@@ -1,0 +1,38 @@
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+
+# JavaScript / TypeScript
+node_modules/
+dist/
+build/
+coverage/
+
+# Data and local outputs
+tmp/
+.cache/
+data/gmail_fetch/
+data/gmail_credentials/
+data/protonmail_credentials/
+data/private/
+outputs/private/
+*.db
+*.sqlite
+*.sqlite3

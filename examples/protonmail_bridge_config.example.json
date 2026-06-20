@@ -1,0 +1,7 @@
+{
+  "host": "127.0.0.1",
+  "port": 1143,
+  "username": "bridge-user",
+  "password": "bridge-password",
+  "ssl": false
+}

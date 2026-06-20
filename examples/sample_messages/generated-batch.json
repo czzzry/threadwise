@@ -1,0 +1,47 @@
+{
+  "batch_id": "generated-batch",
+  "messages": [
+    {
+      "message_id": "raw-001",
+      "sender": "Manager <boss@example.com>",
+      "subject": "Need your approval today",
+      "date": "2026-06-15T09:00:00Z",
+      "body": "Please review the budget update and reply today with your approval."
+    },
+    {
+      "message_id": "raw-002",
+      "sender": "Bank <security@example.com>",
+      "subject": "New sign-in detected",
+      "date": "2026-06-17T10:00:00Z",
+      "body": "We noticed a new sign-in to your account. If this was not you, secure your account now."
+    },
+    {
+      "message_id": "raw-003",
+      "sender": "Store <orders@example.com>",
+      "subject": "Your order is on the way",
+      "date": "2026-06-16T08:00:00Z",
+      "body": "Your recent order has shipped. View your tracking details and receipt online."
+    },
+    {
+      "message_id": "raw-004",
+      "sender": "News <digest@example.com>",
+      "subject": "Weekend reads and member offers",
+      "date": "2026-06-18T07:30:00Z",
+      "body": "This week's newsletter includes travel ideas, personal essays, and special promotions for members."
+    },
+    {
+      "message_id": "raw-005",
+      "sender": "Unknown <alerts@example.com>",
+      "subject": "FYI system note",
+      "date": "2026-06-14T11:30:00Z",
+      "body": "This is an informational update with no clear action or category."
+    },
+    {
+      "message_id": "raw-006",
+      "sender": "Travel Desk <travel@example.com>",
+      "subject": "Travel itinerary, receipt, calendar hold, and personal note",
+      "date": "2026-06-13T12:00:00Z",
+      "body": "Your travel itinerary is confirmed. The receipt is attached, the calendar event is ready, and this personal reminder is included for your trip."
+    }
+  ]
+}
