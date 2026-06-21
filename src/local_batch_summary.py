@@ -3,14 +3,22 @@ from collections import Counter
 from pathlib import Path
 
 from src.label_taxonomy import gmail_label_name
+from src.local_artifacts import (
+    inbox_removal_attempts_path,
+    inbox_removal_status_path,
+    load_json,
+    load_json_or_default,
+    write_attempts_path,
+    write_status_path,
+)
 
 
 def summarize_batch(storage_dir: Path, batch: dict) -> dict:
     batch_id = batch["batch_id"]
-    status_map = load_optional_json(storage_dir / f"{batch_id}_write_status.json", {})
-    attempts = load_optional_json(storage_dir / f"{batch_id}_write_attempts.json", {})
-    inbox_removal_status_map = load_optional_json(storage_dir / f"{batch_id}_inbox_removal_status.json", {})
-    inbox_removal_attempts = load_optional_json(storage_dir / f"{batch_id}_inbox_removal_attempts.json", {})
+    status_map = load_json_or_default(write_status_path(storage_dir, batch_id), {})
+    attempts = load_json_or_default(write_attempts_path(storage_dir, batch_id), {})
+    inbox_removal_status_map = load_json_or_default(inbox_removal_status_path(storage_dir, batch_id), {})
+    inbox_removal_attempts = load_json_or_default(inbox_removal_attempts_path(storage_dir, batch_id), {})
 
     review_states = Counter(item.get("review_state", "pending") for item in batch["items"])
     review_actions = Counter(item.get("review_action") for item in batch["items"] if item.get("review_action"))
@@ -61,13 +69,11 @@ def summarize_batch(storage_dir: Path, batch: dict) -> dict:
 
 
 def load_batch(path: Path) -> dict:
-    return json.loads(path.read_text())
+    return load_json(path)
 
 
 def load_optional_json(path: Path, default):
-    if not path.exists():
-        return default
-    return json.loads(path.read_text())
+    return load_json_or_default(path, default)
 
 
 def format_counter(counter: Counter, separator: str = ",") -> str:

@@ -1,11 +1,12 @@
 import argparse
-import json
 import sys
 from collections import Counter
 from collections.abc import Sequence
 from datetime import date, timedelta
 from pathlib import Path
 from typing import TextIO
+
+from src.local_artifacts import load_json, weekly_report_path, write_json
 
 
 DEFAULT_STORAGE_DIR = Path("data/gmail_fetch")
@@ -55,7 +56,7 @@ def _load_reports_for_window(
 ) -> list[dict]:
     reports: list[dict] = []
     for path in sorted(reports_dir.glob("*_daily_report.json")):
-        report = json.loads(path.read_text())
+        report = load_json(path)
         if report.get("account_id") != account_id:
             continue
         report_date = date.fromisoformat(report["report_date"])
@@ -124,11 +125,15 @@ def _build_weekly_report(
 
 
 def _write_weekly_report(reports_dir: Path, report: dict) -> None:
-    reports_dir.mkdir(parents=True, exist_ok=True)
-    path = reports_dir / (
-        f"{report['account_id']}_weekly_report_{report['window_start']}_{report['window_end']}.json"
+    write_json(
+        weekly_report_path(
+            reports_dir.parent,
+            report["account_id"],
+            report["window_start"],
+            report["window_end"],
+        ),
+        report,
     )
-    path.write_text(json.dumps(report, indent=2))
 
 
 def _print_summary(report: dict, output: TextIO) -> None:

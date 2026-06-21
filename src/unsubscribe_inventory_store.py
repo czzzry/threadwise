@@ -1,8 +1,8 @@
-import json
 from datetime import UTC, datetime
 from email.utils import parseaddr
 from pathlib import Path
 
+from src.local_artifacts import load_json, unsubscribe_selections_path, write_json
 from src.local_batch_summary import load_batch
 from src.sender_utils import normalized_sender_email
 from src.unsubscribe_execution import UnsubscribeExecutor
@@ -101,7 +101,7 @@ class UnsubscribeInventoryStore:
             stored_candidates[candidate_key] = saved_record
             saved_candidates.append(saved_record)
 
-        self._selection_path().write_text(json.dumps(selections, indent=2))
+        write_json(self._selection_path(), selections)
         return saved_candidates
 
     def _candidate_from_message(self, provider: str, account_id: str, item: dict, raw_message: dict) -> dict | None:
@@ -157,13 +157,13 @@ class UnsubscribeInventoryStore:
         selection_path = self._selection_path()
         if not selection_path.exists():
             return {"candidates": {}}
-        return json.loads(selection_path.read_text())
+        return load_json(selection_path)
 
     def _load_selection_map(self) -> dict[str, dict]:
         return self._load_selections().get("candidates", {})
 
     def _selection_path(self) -> Path:
-        return self._storage_dir / "unsubscribe_selections.json"
+        return unsubscribe_selections_path(self._storage_dir)
 
 
 def _display_name(sender: str) -> str:

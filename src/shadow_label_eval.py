@@ -7,6 +7,7 @@ import urllib.error
 import urllib.request
 
 from src.label_taxonomy import CANONICAL_LABEL_ORDER
+from src.local_artifacts import evaluation_report_path, evaluations_dir, load_json, write_json
 
 
 @dataclass
@@ -28,7 +29,7 @@ class ReviewedCorpusLoader:
     def load_reviewed_messages(self, limit: int | None = None) -> list[ReviewedMessage]:
         messages: list[ReviewedMessage] = []
         for batch_path in sorted((self._storage_dir / "batches").glob("*.json")):
-            batch = json.loads(batch_path.read_text())
+            batch = load_json(batch_path)
             for item in batch.get("items", []):
                 if item.get("review_state") != "reviewed":
                     continue
@@ -146,11 +147,9 @@ class ShadowLabelEvaluator:
         return report
 
     def _write_report(self, report: dict) -> Path:
-        evaluations_dir = self._storage_dir / "evaluations"
-        evaluations_dir.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now(tz=UTC).strftime("%Y%m%dT%H%M%SZ")
-        report_path = evaluations_dir / f"shadow-label-eval-{timestamp}.json"
-        report_path.write_text(json.dumps(report, indent=2))
+        report_path = evaluation_report_path(self._storage_dir, f"shadow-label-eval-{timestamp}")
+        write_json(report_path, report)
         return report_path
 
 

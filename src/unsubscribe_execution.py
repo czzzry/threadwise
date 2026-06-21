@@ -4,6 +4,13 @@ import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
 
+from src.local_artifacts import (
+    load_json_or_default,
+    unsubscribe_execution_audit_path,
+    unsubscribe_selections_path,
+    write_json,
+)
+
 
 class UnsubscribeExecutor:
     def __init__(self, storage_dir: Path, transport=None) -> None:
@@ -63,7 +70,7 @@ class UnsubscribeExecutor:
 
             candidate_record["attempts"].append(attempt)
 
-        self._audit_path().write_text(json.dumps(audit, indent=2))
+        write_json(self._audit_path(), audit)
         return {
             "selected_count": preview["selected_count"],
             "executed_count": executed_count,
@@ -128,19 +135,13 @@ class UnsubscribeExecutor:
         return item
 
     def _load_selections(self) -> dict:
-        path = self._storage_dir / "unsubscribe_selections.json"
-        if not path.exists():
-            return {"candidates": {}}
-        return json.loads(path.read_text())
+        return load_json_or_default(unsubscribe_selections_path(self._storage_dir), {"candidates": {}})
 
     def _load_audit(self) -> dict:
-        path = self._audit_path()
-        if not path.exists():
-            return {"candidates": {}}
-        return json.loads(path.read_text())
+        return load_json_or_default(self._audit_path(), {"candidates": {}})
 
     def _audit_path(self) -> Path:
-        return self._storage_dir / "unsubscribe_execution_audit.json"
+        return unsubscribe_execution_audit_path(self._storage_dir)
 
 
 def _first_http_url(value: str) -> str | None:

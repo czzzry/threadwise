@@ -3,6 +3,7 @@ from pathlib import Path
 
 from src.fixture_classifier import FixtureBatchClassifier
 from src.gmail_message_normalizer import normalize_gmail_message
+from src.local_artifacts import batch_path, load_json, write_json
 from src.trusted_sender_store import TrustedSenderStore
 
 
@@ -11,7 +12,7 @@ class StoredBatchReviewStore:
         self._storage_dir = storage_dir
 
     def load_batch(self, batch_id: str) -> dict:
-        return json.loads(self._batch_path(batch_id).read_text())
+        return load_json(self._batch_path(batch_id))
 
     def to_review_queue(self, stored_batch: dict) -> dict:
         items = stored_batch["items"]
@@ -49,9 +50,9 @@ class StoredBatchReviewStore:
 
     def persist_reviewed_items(self, batch_id: str, items: list[dict]) -> None:
         batch_path = self._batch_path(batch_id)
-        stored_batch = json.loads(batch_path.read_text())
+        stored_batch = load_json(batch_path)
         stored_batch["items"] = items
-        batch_path.write_text(json.dumps(stored_batch, indent=2))
+        write_json(batch_path, stored_batch)
         TrustedSenderStore(self._storage_dir).rebuild_from_batches()
 
     def _merge_existing_item(self, refreshed_item: dict, existing_item: dict) -> dict:
@@ -78,4 +79,4 @@ class StoredBatchReviewStore:
         return merged_item
 
     def _batch_path(self, batch_id: str) -> Path:
-        return self._storage_dir / "batches" / f"{batch_id}.json"
+        return batch_path(self._storage_dir, batch_id)

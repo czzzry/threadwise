@@ -1,6 +1,15 @@
 import json
 from pathlib import Path
 
+from src.local_artifacts import (
+    inbox_removal_attempts_path,
+    inbox_removal_status_path,
+    load_json_or_default,
+    write_attempts_path,
+    write_json,
+    write_status_path,
+)
+
 
 class MockGmailLabelClient:
     def __init__(
@@ -163,52 +172,40 @@ class MockGmailLabelWriter:
         return self._load_inbox_removal_attempts(batch_id).get(message_id, [])
 
     def _status_path(self, batch_id: str) -> Path:
-        return self._storage_dir / f"{batch_id}_write_status.json"
+        return write_status_path(self._storage_dir, batch_id)
 
     def _load_status_map(self, batch_id: str) -> dict[str, str]:
-        path = self._status_path(batch_id)
-        if not path.exists():
-            return {}
-        return json.loads(path.read_text())
+        return load_json_or_default(self._status_path(batch_id), {})
 
     def _write_status_map(self, batch_id: str, status_map: dict[str, str]) -> None:
-        self._status_path(batch_id).write_text(json.dumps(status_map, indent=2))
+        write_json(self._status_path(batch_id), status_map)
 
     def _attempts_path(self, batch_id: str) -> Path:
-        return self._storage_dir / f"{batch_id}_write_attempts.json"
+        return write_attempts_path(self._storage_dir, batch_id)
 
     def _load_attempts(self, batch_id: str) -> dict[str, list[dict]]:
-        path = self._attempts_path(batch_id)
-        if not path.exists():
-            return {}
-        return json.loads(path.read_text())
+        return load_json_or_default(self._attempts_path(batch_id), {})
 
     def _write_attempts(self, batch_id: str, attempts: dict[str, list[dict]]) -> None:
-        self._attempts_path(batch_id).write_text(json.dumps(attempts, indent=2))
+        write_json(self._attempts_path(batch_id), attempts)
 
     def _inbox_removal_status_path(self, batch_id: str) -> Path:
-        return self._storage_dir / f"{batch_id}_inbox_removal_status.json"
+        return inbox_removal_status_path(self._storage_dir, batch_id)
 
     def _load_inbox_removal_status_map(self, batch_id: str) -> dict[str, str]:
-        path = self._inbox_removal_status_path(batch_id)
-        if not path.exists():
-            return {}
-        return json.loads(path.read_text())
+        return load_json_or_default(self._inbox_removal_status_path(batch_id), {})
 
     def _write_inbox_removal_status_map(self, batch_id: str, status_map: dict[str, str]) -> None:
-        self._inbox_removal_status_path(batch_id).write_text(json.dumps(status_map, indent=2))
+        write_json(self._inbox_removal_status_path(batch_id), status_map)
 
     def _inbox_removal_attempts_path(self, batch_id: str) -> Path:
-        return self._storage_dir / f"{batch_id}_inbox_removal_attempts.json"
+        return inbox_removal_attempts_path(self._storage_dir, batch_id)
 
     def _load_inbox_removal_attempts(self, batch_id: str) -> dict[str, list[dict]]:
-        path = self._inbox_removal_attempts_path(batch_id)
-        if not path.exists():
-            return {}
-        return json.loads(path.read_text())
+        return load_json_or_default(self._inbox_removal_attempts_path(batch_id), {})
 
     def _write_inbox_removal_attempts(self, batch_id: str, attempts: dict[str, list[dict]]) -> None:
-        self._inbox_removal_attempts_path(batch_id).write_text(json.dumps(attempts, indent=2))
+        write_json(self._inbox_removal_attempts_path(batch_id), attempts)
 
     def _is_inbox_removal_label_eligible(self, final_labels: list[str]) -> bool:
         return "promotions" in final_labels or "spam-low-value" in final_labels
