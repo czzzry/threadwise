@@ -1,4 +1,5 @@
 import json
+import socket
 import ssl
 import tempfile
 import unittest
@@ -14,6 +15,7 @@ from src.live_gmail_client import (
     SetupError,
     _build_verified_ssl_context,
     _exchange_token,
+    _urlopen_json,
 )
 
 
@@ -71,6 +73,31 @@ class LabelTransport:
                 "removedLabelIds": payload.get("removeLabelIds", []),
             }
         raise AssertionError(f"Unexpected transport call: {method} {url}")
+
+
+class PaginatedListTransport:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str, dict, str]] = []
+
+    def __call__(self, method: str, url: str, params: dict | None = None, access_token: str | None = None) -> dict:
+        payload = params or {}
+        self.calls.append((method, url, payload, access_token or ""))
+        page_token = payload.get("pageToken")
+        if page_token is None:
+            return {
+                "messages": [{"id": f"page1-{index}"} for index in range(500)],
+                "nextPageToken": "page-2",
+            }
+        if page_token == "page-2":
+            return {
+                "messages": [{"id": f"page2-{index}"} for index in range(500)],
+                "nextPageToken": "page-3",
+            }
+        if page_token == "page-3":
+            return {
+                "messages": [{"id": f"page3-{index}"} for index in range(200)],
+            }
+        raise AssertionError(f"Unexpected page token: {page_token}")
 
 
 class FakeHTTPServer:
@@ -299,6 +326,7 @@ class LiveGmailClientTests(unittest.TestCase):
 
     def test_exchange_token_uses_verified_ssl_context(self) -> None:
         captured_context = None
+        captured_timeout = None
 
         class FakeResponse:
             def __enter__(self):
@@ -310,10 +338,11 @@ class LiveGmailClientTests(unittest.TestCase):
             def read(self) -> bytes:
                 return b'{"access_token":"token","expires_in":3600}'
 
-        def fake_urlopen(request, context=None):
+        def fake_urlopen(request, context=None, timeout=None):
             del request
-            nonlocal captured_context
+            nonlocal captured_context, captured_timeout
             captured_context = context
+            captured_timeout = timeout
             return FakeResponse()
 
         with patch("src.live_gmail_client.urllib.request.urlopen", side_effect=fake_urlopen):
@@ -326,6 +355,79 @@ class LiveGmailClientTests(unittest.TestCase):
         self.assertIsNotNone(captured_context)
         self.assertEqual(captured_context.verify_mode, ssl.CERT_REQUIRED)
         self.assertTrue(captured_context.check_hostname)
+        self.assertIsNotNone(captured_timeout)
+
+    def test_urlopen_json_retries_transient_timeout_and_succeeds(self) -> None:
+        attempts = 0
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return None
+
+            def read(self) -> bytes:
+                return b'{"messages":[]}'
+
+        def fake_urlopen(request, context=None, timeout=None):
+            del request, context, timeout
+            nonlocal attempts
+            attempts += 1
+            if attempts < 3:
+                raise socket.timeout("timed out")
+            return FakeResponse()
+
+        request = urllib.request.Request("https://gmail.googleapis.com/gmail/v1/users/me/messages")
+        with patch("src.live_gmail_client.urllib.request.urlopen", side_effect=fake_urlopen):
+            response = _urlopen_json(request)
+
+        self.assertEqual(response, {"messages": []})
+        self.assertEqual(attempts, 3)
+
+    def test_urlopen_json_retries_transient_http_503_and_succeeds(self) -> None:
+        attempts = 0
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return None
+
+            def read(self) -> bytes:
+                return b'{"id":"gmail-live-001"}'
+
+        def fake_urlopen(request, context=None, timeout=None):
+            del context, timeout
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise urllib.error.HTTPError(request.full_url, 503, "service unavailable", hdrs=None, fp=None)
+            return FakeResponse()
+
+        request = urllib.request.Request("https://gmail.googleapis.com/gmail/v1/users/me/messages/gmail-live-001")
+        with patch("src.live_gmail_client.urllib.request.urlopen", side_effect=fake_urlopen):
+            response = _urlopen_json(request)
+
+        self.assertEqual(response, {"id": "gmail-live-001"})
+        self.assertEqual(attempts, 2)
+
+    def test_urlopen_json_does_not_retry_non_transient_http_error(self) -> None:
+        attempts = 0
+
+        def fake_urlopen(request, context=None, timeout=None):
+            del context, timeout
+            nonlocal attempts
+            attempts += 1
+            raise urllib.error.HTTPError(request.full_url, 404, "not found", hdrs=None, fp=None)
+
+        request = urllib.request.Request("https://gmail.googleapis.com/gmail/v1/users/me/messages/missing")
+        with patch("src.live_gmail_client.urllib.request.urlopen", side_effect=fake_urlopen):
+            with self.assertRaises(urllib.error.HTTPError):
+                _urlopen_json(request)
+
+        self.assertEqual(attempts, 1)
 
     def test_build_verified_ssl_context_requires_certificate_validation(self) -> None:
         context = _build_verified_ssl_context()
@@ -383,6 +485,43 @@ class LiveGmailClientTests(unittest.TestCase):
                     "https://gmail.googleapis.com/gmail/v1/users/me/messages/gmail-live-001/modify",
                     {"removeLabelIds": ["INBOX"]},
                     "modify-token",
+                ),
+            ],
+        )
+
+    def test_live_client_paginates_message_listing_beyond_first_500_results(self) -> None:
+        transport = PaginatedListTransport()
+        client = LiveGmailClient(access_token="readonly-token", transport=transport)
+
+        message_ids = client.list_messages(("INBOX",), 1200)
+
+        self.assertEqual(len(message_ids), 1200)
+        self.assertEqual(message_ids[0], "page1-0")
+        self.assertEqual(message_ids[499], "page1-499")
+        self.assertEqual(message_ids[500], "page2-0")
+        self.assertEqual(message_ids[999], "page2-499")
+        self.assertEqual(message_ids[1000], "page3-0")
+        self.assertEqual(message_ids[1199], "page3-199")
+        self.assertEqual(
+            transport.calls,
+            [
+                (
+                    "GET",
+                    "https://gmail.googleapis.com/gmail/v1/users/me/messages",
+                    {"labelIds": ["INBOX"], "maxResults": 500},
+                    "readonly-token",
+                ),
+                (
+                    "GET",
+                    "https://gmail.googleapis.com/gmail/v1/users/me/messages",
+                    {"labelIds": ["INBOX"], "maxResults": 500, "pageToken": "page-2"},
+                    "readonly-token",
+                ),
+                (
+                    "GET",
+                    "https://gmail.googleapis.com/gmail/v1/users/me/messages",
+                    {"labelIds": ["INBOX"], "maxResults": 200, "pageToken": "page-3"},
+                    "readonly-token",
                 ),
             ],
         )

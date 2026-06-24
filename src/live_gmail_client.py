@@ -3,6 +3,7 @@ import hashlib
 from importlib.util import find_spec
 import json
 import secrets
+import socket
 import ssl
 import sys
 import threading
@@ -17,6 +18,9 @@ from pathlib import Path
 
 GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
 GMAIL_MODIFY_SCOPE = "https://www.googleapis.com/auth/gmail.modify"
+DEFAULT_HTTP_TIMEOUT_SECONDS = 15
+DEFAULT_HTTP_MAX_ATTEMPTS = 3
+TRANSIENT_HTTP_STATUS_CODES = {408, 429, 500, 502, 503, 504}
 
 
 class SetupError(Exception):
@@ -82,16 +86,30 @@ class LiveGmailClient:
         return cls(access_token=access_token, transport=transport)
 
     def list_messages(self, label_ids: tuple[str, ...], max_results: int) -> list[str]:
-        response = self._transport(
-            "GET",
-            "https://gmail.googleapis.com/gmail/v1/users/me/messages",
-            params={
+        message_ids: list[str] = []
+        page_token: str | None = None
+
+        while len(message_ids) < max_results:
+            remaining = max_results - len(message_ids)
+            params = {
                 "labelIds": list(label_ids),
-                "maxResults": max_results,
-            },
-            access_token=self._access_token,
-        )
-        return [message["id"] for message in response.get("messages", [])]
+                "maxResults": min(remaining, 500),
+            }
+            if page_token is not None:
+                params["pageToken"] = page_token
+
+            response = self._transport(
+                "GET",
+                "https://gmail.googleapis.com/gmail/v1/users/me/messages",
+                params=params,
+                access_token=self._access_token,
+            )
+            message_ids.extend(message["id"] for message in response.get("messages", []))
+            page_token = response.get("nextPageToken")
+            if not page_token:
+                break
+
+        return message_ids[:max_results]
 
     def get_message(self, message_id: str) -> dict:
         return self._transport(
@@ -453,14 +471,27 @@ def _google_oauth_libraries_available() -> bool:
         return False
 
 
-def _urlopen_json(request: urllib.request.Request) -> dict:
-    try:
-        with urllib.request.urlopen(request, context=_build_verified_ssl_context()) as response:
-            return json.loads(response.read())
-    except Exception as exc:
-        if _is_ssl_certificate_error(exc):
-            raise SetupError(_certificate_verification_error_message()) from exc
-        raise
+def _urlopen_json(
+    request: urllib.request.Request,
+    *,
+    timeout_seconds: int = DEFAULT_HTTP_TIMEOUT_SECONDS,
+    max_attempts: int = DEFAULT_HTTP_MAX_ATTEMPTS,
+) -> dict:
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            with urllib.request.urlopen(
+                request,
+                context=_build_verified_ssl_context(),
+                timeout=timeout_seconds,
+            ) as response:
+                return json.loads(response.read())
+        except Exception as exc:
+            if _is_ssl_certificate_error(exc):
+                raise SetupError(_certificate_verification_error_message()) from exc
+            if attempt >= max_attempts or not _is_transient_network_error(exc):
+                raise
 
 
 def _build_verified_ssl_context() -> ssl.SSLContext:
@@ -488,6 +519,23 @@ def _is_ssl_certificate_error(exc: BaseException) -> bool:
         return True
 
     return False
+
+
+def _is_transient_network_error(exc: BaseException) -> bool:
+    if isinstance(exc, urllib.error.HTTPError):
+        return exc.code in TRANSIENT_HTTP_STATUS_CODES
+
+    if isinstance(exc, (TimeoutError, socket.timeout, ConnectionResetError, ConnectionAbortedError)):
+        return True
+
+    if isinstance(exc, urllib.error.URLError) and exc.reason is not None:
+        return _is_transient_network_error(exc.reason)
+
+    if isinstance(exc, ssl.SSLError) and "timed out" in str(exc).lower():
+        return True
+
+    message = str(exc).lower()
+    return "timed out" in message or "temporarily unavailable" in message
 
 
 def _certificate_verification_error_message() -> str:
