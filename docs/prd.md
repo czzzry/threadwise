@@ -1,156 +1,135 @@
 # PRD
 
+Status: Current bounded-slice PRD
+Current as of: 2026-06-24
+Builds on: `docs/v2-alignment.md`, `docs/checkpoints/current-operating-model-2026-06-22.md`, and `docs/decisions/gmail-bounded-autonomy.md`
+Related decisions: `docs/decisions/gmail-bounded-autonomy.md`, `docs/decisions/gmail-whole-inbox-readiness-policy.md`
+First implementation slice: `docs/issues/041-inspect-repeated-unlabeled-exceptions-across-stored-batches.md`
+
+## Current Progress Under This PRD
+
+The readiness work originally scoped here has now advanced beyond the first inspection slice:
+
+- recurring reviewed-unlabeled inspection is implemented,
+- the focused classifier cleanup slices discovered through that inspection are implemented through issue `048`,
+- the current reviewed-unlabeled founder-test Gmail frontier reclassifies to `0` remaining unlabeled items under the current classifier,
+- the current readiness policy is now explicit in `docs/decisions/gmail-whole-inbox-readiness-policy.md`.
+- a local readiness-check command now evaluates individual Gmail daily run artifacts against the run-level readiness policy.
+- a local stored-batch replay command now replays the current classifier across stored Gmail batches and reports corpus-level pass/warn/pause evidence without fetching Gmail again.
+- the stored founder-test Gmail replay corpus now evaluates to `PASS` under the current classifier and readiness thresholds.
+- a real live Gmail pagination bug has been fixed, so historical backfill can now move beyond Gmail's first `500` inbox results.
+- the stored founder-test Gmail corpus has now expanded to `29` batches / `1810` messages while still replaying to `PASS`.
+- the most recent live historical validation batches (`founder-test-batch-26` through `founder-test-batch-29`) all replay under the current classifier with verified mutation evidence and no replay warnings.
+- the historical founder-test Gmail backfill has now reached the current frontier.
+- the next bounded slice is `docs/issues/052-prove-supervised-gmail-daily-use-on-new-mail.md`, which must measure only genuinely fresh post-frontier Gmail runs rather than whichever historical report is latest on disk.
+
+The main remaining work under this PRD is no longer sender-family cleanup. It is preserving and proving the operating model over time, especially around reliable live backfill and incremental fetch behavior.
+
 ## Problem Statement
 
-The current inbox workflow is noisy and manual. Important messages are mixed with low-value mail, and it takes too much effort to consistently label messages in a way that makes later retrieval easier. The product has now proven it can classify many real emails well enough to apply labels automatically, so the next scope checkpoint is to turn that into a practical operating model rather than continue optimizing a review-first experiment.
+The repo already proves a bounded Gmail daily run: it can fetch a fresh inbox batch, classify messages, auto-apply current `EA/` labels, remove `INBOX` only for the current low-value classes, and write daily report artifacts. That solves the basic MVP question.
+
+The next product milestone is stronger: the founder wants to be able to let this run daily on the whole active Gmail inbox with confidence. The limiting problem is no longer the mutation boundary alone. The limiting problem is readiness:
+
+- the repo needed a way to inspect and close repeated exception patterns systematically
+- the quality threshold for "safe enough to run daily on the whole inbox" needed to be written down as an explicit readiness policy
+- the current fetch model is still a local batch workflow, not yet a clearly approved long-lived whole-inbox operating model
 
 ## Solution
 
-Use a lightweight local Gmail workflow for one non-primary account that:
+Define and implement a bounded Gmail whole-inbox readiness path without broadening the current Gmail autonomy boundary.
 
-- fetches inbox messages in manual batches
-- classifies them at the message level
-- auto-applies any current suggested `EA/` labels
-- removes `INBOX` only for low-value and promotional mail
-- leaves only unlabeled exceptions for manual review
-- stores outcomes and audit state locally
+This slice should:
 
-Manual review remains available for exception handling and spot checks, but it is no longer the default control model.
+- treat supervised daily whole-inbox Gmail use as the target milestone
+- keep the current bounded mutation rules unchanged while readiness is improved
+- make repeated unlabeled exceptions inspectable from stored local artifacts
+- reduce manual review burden by turning the current unlabeled tail into concrete, recurring clusters that can later be closed in small classifier slices
+- define the later planning path for readiness policy, incremental-fetch reliability, and supervised scheduling
+
+The first implementation slice under this PRD is not scheduling and not broader Gmail write power. It is exception inspection: expose the recurring unlabeled patterns that are currently blocking confident daily whole-inbox use.
 
 ## User Stories
 
-1. As a Gmail user, I want to fetch a bounded batch of inbox messages manually, so that I stay in control during evaluation.
-2. As a Gmail user, I want the app to classify individual messages rather than whole threads, so that mixed threads do not corrupt retrieval.
-3. As a Gmail user, I want suggested labels before anything is written back, so that I can review the system safely.
-4. As a Gmail user, I want labels optimized for retrieval first, so that I can reliably find the right messages later.
-5. As a Gmail user, I want the app to allow multiple labels on one message, so that messages with multiple useful dimensions are not flattened into one choice.
-6. As a Gmail user, I want applied labels capped to a small number, so that the output remains readable and useful.
-7. As a Gmail user, I want the app to keep ranked near-miss labels, so that I can see where the system was close even when a label was not applied.
-8. As a Gmail user, I want `unlabeled` to be a valid outcome, so that the system does not force bad guesses.
-9. As a Gmail user, I want to review unlabeled messages too, so that uncertainty is visible and correctable.
-10. As a Gmail user, I want the app to show a short interpretation of what each email is, so that I can review the model's understanding faster than by labels alone.
-11. As a Gmail user, I want to see sender, subject, date, labels, near-misses, and confidence cues together, so that batch review is efficient.
-12. As a Gmail user, I want confidence shown as heuristics rather than false precision, so that I do not over-trust model scores.
-13. As a Gmail user, I want `reply-needed` and `account-security` items prioritized in review, so that higher-risk mail gets attention first.
-14. As a Gmail user, I want to edit, approve, or reject label suggestions, so that my review decisions are explicit.
-15. As a Gmail user, I want corrected messages and label changes to be tracked, so that the system can measure review friction and weak spots.
-16. As a Gmail user, I want the app to write labels to Gmail automatically when they are already within the trusted current operating model, so that I do not have to manually review every message.
-17. As a Gmail user, I want Gmail labels namespaced under `EA/`, so that experimentation does not pollute my existing organization.
-18. As a Gmail user, I want the app to create missing `EA/` labels automatically, so that setup stays lightweight.
-19. As a Gmail user, I want reviewed messages to stay frozen by default, so that history does not silently change.
-20. As a Gmail user, I want failed Gmail writes to be retryable without re-review, so that API failures do not create duplicate work.
-21. As a Gmail user, I want local storage of review history and message content, so that the app can support fast iteration and later analysis.
-22. As a Gmail user, I want private email content kept out of repo docs and product artifacts, so that planning materials remain safe to share.
-23. As a product lead, I want automation to stay bounded and reversible, so that faster progress does not require perfect classification first.
-24. As a product lead, I want the internal model to use provider-neutral concepts where easy, so that later provider support is possible without forcing a framework now.
-25. As a product lead, I want explicit success criteria for label usefulness and review effort, so that continuation decisions are evidence-based.
-26. As a product lead, I want the PRD to define testing expectations before implementation, so that slices do not backfill weak tests after code exists.
+1. As the inbox owner, I want to run the assistant every day against new Gmail inbox mail, so that I can rely on it as part of my actual workflow instead of a one-off experiment.
+2. As the inbox owner, I want the current Gmail bounded-autonomy rules to stay unchanged while readiness work continues, so that whole-inbox ambitions do not silently broaden provider-side risk.
+3. As the inbox owner, I want recurring unlabeled exceptions grouped and counted, so that I can see the main sources of manual review burden quickly.
+4. As the inbox owner, I want privacy-safe exception summaries, so that inspection tools do not spill more private content than necessary.
+5. As the inbox owner, I want to see which batches and accounts a recurring exception pattern came from, so that I can decide whether it is worth classifier work.
+6. As the inbox owner, I want repeated exception clusters ranked by frequency, so that the highest-leverage cleanup opportunities are obvious.
+7. As the inbox owner, I want recent representative examples for an exception cluster, so that I can judge whether the grouping is meaningful.
+8. As the inbox owner, I want current labeled and mutated flows to remain stable while exception inspection is added, so that readiness work does not destabilize the existing daily run.
+9. As the product lead, I want a current PRD that defines "daily whole-inbox readiness" as a bounded milestone, so that future work does not jump straight to scheduling or broader autonomy.
+10. As the product lead, I want the first slice to improve observability of the unlabeled tail rather than invent new automation, so that the work stays inside the current trust boundary.
+11. As the product lead, I want readiness planning to separate near-term artifact and inspection work from later fetch and scheduling decisions, so that implementation remains reviewable and small.
+12. As the product lead, I want a later explicit readiness policy for exception rate, mutation safety, and operator review expectations, so that "safe enough to run daily" becomes a decision with evidence behind it.
+13. As an agent working in this repo later, I want the current PRD to name the real blocker to whole-inbox daily use, so that I do not mistake old classifier issues or old MVP gaps for the current problem.
 
 ## Implementation Decisions
 
-- Scope the product to one non-primary Gmail account in v1, using single-user local OAuth.
-- Gmail OAuth and write scope are a material product risk. Request the narrowest scopes that support reading messages and writing approved labels only.
-- Use a lightweight local web app as the review surface. Do not build a Gmail extension in v1.
-- Treat the current slice as Gmail-connected and Gmail-specific at the integration edge, while keeping internal concepts neutral where easy: message, label, prediction, review decision, write status.
-- Do not build a full multi-provider abstraction or framework in v1.
-- Fetch inbox messages manually in bounded batches. Do not poll in the background yet.
-- Operate at message level, not thread level.
-- Optimize labels for retrieval and understanding first, then use those labels for bounded automation.
-- Support a fixed initial taxonomy:
-  - `travel`
-  - `receipt-billing`
-  - `shopping-order`
-  - `newsletter`
-  - `promotions`
-  - `account-security`
-  - `calendar-event`
-  - `personal`
-  - `job-related`
-  - `spam-low-value`
-  - `reply-needed`
-- Treat `reply-needed` as a stateful, higher-risk label that can co-exist with descriptive labels.
-- Allow multiple applied labels with a visible cap of 3; store additional ranked candidates as near-misses.
-- Allow `unlabeled` as an explicit outcome and support taxonomy-gap marking during review.
-- Define basic compatibility rules between labels rather than leaving all combinations to the model.
-- Exact label compatibility rules must be resolved in the relevant implementation slice before implementation begins.
-- Present each review item with sender, subject, date, interpretation, suggested labels, near-misses, confidence heuristics, and review controls, plus a way to open the underlying email.
-- Order review items by priority first for `reply-needed` and `account-security`, then by recency.
-- Treat confidence numbers as ranking aids, not calibrated truth probabilities.
-- Write current suggested labels only to a dedicated Gmail namespace such as `EA/travel`.
-- Make Gmail output label names configurable, but keep the taxonomy itself fixed for this slice.
-- Permit the app to create missing Gmail labels under the agent namespace automatically.
-- Store message content, predictions, interpretations, near-misses, review outcomes, sender history, and timestamps locally.
-- Keep local message storage gitignored, separate from credentials, easy to delete, and excluded from logs.
-- Do not place private email content in repo docs, PRD examples, issue trackers, or knowledge tools such as Obsidian.
-- Treat private email content, OAuth credentials, inbox access, and label write-back as privacy/security-sensitive constraints throughout implementation.
-- Track sender history by normalized sender email address to support later sender-level preference features.
-- Distinguish processing state from review state:
-  - `processed`: prediction created
-  - `reviewed`: approved, edited, rejected, approved as `unlabeled`, or `auto-approve`
-- Skip already processed messages by default during manual fetches.
-- Keep reviewed messages frozen by default; if reprocessing is added later, it must preserve audit history and produce reviewable diffs before Gmail label changes.
-- Track Gmail write status per message and allow retry without re-review when the approved labels have not changed.
-- Require a minimal post-batch summary covering: messages reviewed, messages labeled, unlabeled count, per-label counts, and reviewer label changes.
-- Structure batch summaries as the precursor to later weekly reporting, but do not build weekly reporting in this slice.
+- Scope this PRD to Gmail daily whole-inbox readiness, not to broader multi-provider autonomy and not to a generic QA framework.
+- Preserve the current Gmail bounded-autonomy rules exactly as captured in the current decision note.
+- Keep ProtonMail read-only and out of scope for provider-side mutation.
+- Treat stored local batch artifacts as the primary evidence source for readiness work before adding new live Gmail actions.
+- Start with one thin vertical slice:
+  - inspect reviewed unlabeled exceptions across stored batches
+  - group repeated patterns into privacy-safe clusters
+  - expose counts, sample references, and recent batch/account context
+- Prefer a local CLI and optional local artifact output for the first slice, because the repo already has stable seams for storage-backed inspection commands.
+- Reuse the existing stored-batch vocabulary:
+  - account
+  - batch
+  - reviewed vs pending
+  - labeled vs unlabeled
+  - daily report artifact
+  - exception
+- Use grouping that is stable enough to surface repeated patterns but conservative enough not to imply semantic certainty the classifier does not yet have.
+- Treat the first slice as observability for the manual-follow-up path, not as an automatic reclassification engine.
+- Reserve later slices for:
+  - closing the highest-value recurring exception clusters
+  - writing an explicit readiness policy
+  - tightening incremental-fetch semantics for long-lived daily use
+  - supervised scheduling or operator-triggered recurring runs
+- Do not add in this PRD's first slice:
+  - broader Gmail mutations
+  - delete, trash, or broad archive behavior
+  - background jobs
+  - always-on syncing
+  - a large browser UI redesign
+  - cross-provider unification work
 
 ## Testing Decisions
 
-- Good tests verify public behavior and user-visible outcomes, not private implementation details.
-- Each implementation slice must define expected behavior and tests before implementation begins.
-- Use `/tdd` or a red-green-refactor workflow where practical for implementation slices.
-- Codex must not write tests after implementation merely to bless code it already wrote.
-- If tests change after implementation begins, the reason must be explained and the acceptance criteria must not be weakened.
-- Testing should prefer the highest practical seam:
-  - classification input/output behavior
-  - batch review state transitions
-  - Gmail write-back behavior at the integration boundary
-  - user-visible summaries and status reporting
-- Likely modules/seams to test in implementation slices:
-  - message ingestion and normalization from Gmail responses
-  - classification result shaping, including applied labels, near-misses, and unlabeled outcomes
-  - review decision handling and state transitions
-  - Gmail label mapping and write-back request construction
-  - failure handling and retry behavior for write-back
-  - batch summary generation
-- Tests should focus on externally observable outcomes such as:
-  - which messages appear in a review batch
-  - how labels and near-misses are exposed
-  - whether reviewed messages can be written back correctly
-  - whether failed writes remain retryable without re-review
-  - whether summaries reflect counts and review changes correctly
-- The first implementation slice may include only the minimum test setup required for that slice. Do not spin up a standalone testing-infrastructure project.
-
-## Testing and Verification Strategy
-
-- Before implementation of any slice, define:
-  - the slice boundary
-  - expected user-visible behavior
-  - the tests that will prove it
-- Prefer tests through public interfaces such as UI-visible state, persisted review outcomes, request/response boundaries, and provider-facing write behavior.
-- Avoid tests that assert internal helper structure, private methods, or incidental implementation details.
-- Favor small, slice-specific tests over broad framework work.
-- End each implementation slice with a verification summary covering:
-  - tests run
-  - behavior verified
-  - manual checks performed
-  - known gaps
+- Good tests for this PRD prove externally visible operator behavior from local artifacts, not helper implementation details.
+- Prefer the highest seam possible:
+  - inspection CLI behavior
+  - persisted local batch artifacts
+  - any generated local readiness/inspection artifact
+- Prior art already exists in:
+  - `tests/test_local_batch_index_cli.py` for privacy-safe cross-batch summaries
+  - `tests/test_local_batch_status_cli.py` for storage-backed inspection behavior
+  - `tests/test_live_gmail_daily_run_cli.py` and `tests/test_weekly_inbox_report_cli.py` for exception counts already exposed in current run/report artifacts
+- The first slice should test:
+  - grouping of repeated reviewed unlabeled exceptions across multiple stored batches
+  - privacy-safe rendering that avoids dumping full private message bodies
+  - stable counts and representative references for recurring clusters
+  - clean handling of empty storage, mixed accounts, and pending items
+- Keep tests scenario-based and operator-facing. Do not build a broad eval harness in this PRD.
 
 ## Out of Scope
 
-- deleting, trashing, or archiving mail
-- background polling or live inbox monitoring
-- weekly report generation
-- sender preference automation such as wanted vs unwanted newsletters
-- time-aware expiration logic for security-code messages
-- multi-provider support beyond neutral naming where easy
-- a generic provider abstraction layer
-- large-scale backfill or automatic reclassification of previously reviewed mail
-- broad standalone testing-infrastructure work
+- changing the current Gmail bounded-autonomy policy
+- adding new Gmail actions beyond the current bounded workflow
+- changing ProtonMail to support provider-side mutation
+- adding delete, trash, or broad archive behavior
+- background scheduling in the first slice
+- redesigning the taxonomy before the recurring unlabeled tail is visible
+- building a large eval framework
+- a major UI redesign of the local workbench
+- solving every exception pattern in one slice
 
 ## Further Notes
 
-- Success for this slice should be judged on whether real Gmail batches can be reviewed end-to-end, whether at least roughly 80% of messages get at least one useful label across trial batches, whether per-label quality is measurable, and whether retrieval improves.
-- Sensitive false positives matter especially for `spam-low-value`, `account-security`, and `reply-needed`.
-- Review effort should be measured with reviewer label changes, not only message counts.
-- This PRD should lead to small vertical implementation slices rather than one large build.
-- Because this product handles private email, slices should preserve least-privilege access and avoid broadening Gmail permissions or write capabilities without explicit approval.
+- The milestone for this PRD is supervised confidence in daily Gmail whole-inbox use, not fully unattended autonomy.
+- The first question is not "can we schedule it?" but "are the remaining exceptions visible and manageable enough to justify daily use?"
+- The first implementation slice should leave the repo with a clearer picture of the recurring exception tail and a better basis for choosing the next thin classifier slice.
