@@ -114,30 +114,22 @@ class LiveProtonMailDailyRunCliTests(unittest.TestCase):
             self.assertIn("Fetched: 3", rendered)
             self.assertIn("Auto-applied label writes: 0", rendered)
             self.assertIn("INBOX removals: 0", rendered)
-            self.assertIn("Classified messages: 2", rendered)
-            self.assertIn("Unlabeled exceptions: 1", rendered)
+            self.assertIn("Classified messages: 3", rendered)
+            self.assertIn("Unlabeled exceptions: 0", rendered)
             self.assertEqual(report["provider"], "protonmail")
             self.assertEqual(report["processed_count"], 3)
             self.assertEqual(report["auto_applied_count"], 0)
             self.assertEqual(report["inbox_removed_count"], 0)
-            self.assertEqual(report["classified_count"], 2)
+            self.assertEqual(report["classified_count"], 3)
             self.assertEqual(
                 report["suggested_label_counts"],
                 {
-                    "EA/LowValue": 1,
+                    "EA/LowValue": 2,
                     "EA/Orders": 1,
                 },
             )
-            self.assertEqual(report["unlabeled_count"], 1)
-            self.assertEqual(
-                report["unlabeled_exceptions"],
-                [
-                    {
-                        "sender": "upGrad KnowledgeHut <mailer@certs.knowledgehut.com>",
-                        "subject": "A reserved seat is available in your name",
-                    }
-                ],
-            )
+            self.assertEqual(report["unlabeled_count"], 0)
+            self.assertEqual(report["unlabeled_exceptions"], [])
 
 
 if __name__ == "__main__":

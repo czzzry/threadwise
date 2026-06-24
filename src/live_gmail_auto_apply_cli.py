@@ -6,15 +6,12 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TextIO
 
+from src.cli_paths import resolve_optional_path, resolve_path
+from src.gmail_batch_review_store import GmailBatchReviewStore
+from src.gmail_cli_support import default_gmail_client_factory
 from src.gmail_writer import MockGmailLabelWriter
+from src.label_taxonomy import gmail_label_name
 from src.live_gmail_client import GMAIL_MODIFY_SCOPE, SetupError
-from src.live_gmail_review_cli import (
-    StoredBatchReviewStore,
-    _default_gmail_client_factory,
-    _gmail_label_name,
-    _resolve_optional_path,
-    _resolve_path,
-)
 
 
 DEFAULT_STORAGE_DIR = Path("data/gmail_fetch")
@@ -47,12 +44,12 @@ def main(
     output = stdout or sys.stdout
     error_output = stderr or sys.stderr
     repo_root = cwd or Path.cwd()
-    storage_dir = _resolve_path(args.storage_dir, repo_root)
-    credentials_dir = _resolve_path(args.credentials_dir, repo_root)
-    client_secret_path = _resolve_optional_path(args.client_secret_path, repo_root)
+    storage_dir = resolve_path(args.storage_dir, repo_root)
+    credentials_dir = resolve_path(args.credentials_dir, repo_root)
+    client_secret_path = resolve_optional_path(args.client_secret_path, repo_root)
 
     try:
-        batch_store = StoredBatchReviewStore(storage_dir)
+        batch_store = GmailBatchReviewStore(storage_dir)
         stored_batch = batch_store.load_batch(args.batch_id)
         pending_count = sum(1 for item in stored_batch["items"] if item.get("review_state") != "reviewed")
         write_status_map = _load_write_status_map(storage_dir, args.batch_id)
@@ -66,7 +63,7 @@ def main(
 
         batch_store.persist_reviewed_items(args.batch_id, stored_batch["items"])
 
-        gmail_client_factory = gmail_client_factory or _default_gmail_client_factory
+        gmail_client_factory = gmail_client_factory or default_gmail_client_factory
         gmail_client = gmail_client_factory(
             stored_batch["account_id"],
             credentials_dir,
@@ -76,7 +73,7 @@ def main(
         writer = MockGmailLabelWriter(
             gmail_client=gmail_client,
             storage_dir=storage_dir,
-            label_name_resolver=_gmail_label_name,
+            label_name_resolver=gmail_label_name,
         )
         write_summary = writer.write_reviewed_labels(args.batch_id, auto_items)
         inbox_summary = writer.remove_inbox_for_low_value_messages(args.batch_id, auto_items)
@@ -122,7 +119,7 @@ def _load_write_status_map(storage_dir: Path, batch_id: str) -> dict[str, str]:
 
 def _print_dry_run(auto_items: list[dict], pending_count: int, output: TextIO) -> None:
     label_counts = Counter(
-        _gmail_label_name(label)
+        gmail_label_name(label)
         for item in auto_items
         for label in item.get("final_labels") or []
     )

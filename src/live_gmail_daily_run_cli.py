@@ -1,21 +1,18 @@
 import argparse
-import json
 import sys
 from collections.abc import Sequence
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import TextIO
 
+from src.cli_paths import resolve_optional_path, resolve_path
+from src.daily_report import build_gmail_daily_report, reviewed_label_counts, write_daily_report
 from src.gmail_fetcher import GmailBatchFetcher
+from src.gmail_batch_review_store import GmailBatchReviewStore
+from src.gmail_cli_support import default_gmail_client_factory
 from src.gmail_writer import MockGmailLabelWriter
+from src.label_taxonomy import gmail_label_name
 from src.live_gmail_auto_apply_cli import _auto_approve_items, _load_write_status_map
-from src.live_gmail_client import GMAIL_MODIFY_SCOPE, LiveGmailClient, SetupError
-from src.live_gmail_review_cli import (
-    StoredBatchReviewStore,
-    _gmail_label_name,
-    _resolve_optional_path,
-    _resolve_path,
-)
+from src.live_gmail_client import GMAIL_MODIFY_SCOPE, SetupError
 
 
 DEFAULT_STORAGE_DIR = Path("data/gmail_fetch")
@@ -47,14 +44,14 @@ def main(
     output = stdout or sys.stdout
     error_output = stderr or sys.stderr
     repo_root = cwd or Path.cwd()
-    storage_dir = _resolve_path(args.storage_dir, repo_root)
-    credentials_dir = _resolve_path(args.credentials_dir, repo_root)
-    client_secret_path = _resolve_optional_path(args.client_secret_path, repo_root)
+    storage_dir = resolve_path(args.storage_dir, repo_root)
+    credentials_dir = resolve_path(args.credentials_dir, repo_root)
+    client_secret_path = resolve_optional_path(args.client_secret_path, repo_root)
 
     storage_dir.mkdir(parents=True, exist_ok=True)
     credentials_dir.mkdir(parents=True, exist_ok=True)
 
-    gmail_client_factory = gmail_client_factory or _default_gmail_client_factory
+    gmail_client_factory = gmail_client_factory or default_gmail_client_factory
 
     try:
         gmail_client = gmail_client_factory(
@@ -69,7 +66,7 @@ def main(
             output.write("No new messages found.\n")
             return 0
 
-        batch_store = StoredBatchReviewStore(storage_dir)
+        batch_store = GmailBatchReviewStore(storage_dir)
         stored_batch = batch_store.load_batch(review_queue["batch_id"])
         write_status_map = _load_write_status_map(storage_dir, review_queue["batch_id"])
         auto_items = _auto_approve_items(stored_batch["items"], write_status_map)
@@ -78,7 +75,7 @@ def main(
         writer = MockGmailLabelWriter(
             gmail_client=gmail_client,
             storage_dir=storage_dir,
-            label_name_resolver=_gmail_label_name,
+            label_name_resolver=gmail_label_name,
         )
         write_summary = writer.write_reviewed_labels(review_queue["batch_id"], auto_items)
         inbox_summary = writer.remove_inbox_for_low_value_messages(review_queue["batch_id"], auto_items)
@@ -111,27 +108,16 @@ def _print_summary(
     storage_dir: Path,
     output: TextIO,
 ) -> None:
-    report = {
-        "account_id": account_id,
-        "provider": "gmail",
-        "batch_id": batch_id,
-        "report_date": datetime.now(UTC).date().isoformat(),
-        "processed_count": fetched_count,
-        "auto_applied_count": applied_count,
-        "inbox_removed_count": inbox_removals,
-        "classified_count": applied_count,
-        "unlabeled_count": len(unlabeled_exceptions),
-        "label_counts": _label_counts_for_report(storage_dir, batch_id),
-        "suggested_label_counts": _label_counts_for_report(storage_dir, batch_id),
-        "unlabeled_exceptions": [
-            {
-                "sender": item["sender"],
-                "subject": item["subject"],
-            }
-            for item in unlabeled_exceptions
-        ],
-    }
-    _write_daily_report(storage_dir, batch_id, report)
+    report = build_gmail_daily_report(
+        storage_dir,
+        batch_id,
+        account_id,
+        fetched_count,
+        applied_count,
+        inbox_removals,
+        unlabeled_exceptions,
+    )
+    write_daily_report(storage_dir, batch_id, report)
     output.write(f"Batch: {batch_id}\n")
     output.write(f"Fetched: {fetched_count}\n")
     output.write(f"Auto-applied label writes: {applied_count}\n")
@@ -143,36 +129,7 @@ def _print_summary(
 
 
 def _label_counts_for_report(storage_dir: Path, batch_id: str) -> dict[str, int]:
-    batch_store = StoredBatchReviewStore(storage_dir)
-    stored_batch = batch_store.load_batch(batch_id)
-    counts: dict[str, int] = {}
-    for item in stored_batch["items"]:
-        if item.get("review_state") != "reviewed":
-            continue
-        for label in item.get("final_labels") or []:
-            label_name = _gmail_label_name(label)
-            counts[label_name] = counts.get(label_name, 0) + 1
-    return dict(sorted(counts.items()))
-
-
-def _write_daily_report(storage_dir: Path, batch_id: str, report: dict) -> None:
-    reports_dir = storage_dir / "reports"
-    reports_dir.mkdir(parents=True, exist_ok=True)
-    (reports_dir / f"{batch_id}_daily_report.json").write_text(json.dumps(report, indent=2))
-
-
-def _default_gmail_client_factory(
-    account_id: str,
-    credentials_dir: Path,
-    client_secret_path: Path | None,
-    required_scope: str,
-) -> object:
-    return LiveGmailClient.from_local_oauth(
-        account_id,
-        credentials_dir,
-        client_secret_path=client_secret_path,
-        scope=required_scope,
-    )
+    return reviewed_label_counts(storage_dir, batch_id)
 
 
 if __name__ == "__main__":

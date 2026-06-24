@@ -14,7 +14,7 @@ from src.local_browser_review_rendering import (
 )
 from src.local_browser_review_runtime import build_live_fetch_batch_fn, build_shadow_eval_fn
 from src.review_loop import FixtureReviewLoop
-from src.stored_batch_review_store import StoredBatchReviewStore
+from src.gmail_batch_review_store import GmailBatchReviewStore
 from src.unsubscribe_execution import UnsubscribeExecutor
 from src.unsubscribe_inventory_store import UnsubscribeInventoryStore
 
@@ -120,7 +120,7 @@ class LocalBrowserReviewApp(LocalBrowserReviewRenderingMixin):
     ) -> None:
         self._storage_dir = storage_dir
         self._batch_id = batch_id
-        self._store = StoredBatchReviewStore(storage_dir)
+        self._store = GmailBatchReviewStore(storage_dir)
         self._unsubscribe_store = UnsubscribeInventoryStore(storage_dir)
         self._unsubscribe_executor = UnsubscribeExecutor(storage_dir)
         self._fetch_batch_fn = fetch_batch_fn

@@ -4,15 +4,12 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TextIO
 
+from src.cli_paths import resolve_optional_path, resolve_path
+from src.gmail_batch_review_store import GmailBatchReviewStore
+from src.gmail_cli_support import default_gmail_client_factory
 from src.gmail_writer import MockGmailLabelWriter
+from src.label_taxonomy import gmail_label_name
 from src.live_gmail_client import GMAIL_MODIFY_SCOPE, SetupError
-from src.live_gmail_review_cli import (
-    StoredBatchReviewStore,
-    _default_gmail_client_factory,
-    _gmail_label_name,
-    _resolve_optional_path,
-    _resolve_path,
-)
 
 
 DEFAULT_STORAGE_DIR = Path("data/gmail_fetch")
@@ -43,14 +40,14 @@ def main(
     output = stdout or sys.stdout
     error_output = stderr or sys.stderr
     repo_root = cwd or Path.cwd()
-    storage_dir = _resolve_path(args.storage_dir, repo_root)
-    credentials_dir = _resolve_path(args.credentials_dir, repo_root)
-    client_secret_path = _resolve_optional_path(args.client_secret_path, repo_root)
+    storage_dir = resolve_path(args.storage_dir, repo_root)
+    credentials_dir = resolve_path(args.credentials_dir, repo_root)
+    client_secret_path = resolve_optional_path(args.client_secret_path, repo_root)
 
     try:
-        batch_store = StoredBatchReviewStore(storage_dir)
+        batch_store = GmailBatchReviewStore(storage_dir)
         stored_batch = batch_store.load_batch(args.batch_id)
-        gmail_client_factory = gmail_client_factory or _default_gmail_client_factory
+        gmail_client_factory = gmail_client_factory or default_gmail_client_factory
         gmail_client = gmail_client_factory(
             stored_batch["account_id"],
             credentials_dir,
@@ -60,7 +57,7 @@ def main(
         writer = MockGmailLabelWriter(
             gmail_client=gmail_client,
             storage_dir=storage_dir,
-            label_name_resolver=_gmail_label_name,
+            label_name_resolver=gmail_label_name,
         )
 
         retried_items: list[dict] = []

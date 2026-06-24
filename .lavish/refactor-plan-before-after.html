@@ -1,0 +1,692 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Email Agent Refactor Plan</title>
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+    mermaid.initialize({
+      startOnLoad: true,
+      securityLevel: "loose",
+      theme: "base",
+      themeVariables: {
+        fontFamily: "Georgia, Times New Roman, serif",
+        primaryColor: "#fffdf8",
+        primaryBorderColor: "#b9ae9b",
+        primaryTextColor: "#1f1a14",
+        lineColor: "#766d5f",
+        secondaryColor: "#eef7f4",
+        tertiaryColor: "#f7f1e7",
+        clusterBkg: "#f8f5ed",
+        clusterBorder: "#d7cfbf",
+        noteBkgColor: "#fff7d6",
+        noteTextColor: "#1f1a14"
+      }
+    });
+  </script>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f3efe4;
+      --panel: #fffdf8;
+      --ink: #1f1a14;
+      --muted: #665d50;
+      --line: #d7cfbf;
+      --line-strong: #b9ae9b;
+      --teal: #0f766e;
+      --teal-soft: #d8f3ef;
+      --amber: #9a5b10;
+      --amber-soft: #fff0cf;
+      --red: #9f1239;
+      --red-soft: #fff1f3;
+      --green: #166534;
+      --green-soft: #e4f7e8;
+      --blue: #1d4e89;
+      --blue-soft: #e5f0fb;
+      --shadow: 0 18px 48px rgba(31, 26, 20, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      background:
+        linear-gradient(180deg, rgba(255, 253, 248, 0.92), rgba(243, 239, 228, 0.96)),
+        repeating-linear-gradient(135deg, rgba(31, 26, 20, 0.035) 0 1px, transparent 1px 18px);
+      color: var(--ink);
+    }
+
+    main {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 34px 0 64px;
+    }
+
+    header {
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 22px;
+      margin-bottom: 24px;
+    }
+
+    h1, h2, h3 {
+      line-height: 1.1;
+      letter-spacing: 0;
+    }
+
+    h1 {
+      max-width: 900px;
+      margin: 0 0 10px;
+      font-size: clamp(2rem, 5vw, 4.7rem);
+      font-weight: 700;
+    }
+
+    h2 {
+      margin: 0 0 14px;
+      font-size: clamp(1.45rem, 3vw, 2.2rem);
+    }
+
+    h3 {
+      margin: 0 0 8px;
+      font-size: 1.05rem;
+    }
+
+    p {
+      margin: 0;
+      line-height: 1.55;
+    }
+
+    .lede {
+      max-width: 820px;
+      color: var(--muted);
+      font-size: 1.12rem;
+    }
+
+    .meta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 18px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      padding: 5px 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255, 253, 248, 0.72);
+      color: var(--muted);
+      font-size: 0.92rem;
+      white-space: normal;
+    }
+
+    section {
+      margin-top: 26px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      padding: 20px;
+    }
+
+    .grid {
+      display: grid;
+      gap: 16px;
+    }
+
+    .grid.two {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .grid.three {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .card {
+      background: #fffefa;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      min-width: 0;
+    }
+
+    .card.warning { background: var(--amber-soft); border-color: #e2bb74; }
+    .card.good { background: var(--green-soft); border-color: #a8d5b2; }
+    .card.risk { background: var(--red-soft); border-color: #e8a7b5; }
+    .card.info { background: var(--blue-soft); border-color: #a9c5df; }
+
+    .label {
+      display: inline-block;
+      margin-bottom: 9px;
+      color: var(--muted);
+      font-size: 0.76rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .big-number {
+      display: block;
+      font-size: 2.2rem;
+      font-weight: 700;
+      line-height: 1;
+      margin-bottom: 6px;
+    }
+
+    .muted { color: var(--muted); }
+
+    .diagram-shell {
+      background: #fffefa;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      overflow-x: auto;
+    }
+
+    .diagram-shell .mermaid {
+      min-width: 620px;
+    }
+
+    .compare {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 16px;
+      align-items: stretch;
+    }
+
+    .state-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 5px 9px;
+      border-radius: 999px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      white-space: normal;
+    }
+
+    .badge.now { background: var(--amber-soft); color: var(--amber); }
+    .badge.next { background: var(--teal-soft); color: var(--teal); }
+    .badge.stop { background: var(--red-soft); color: var(--red); }
+
+    .list {
+      display: grid;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .item {
+      border-left: 4px solid var(--line-strong);
+      padding: 2px 0 2px 12px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .item strong {
+      color: var(--ink);
+    }
+
+    code {
+      background: #f0eadf;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      padding: 1px 5px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.88em;
+      overflow-wrap: anywhere;
+    }
+
+    .steps {
+      display: grid;
+      gap: 12px;
+      counter-reset: step;
+    }
+
+    .step {
+      position: relative;
+      min-height: 72px;
+      padding: 15px 15px 15px 58px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fffefa;
+    }
+
+    .step::before {
+      counter-increment: step;
+      content: counter(step);
+      position: absolute;
+      left: 16px;
+      top: 16px;
+      width: 28px;
+      height: 28px;
+      display: grid;
+      place-items: center;
+      border-radius: 999px;
+      background: var(--teal);
+      color: white;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .file-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .file {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fffefa;
+      padding: 10px;
+      min-width: 0;
+    }
+
+    .file code {
+      display: inline;
+      line-height: 1.45;
+    }
+
+    .decision {
+      display: grid;
+      grid-template-columns: 180px minmax(0, 1fr);
+      gap: 14px;
+      align-items: start;
+      padding: 14px 0;
+      border-top: 1px solid var(--line);
+    }
+
+    .decision:first-child {
+      border-top: 0;
+      padding-top: 0;
+    }
+
+    .plain-table {
+      width: 100%;
+      border-collapse: collapse;
+      overflow-wrap: anywhere;
+    }
+
+    .plain-table th,
+    .plain-table td {
+      border-top: 1px solid var(--line);
+      padding: 11px 9px;
+      text-align: left;
+      vertical-align: top;
+      line-height: 1.4;
+    }
+
+    .plain-table th {
+      color: var(--muted);
+      font-size: 0.78rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .footer-note {
+      margin-top: 30px;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    @media (max-width: 820px) {
+      main {
+        width: min(100% - 22px, 1180px);
+        padding-top: 22px;
+      }
+
+      .grid.two,
+      .grid.three,
+      .compare,
+      .file-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .decision {
+        grid-template-columns: 1fr;
+        gap: 6px;
+      }
+
+      .diagram-shell .mermaid {
+        min-width: 560px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Email Agent Refactor Plan</h1>
+      <p class="lede">
+        A before/after architecture map for the completed bounded refactor: reusable batch workflow behavior now lives outside CLI files, Gmail-specific review behavior is explicit, and product behavior was preserved.
+      </p>
+      <div class="meta-row">
+        <span class="pill">Implementation completed for issue 054</span>
+        <span class="pill">Current docs read: AGENTS, CONTEXT, V2 alignment, PRD, checkpoint</span>
+        <span class="pill">Validation: 296 unittest tests passed</span>
+      </div>
+    </header>
+
+    <section class="grid three">
+      <article class="card good">
+        <span class="label">What Is Healthy</span>
+        <span class="big-number">1</span>
+        <p>The repo already has a clear product spine: fetch mail, normalize it, classify it, store local evidence, report what happened, and only mutate Gmail inside bounded rules.</p>
+      </article>
+      <article class="card warning">
+        <span class="label">Main Problem</span>
+        <span class="big-number">2</span>
+        <p>Some reusable business behavior lives inside command-line modules, so other commands import private helpers from CLI files instead of stable application modules.</p>
+      </article>
+      <article class="card info">
+        <span class="label">Recommended Scope</span>
+        <span class="big-number">3</span>
+        <p>A small architecture refactor focused on workflow organization, not classifier behavior, Gmail OAuth, or a broad repo cleanup. This has now been implemented.</p>
+      </article>
+    </section>
+
+    <section class="panel">
+      <h2>Current System Map</h2>
+      <p class="muted">This is the high-level shape I found while scanning the repo. The structure is coherent; the issue is where a few pieces carry too many responsibilities.</p>
+      <div class="diagram-shell" style="margin-top: 14px;">
+        <pre class="mermaid">
+flowchart TD
+  User["Operator / founder"] --> Commands["CLI commands and local browser workbench"]
+  Commands --> Providers["Provider clients<br/>Gmail + ProtonMail"]
+  Providers --> Fetch["Fetch and normalize messages"]
+  Fetch --> Store["Provider-aware local batch artifacts"]
+  Store --> Classifier["Rule-based classifier<br/>fixture_classifier.py"]
+  Classifier --> Review["Review and exception handling"]
+  Review --> Actions["Bounded actions<br/>Gmail labels, INBOX removal, selected unsubscribe"]
+  Store --> Reports["Daily, weekly, readiness reports"]
+  Review --> Reports
+
+  classDef pressure fill:#fff0cf,stroke:#9a5b10,color:#1f1a14;
+  classDef solid fill:#e4f7e8,stroke:#166534,color:#1f1a14;
+  classDef neutral fill:#fffdf8,stroke:#b9ae9b,color:#1f1a14;
+  class Classifier,Commands pressure;
+  class Store,Reports solid;
+        </pre>
+      </div>
+    </section>
+
+    <section>
+      <h2>Before And After</h2>
+      <div class="compare">
+        <article class="panel">
+          <div class="state-title">
+            <h3>Before: CLI Files Do Double Duty</h3>
+            <span class="badge now">current</span>
+          </div>
+          <div class="diagram-shell">
+            <pre class="mermaid">
+flowchart TD
+  Daily["daily_live_gmail_run_cli.py"] --> ReviewCLI["private helpers in<br/>live_gmail_review_cli.py"]
+  AutoApply["live_gmail_auto_apply_cli.py"] --> ReviewCLI
+  Retry["live_gmail_retry_cli.py"] --> ReviewCLI
+  Remove["live_gmail_remove_inbox_cli.py"] --> ReviewCLI
+  ReviewCLI --> Store["StoredBatchReviewStore"]
+  ReviewCLI --> ClientFactory["Gmail client factory"]
+  ReviewCLI --> Paths["path resolution"]
+  Daily --> Report["writes daily report inline"]
+  ProtonDaily["live_protonmail_daily_run_cli.py"] --> ProtonReport["writes similar daily report inline"]
+
+  classDef cli fill:#fff0cf,stroke:#9a5b10,color:#1f1a14;
+  classDef shared fill:#fff1f3,stroke:#9f1239,color:#1f1a14;
+  classDef artifact fill:#e5f0fb,stroke:#1d4e89,color:#1f1a14;
+  class Daily,AutoApply,Retry,Remove,ProtonDaily cli;
+  class ReviewCLI shared;
+  class Report,ProtonReport artifact;
+            </pre>
+          </div>
+          <div class="list">
+            <div class="item"><strong>Plain-English issue:</strong> a command-line file is also acting like a shared library.</div>
+            <div class="item"><strong>Why it matters:</strong> changing the review command can accidentally affect daily runs, retries, or inbox removal.</div>
+            <div class="item"><strong>Evidence:</strong> Gmail daily, auto-apply, retry, and remove-inbox commands import private helpers from <code>live_gmail_review_cli.py</code>.</div>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="state-title">
+            <h3>After: Commands Become Thin Entrypoints</h3>
+            <span class="badge next">target</span>
+          </div>
+          <div class="diagram-shell">
+            <pre class="mermaid">
+flowchart TD
+  Daily["daily Gmail command"] --> Workflow["Batch workflow module"]
+  AutoApply["auto-apply command"] --> Workflow
+  Retry["retry command"] --> Workflow
+  Remove["remove INBOX command"] --> Workflow
+  ProtonDaily["daily ProtonMail command"] --> Reports["report builder module"]
+  Workflow --> GmailReview["Gmail review adapter"]
+  Workflow --> Paths["shared path/config helpers"]
+  Workflow --> Reports
+  GmailReview --> Store["StoredBatchReviewStore"]
+  Reports --> Artifacts["daily report artifacts"]
+
+  classDef cli fill:#eef7f4,stroke:#0f766e,color:#1f1a14;
+  classDef app fill:#e4f7e8,stroke:#166534,color:#1f1a14;
+  classDef adapter fill:#e5f0fb,stroke:#1d4e89,color:#1f1a14;
+  class Daily,AutoApply,Retry,Remove,ProtonDaily cli;
+  class Workflow,Reports,Paths app;
+  class GmailReview,Store adapter;
+            </pre>
+          </div>
+          <div class="list">
+            <div class="item"><strong>Plain-English improvement:</strong> commands only parse inputs and call reusable workflow code.</div>
+            <div class="item"><strong>Why it matters:</strong> daily Gmail, daily ProtonMail, reports, and future runs share stable building blocks.</div>
+            <div class="item"><strong>Behavior rule:</strong> output files, labels, reports, and Gmail actions should stay the same.</div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Provider-Aware Review Store</h2>
+      <p class="muted">This is the most important naming mismatch. A generic-looking local batch review store currently performs Gmail-specific re-normalization when raw messages are present.</p>
+      <div class="compare" style="margin-top: 14px;">
+        <article class="card warning">
+          <div class="state-title">
+            <h3>Before</h3>
+            <span class="badge now">ambiguous</span>
+          </div>
+          <div class="diagram-shell">
+            <pre class="mermaid">
+flowchart TD
+  GenericName["StoredBatchReviewStore"] --> Load["load batch"]
+  GenericName --> Persist["persist reviewed items"]
+  GenericName --> GmailNormalize["normalize_gmail_message"]
+  GmailNormalize --> Reclassify["reclassify raw Gmail messages"]
+
+  classDef mixed fill:#fff0cf,stroke:#9a5b10,color:#1f1a14;
+  class GenericName,GmailNormalize,Reclassify mixed;
+            </pre>
+          </div>
+          <div class="list">
+            <div class="item">The name says generic local batch review.</div>
+            <div class="item">The implementation contains Gmail-specific behavior.</div>
+          </div>
+        </article>
+        <article class="card good">
+          <div class="state-title">
+            <h3>After</h3>
+            <span class="badge next">explicit</span>
+          </div>
+          <div class="diagram-shell">
+            <pre class="mermaid">
+flowchart TD
+  BatchStore["StoredBatchReviewStore"] --> Load["load batch"]
+  BatchStore --> Persist["persist reviewed items"]
+  GmailAdapter["GmailBatchReviewAdapter"] --> GmailNormalize["normalize_gmail_message"]
+  GmailAdapter --> Reclassify["refresh Gmail-derived items"]
+  GmailAdapter --> BatchStore
+
+  classDef generic fill:#e4f7e8,stroke:#166534,color:#1f1a14;
+  classDef gmail fill:#e5f0fb,stroke:#1d4e89,color:#1f1a14;
+  class BatchStore,Load,Persist generic;
+  class GmailAdapter,GmailNormalize,Reclassify gmail;
+            </pre>
+          </div>
+          <div class="list">
+            <div class="item">The generic store just handles stored batches.</div>
+            <div class="item">Gmail-specific refresh logic has an explicit Gmail name.</div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>What Changed In Code</h2>
+      <div class="diagram-shell" style="margin-top: 14px;">
+        <pre class="mermaid">
+flowchart TD
+  Commands["Gmail and ProtonMail commands"] --> Paths["cli_paths.py<br/>shared path resolution"]
+  Commands --> GmailSetup["gmail_cli_support.py<br/>shared Gmail client factory"]
+  DailyCommands["daily Gmail + ProtonMail runs"] --> DailyReports["daily_report.py<br/>shared report builders"]
+  GmailReview["Gmail review surfaces"] --> GmailStore["gmail_batch_review_store.py<br/>Gmail raw-message refresh"]
+  GenericStore["stored_batch_review_store.py<br/>generic load + persist"] --> Artifacts["local batch artifacts"]
+  GmailStore --> GenericStore
+  DailyReports --> GenericStore
+
+  classDef new fill:#e4f7e8,stroke:#166534,color:#1f1a14;
+  classDef changed fill:#e5f0fb,stroke:#1d4e89,color:#1f1a14;
+  classDef artifact fill:#fffdf8,stroke:#b9ae9b,color:#1f1a14;
+  class Paths,GmailSetup,DailyReports,GmailStore new;
+  class Commands,DailyCommands,GmailReview,GenericStore changed;
+  class Artifacts artifact;
+        </pre>
+      </div>
+      <div class="list">
+        <div class="item"><strong>New helper modules:</strong> <code>cli_paths.py</code>, <code>gmail_cli_support.py</code>, <code>daily_report.py</code>, and <code>gmail_batch_review_store.py</code>.</div>
+        <div class="item"><strong>Thinner commands:</strong> Gmail fetch, review, daily run, auto-apply, retry, and remove-inbox commands now use shared helpers instead of borrowing private helpers from the review CLI.</div>
+        <div class="item"><strong>Clearer provider boundary:</strong> generic stored-batch persistence is separate from Gmail-specific raw-message refresh and reclassification.</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Implementation Plan</h2>
+      <p class="muted">This is the issue-sized plan that was implemented. Each step was behavior-preserving and validated with the available local tests.</p>
+      <div class="steps" style="margin-top: 14px;">
+        <article class="step">
+          <h3>Characterize Current Behavior</h3>
+          <p class="muted">Verified tests around current command outputs and artifact contents for Gmail daily run, ProtonMail daily run, write status, inbox removal status, and daily reports.</p>
+        </article>
+        <article class="step">
+          <h3>Extract Shared Path And Report Helpers</h3>
+          <p class="muted">Move repeated path resolution and daily report writing into small shared modules. Commands should call these helpers instead of each owning near-duplicate code.</p>
+        </article>
+        <article class="step">
+          <h3>Extract Gmail Review Support From CLI</h3>
+          <p class="muted">Move reusable Gmail review helpers out of <code>live_gmail_review_cli.py</code> into a module with a library name. The CLI keeps only parsing, prompting, and command-specific output.</p>
+        </article>
+        <article class="step">
+          <h3>Make Gmail-Specific Store Behavior Explicit</h3>
+          <p class="muted">Separate generic stored-batch persistence from Gmail raw-message refresh and reclassification. This makes the provider-aware model easier to trust.</p>
+        </article>
+        <article class="step">
+          <h3>Run Tests And Compare Artifacts</h3>
+          <p class="muted">Ran full local unittest discovery. The refactor is considered stable because all 296 discovered tests passed.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="grid two">
+      <article class="panel">
+        <h2>Files Likely Touched</h2>
+        <p class="muted">This is intentionally narrow. It avoids the giant classifier and provider authentication code.</p>
+        <div class="file-grid">
+          <div class="file"><code>src/live_gmail_review_cli.py</code><p class="muted">Stop exporting private helper behavior to other commands.</p></div>
+          <div class="file"><code>src/live_gmail_daily_run_cli.py</code><p class="muted">Call shared workflow/report helpers.</p></div>
+          <div class="file"><code>src/live_gmail_auto_apply_cli.py</code><p class="muted">Call shared Gmail support helpers.</p></div>
+          <div class="file"><code>src/live_gmail_retry_cli.py</code><p class="muted">Use shared setup helpers.</p></div>
+          <div class="file"><code>src/live_gmail_remove_inbox_cli.py</code><p class="muted">Use shared setup helpers.</p></div>
+          <div class="file"><code>src/live_protonmail_daily_run_cli.py</code><p class="muted">Use shared report builder.</p></div>
+          <div class="file"><code>src/stored_batch_review_store.py</code><p class="muted">Separate generic store from Gmail refresh behavior.</p></div>
+          <div class="file"><code>tests/...</code><p class="muted">Characterization tests for behavior that must not change.</p></div>
+        </div>
+      </article>
+
+      <article class="panel">
+        <h2>What Stays Out</h2>
+        <p class="muted">These are real areas, but they are not the first refactor.</p>
+        <div class="list">
+          <div class="item"><strong>Classifier rewrite:</strong> <code>fixture_classifier.py</code> is the biggest file, but changing it risks label behavior. Save it for a later classifier-specific plan.</div>
+          <div class="item"><strong>Gmail OAuth split:</strong> <code>live_gmail_client.py</code> mixes OAuth and Gmail calls, but touching it first increases risk around credentials and live access.</div>
+          <div class="item"><strong>Browser UI redesign:</strong> the local workbench is large but not the current bottleneck for daily-use readiness.</div>
+          <div class="item"><strong>New product behavior:</strong> no new Gmail actions, no ProtonMail writes, no scheduling, no broader automation.</div>
+        </div>
+      </article>
+    </section>
+
+    <section class="panel">
+      <h2>Decision Summary</h2>
+      <div class="decision">
+        <div><span class="badge next">recommended</span></div>
+        <p>Completed one bounded refactor issue focused on command/workflow organization and provider-aware review storage.</p>
+      </div>
+      <div class="decision">
+        <div><span class="badge now">why now</span></div>
+        <p>The repo was waiting on new email evidence, so this reduced structural confusion without changing product scope or touching live inbox behavior.</p>
+      </div>
+      <div class="decision">
+        <div><span class="badge stop">approval gate</span></div>
+        <p>The implementation brief is recorded in <code>docs/issues/054-refactor-batch-workflow-command-boundaries.md</code>. No live inbox commands were run.</p>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Validation Plan</h2>
+      <table class="plain-table">
+        <thead>
+          <tr>
+            <th>Check</th>
+            <th>What It Proves</th>
+            <th>Current Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Existing tests</td>
+            <td>Current CLI and storage behavior still works.</td>
+            <td><code>pytest</code> is not installed in the active Python environment, so validation used direct <code>unittest</code> execution.</td>
+          </tr>
+          <tr>
+            <td>Characterization tests</td>
+            <td>Before refactor, lock down output and artifact shapes that users rely on.</td>
+            <td>Covered by existing and updated affected tests.</td>
+          </tr>
+          <tr>
+            <td>Representative artifact comparison</td>
+            <td>Generated daily reports and write-status files remain stable.</td>
+            <td>Daily report schema remained covered by Gmail and ProtonMail daily-run tests.</td>
+          </tr>
+          <tr>
+            <td>Manual sensitive-action review</td>
+            <td>No new email mutations or provider integrations were introduced.</td>
+            <td>No live Gmail command was run.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <p class="footer-note">
+      Design source: this artifact borrows the repo's existing local browser workbench feel: serif typography, warm local-tool background, compact panels, and restrained operational styling.
+    </p>
+  </main>
+</body>
+</html>

@@ -4,8 +4,10 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TextIO
 
+from src.cli_paths import resolve_optional_path, resolve_path
 from src.gmail_fetcher import GmailBatchFetcher
-from src.live_gmail_client import LiveGmailClient, SetupError
+from src.gmail_cli_support import default_gmail_client_factory
+from src.live_gmail_client import SetupError
 
 DEFAULT_STORAGE_DIR = Path("data/gmail_fetch")
 DEFAULT_CREDENTIALS_DIR = Path("data/gmail_credentials")
@@ -34,14 +36,14 @@ def main(
     output = stdout or sys.stdout
     error_output = stderr or sys.stderr
     repo_root = cwd or Path.cwd()
-    storage_dir = _resolve_path(args.storage_dir, repo_root)
-    credentials_dir = _resolve_path(args.credentials_dir, repo_root)
-    client_secret_path = _resolve_optional_path(args.client_secret_path, repo_root)
+    storage_dir = resolve_path(args.storage_dir, repo_root)
+    credentials_dir = resolve_path(args.credentials_dir, repo_root)
+    client_secret_path = resolve_optional_path(args.client_secret_path, repo_root)
 
     storage_dir.mkdir(parents=True, exist_ok=True)
     credentials_dir.mkdir(parents=True, exist_ok=True)
 
-    gmail_client_factory = gmail_client_factory or _default_gmail_client_factory
+    gmail_client_factory = gmail_client_factory or default_gmail_client_factory
 
     try:
         gmail_client = gmail_client_factory(args.account_id, credentials_dir, client_secret_path)
@@ -57,28 +59,6 @@ def main(
 
     output.write(f"Fetched {len(review_queue['items'])} new messages into {review_queue['batch_id']}.\n")
     return 0
-
-
-def _default_gmail_client_factory(
-    account_id: str,
-    credentials_dir: Path,
-    client_secret_path: Path | None,
-) -> object:
-    return LiveGmailClient.from_local_oauth(
-        account_id,
-        credentials_dir,
-        client_secret_path=client_secret_path,
-    )
-
-
-def _resolve_path(path: Path, repo_root: Path) -> Path:
-    return path if path.is_absolute() else repo_root / path
-
-
-def _resolve_optional_path(path: Path | None, repo_root: Path) -> Path | None:
-    if path is None:
-        return None
-    return _resolve_path(path, repo_root)
 
 
 if __name__ == "__main__":

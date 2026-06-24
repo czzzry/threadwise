@@ -7,13 +7,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import TextIO
 
+from src.cli_paths import resolve_optional_path, resolve_path
+from src.gmail_batch_review_store import GmailBatchReviewStore
+from src.gmail_cli_support import default_gmail_client_factory
 from src.gmail_writer import MockGmailLabelWriter
-from src.gmail_message_normalizer import normalize_gmail_message
 from src.label_taxonomy import CANONICAL_LABEL_ORDER, allowed_gmail_labels, gmail_label_name
-from src.live_gmail_client import GMAIL_MODIFY_SCOPE, LiveGmailClient, SetupError
-from src.fixture_classifier import FixtureBatchClassifier
+from src.live_gmail_client import GMAIL_MODIFY_SCOPE, SetupError
 from src.review_loop import FixtureReviewLoop
-from src.stored_batch_review_store import StoredBatchReviewStore
 
 
 DEFAULT_STORAGE_DIR = Path("data/gmail_fetch")
@@ -47,12 +47,12 @@ def main(
     output = stdout or sys.stdout
     error_output = stderr or sys.stderr
     repo_root = cwd or Path.cwd()
-    storage_dir = _resolve_path(args.storage_dir, repo_root)
-    credentials_dir = _resolve_path(args.credentials_dir, repo_root)
-    client_secret_path = _resolve_optional_path(args.client_secret_path, repo_root)
+    storage_dir = resolve_path(args.storage_dir, repo_root)
+    credentials_dir = resolve_path(args.credentials_dir, repo_root)
+    client_secret_path = resolve_optional_path(args.client_secret_path, repo_root)
 
     try:
-        batch_store = StoredBatchReviewStore(storage_dir)
+        batch_store = GmailBatchReviewStore(storage_dir)
         stored_batch = batch_store.load_batch(args.batch_id)
         review_queue = batch_store.to_review_queue(stored_batch)
         review_loop = FixtureReviewLoop(fixtures_dir=storage_dir)
@@ -72,7 +72,7 @@ def main(
             output.write("No Gmail labels were applied.\n")
             return 0
 
-        gmail_client_factory = gmail_client_factory or _default_gmail_client_factory
+        gmail_client_factory = gmail_client_factory or default_gmail_client_factory
         gmail_client = gmail_client_factory(
             review_queue["account_id"],
             credentials_dir,
@@ -268,30 +268,6 @@ def _parse_single_label_token(token: str) -> tuple[str | None, str | None]:
         return internal_label, None
 
     return None, f"Unknown label: {token}"
-
-
-def _default_gmail_client_factory(
-    account_id: str,
-    credentials_dir: Path,
-    client_secret_path: Path | None,
-    required_scope: str,
-) -> object:
-    return LiveGmailClient.from_local_oauth(
-        account_id,
-        credentials_dir,
-        client_secret_path=client_secret_path,
-        scope=required_scope,
-    )
-
-
-def _resolve_path(path: Path, repo_root: Path) -> Path:
-    return path if path.is_absolute() else repo_root / path
-
-
-def _resolve_optional_path(path: Path | None, repo_root: Path) -> Path | None:
-    if path is None:
-        return None
-    return _resolve_path(path, repo_root)
 
 
 if __name__ == "__main__":

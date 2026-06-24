@@ -3,10 +3,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from src.stored_batch_review_store import StoredBatchReviewStore
+from src.gmail_batch_review_store import GmailBatchReviewStore
 
 
-class StoredBatchReviewStoreTests(unittest.TestCase):
+class GmailBatchReviewStoreTests(unittest.TestCase):
     def test_to_review_queue_refreshes_context_from_raw_messages_and_pending_labels(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
@@ -61,7 +61,7 @@ class StoredBatchReviewStoreTests(unittest.TestCase):
                 )
             )
 
-            store = StoredBatchReviewStore(storage_dir)
+            store = GmailBatchReviewStore(storage_dir)
             review_queue = store.to_review_queue(store.load_batch("founder-test-batch-1"))
 
             item = review_queue["items"][0]
@@ -148,7 +148,7 @@ class StoredBatchReviewStoreTests(unittest.TestCase):
                 )
             )
 
-            store = StoredBatchReviewStore(storage_dir)
+            store = GmailBatchReviewStore(storage_dir)
             review_queue = store.to_review_queue(store.load_batch("founder-test-batch-1"))
 
             reviewed_item = next(item for item in review_queue["items"] if item["message_id"] == "gmail-live-001")
@@ -242,7 +242,7 @@ class StoredBatchReviewStoreTests(unittest.TestCase):
                 )
             )
 
-            store = StoredBatchReviewStore(storage_dir)
+            store = GmailBatchReviewStore(storage_dir)
             review_queue = store.to_review_queue(store.load_batch("founder-test-batch-2"))
 
             self.assertEqual(review_queue["items"][0]["applied_labels"], ["personal"])
