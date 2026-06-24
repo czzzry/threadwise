@@ -4,8 +4,8 @@
 
 This repo is following the local-issues workflow in [AGENTS.md](/Users/cezarybaraniecki/Documents/AI%20project/email-agent/AGENTS.md). The relevant planning artifacts are:
 
-- [docs/alignment.md](/Users/cezarybaraniecki/Documents/AI%20project/email-agent/docs/alignment.md)
-- [docs/prd.md](/Users/cezarybaraniecki/Documents/AI%20project/email-agent/docs/prd.md)
+- [docs/archive/alignment-v1-gmail-mvp.md](/Users/cezarybaraniecki/Documents/AI%20project/email-agent/docs/archive/alignment-v1-gmail-mvp.md)
+- [docs/archive/prd-v1-gmail-mvp.md](/Users/cezarybaraniecki/Documents/AI%20project/email-agent/docs/archive/prd-v1-gmail-mvp.md)
 - [docs/decisions/review-semantics.md](/Users/cezarybaraniecki/Documents/AI%20project/email-agent/docs/decisions/review-semantics.md)
 - [docs/issues/001-fixture-backed-review-loop-for-one-batch.md](/Users/cezarybaraniecki/Documents/AI%20project/email-agent/docs/issues/001-fixture-backed-review-loop-for-one-batch.md)
 - [docs/issues/002-classification-generated-suggestions-for-fixture-batch.md](/Users/cezarybaraniecki/Documents/AI%20project/email-agent/docs/issues/002-classification-generated-suggestions-for-fixture-batch.md)

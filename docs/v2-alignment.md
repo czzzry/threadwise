@@ -1,10 +1,32 @@
 # V2 Alignment
 
-## Purpose
+Status: Current product-direction alignment
+Current as of: 2026-06-22
+Builds on: `docs/archive/alignment-v1-gmail-mvp.md` and `docs/archive/prd-v1-gmail-mvp.md` as historical Gmail V1 artifacts
+Current bounded PRD: `docs/prd.md`
+Implementation checkpoint: `docs/checkpoints/current-operating-model-2026-06-22.md`
+
+## Mature product direction
 
 V2 should turn the current Gmail-only autonomous labeling workflow into the beginning of a real multi-inbox assistant for one person.
 
 The goal is not to jump straight to full automation everywhere. The goal is to extend the operating model that now works for one Gmail inbox into a product that can support two inboxes cleanly and produce useful summaries about what happened.
+
+Unsubscribe management is part of the mature product. It is not a side utility.
+
+## Current product state
+
+The repo already proves more than the original Gmail MVP:
+
+- Gmail daily runs with bounded label write-back and limited `INBOX` removal
+- daily per-run operational reports
+- weekly per-inbox analytical reports
+- provider/account-aware local run artifacts
+- ProtonMail read-only import, live fetch, and daily run paths
+- unsubscribe inventory, supported execution, and manual follow-up paths
+- local browser review and inspection tools for exceptions and spot checks
+
+This means V2 is no longer "build daily reports, then weekly reports, then ProtonMail." Those slices already exist in the repo. The current job is to keep the operating model stable, keep the docs synchronized, and choose the next bounded product move.
 
 ## Target User
 
@@ -22,17 +44,15 @@ Help one person stay in control of two noisy inboxes by:
 - surfacing what happened in clear reports
 - leaving only the uncertain or user-choice cases for manual follow-up
 
-Unsubscribe management is part of the mature product. It is not a side utility.
-
-## Operating Model
+## Current operating model
 
 The intended steady-state operating model is:
 
 1. run the assistant once per day for each inbox
 2. fetch the latest messages for that inbox
 3. classify the messages
-4. auto-apply current suggested labels
-5. remove `INBOX` only for low-value or promotional mail
+4. auto-apply current suggested labels where the provider flow supports it
+5. remove `INBOX` only for low-value or promotional Gmail mail
 6. produce a daily per-run report for that inbox
 7. leave only unlabeled or otherwise unresolved exceptions for manual follow-up
 
@@ -51,7 +71,7 @@ V2 should not force a merged unified inbox model first.
 
 The product should be able to tell the user what happened in Gmail and what happened in ProtonMail separately, even if both runs happen on the same day.
 
-## Reporting Model
+## Reporting model
 
 ### Daily Report
 
@@ -81,48 +101,34 @@ It should go beyond simple sums and include:
 
 Cross-inbox combined reporting may come later, but per-inbox weekly reporting is enough for the current direction.
 
-## Autonomy Boundary
+## Current safety rules
 
 Current accepted autonomy:
 
 - auto-apply all current suggested `EA/` labels
-- remove `INBOX` only for `spam-low-value` and `promotions`
-- leave unlabeled exceptions for manual handling
+- remove `INBOX` only for `spam-low-value` and `promotions` in Gmail
+- build unsubscribe inventory locally and execute only supported unsubscribe actions that the user explicitly selected
+- leave unlabeled or unsupported exceptions for manual handling
 
 Still out of scope for default autonomy:
 
 - deleting mail
 - trashing mail
 - archiving mail broadly
-- unsubscribing from lists without explicit user selection
+- unsubscribing from lists without explicit user selection or confirmation
+- provider-side ProtonMail mutation
 
-## Unsubscribe Management
+## Remaining roadmap
 
-Unsubscribe management is part of the mature product and should be treated as a core future job of the assistant.
+Near-term product work now looks more like:
 
-It should be staged:
+1. tighten the current provider/account-aware operating model and artifact contracts
+2. improve the manual follow-up path for unlabeled and unsupported cases
+3. write clearer product and safety rules for subscription management
+4. decide whether ProtonMail should remain read-only or later gain bounded write actions
+5. consider combined cross-inbox reporting, scheduling, and multi-user support only if the one-user local workflow keeps proving useful
 
-1. identify which mailing lists or newsletters the user is on
-2. let the user review that list
-3. let the user choose which lists to leave
-4. execute unsubscribes only after explicit confirmation
-
-This should not be the first v2 implementation slice, but it should remain in the intended product direction.
-
-## Near-Term Sequencing
-
-Recommended early v2 sequence:
-
-1. daily per-run operational report for one inbox
-2. weekly per-inbox analytical report
-3. make the workflow explicitly provider/account-aware while still running Gmail live
-4. add list/subscription inventory
-5. add user-selected unsubscribe execution
-6. add ProtonMail live integration into the already-defined workflow
-
-This sequence is intended to reduce integration risk while still moving toward the mature product.
-
-## Non-Goals For Immediate V2 Start
+## Non-goals for now
 
 Do not assume immediate priority for:
 
@@ -131,17 +137,3 @@ Do not assume immediate priority for:
 - merged cross-provider inbox UX
 - generic provider framework work beyond what the workflow actually needs
 - deleting or archiving mail automatically
-
-## Current Product Position
-
-The current product is no longer just a review experiment.
-
-It is now a usable autonomous Gmail workflow with:
-
-- manual fetch
-- autonomous label write-back
-- bounded inbox clearing for low-value/promotional mail
-- local audit state
-- small unlabeled exception tails
-
-V2 should build on that operating model instead of restarting from first principles.

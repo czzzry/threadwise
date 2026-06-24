@@ -45,7 +45,7 @@ Result at the latest checkpoint: `67 tests passed`.
 ## Important Constraints
 
 - This slice stays local to stored data and does not add Gmail API reads, Gmail writes, OAuth changes, retry workflow, or UI expansion
-- The classifier still uses only the approved fixed taxonomy from [docs/alignment.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/alignment.md) and [docs/prd.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/prd.md)
+- The classifier still uses only the approved fixed taxonomy from [docs/archive/alignment-v1-gmail-mvp.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/archive/alignment-v1-gmail-mvp.md) and [docs/archive/prd-v1-gmail-mvp.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/archive/prd-v1-gmail-mvp.md)
 - Manual verification against the real stored batch was not run in this session because that would involve private email content and should be explicitly approved first
 
 ## Risks Or Open Questions

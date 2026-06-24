@@ -1,6 +1,10 @@
 # MVP Happy-Path Usage Guide
 
-This guide covers the current local Gmail assistant MVP only.
+Status: Historical Gmail manual-review happy-path guide
+Current default workflow: `scripts/daily_live_gmail_run.py`
+Current implementation checkpoint: `docs/checkpoints/current-operating-model-2026-06-22.md`
+
+This guide covers the earlier Gmail manual-review MVP flow that preceded the current one-command daily run.
 
 It uses the existing commands and the already-proven workflow:
 
@@ -11,9 +15,9 @@ It uses the existing commands and the already-proven workflow:
 5. remove `INBOX` for approved low-value/promotions messages if wanted
 6. inspect one batch or list all batches
 
-## Current MVP
+## Historical MVP
 
-The current MVP is:
+The historical MVP was:
 
 - one local Gmail account
 - manual batch fetch

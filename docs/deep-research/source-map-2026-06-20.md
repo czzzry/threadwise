@@ -8,10 +8,12 @@ Deep Research should inspect docs and code together. The codebase appears slight
 
 - `AGENTS.md`: defines the intended working method, scope control, sensitive areas, and artifact expectations for the repo
 - `README.md`: best short operational overview of the current Gmail and ProtonMail flows
-- `docs/alignment.md`: current product intent, control model, taxonomy, review semantics, and success criteria
-- `docs/prd.md`: fuller requirements and testing decisions for the Gmail-centered product slice
-- `docs/mvp-checkpoint.md`: best checkpoint summary of what the Gmail MVP proved and what gaps remained at that stage
-- `docs/mvp-happy-path-usage-guide.md`: concrete human workflow for running the current MVP
+- `docs/v2-alignment.md`: current product direction, safety rules, and multi-inbox intent
+- `docs/checkpoints/current-operating-model-2026-06-22.md`: best short summary of what the repo currently proves
+- `docs/archive/alignment-v1-gmail-mvp.md`: original product intent, control model, taxonomy, review semantics, and success criteria for the Gmail MVP
+- `docs/archive/prd-v1-gmail-mvp.md`: fuller historical requirements and testing decisions for the Gmail-centered first slice
+- `docs/archive/mvp-checkpoint-v1-issues-001-027.md`: checkpoint summary of what the original Gmail MVP proved and what gaps remained at that stage
+- `docs/archive/mvp-happy-path-gmail-manual-review.md`: historical manual-review workflow for the earlier Gmail MVP
 - `docs/v2-issue-map.md`: latest lightweight roadmap, useful mainly to compare against the implementation
 
 ## Pocock-style workflow docs
@@ -71,7 +73,7 @@ Deep Research should inspect docs and code together. The codebase appears slight
 - `docs/handoff/mvp-v0.1-acceptance.md`: useful checkpoint on what was accepted as real progress
 - `docs/handoff/next-session-start.md`: likely useful context on what the next session was expected to do
 - `docs/handoff/issue-014-remove-inbox-for-approved-low-value-live-messages.md`: explains one major bounded-autonomy decision in practice
-- `docs/handoff/issue-016-mvp-happy-path-usage-guide.md`: explains why the usage guide exists and what behavior was validated
+- `docs/handoff/issue-016-mvp-happy-path-usage-guide.md`: explains why the historical Gmail manual-review usage guide exists and what behavior was validated
 
 ## Decision / ADR docs
 

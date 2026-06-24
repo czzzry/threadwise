@@ -92,4 +92,4 @@ This confirms the user-visible `011` slice:
 
 ## Recommended Next Step
 
-Clear context, resume from the latest handoffs and [docs/mvp-checkpoint.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/mvp-checkpoint.md), then choose the next bounded slice through the normal issue-first process.
+Clear context, resume from the latest handoffs and [docs/archive/mvp-checkpoint-v1-issues-001-027.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/archive/mvp-checkpoint-v1-issues-001-027.md), then choose the next bounded slice through the normal issue-first process.

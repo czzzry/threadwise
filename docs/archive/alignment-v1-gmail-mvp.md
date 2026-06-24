@@ -1,4 +1,10 @@
-# Alignment
+# Alignment (V1 Gmail MVP)
+
+Status: Historical V1 alignment
+Historical context: Original Gmail-first MVP alignment before daily runs, weekly reports, ProtonMail read-only flows, and unsubscribe slices
+Superseded by: `docs/v2-alignment.md` for current product direction and `docs/checkpoints/current-operating-model-2026-06-22.md` for current implementation state
+
+This document remains useful as the rationale for the original Gmail MVP boundary.
 
 ## Product intent
 

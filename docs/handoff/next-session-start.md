@@ -5,7 +5,7 @@ Use this after `/clear` to re-situate quickly before starting the next task.
 ## Read First
 
 - [AGENTS.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/AGENTS.md)
-- [docs/mvp-checkpoint.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/mvp-checkpoint.md)
+- [docs/archive/mvp-checkpoint-v1-issues-001-027.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/archive/mvp-checkpoint-v1-issues-001-027.md)
 - [docs/handoff/mvp-v0.1-acceptance.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/handoff/mvp-v0.1-acceptance.md)
 
 ## Current State
@@ -27,7 +27,7 @@ python3 scripts/review_local_batch_in_browser.py --batch-id founder-test-batch-N
 
 Do not start coding immediately.
 
-1. Re-summarize the current MVP from `docs/mvp-checkpoint.md`.
+1. Re-summarize the then-current MVP from `docs/archive/mvp-checkpoint-v1-issues-001-027.md`.
 2. Reconfirm the MVP v0.1 acceptance checkpoint and browser-review/apply sequence.
 3. Ask what the current concrete pain is now.
 4. Choose the next bounded slice only through the issue-first process:

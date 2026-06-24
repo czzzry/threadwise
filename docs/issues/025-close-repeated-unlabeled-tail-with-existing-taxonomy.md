@@ -1,3 +1,10 @@
+# Status
+
+Historical context
+Current as of: 2026-06-23
+Implemented in: `src/fixture_classifier.py` and `tests/test_fixture_classifier.py`
+Superseded by: current post-issue-040 slice selection should use `docs/v2-issue-map.md` plus fresh triage
+
 # Title
 
 Close the repeated unlabeled tail with existing taxonomy

@@ -8,7 +8,7 @@ This follows the read-only inbox-removal visibility slice in [docs/handoff/issue
 
 ## What Changed
 
-- Added a concise usage guide at [docs/mvp-happy-path-usage-guide.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/mvp-happy-path-usage-guide.md)
+- Added a concise usage guide at [docs/archive/mvp-happy-path-gmail-manual-review.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/archive/mvp-happy-path-gmail-manual-review.md)
 - Added a lightweight README link to the guide in [README.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/README.md)
 - Kept the guide strictly aligned to the already-proven command set:
   - fetch

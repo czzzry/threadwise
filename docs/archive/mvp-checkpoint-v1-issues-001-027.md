@@ -1,4 +1,10 @@
-# MVP Checkpoint
+# MVP Checkpoint (Issues 001-027)
+
+Status: Historical checkpoint after issues `001` through `027`
+Applies to: Gmail MVP before daily runs, weekly reports, provider-aware artifacts, ProtonMail read-only slices, and unsubscribe workbench slices
+Current implementation checkpoint: `docs/checkpoints/current-operating-model-2026-06-22.md`
+
+This document records what the repo had proven at the original Gmail MVP boundary.
 
 ## Current State
 
