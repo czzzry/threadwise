@@ -13,7 +13,7 @@ CANONICAL_LABEL_ORDER = [
     "reply-needed",
 ]
 
-# Canonical internal taxonomy from docs/alignment.md and docs/prd.md.
+# Canonical internal taxonomy from docs/archive/alignment-v1-gmail-mvp.md and docs/archive/prd-v1-gmail-mvp.md.
 DEFAULT_GMAIL_LABEL_NAMES = {
     "travel": "EA/Travel",
     "receipt-billing": "EA/Receipts",
