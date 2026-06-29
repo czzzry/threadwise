@@ -759,6 +759,31 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("message_id", payload["selected_context_fields"])
         self.assertIn("selected_email", payload["sidebar_state_fields"])
 
+    def test_harness_state_endpoint_includes_cors_headers(self) -> None:
+        app = GmailCompanionApp(Path("/tmp/example"))
+        handler = _FakeRequestHandler("/api/harness-state", method="GET")
+
+        app.handle_request(handler)
+
+        self.assertEqual(handler.code, 200)
+        self.assertEqual(handler.sent_headers["Access-Control-Allow-Origin"], "*")
+        self.assertEqual(handler.sent_headers["Access-Control-Allow-Methods"], "GET, POST, OPTIONS")
+        self.assertEqual(handler.sent_headers["Access-Control-Allow-Headers"], "Content-Type")
+        self.assertEqual(handler.sent_headers["Access-Control-Allow-Private-Network"], "true")
+
+    def test_options_request_returns_cors_preflight_headers(self) -> None:
+        app = GmailCompanionApp(Path("/tmp/example"))
+        handler = _FakeRequestHandler("/api/teach-apply", method="OPTIONS")
+
+        app.handle_request(handler)
+
+        self.assertEqual(handler.code, 204)
+        self.assertEqual(handler.sent_headers["Access-Control-Allow-Origin"], "*")
+        self.assertEqual(handler.sent_headers["Access-Control-Allow-Methods"], "GET, POST, OPTIONS")
+        self.assertEqual(handler.sent_headers["Access-Control-Allow-Headers"], "Content-Type")
+        self.assertEqual(handler.sent_headers["Access-Control-Allow-Private-Network"], "true")
+        self.assertEqual(handler.sent_headers["Content-Length"], "0")
+
     def _get_contract(self, app: GmailCompanionApp) -> tuple[int, dict]:
         class _HeaderOnlyHandler:
             path = "/api/selected-email-contract"
@@ -814,3 +839,29 @@ class _FakeServer:
 
     def server_close(self) -> None:
         self.closed = True
+
+
+class _FakeRequestHandler:
+    def __init__(self, path: str, *, method: str) -> None:
+        self.path = path
+        self.command = method
+        self.headers = {}
+        self.sent_headers: dict[str, str] = {}
+        self.code = None
+        self.wfile = self._Writer()
+
+    def send_response(self, code):
+        self.code = code
+
+    def send_header(self, key, value):
+        self.sent_headers[key] = value
+
+    def end_headers(self):
+        return
+
+    class _Writer:
+        def __init__(self) -> None:
+            self.value = b""
+
+        def write(self, value):
+            self.value += value

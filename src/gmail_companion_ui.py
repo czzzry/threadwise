@@ -91,6 +91,9 @@ def create_server(
         def do_POST(self) -> None:
             app.handle_request(self)
 
+        def do_OPTIONS(self) -> None:
+            app.handle_request(self)
+
         def log_message(self, format: str, *args) -> None:
             return
 
@@ -117,11 +120,16 @@ class GmailCompanionApp:
 
     def handle_request(self, handler: BaseHTTPRequestHandler) -> None:
         parsed = urlparse(handler.path)
+        if handler.command == "OPTIONS":
+            self._write_cors_preflight(handler)
+            return
+
         if handler.command == "GET" and parsed.path == "/":
             encoded = self.render_panel().encode("utf-8")
             handler.send_response(HTTPStatus.OK)
             handler.send_header("Content-Type", "text/html; charset=utf-8")
             handler.send_header("Content-Length", str(len(encoded)))
+            self._write_cors_headers(handler)
             handler.end_headers()
             handler.wfile.write(encoded)
             return
@@ -131,6 +139,7 @@ class GmailCompanionApp:
             handler.send_response(HTTPStatus.OK)
             handler.send_header("Content-Type", "text/html; charset=utf-8")
             handler.send_header("Content-Length", str(len(encoded)))
+            self._write_cors_headers(handler)
             handler.end_headers()
             handler.wfile.write(encoded)
             return
@@ -140,6 +149,7 @@ class GmailCompanionApp:
             handler.send_response(HTTPStatus.OK)
             handler.send_header("Content-Type", "text/html; charset=utf-8")
             handler.send_header("Content-Length", str(len(encoded)))
+            self._write_cors_headers(handler)
             handler.end_headers()
             handler.wfile.write(encoded)
             return
@@ -149,6 +159,7 @@ class GmailCompanionApp:
             handler.send_response(HTTPStatus.OK)
             handler.send_header("Content-Type", "text/html; charset=utf-8")
             handler.send_header("Content-Length", str(len(encoded)))
+            self._write_cors_headers(handler)
             handler.end_headers()
             handler.wfile.write(encoded)
             return
@@ -158,6 +169,7 @@ class GmailCompanionApp:
             handler.send_response(HTTPStatus.OK)
             handler.send_header("Content-Type", "application/json")
             handler.send_header("Content-Length", str(len(encoded)))
+            self._write_cors_headers(handler)
             handler.end_headers()
             handler.wfile.write(encoded)
             return
@@ -168,6 +180,7 @@ class GmailCompanionApp:
             handler.send_response(HTTPStatus.OK)
             handler.send_header("Content-Type", "application/json")
             handler.send_header("Content-Length", str(len(encoded)))
+            self._write_cors_headers(handler)
             handler.end_headers()
             handler.wfile.write(encoded)
             return
@@ -178,6 +191,7 @@ class GmailCompanionApp:
             handler.send_response(HTTPStatus.OK)
             handler.send_header("Content-Type", "application/json")
             handler.send_header("Content-Length", str(len(encoded)))
+            self._write_cors_headers(handler)
             handler.end_headers()
             handler.wfile.write(encoded)
             return
@@ -221,8 +235,21 @@ class GmailCompanionApp:
         handler.send_response(status)
         handler.send_header("Content-Type", "application/json")
         handler.send_header("Content-Length", str(len(encoded)))
+        self._write_cors_headers(handler)
         handler.end_headers()
         handler.wfile.write(encoded)
+
+    def _write_cors_headers(self, handler: BaseHTTPRequestHandler) -> None:
+        handler.send_header("Access-Control-Allow-Origin", "*")
+        handler.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        handler.send_header("Access-Control-Allow-Headers", "Content-Type")
+        handler.send_header("Access-Control-Allow-Private-Network", "true")
+
+    def _write_cors_preflight(self, handler: BaseHTTPRequestHandler) -> None:
+        handler.send_response(HTTPStatus.NO_CONTENT)
+        self._write_cors_headers(handler)
+        handler.send_header("Content-Length", "0")
+        handler.end_headers()
 
     def sidebar_state(self, selected_context: dict | None) -> dict:
         summary = build_daily_summary(self._storage_dir)

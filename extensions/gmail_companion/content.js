@@ -1,4 +1,8 @@
 (() => {
+  const SINGLETON_KEY = "__eaCompanionSingleton";
+  if (globalThis[SINGLETON_KEY] && typeof globalThis[SINGLETON_KEY].teardown === "function") {
+    globalThis[SINGLETON_KEY].teardown();
+  }
   const ROOT_ID = "email-agent-companion-root";
   const LOCAL_ORIGIN = "http://127.0.0.1:8021";
   const PANEL_WIDTH = "392px";
@@ -18,20 +22,32 @@
   };
   let manualPreviewContext = null;
   let lastLiveContext = null;
+  let trustedHtmlPolicy = null;
+  let refreshIntervalId = null;
+  let hashChangeListener = null;
+  let documentClickListener = null;
+  let runtimeMessageListener = null;
 
   function boot() {
     ensureRoot();
+    installTestHooks();
     refreshSelection();
-    window.setInterval(refreshSelection, 1200);
-    window.addEventListener("hashchange", refreshSelection);
-    document.addEventListener("click", () => window.setTimeout(refreshSelection, 150));
-    chrome.runtime.onMessage.addListener((message) => {
+    refreshIntervalId = window.setInterval(refreshSelection, 1200);
+    hashChangeListener = () => refreshSelection();
+    window.addEventListener("hashchange", hashChangeListener);
+    documentClickListener = () => window.setTimeout(refreshSelection, 150);
+    document.addEventListener("click", documentClickListener);
+    runtimeMessageListener = (message) => {
       if (!message || message.type !== "email-agent:toggle") {
         return;
       }
       minimized = !minimized;
       renderMinimized();
-    });
+    };
+    chrome.runtime.onMessage.addListener(runtimeMessageListener);
+    globalThis[SINGLETON_KEY] = {
+      teardown,
+    };
   }
 
   function ensureRoot() {
@@ -51,7 +67,7 @@
       zIndex: "2147483647",
       pointerEvents: "auto",
     });
-    root.innerHTML = `
+    setHtml(root, `
       <div id="ea-panel" style="background:rgba(255,253,248,0.98);border:1px solid rgba(215,207,191,0.95);border-radius:22px;box-shadow:0 20px 60px rgba(31,26,20,0.16);overflow:hidden;font-family:Georgia,'Times New Roman',serif;color:#1f1a14;">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:16px 16px 14px;border-bottom:1px solid #d7cfbf;background:linear-gradient(180deg,#fff8eb 0%,#f6eedf 100%);">
           <div style="display:grid;gap:6px;">
@@ -79,7 +95,7 @@
           </div>
         </div>
       </div>
-    `;
+    `);
     document.body.appendChild(root);
 
     root.querySelector("#ea-minimize").addEventListener("click", () => {
@@ -188,10 +204,10 @@
       subtitle.textContent = "Connection failed";
     }
     if (selectedEmailNode) {
-      selectedEmailNode.innerHTML = `<div style="margin-top:10px;color:#8a4b00;line-height:1.45;">${escapeHtml(message)}</div>`;
+      setHtml(selectedEmailNode, `<div style="margin-top:10px;color:#8a4b00;line-height:1.45;">${escapeHtml(message)}</div>`);
     }
     if (dailySummaryNode) {
-      dailySummaryNode.innerHTML = `<div style="margin-top:10px;color:#6b6255;line-height:1.45;">Make sure the local companion server is running on 127.0.0.1:8021.</div>`;
+      setHtml(dailySummaryNode, `<div style="margin-top:10px;color:#6b6255;line-height:1.45;">Make sure the local companion server is running on 127.0.0.1:8021.</div>`);
     }
   }
 
@@ -236,7 +252,7 @@
           </div>
         `
         : "";
-      selectedEmailNode.innerHTML = `
+      setHtml(selectedEmailNode, `
         <div style="margin-top:10px;color:#6b6255;line-height:1.45;">${title}</div>
         ${reason}
         <div style="margin-top:12px;border-radius:14px;background:#f5efe2;padding:12px;">
@@ -249,7 +265,7 @@
           <li>Short reason</li>
         </ol>
         ${fallbackHtml}
-      `;
+      `);
     } else {
       const statusStyle =
         selected.status === "needs-attention"
@@ -324,7 +340,7 @@
           <div style="margin-top:8px;color:#1f1a14;line-height:1.45;">${escapeHtml(stepCopy.body)}</div>
         </div>
       `;
-      selectedEmailNode.innerHTML = `
+      setHtml(selectedEmailNode, `
         <div style="margin-top:8px;font-size:1.08rem;font-weight:700;line-height:1.2;">${escapeHtml(selected.subject || "(no subject)")}</div>
         <div style="margin-top:6px;color:#6b6255;font-size:0.88rem;overflow-wrap:anywhere;">${escapeHtml(selected.sender || "(unknown sender)")}</div>
         <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;">
@@ -362,7 +378,7 @@
           </div>
           ${previewHtml}
         </div>
-      `;
+      `);
     }
 
     const changedToday = summary.changed_today || {};
@@ -375,7 +391,7 @@
       .join("");
     const metricButtonStyle = (key) =>
       `border:0;border-radius:14px;background:${activeSummaryFilter === key ? "#e7f6f4" : "#f5efe2"};box-shadow:${activeSummaryFilter === key ? "inset 0 0 0 1px rgba(15,118,110,0.22)" : "none"};padding:12px;text-align:left;cursor:pointer;font:inherit;color:#1f1a14;`;
-    dailySummaryNode.innerHTML = `
+    setHtml(dailySummaryNode, `
       <div style="margin-top:10px;color:#6b6255;line-height:1.45;">${summary.run_count > 1 ? `Rolling view across the last ${summary.run_count} Gmail runs` : "Latest run snapshot"}</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px;">
         <button type="button" data-ea-summary-filter="recent_items" style="${metricButtonStyle("recent_items")}"><strong style="display:block;font-size:1.15rem;">${summary.processed_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">processed</span></button>
@@ -423,7 +439,36 @@
       <p style="color:#6b6255;font-size:0.85rem;margin-top:12px;">Source: ${escapeHtml(summary.source_label || "stored Gmail snapshot")}${summary.batch_id ? ` - ${escapeHtml(summary.batch_id)}` : ""}</p>
       <div style="margin-top:12px;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">${escapeHtml(bucketLabelForFilter(activeSummaryFilter))}</div>
       <div style="margin-top:10px;display:grid;gap:8px;">${renderSummaryItemCards(summaryItemsForFilter(activeSummaryFilter))}</div>
-    `;
+    `);
+  }
+
+  function setHtml(node, html) {
+    if (!node) {
+      return;
+    }
+    node.innerHTML = toTrustedHtml(html);
+  }
+
+  function toTrustedHtml(html) {
+    if (!globalThis.trustedTypes || typeof globalThis.trustedTypes.createPolicy !== "function") {
+      return html;
+    }
+    if (!trustedHtmlPolicy) {
+      try {
+        trustedHtmlPolicy = globalThis.trustedTypes.createPolicy("email-agent-gmail-companion", {
+          createHTML(value) {
+            return value;
+          },
+        });
+      } catch (_error) {
+        trustedHtmlPolicy = {
+          createHTML(value) {
+            return value;
+          },
+        };
+      }
+    }
+    return trustedHtmlPolicy.createHTML(html);
   }
 
   function normalizeHarnessState(state) {
@@ -788,6 +833,98 @@
       targetLabel: selectNode?.value || teachDraft.targetLabel || "",
       note: noteNode?.value || "",
     };
+  }
+
+  function installTestHooks() {
+    globalThis.__eaTestHooks = {
+      getSnapshot() {
+        return {
+          previousPayload,
+          activeSummaryFilter,
+          manualPreviewContext,
+          lastLiveContext,
+          selectedContext: lastSidebarState?.selected_context || {},
+          selectedEmail: lastSidebarState?.selected_email || null,
+          recentCount: (lastHarnessState?.recent_items || []).length,
+          needsAttentionCount: (lastHarnessState?.needs_attention_items || []).length,
+        };
+      },
+      selectSummaryItem(messageId) {
+        const item = findSummaryItem(messageId);
+        if (!item) {
+          return { ok: false, error: "item-not-found" };
+        }
+        manualPreviewContext = contextFromItem(item);
+        teachPreview = null;
+        previousTeachPreview = null;
+        teachResult = "";
+        unsubscribeResult = "";
+        teachDraft = { targetLabel: "", note: "" };
+        refreshSelection(true);
+        return { ok: true, messageId: item.message_id || "", subject: item.subject || "" };
+      },
+      previewTeach(targetLabel, note) {
+        if (!lastSidebarState || !lastSidebarState.selected_email || !lastSidebarState.selected_email.found) {
+          return { ok: false, error: "selected-email-not-found" };
+        }
+        teachDraft = {
+          targetLabel: targetLabel || teachDraft.targetLabel || "",
+          note: note || "",
+        };
+        const selectNode = document.getElementById("ea-target-label");
+        const noteNode = document.getElementById("ea-teach-note");
+        if (selectNode && targetLabel) {
+          selectNode.value = targetLabel;
+        }
+        if (noteNode) {
+          noteNode.value = note || "";
+        }
+        previewTeach();
+        return {
+          ok: true,
+          targetLabel: teachDraft.targetLabel,
+          note: teachDraft.note,
+        };
+      },
+      returnToLive() {
+        manualPreviewContext = null;
+        teachPreview = null;
+        previousTeachPreview = null;
+        teachResult = "";
+        unsubscribeResult = "";
+        refreshSelection(true);
+        return { ok: true };
+      },
+    };
+  }
+
+  function teardown() {
+    if (refreshIntervalId !== null) {
+      window.clearInterval(refreshIntervalId);
+      refreshIntervalId = null;
+    }
+    if (hashChangeListener) {
+      window.removeEventListener("hashchange", hashChangeListener);
+      hashChangeListener = null;
+    }
+    if (documentClickListener) {
+      document.removeEventListener("click", documentClickListener);
+      documentClickListener = null;
+    }
+    if (
+      runtimeMessageListener &&
+      chrome?.runtime?.onMessage &&
+      typeof chrome.runtime.onMessage.removeListener === "function"
+    ) {
+      chrome.runtime.onMessage.removeListener(runtimeMessageListener);
+    }
+    runtimeMessageListener = null;
+    const root = document.getElementById(ROOT_ID);
+    if (root) {
+      root.remove();
+    }
+    delete globalThis.__eaTestHooks;
+    delete globalThis[SINGLETON_KEY];
   }
 
   function escapeHtml(value) {
