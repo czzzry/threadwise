@@ -2,14 +2,14 @@
 
 ## Context
 
-This note records the docs-only checkpoint for [docs/issues/016-mvp-happy-path-usage-guide.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/issues/016-mvp-happy-path-usage-guide.md).
+This note records the docs-only checkpoint for [docs/issues/016-mvp-happy-path-usage-guide.md](docs/issues/016-mvp-happy-path-usage-guide.md).
 
-This follows the read-only inbox-removal visibility slice in [docs/handoff/issue-015-show-inbox-removal-status-in-local-inspection.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/handoff/issue-015-show-inbox-removal-status-in-local-inspection.md).
+This follows the read-only inbox-removal visibility slice in [docs/handoff/issue-015-show-inbox-removal-status-in-local-inspection.md](docs/handoff/issue-015-show-inbox-removal-status-in-local-inspection.md).
 
 ## What Changed
 
-- Added a concise usage guide at [docs/archive/mvp-happy-path-gmail-manual-review.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/archive/mvp-happy-path-gmail-manual-review.md)
-- Added a lightweight README link to the guide in [README.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/README.md)
+- Added a concise usage guide at [docs/archive/mvp-happy-path-gmail-manual-review.md](docs/archive/mvp-happy-path-gmail-manual-review.md)
+- Added a lightweight README link to the guide in [README.md](README.md)
 - Kept the guide strictly aligned to the already-proven command set:
   - fetch
   - review/apply labels

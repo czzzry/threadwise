@@ -89,7 +89,7 @@ class GmailMessageNormalizerTests(unittest.TestCase):
                         "<p>The Wealth of Nations by Adam Smith</p>"
                         "<p>https://www.audible.com/account/overview</p>"
                         "<p>Privacy Notice</p>"
-                        "<p>This email was sent to baraniecki@gmail.com.</p>"
+                        "<p>This email was sent to alex@example.com.</p>"
                         "</body></html>"
                     )
                 },

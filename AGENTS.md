@@ -2,7 +2,7 @@
 
 ## Project purpose
 
-This repo is for building and iterating on an email agent / inbox assistant.
+This repo is for building and iterating on Threadwise, a human-in-the-loop AI inbox triage product.
 
 The product is no longer purely fuzzy discovery. The repo already contains a working Gmail MVP plus newer reporting, ProtonMail, and unsubscribe slices. Some scope is still exploratory, so the docs must clearly separate historical artifacts from the current operating model.
 
@@ -74,7 +74,7 @@ Do not create these artifacts prematurely. Create them only when the current wor
 
 ### Issue tracker
 
-Issues for this repo are tracked in GitHub Issues for `czzzry/email-agent`. See `docs/agents/issue-tracker.md`.
+Issues for this repo are tracked in GitHub Issues. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 

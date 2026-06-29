@@ -4213,16 +4213,16 @@ class FixtureBatchClassifierTests(unittest.TestCase):
                 "expected_labels": ["financial-account"],
             },
             {
-                "sender": '"Cezary Baraniecki (via Google Docs)" <drive-shares-dm-noreply@google.com>',
+                "sender": '"Alex Example (via Google Docs)" <drive-shares-dm-noreply@google.com>',
                 "subject": 'Document shared with you: "Meditations"',
-                "snippet": "Cezary Baraniecki shared a document.",
+                "snippet": "Alex Example shared a document.",
                 "body": "I've shared an item with you: Meditations.",
                 "expected_labels": ["personal"],
             },
             {
-                "sender": '"Cezary Baraniecki (via Google Docs)" <drive-shares-dm-noreply@google.com>',
+                "sender": '"Alex Example (via Google Docs)" <drive-shares-dm-noreply@google.com>',
                 "subject": 'Document shared with you: "Deep Work"',
-                "snippet": "Cezary Baraniecki shared a document.",
+                "snippet": "Alex Example shared a document.",
                 "body": "I've shared an item with you: Deep Work.",
                 "expected_labels": ["personal"],
             },
@@ -4316,7 +4316,7 @@ class FixtureBatchClassifierTests(unittest.TestCase):
             },
             {
                 "sender": '"Amazon.de Rezensionen" <customer-reviews-messages@amazon.de>',
-                "subject": "Cezary Baraniecki, ever wonder if your reviews are getting noticed?",
+                "subject": "Alex Example, ever wonder if your reviews are getting noticed?",
                 "snippet": "They are. Keep it up by reviewing more products.",
                 "body": "They are. Keep it up by reviewing more products. Your views: 2,000+ Your helpful votes: 15.",
                 "expected_labels": ["spam-low-value"],
@@ -4419,7 +4419,7 @@ class FixtureBatchClassifierTests(unittest.TestCase):
                 "expected_labels": ["job-related"],
             },
             {
-                "sender": "Cezary Baraniecki <baraniecki@gmail.com>",
+                "sender": "Alex Example <alex@example.com>",
                 "subject": "Re: Wind Down Team FAQs",
                 "snippet": "Please find the scans of my signatures.",
                 "body": "Please find the scans of my signatures. The paper signed copies will be mailed today.",

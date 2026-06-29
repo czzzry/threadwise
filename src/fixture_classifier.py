@@ -1052,7 +1052,7 @@ class FixtureBatchClassifier:
             sender_email in {
                 "nkruckmeyer@snap.com",
                 "se.sebastian.schulze@gmail.com",
-                "baraniecki@gmail.com",
+                "alex@example.com",
             }
             and "wind down team faqs" in text
         )

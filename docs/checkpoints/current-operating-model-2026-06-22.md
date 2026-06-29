@@ -6,7 +6,7 @@ Builds on: `docs/v2-alignment.md`
 Current bounded PRD: `docs/prd.md` for the Gmail inbox companion release
 Historical predecessors: `docs/archive/alignment-v1-gmail-mvp.md`, `docs/archive/prd-v1-gmail-mvp.md`, and `docs/archive/mvp-checkpoint-v1-issues-001-027.md`
 
-This checkpoint is the short read for what the repo currently proves. The older MVP checkpoint stops at issues `001` through `027`; the repo now includes later slices through `039`.
+This checkpoint is the short read for what Threadwise currently proves. The older MVP checkpoint stops at issues `001` through `027`; the repo now includes later slices through `039`.
 
 ## Current operating model
 

@@ -2,9 +2,9 @@
 
 ## Context
 
-This note records the implementation checkpoint for [docs/issues/009-live-gmail-retry-failed-writes-without-re-review.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/issues/009-live-gmail-retry-failed-writes-without-re-review.md).
+This note records the implementation checkpoint for [docs/issues/009-live-gmail-retry-failed-writes-without-re-review.md](docs/issues/009-live-gmail-retry-failed-writes-without-re-review.md).
 
-This follows the confirmed live review and write-back checkpoint in [docs/handoff/issue-007-live-review-and-ea-writeback.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/handoff/issue-007-live-review-and-ea-writeback.md) and the later suggestion-quality checkpoint in [docs/handoff/issue-008-improve-live-gmail-label-suggestions.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/handoff/issue-008-improve-live-gmail-label-suggestions.md).
+This follows the confirmed live review and write-back checkpoint in [docs/handoff/issue-007-live-review-and-ea-writeback.md](docs/handoff/issue-007-live-review-and-ea-writeback.md) and the later suggestion-quality checkpoint in [docs/handoff/issue-008-improve-live-gmail-label-suggestions.md](docs/handoff/issue-008-improve-live-gmail-label-suggestions.md).
 
 ## What Changed
 

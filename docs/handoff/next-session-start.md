@@ -4,9 +4,9 @@ Use this after `/clear` to re-situate quickly before starting the next task.
 
 ## Read First
 
-- [AGENTS.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/AGENTS.md)
-- [docs/archive/mvp-checkpoint-v1-issues-001-027.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/archive/mvp-checkpoint-v1-issues-001-027.md)
-- [docs/handoff/mvp-v0.1-acceptance.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/handoff/mvp-v0.1-acceptance.md)
+- [AGENTS.md](AGENTS.md)
+- [docs/archive/mvp-checkpoint-v1-issues-001-027.md](docs/archive/mvp-checkpoint-v1-issues-001-027.md)
+- [docs/handoff/mvp-v0.1-acceptance.md](docs/handoff/mvp-v0.1-acceptance.md)
 
 ## Current State
 

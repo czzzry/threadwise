@@ -2,9 +2,9 @@
 
 ## Context
 
-This note records the validation run for [docs/issues/012-second-batch-mvp-acceptance-run.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/issues/012-second-batch-mvp-acceptance-run.md).
+This note records the validation run for [docs/issues/012-second-batch-mvp-acceptance-run.md](docs/issues/012-second-batch-mvp-acceptance-run.md).
 
-This follows the second-batch visibility checkpoint in [docs/handoff/issue-011-read-only-local-batch-index.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/handoff/issue-011-read-only-local-batch-index.md).
+This follows the second-batch visibility checkpoint in [docs/handoff/issue-011-read-only-local-batch-index.md](docs/handoff/issue-011-read-only-local-batch-index.md).
 
 ## What Changed
 

@@ -2,9 +2,9 @@
 
 ## Context
 
-This note records the first successful live smoke test for [docs/issues/006-live-gmail-readonly-manual-fetch.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/issues/006-live-gmail-readonly-manual-fetch.md).
+This note records the first successful live smoke test for [docs/issues/006-live-gmail-readonly-manual-fetch.md](docs/issues/006-live-gmail-readonly-manual-fetch.md).
 
-This follows the earlier mocked-spine checkpoint in [docs/handoff/issues-001-005-mocked-spine.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/handoff/issues-001-005-mocked-spine.md).
+This follows the earlier mocked-spine checkpoint in [docs/handoff/issues-001-005-mocked-spine.md](docs/handoff/issues-001-005-mocked-spine.md).
 
 ## What Changed
 

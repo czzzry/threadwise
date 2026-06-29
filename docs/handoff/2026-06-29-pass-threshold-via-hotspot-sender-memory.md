@@ -1,7 +1,7 @@
 # Email Agent Handoff
 
 Date: 2026-06-29
-Repo: `/Users/cezarybaraniecki/Documents/AI project/email-agent`
+Repo: `.`
 Focus completed: the classifier loop reached the current operational `PASS` threshold by broadening hotspot founder answers into sender-wide memory where that was the actual founder intent.
 
 ## Read first

@@ -2,14 +2,14 @@
 
 ## Context
 
-This note records the implementation checkpoint for [docs/issues/010-read-only-local-batch-status-inspection.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/issues/010-read-only-local-batch-status-inspection.md).
+This note records the implementation checkpoint for [docs/issues/010-read-only-local-batch-status-inspection.md](docs/issues/010-read-only-local-batch-status-inspection.md).
 
 This follows the live fetch, review/write, suggestion-quality, and retry checkpoints in:
 
-- [docs/handoff/issue-006-live-gmail-readonly-smoke.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/handoff/issue-006-live-gmail-readonly-smoke.md)
-- [docs/handoff/issue-007-live-review-and-ea-writeback.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/handoff/issue-007-live-review-and-ea-writeback.md)
-- [docs/handoff/issue-008-improve-live-gmail-label-suggestions.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/handoff/issue-008-improve-live-gmail-label-suggestions.md)
-- [docs/handoff/issue-009-live-gmail-retry-failed-writes-without-re-review.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/handoff/issue-009-live-gmail-retry-failed-writes-without-re-review.md)
+- [docs/handoff/issue-006-live-gmail-readonly-smoke.md](docs/handoff/issue-006-live-gmail-readonly-smoke.md)
+- [docs/handoff/issue-007-live-review-and-ea-writeback.md](docs/handoff/issue-007-live-review-and-ea-writeback.md)
+- [docs/handoff/issue-008-improve-live-gmail-label-suggestions.md](docs/handoff/issue-008-improve-live-gmail-label-suggestions.md)
+- [docs/handoff/issue-009-live-gmail-retry-failed-writes-without-re-review.md](docs/handoff/issue-009-live-gmail-retry-failed-writes-without-re-review.md)
 
 ## What Changed
 

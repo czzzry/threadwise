@@ -2,9 +2,9 @@
 
 ## Context
 
-This note records the implementation and verification checkpoint for [docs/issues/013-improve-account-email-suggestions-for-stored-live-batches.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/issues/013-improve-account-email-suggestions-for-stored-live-batches.md).
+This note records the implementation and verification checkpoint for [docs/issues/013-improve-account-email-suggestions-for-stored-live-batches.md](docs/issues/013-improve-account-email-suggestions-for-stored-live-batches.md).
 
-This follows the second-batch MVP validation in [docs/handoff/issue-012-second-batch-mvp-acceptance-run.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/handoff/issue-012-second-batch-mvp-acceptance-run.md).
+This follows the second-batch MVP validation in [docs/handoff/issue-012-second-batch-mvp-acceptance-run.md](docs/handoff/issue-012-second-batch-mvp-acceptance-run.md).
 
 ## What Changed
 

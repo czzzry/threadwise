@@ -2,9 +2,9 @@
 
 ## Context
 
-This note records the first successful live verification for [docs/issues/007-review-live-gmail-batch-and-confirmed-ea-writeback.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/issues/007-review-live-gmail-batch-and-confirmed-ea-writeback.md).
+This note records the first successful live verification for [docs/issues/007-review-live-gmail-batch-and-confirmed-ea-writeback.md](docs/issues/007-review-live-gmail-batch-and-confirmed-ea-writeback.md).
 
-This follows the earlier live read-only checkpoint in [docs/handoff/issue-006-live-gmail-readonly-smoke.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/handoff/issue-006-live-gmail-readonly-smoke.md).
+This follows the earlier live read-only checkpoint in [docs/handoff/issue-006-live-gmail-readonly-smoke.md](docs/handoff/issue-006-live-gmail-readonly-smoke.md).
 
 ## What Changed
 

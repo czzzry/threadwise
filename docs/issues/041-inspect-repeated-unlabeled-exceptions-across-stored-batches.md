@@ -3,7 +3,7 @@
 Implemented on 2026-06-23
 Current as of: 2026-06-23
 Triage state: `implemented`
-Builds on: `/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/prd.md`
+Builds on: `docs/prd.md`
 Blocked by: None
 
 # Title

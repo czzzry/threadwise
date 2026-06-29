@@ -2,9 +2,9 @@
 
 ## Context
 
-This note records the implementation checkpoint for [docs/issues/015-show-inbox-removal-status-in-local-inspection.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/issues/015-show-inbox-removal-status-in-local-inspection.md).
+This note records the implementation checkpoint for [docs/issues/015-show-inbox-removal-status-in-local-inspection.md](docs/issues/015-show-inbox-removal-status-in-local-inspection.md).
 
-This follows the live-verified inbox-removal slice in [docs/handoff/issue-014-remove-inbox-for-approved-low-value-live-messages.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/handoff/issue-014-remove-inbox-for-approved-low-value-live-messages.md).
+This follows the live-verified inbox-removal slice in [docs/handoff/issue-014-remove-inbox-for-approved-low-value-live-messages.md](docs/handoff/issue-014-remove-inbox-for-approved-low-value-live-messages.md).
 
 ## What Changed
 

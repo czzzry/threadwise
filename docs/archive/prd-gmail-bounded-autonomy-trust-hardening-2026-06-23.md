@@ -2,7 +2,7 @@
 
 Status: Historical context
 Current as of: 2026-06-23
-Superseded by: `/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/prd.md`
+Superseded by: `docs/prd.md`
 Related implementation slice: `docs/issues/040-prove-bounded-gmail-autonomy-end-to-end.md`
 
 ## Problem Statement

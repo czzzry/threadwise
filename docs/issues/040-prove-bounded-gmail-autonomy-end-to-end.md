@@ -3,7 +3,7 @@
 Historical context
 Current as of: 2026-06-23
 Implemented in: `tests/test_live_gmail_daily_run_cli.py` plus `docs/decisions/gmail-bounded-autonomy.md`
-Superseded by: current slice selection now flows from `/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/prd.md`
+Superseded by: current slice selection now flows from `docs/prd.md`
 
 # Title
 

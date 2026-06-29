@@ -2,9 +2,9 @@
 
 ## Context
 
-This note records the implementation checkpoint for [docs/issues/008-improve-live-gmail-label-suggestions.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/issues/008-improve-live-gmail-label-suggestions.md).
+This note records the implementation checkpoint for [docs/issues/008-improve-live-gmail-label-suggestions.md](docs/issues/008-improve-live-gmail-label-suggestions.md).
 
-This follows the live review and write-back checkpoint in [docs/handoff/issue-007-live-review-and-ea-writeback.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/handoff/issue-007-live-review-and-ea-writeback.md).
+This follows the live review and write-back checkpoint in [docs/handoff/issue-007-live-review-and-ea-writeback.md](docs/handoff/issue-007-live-review-and-ea-writeback.md).
 
 ## What Changed
 
@@ -45,7 +45,7 @@ Result at the latest checkpoint: `67 tests passed`.
 ## Important Constraints
 
 - This slice stays local to stored data and does not add Gmail API reads, Gmail writes, OAuth changes, retry workflow, or UI expansion
-- The classifier still uses only the approved fixed taxonomy from [docs/archive/alignment-v1-gmail-mvp.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/archive/alignment-v1-gmail-mvp.md) and [docs/archive/prd-v1-gmail-mvp.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/archive/prd-v1-gmail-mvp.md)
+- The classifier still uses only the approved fixed taxonomy from [docs/archive/alignment-v1-gmail-mvp.md](docs/archive/alignment-v1-gmail-mvp.md) and [docs/archive/prd-v1-gmail-mvp.md](docs/archive/prd-v1-gmail-mvp.md)
 - Manual verification against the real stored batch was not run in this session because that would involve private email content and should be explicitly approved first
 
 ## Risks Or Open Questions

@@ -7,6 +7,8 @@ Completed bounded milestone: `docs/archive/prd-memory-runtime-milestone-complete
 Current bounded PRD: `docs/prd.md`
 Implementation checkpoint: `docs/checkpoints/current-operating-model-2026-06-22.md`
 
+Threadwise is the public-facing project name for this repo.
+
 ## Mature product direction
 
 V2 should turn the current Gmail-only autonomous labeling workflow into a browser-based, teachable inbox agent for one person's inboxes.

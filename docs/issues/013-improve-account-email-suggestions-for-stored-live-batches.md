@@ -62,7 +62,7 @@ Let the user open a previously fetched live Gmail batch and more often find usef
 ## Dependencies/order
 
 - Depends on issue `008` for the existing live-batch suggestion-improvement path
-- Justified by the concrete pain recorded in [docs/handoff/issue-012-second-batch-mvp-acceptance-run.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/handoff/issue-012-second-batch-mvp-acceptance-run.md)
+- Justified by the concrete pain recorded in [docs/handoff/issue-012-second-batch-mvp-acceptance-run.md](docs/handoff/issue-012-second-batch-mvp-acceptance-run.md)
 - Should start only after the issue draft is approved for bounded local suggestion-quality work on `EA/Account`
 
 ## Stop conditions requiring Founder review

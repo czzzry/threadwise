@@ -1,7 +1,7 @@
 # Email Agent Handoff
 
 Date: 2026-06-29
-Repo: `/Users/cezarybaraniecki/Documents/AI project/email-agent`
+Repo: `.`
 Focus completed: drained the pending review queue, fixed a compiled-rule overwrite bug, and restored the loop to a stable `PASS` state with zero pending queue items.
 
 ## Read first

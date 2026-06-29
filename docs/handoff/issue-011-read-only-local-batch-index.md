@@ -2,9 +2,9 @@
 
 ## Context
 
-This note records the implementation and live acceptance checkpoint for [docs/issues/011-read-only-local-batch-index.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/issues/011-read-only-local-batch-index.md).
+This note records the implementation and live acceptance checkpoint for [docs/issues/011-read-only-local-batch-index.md](docs/issues/011-read-only-local-batch-index.md).
 
-This follows the local batch inspection checkpoint in [docs/handoff/issue-010-read-only-local-batch-status-inspection.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/handoff/issue-010-read-only-local-batch-status-inspection.md).
+This follows the local batch inspection checkpoint in [docs/handoff/issue-010-read-only-local-batch-status-inspection.md](docs/handoff/issue-010-read-only-local-batch-status-inspection.md).
 
 ## What Changed
 
@@ -92,4 +92,4 @@ This confirms the user-visible `011` slice:
 
 ## Recommended Next Step
 
-Clear context, resume from the latest handoffs and [docs/archive/mvp-checkpoint-v1-issues-001-027.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/archive/mvp-checkpoint-v1-issues-001-027.md), then choose the next bounded slice through the normal issue-first process.
+Clear context, resume from the latest handoffs and [docs/archive/mvp-checkpoint-v1-issues-001-027.md](docs/archive/mvp-checkpoint-v1-issues-001-027.md), then choose the next bounded slice through the normal issue-first process.

@@ -1,7 +1,7 @@
 # Email Agent Handoff
 
 Date: 2026-06-29
-Repo: `/Users/cezarybaraniecki/Documents/AI project/email-agent`
+Repo: `.`
 Focus completed: Slice 1 landed as a unified review-queue contract for deterministic + memory + LLM + feedback work on stored corpora.
 
 ## Read first

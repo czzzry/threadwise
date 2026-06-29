@@ -2,9 +2,9 @@
 
 ## Context
 
-This note records the implementation checkpoint for [docs/issues/014-remove-inbox-for-approved-low-value-live-messages.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/issues/014-remove-inbox-for-approved-low-value-live-messages.md).
+This note records the implementation checkpoint for [docs/issues/014-remove-inbox-for-approved-low-value-live-messages.md](docs/issues/014-remove-inbox-for-approved-low-value-live-messages.md).
 
-This follows the bounded account-suggestion improvement in [docs/handoff/issue-013-improve-account-email-suggestions.md](/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/handoff/issue-013-improve-account-email-suggestions.md).
+This follows the bounded account-suggestion improvement in [docs/handoff/issue-013-improve-account-email-suggestions.md](docs/handoff/issue-013-improve-account-email-suggestions.md).
 
 ## What Changed
 

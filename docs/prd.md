@@ -7,6 +7,8 @@ Supersedes as current planning focus: `docs/archive/prd-memory-runtime-milestone
 Release target: Gmail first serious release
 Next release target after this: founder's ProtonMail inbox in MVP+1
 
+This PRD describes the current Threadwise Gmail-first release slice.
+
 ## Problem Statement
 
 The repo now proves the backend trust milestone that mattered most for the classifier itself:

@@ -1,7 +1,7 @@
 # Email Agent Handoff
 
 Date: 2026-06-29
-Repo: `/Users/cezarybaraniecki/Documents/AI project/email-agent`
+Repo: `.`
 Focus completed: Slice 2 landed. The unified review queue is now ranked and exposed as the main multi-inbox operator loop in the browser workbench.
 
 ## Read first

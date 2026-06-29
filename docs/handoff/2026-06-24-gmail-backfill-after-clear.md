@@ -4,12 +4,12 @@ Current as of: 2026-06-24
 
 ## Read first
 
-1. `/Users/cezarybaraniecki/Documents/AI project/email-agent/AGENTS.md`
-2. `/Users/cezarybaraniecki/Documents/AI project/email-agent/CONTEXT.md`
-3. `/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/v2-alignment.md`
-4. `/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/prd.md`
-5. `/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/checkpoints/current-operating-model-2026-06-22.md`
-6. `/Users/cezarybaraniecki/Documents/AI project/email-agent/docs/handoff/2026-06-24-gmail-backfill-runtime-hardening.md`
+1. `AGENTS.md`
+2. `CONTEXT.md`
+3. `docs/v2-alignment.md`
+4. `docs/prd.md`
+5. `docs/checkpoints/current-operating-model-2026-06-22.md`
+6. `docs/handoff/2026-06-24-gmail-backfill-runtime-hardening.md`
 7. this handoff
 
 ## Current state

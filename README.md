@@ -1,190 +1,116 @@
-# email-agent
+# Threadwise
 
-Local email-assistant repo for one-user inbox workflows.
+Human-in-the-loop AI inbox triage before provider-side action.
 
-The repo currently supports a live Gmail daily run with bounded write-back, a ProtonMail read-only path, per-inbox daily and weekly reporting, and a local review / unsubscribe / eval workbench.
+Threadwise is a local-first prototype for AI-assisted inbox triage. It combines deterministic rules, model-assisted classification, a browser-side inbox companion, and explicit human review before broader provider-side changes.
 
-## 0. Current Docs
+This repo is meant to show practical AI workflow building and product judgment, not polished SaaS infrastructure. The interesting part is the loop: the agent classifies email, explains itself briefly, accepts correction in context, previews wider impact, and waits for confirmation before changing more than the current message.
 
-If you are trying to understand the current state of the repo rather than its history, read:
+Start here if you want the public project story:
 
-- [AGENTS.md](AGENTS.md) for workflow and guardrails
-- [CONTEXT.md](CONTEXT.md) for the current stage and doc trust order
-- [docs/v2-alignment.md](docs/v2-alignment.md) for current product direction
-- [docs/prd.md](docs/prd.md) for the current bounded slice
-- [docs/checkpoints/current-operating-model-2026-06-22.md](docs/checkpoints/current-operating-model-2026-06-22.md) for the latest implementation checkpoint
-- [docs/v2-issue-map.md](docs/v2-issue-map.md) for candidate next-slice themes only
+- [Portfolio overview](docs/portfolio.md)
+- [Current product direction](docs/v2-alignment.md)
+- [Current bounded PRD](docs/prd.md)
+- [Current operating checkpoint](docs/checkpoints/current-operating-model-2026-06-22.md)
 
-Historical V1 docs live under [docs/archive/](docs/archive/).
+## What It Does Today
 
-## 1. What This Repo Currently Does
+- Gmail-first companion flow with a browser sidebar attached to the inbox
+- Selected-email classification, short rationale, and teaching preview
+- Daily run workflow with bounded Gmail label write-back
+- Limited Gmail `INBOX` removal for already-approved low-value categories only
+- ProtonMail read-only fetch and reporting path
+- Daily and weekly reporting from local run artifacts
+- Unsubscribe inventory plus explicit, auditable follow-up flows
 
-- Gmail: fetch a batch, classify messages, auto-apply current `EA/` labels, remove `INBOX` only for `promotions` and `spam-low-value`, and write a daily report.
-- ProtonMail: fetch through Bridge or import a local export, classify into the same provider-aware batch model, and write reports without provider-side mutation.
-- Reporting: build daily per-run reports and weekly per-inbox analytical reports from stored artifacts.
-- Local workbench: inspect batches, review exceptions in a browser, inventory unsubscribe candidates, execute supported unsubscribes with audit history, and run shadow-label evaluation.
+## Why It Exists
 
-## 2. Quickstart: Current Preferred Workflow
+Email is full of repetitive triage work, but fully autonomous inbox action is easy to over-claim and hard to trust.
 
-For the earlier Gmail manual-review happy path, see [docs/archive/mvp-happy-path-gmail-manual-review.md](docs/archive/mvp-happy-path-gmail-manual-review.md).
+Threadwise explores a narrower product bet:
 
-Current Gmail daily workflow:
+- let automation do the repetitive first pass
+- keep the human in the loop for corrections and broader changes
+- make learning visible instead of silent
+- keep provider-side actions bounded and explicit
+
+## Safety Boundaries
+
+- This repo does not claim full inbox autonomy.
+- It does not default to deleting, trashing, broadly archiving, or sending email.
+- It does not claim phishing or security-grade detection.
+- ProtonMail is currently read-only.
+- Broader existing-message rewrites are previewed first and require confirmation.
+
+## Repo Guide
+
+- `src/`: core classification, provider adapters, review/runtime logic, companion UI server
+- `scripts/`: runnable entrypoints for Gmail, ProtonMail, reports, harnesses, and local tools
+- `extensions/`: browser companion code
+- `tests/`: behavior and contract tests
+- `docs/`: product docs, PRDs, checkpoints, issues, handoffs, and portfolio framing
+- `examples/`: safe sample inputs and config examples
+
+## Demo And Screenshots
+
+This repo does not yet include polished public screenshots.
+
+Planned public demo assets:
+
+- Gmail companion sidebar on a selected message
+- `Correct / Teach` preview showing confirmation before broader changes
+- Daily summary view
+- Unsubscribe inventory / follow-up flow
+
+Use [docs/portfolio.md](docs/portfolio.md) for the exact capture checklist.
+
+## Running It Locally
+
+Current preferred commands stay here, lower in the README because this repo is also a portfolio artifact.
+
+Gmail daily workflow:
 
 ```bash
 python3 scripts/daily_live_gmail_run.py --account-id founder-test --batch-size 50
 ```
 
-Current ProtonMail read-only daily workflow:
+ProtonMail read-only daily workflow:
 
 ```bash
 python3 scripts/daily_live_protonmail_run.py --account-id founder-proton --batch-size 25
 ```
 
-Generate a weekly per-inbox report from stored daily artifacts:
+Weekly per-inbox report:
 
 ```bash
 python3 scripts/weekly_inbox_report.py --account-id founder-test --storage-dir data/gmail_fetch --end-date 2026-06-20
 ```
 
-## 3. Gmail Workflow
-
-Preferred command:
-
-```bash
-python3 scripts/daily_live_gmail_run.py --account-id founder-test --batch-size 50
-```
-
-What it does:
-
-- fetches a fresh Gmail batch
-- classifies messages into the current taxonomy
-- auto-applies all current suggested `EA/` labels
-- removes `INBOX` only for `spam-low-value` and `promotions`
-- prints the remaining unlabeled exceptions for manual follow-up
-- writes a durable per-run report to `data/gmail_fetch/reports/<batch_id>_daily_report.json`
-
-Lower-level Gmail review and recovery commands remain available under `scripts/` for manual fetch, browser review, explicit label write-back, retries, and batch inspection.
-
-## 4. ProtonMail Workflow
-
-Preferred daily read-only command:
-
-```bash
-python3 scripts/daily_live_protonmail_run.py --account-id founder-proton --batch-size 25
-```
-
-What it does:
-
-- fetches a fresh ProtonMail batch through Bridge
-- classifies messages into the existing provider-aware local batch model
-- performs no provider write actions
-- prints unlabeled exceptions for manual follow-up
-- writes a durable per-run report to `data/gmail_fetch/reports/<batch_id>_daily_report.json`
-
-For the import-based read-only path, ingest a ProtonMail export file with:
-
-```bash
-python3 scripts/manual_protonmail_fetch.py --account-id founder-proton --source-path /path/to/proton_export.json
-```
-
-Import contract:
-
-- JSON array of message objects
-- each message should include `id`, `sender`, `subject`, and `date`
-- optional fields: `snippet`, `body`, `mailbox`, `list_unsubscribe`, `precedence`
-- only messages with `mailbox: "inbox"` are imported
-
-For the lower-level live Bridge fetch command, use:
-
-```bash
-python3 scripts/live_protonmail_fetch.py --account-id founder-proton --batch-size 25
-```
-
-Bridge setup contract for this repo:
-
-- Proton Mail Bridge is the supported provider edge for live read-only Proton access
-- Bridge requires a paid Proton Mail plan according to Proton's Bridge documentation
-- default config path: `data/protonmail_credentials/protonmail_bridge/<account_id>.json`
-- expected config fields: `host`, `port`, `username`, `password`, optional `ssl`
-- example config: `examples/protonmail_bridge_config.example.json`
-
-## 5. Weekly Reports
-
-Weekly per-inbox analytical report:
-
-```bash
-python3 scripts/weekly_inbox_report.py --account-id founder-test --storage-dir data/gmail_fetch --end-date 2026-06-20
-```
-
-This writes:
-
-- `data/gmail_fetch/reports/<account_id>_weekly_report_<start>_<end>.json`
-
-The report rolls up stored daily artifacts for one inbox and is meant to summarize trends, category mix, exception rate, and notable changes over the week.
-
-## 6. Local Workbench / Lower-Level Tools
-
-Browser review / workbench:
+Local browser review / workbench:
 
 ```bash
 python3 scripts/review_local_batch_in_browser.py --batch-id founder-test-batch-N --port 8001
 ```
 
-Other useful lower-level commands:
+Operational readiness check:
 
 ```bash
-python3 scripts/manual_gmail_fetch.py --account-id founder-test --batch-size 10
-python3 scripts/review_live_gmail_batch.py --batch-id founder-test-batch-N
-python3 scripts/retry_live_gmail_failed_writes.py --batch-id founder-test-batch-N
-python3 scripts/remove_inbox_for_live_gmail_batch.py --batch-id founder-test-batch-N
-python3 scripts/inspect_local_batch_status.py --batch-id founder-test-batch-N
-python3 scripts/list_local_batches.py
-python3 scripts/evaluate_shadow_model_labels.py --help
+python3 scripts/check_operational_readiness.py
 ```
 
-For autonomous handling of a specific stored Gmail batch, use:
+More operational detail:
 
-```bash
-python3 scripts/auto_apply_live_gmail_batch.py --batch-id founder-test-batch-N
-```
+- [Current operational readiness note](docs/current-operational-readiness-2026-06-29.md)
+- [Current operating model checkpoint](docs/checkpoints/current-operating-model-2026-06-22.md)
+- [Historical Gmail MVP guide](docs/archive/mvp-happy-path-gmail-manual-review.md)
 
-## 7. Credential / Data Paths
+## Private Local Data
 
-Local private paths used by this repo:
+This repo uses local private data paths such as:
 
-- Gmail credentials: `data/gmail_credentials/`
-- Gmail / provider-aware run artifacts: `data/gmail_fetch/`
-- ProtonMail Bridge config: `data/protonmail_credentials/protonmail_bridge/<account_id>.json`
+- `data/gmail_credentials/`
+- `data/gmail_fetch/`
+- `data/protonmail_credentials/protonmail_bridge/<account_id>.json`
 
-Optional OpenAI key for shadow evaluation:
+These paths are local-only and should not be committed.
 
-- `EMAIL_AGENT_OPENAI_API_KEY`
-- `OPENAI_API_KEY`
-
-If OAuth or token exchange fails with an SSL certificate verification error on a `python.org` macOS Python install, run:
-
-```bash
-open "/Applications/Python 3.13/Install Certificates.command"
-```
-
-## 8. Safety Notes
-
-- Treat credentials, tokens, Bridge config, and stored inbox artifacts as private local data.
-- Gmail mutation is intentionally bounded to current `EA/` label write-back plus `INBOX` removal for `promotions` and `spam-low-value`.
-- ProtonMail is read-only in the current operating model.
-- Unsubscribe handling is deliberately controlled: build inventory locally, execute only supported cases with audit history, and keep unsupported cases manual.
-- The repo does not default to deleting, trashing, or broadly archiving mail.
-
-## 9. Legacy or Lower-Level Commands
-
-Older or more manual commands remain useful for debugging, controlled review, and slice-specific verification:
-
-```bash
-python3 scripts/manual_gmail_fetch.py --account-id founder-test --batch-size 10
-python3 scripts/review_live_gmail_batch.py --batch-id founder-test-batch-N
-python3 scripts/retry_live_gmail_failed_writes.py --batch-id founder-test-batch-N
-python3 scripts/remove_inbox_for_live_gmail_batch.py --batch-id founder-test-batch-N
-python3 scripts/manual_protonmail_fetch.py --account-id founder-proton --source-path /path/to/proton_export.json
-python3 scripts/live_protonmail_fetch.py --account-id founder-proton --batch-size 25
-python3 scripts/evaluate_shadow_model_labels.py --help
-```

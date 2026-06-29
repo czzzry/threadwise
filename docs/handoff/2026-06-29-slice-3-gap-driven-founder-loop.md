@@ -1,7 +1,7 @@
 # Email Agent Handoff
 
 Date: 2026-06-29
-Repo: `/Users/cezarybaraniecki/Documents/AI project/email-agent`
+Repo: `.`
 Focus completed: Slice 3 is now operationally actionable. The system no longer just measures the remaining unresolved gap; it stages the biggest recurring unresolved families as founder-answerable queue items in the main workbench.
 
 ## Read first

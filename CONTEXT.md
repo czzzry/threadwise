@@ -52,7 +52,7 @@ Do not restart first-principles Gmail-MVP discovery.
 
 Do not infer an approved next build from `docs/v2-issue-map.md`, old handoffs, or archived V1 planning docs.
 
-The current product direction is:
+The current product direction for Threadwise is:
 
 - first serious release target: Gmail only
 - primary surface: browser-based inbox companion sidebar

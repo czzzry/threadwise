@@ -2,16 +2,16 @@
 
 ## Context
 
-This repo is following the local-issues workflow in [AGENTS.md](/Users/cezarybaraniecki/Documents/AI%20project/email-agent/AGENTS.md). The relevant planning artifacts are:
+This repo is following the local-issues workflow in [AGENTS.md](AGENTS.md). The relevant planning artifacts are:
 
-- [docs/archive/alignment-v1-gmail-mvp.md](/Users/cezarybaraniecki/Documents/AI%20project/email-agent/docs/archive/alignment-v1-gmail-mvp.md)
-- [docs/archive/prd-v1-gmail-mvp.md](/Users/cezarybaraniecki/Documents/AI%20project/email-agent/docs/archive/prd-v1-gmail-mvp.md)
-- [docs/decisions/review-semantics.md](/Users/cezarybaraniecki/Documents/AI%20project/email-agent/docs/decisions/review-semantics.md)
-- [docs/issues/001-fixture-backed-review-loop-for-one-batch.md](/Users/cezarybaraniecki/Documents/AI%20project/email-agent/docs/issues/001-fixture-backed-review-loop-for-one-batch.md)
-- [docs/issues/002-classification-generated-suggestions-for-fixture-batch.md](/Users/cezarybaraniecki/Documents/AI%20project/email-agent/docs/issues/002-classification-generated-suggestions-for-fixture-batch.md)
-- [docs/issues/003-manual-gmail-fetch-into-review-queue.md](/Users/cezarybaraniecki/Documents/AI%20project/email-agent/docs/issues/003-manual-gmail-fetch-into-review-queue.md)
-- [docs/issues/004-review-approved-gmail-label-write-back.md](/Users/cezarybaraniecki/Documents/AI%20project/email-agent/docs/issues/004-review-approved-gmail-label-write-back.md)
-- [docs/issues/005-retry-failed-gmail-writes-without-re-review.md](/Users/cezarybaraniecki/Documents/AI%20project/email-agent/docs/issues/005-retry-failed-gmail-writes-without-re-review.md)
+- [docs/archive/alignment-v1-gmail-mvp.md](docs/archive/alignment-v1-gmail-mvp.md)
+- [docs/archive/prd-v1-gmail-mvp.md](docs/archive/prd-v1-gmail-mvp.md)
+- [docs/decisions/review-semantics.md](docs/decisions/review-semantics.md)
+- [docs/issues/001-fixture-backed-review-loop-for-one-batch.md](docs/issues/001-fixture-backed-review-loop-for-one-batch.md)
+- [docs/issues/002-classification-generated-suggestions-for-fixture-batch.md](docs/issues/002-classification-generated-suggestions-for-fixture-batch.md)
+- [docs/issues/003-manual-gmail-fetch-into-review-queue.md](docs/issues/003-manual-gmail-fetch-into-review-queue.md)
+- [docs/issues/004-review-approved-gmail-label-write-back.md](docs/issues/004-review-approved-gmail-label-write-back.md)
+- [docs/issues/005-retry-failed-gmail-writes-without-re-review.md](docs/issues/005-retry-failed-gmail-writes-without-re-review.md)
 
 ## What Was Completed
 
@@ -25,24 +25,24 @@ This repo is following the local-issues workflow in [AGENTS.md](/Users/cezarybar
 
 Key modules:
 
-- [src/review_loop.py](/Users/cezarybaraniecki/Documents/AI%20project/email-agent/src/review_loop.py)
-- [src/fixture_classifier.py](/Users/cezarybaraniecki/Documents/AI%20project/email-agent/src/fixture_classifier.py)
-- [src/gmail_fetcher.py](/Users/cezarybaraniecki/Documents/AI%20project/email-agent/src/gmail_fetcher.py)
-- [src/gmail_writer.py](/Users/cezarybaraniecki/Documents/AI%20project/email-agent/src/gmail_writer.py)
+- [src/review_loop.py](src/review_loop.py)
+- [src/fixture_classifier.py](src/fixture_classifier.py)
+- [src/gmail_fetcher.py](src/gmail_fetcher.py)
+- [src/gmail_writer.py](src/gmail_writer.py)
 
 Test coverage:
 
-- [tests/test_fixture_review_loop.py](/Users/cezarybaraniecki/Documents/AI%20project/email-agent/tests/test_fixture_review_loop.py)
-- [tests/test_fixture_classifier.py](/Users/cezarybaraniecki/Documents/AI%20project/email-agent/tests/test_fixture_classifier.py)
-- [tests/test_gmail_fetcher.py](/Users/cezarybaraniecki/Documents/AI%20project/email-agent/tests/test_gmail_fetcher.py)
-- [tests/test_gmail_writer.py](/Users/cezarybaraniecki/Documents/AI%20project/email-agent/tests/test_gmail_writer.py)
-- [tests/test_gmail_retry.py](/Users/cezarybaraniecki/Documents/AI%20project/email-agent/tests/test_gmail_retry.py)
+- [tests/test_fixture_review_loop.py](tests/test_fixture_review_loop.py)
+- [tests/test_fixture_classifier.py](tests/test_fixture_classifier.py)
+- [tests/test_gmail_fetcher.py](tests/test_gmail_fetcher.py)
+- [tests/test_gmail_writer.py](tests/test_gmail_writer.py)
+- [tests/test_gmail_retry.py](tests/test_gmail_retry.py)
 
 Representative fixtures:
 
-- [examples/fixture_batches/one-batch.json](/Users/cezarybaraniecki/Documents/AI%20project/email-agent/examples/fixture_batches/one-batch.json)
-- [examples/sample_messages/generated-batch.json](/Users/cezarybaraniecki/Documents/AI%20project/email-agent/examples/sample_messages/generated-batch.json)
-- [examples/gmail_api/mock_inbox_payloads.json](/Users/cezarybaraniecki/Documents/AI%20project/email-agent/examples/gmail_api/mock_inbox_payloads.json)
+- [examples/fixture_batches/one-batch.json](examples/fixture_batches/one-batch.json)
+- [examples/sample_messages/generated-batch.json](examples/sample_messages/generated-batch.json)
+- [examples/gmail_api/mock_inbox_payloads.json](examples/gmail_api/mock_inbox_payloads.json)
 
 ## Verification Status
 
