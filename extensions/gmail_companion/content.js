@@ -252,18 +252,24 @@
           </div>
         `
         : "";
+      const liveEmailCard = hasSnapshotMiss && lastLiveContext && (lastLiveContext.subject || lastLiveContext.sender)
+        ? `
+          <div style="margin-top:12px;border-radius:14px;background:#f5efe2;padding:12px;">
+            <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">Viewing in Gmail now</div>
+            <div style="margin-top:8px;font-weight:700;line-height:1.35;">${escapeHtml(lastLiveContext.subject || "(no subject)")}</div>
+            <div style="margin-top:6px;color:#6b6255;line-height:1.45;overflow-wrap:anywhere;">${escapeHtml(lastLiveContext.sender || "(unknown sender)")}</div>
+          </div>
+        `
+        : "";
       setHtml(selectedEmailNode, `
         <div style="margin-top:10px;color:#6b6255;line-height:1.45;">${title}</div>
         ${reason}
+        ${liveEmailCard}
         <div style="margin-top:12px;border-radius:14px;background:#f5efe2;padding:12px;">
           <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">${escapeHtml(stepCopy.title)}</div>
           <div style="margin-top:8px;color:#1f1a14;line-height:1.45;">${escapeHtml(stepCopy.body)}</div>
         </div>
-        <ol style="margin:10px 0 0;padding-left:18px;color:#6b6255;">
-          <li>Current category</li>
-          <li>Handling status</li>
-          <li>Short reason</li>
-        </ol>
+        <div style="margin-top:12px;color:#6b6255;line-height:1.45;">The agent can only explain and teach from the latest stored sync, so use a queue item below for now or rerun the Gmail sync.</div>
         ${fallbackHtml}
       `);
     } else {
@@ -285,6 +291,9 @@
           ? `<div style="margin-top:12px;border-radius:14px;background:#d8f3ef;padding:12px;color:#0f766e;line-height:1.45;">${escapeHtml(teachResult)}</div>`
           : renderPreviousTeachPreviewHtml(previousTeachPreview);
       const details = selected.details || {};
+      const decisionSource = humanDecisionSource(details.review_action || "");
+      const writeStatusLabel = humanWriteStatus(details.write_status || "");
+      const inboxStatusLabel = humanInboxStatus(details.inbox_status || "");
       const matchedRuleList = (details.matched_rule_ids || []).length
         ? `<div style="margin-top:6px;color:#6b6255;line-height:1.45;">Matched rules: ${escapeHtml((details.matched_rule_ids || []).join(", "))}</div>`
         : "";
@@ -356,9 +365,9 @@
         </div>
         <div style="margin-top:14px;border-radius:14px;background:#f5efe2;padding:12px;">
           <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">Details</div>
-          <div style="margin-top:8px;color:#6b6255;line-height:1.45;">Decision source: ${escapeHtml(details.review_action || "n/a")}</div>
-          <div style="margin-top:6px;color:#6b6255;line-height:1.45;">Label write status: ${escapeHtml(details.write_status || "not written")}</div>
-          <div style="margin-top:6px;color:#6b6255;line-height:1.45;">Inbox removal status: ${escapeHtml(details.inbox_status || "not removed")}</div>
+          <div style="margin-top:8px;color:#6b6255;line-height:1.45;">Decision source: ${escapeHtml(decisionSource)}</div>
+          <div style="margin-top:6px;color:#6b6255;line-height:1.45;">Label write status: ${escapeHtml(writeStatusLabel)}</div>
+          <div style="margin-top:6px;color:#6b6255;line-height:1.45;">Inbox handling: ${escapeHtml(inboxStatusLabel)}</div>
           <div style="margin-top:6px;color:#6b6255;line-height:1.45;">Matched saved rules: ${escapeHtml(String(details.matched_rule_count || 0))}</div>
           ${matchedRuleList}
           ${unsubscribeReasonList}
@@ -509,7 +518,7 @@
     if (!selected || !selected.found) {
       return {
         title: "What to do now",
-        body: "Open a synced queue item below if you want to review or teach the agent before the next Gmail sync.",
+        body: "Open one of the synced queue items below if you want to review or teach the agent before the next Gmail sync finishes.",
       };
     }
     if (showingQueuePreview) {
@@ -833,6 +842,41 @@
       targetLabel: selectNode?.value || teachDraft.targetLabel || "",
       note: noteNode?.value || "",
     };
+  }
+
+  function humanDecisionSource(reviewAction) {
+    if (!reviewAction) {
+      return "No prior decision recorded";
+    }
+    return {
+      "auto-approve": "Auto-approved by current rules",
+      approve: "Previously reviewed locally",
+      "sidebar-current-only": "Taught on this email only",
+      "sidebar-matching-existing": "Taught and rewrote matching stored emails",
+      "sidebar-future-only": "Saved as a future lesson",
+    }[reviewAction] || reviewAction.replaceAll("-", " ");
+  }
+
+  function humanWriteStatus(writeStatus) {
+    if (!writeStatus) {
+      return "Not written to Gmail";
+    }
+    return {
+      applied: "Written to Gmail",
+      skipped: "Skipped Gmail write",
+      failed: "Gmail write failed",
+    }[writeStatus] || writeStatus;
+  }
+
+  function humanInboxStatus(inboxStatus) {
+    if (!inboxStatus) {
+      return "Inbox unchanged";
+    }
+    return {
+      applied: "Removed from inbox",
+      skipped: "Left in inbox",
+      failed: "Inbox update failed",
+    }[inboxStatus] || inboxStatus;
   }
 
   function installTestHooks() {
