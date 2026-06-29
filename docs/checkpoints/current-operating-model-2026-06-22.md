@@ -1,7 +1,7 @@
 # Current Operating Model Checkpoint
 
 Status: Current checkpoint
-Current as of: 2026-06-22
+Current as of: 2026-06-29
 Builds on: `docs/v2-alignment.md`
 Current bounded PRD: `docs/prd.md` for the Gmail inbox companion release
 Historical predecessors: `docs/archive/alignment-v1-gmail-mvp.md`, `docs/archive/prd-v1-gmail-mvp.md`, and `docs/archive/mvp-checkpoint-v1-issues-001-027.md`
@@ -12,7 +12,7 @@ This checkpoint is the short read for what the repo currently proves. The older 
 
 ### Gmail
 
-The Gmail path is now a usable local daily workflow for one inbox:
+The Gmail path is now a usable supervised release workflow for one inbox:
 
 1. fetch a fresh batch
 2. classify messages into the approved taxonomy
@@ -20,8 +20,11 @@ The Gmail path is now a usable local daily workflow for one inbox:
 4. remove `INBOX` only for `promotions` and `spam-low-value`
 5. write a daily report artifact
 6. leave only unlabeled exceptions for manual follow-up
+7. show the current email, compact daily summary, queue-preview path, teaching preview, and unsubscribe context in the Gmail companion sidebar during real inbox browsing
 
 Manual browser review, explicit review/apply flows, retries, and local inspection commands remain available as fallback and verification paths.
+
+The repo now also includes a deterministic live Gmail acceptance harness that can attach to the real Gmail page target, inject the sidebar when needed, and exercise queue-preview and teaching-preview flows against the founder's real inbox context.
 
 ### ProtonMail
 
@@ -83,6 +86,10 @@ Still out of scope by default:
 ## What looks solid now
 
 - Gmail daily run and exception-summary workflow
+- Gmail companion sidebar as the primary supervised release surface
+- live selected-email fallback into queue preview from unsynced Gmail messages
+- live `Correct / Teach` preview path with broader-impact confirmation
+- compact in-sidebar daily summary and unsubscribe surfacing
 - daily and weekly report generation
 - provider/account-aware local artifact handling
 - ProtonMail read-only import and live Bridge paths
@@ -93,11 +100,10 @@ Still out of scope by default:
 
 ## What still looks partial
 
-- there is not yet a single up-to-date PRD for the post-Gmail-MVP operating model
 - roadmap docs can still drift unless checkpoints and handoffs are refreshed
 - ProtonMail write-side behavior is still unresolved product scope
-- long-lived operational proof is still lighter than the live workflow deserves even with a new readiness-policy decision note
 - the local artifact model is central enough that it likely needs stronger explicit versioning and decision notes over time
+- the isolated automation-browser path still relies on host-driven injection/message fulfillment for deterministic live Gmail acceptance instead of unpacked-extension parity by itself
 
 ## Next documentation needs
 

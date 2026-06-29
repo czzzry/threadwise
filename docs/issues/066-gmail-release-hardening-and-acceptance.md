@@ -1,9 +1,12 @@
 # Status
 
-Current
-Current as of: 2026-06-29
+Completed
+Completed as of: 2026-06-29
 Triage state: `ready-for-agent`
 Builds on: `docs/prd.md`, `docs/issues/064-inbox-correct-teach-conversation.md`, `docs/issues/065-sidebar-daily-summary-and-unsubscribe-flow.md`
+Implementation handoffs:
+- `docs/handoff/2026-06-29-gmail-companion-simulator-acceptance-pass.md`
+- `docs/handoff/2026-06-29-live-gmail-acceptance-harness-and-trusted-types-hardening.md`
 
 # Title
 
@@ -39,14 +42,33 @@ This is the slice that should turn "the pieces exist" into "the Gmail release is
 
 ## Acceptance criteria
 
-- [ ] The integrated Gmail companion flow works during supervised real Gmail browsing.
-- [ ] Prompting behavior stays within the bounded product budget or batches appropriately.
-- [ ] Ignored clarification prompts leave the system in a safe and understandable state.
-- [ ] Agent-made changes are visible in lightweight operational summaries.
-- [ ] The release has a clear supervised acceptance pass and any remaining sharp edges are documented.
+- [x] The integrated Gmail companion flow works during supervised real Gmail browsing.
+- [x] Prompting behavior stays within the bounded product budget or batches appropriately.
+- [x] Ignored clarification prompts leave the system in a safe and understandable state.
+- [x] Agent-made changes are visible in lightweight operational summaries.
+- [x] The release has a clear supervised acceptance pass and any remaining sharp edges are documented.
 
 ## Output
 
 - hardened Gmail companion release flow
 - supervised acceptance notes
 - documented remaining sharp edges, if any
+
+## Completion note
+
+This slice is complete for the supervised Gmail release target.
+
+What was proven in the live acceptance pass:
+
+- the companion can attach to the founder's real signed-in Gmail inbox page
+- the sidebar can render on live Gmail pages that enforce stricter Trusted Types behavior
+- the live unsynced-message state degrades into a usable queue-review path
+- queue preview works from the live sidebar into stored synced emails
+- the `Correct / Teach` preview path can surface real impact counts and confirmation choices in the live Gmail context
+- operational summary and unsubscribe surfaces remain available from the same sidebar flow
+
+Remaining sharp edge:
+
+- the isolated Chrome automation profile used for deterministic acceptance does not yet load the unpacked extension reliably by itself, so the acceptance harness currently uses host-driven sidebar injection and host-driven message fulfillment
+
+That remaining caveat should be treated as a narrow follow-up, not as a blocker to closing `066`.
