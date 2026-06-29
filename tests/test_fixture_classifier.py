@@ -3437,6 +3437,13 @@ class FixtureBatchClassifierTests(unittest.TestCase):
                 "expected_labels": ["account-security"],
             },
             {
+                "sender": "Amazon <account-update@amazon.ca>",
+                "subject": "Passkey added to your account",
+                "snippet": "A passkey was added to your Amazon account.",
+                "body": "A passkey was added to your Amazon account.",
+                "expected_labels": ["account-security"],
+            },
+            {
                 "sender": '"Amazon.de" <order-update@amazon.de>',
                 "subject": "Delivery attempted with your Amazon package.",
                 "snippet": "Unfortunately, DHL ran into an issue when attempting your delivery.",
@@ -3461,6 +3468,146 @@ class FixtureBatchClassifierTests(unittest.TestCase):
                     "gmail_label_ids": ["INBOX", "CATEGORY_UPDATES"],
                     "list_unsubscribe": None,
                     "precedence": "",
+                    "sender": case["sender"],
+                    "subject": case["subject"],
+                    "snippet": case["snippet"],
+                    "body": case["body"],
+                }
+                for index, case in enumerate(cases, 1)
+            ],
+        )
+
+        labels_by_subject = {item["subject"]: item["applied_labels"] for item in review_queue["items"]}
+        for case in cases:
+            with self.subTest(subject=case["subject"]):
+                self.assertEqual(labels_by_subject[case["subject"]], case["expected_labels"])
+
+    def test_classify_messages_marks_protonmail_discovery_records_with_approved_labels(self) -> None:
+        cases = [
+            {
+                "sender": "<keine-antwort@handyticket.de>",
+                "subject": "HandyTicket Deutschland: Quittung für den Ticketkauf",
+                "snippet": "Quittung für den Ticketkauf.",
+                "body": "HandyTicket Deutschland: Quittung für den Ticketkauf.",
+                "expected_labels": ["travel", "receipt-billing"],
+            },
+            {
+                "sender": "\"GitHub\" <noreply@github.com>",
+                "subject": "[GitHub] A third-party OAuth application has been added to your account",
+                "snippet": "A third-party OAuth application has been added to your account.",
+                "body": "A third-party OAuth application has been added to your account.",
+                "expected_labels": ["account-security"],
+            },
+            {
+                "sender": "\"noreply@zoxs.de\" <noreply@zoxs.de>",
+                "subject": "Statusupdate zu Deiner Bestellung 942964",
+                "snippet": "Statusupdate zu Deiner Bestellung.",
+                "body": "Statusupdate zu Deiner Bestellung 942964.",
+                "expected_labels": ["shopping-order"],
+            },
+            {
+                "sender": "\"Caventura GmbH\" <accounting@caventura.com>",
+                "subject": "Versand Ihrer Bestellung 2002639 von Caventura GmbH",
+                "snippet": "Versand Ihrer Bestellung.",
+                "body": "Versand Ihrer Bestellung 2002639 von Caventura GmbH.",
+                "expected_labels": ["shopping-order"],
+            },
+            {
+                "sender": "\"Caventura GmbH\" <accounting@caventura.com>",
+                "subject": "Lieferschein 3002664 von Caventura GmbH zum Auftrag 2002639",
+                "snippet": "Lieferschein zum Auftrag.",
+                "body": "Lieferschein 3002664 von Caventura GmbH zum Auftrag 2002639.",
+                "expected_labels": ["shopping-order"],
+            },
+            {
+                "sender": "<bilety@polregio.pl>",
+                "subject": "🚄 Your ticket valid on 06-04-2026, Szczecin Główny ➔ Kostrzyn",
+                "snippet": "Your ticket valid on 06-04-2026.",
+                "body": "Your ticket valid on 06-04-2026, Szczecin Główny ➔ Kostrzyn.",
+                "expected_labels": ["travel"],
+            },
+            {
+                "sender": "\"Shopify Billing\" <billing@shopify.com>",
+                "subject": "Jun 5, 2026 bill for Food Healthy",
+                "snippet": "Your Shopify bill is ready.",
+                "body": "Jun 5, 2026 bill for Food Healthy.",
+                "expected_labels": ["receipt-billing"],
+            },
+        ]
+
+        review_queue = self.classifier.classify_messages(
+            "founder-test-batch-x",
+            [
+                {
+                    "message_id": f"message-{index}",
+                    "date": f"2026-06-19T08:{index:02d}:00Z",
+                    "gmail_label_ids": [],
+                    "list_unsubscribe": None,
+                    "precedence": "",
+                    "source": "protonmail",
+                    "sender": case["sender"],
+                    "subject": case["subject"],
+                    "snippet": case["snippet"],
+                    "body": case["body"],
+                }
+                for index, case in enumerate(cases, 1)
+            ],
+        )
+
+        labels_by_subject = {item["subject"]: item["applied_labels"] for item in review_queue["items"]}
+        for case in cases:
+            with self.subTest(subject=case["subject"]):
+                self.assertEqual(labels_by_subject[case["subject"]], case["expected_labels"])
+
+    def test_classify_messages_marks_second_protonmail_discovery_slice_records(self) -> None:
+        cases = [
+            {
+                "sender": "\"Charles Schwab & Co., Inc.\" <donotreply@mail.schwab.com>",
+                "subject": "Your account eStatement is available",
+                "snippet": "Charles Schwab & Co., Inc.",
+                "body": "Your account eStatement is available online.",
+                "expected_labels": ["financial-account"],
+            },
+            {
+                "sender": "\"DHL Paket\" <noreply@dhl.de>",
+                "subject": "Einlieferungsbeleg: Ihr Versand an der Packstation",
+                "snippet": "Einlieferungsbeleg für Ihren Versand an der Packstation.",
+                "body": "Einlieferungsbeleg: Ihr Versand an der Packstation.",
+                "expected_labels": ["shopping-order"],
+            },
+            {
+                "sender": "\"Steam Support\" <noreply@steampowered.com>",
+                "subject": "Thank you for your Steam purchase!",
+                "snippet": "Thanks for your purchase.",
+                "body": "Thank you for your Steam purchase! Billing and payment details are available in your account.",
+                "expected_labels": ["shopping-order"],
+            },
+            {
+                "sender": "\"Proton\" <no-reply@notify.proton.me>",
+                "subject": "Subscription has been renewed",
+                "snippet": "Subscription has been renewed.",
+                "body": "Subscription has been renewed. Your Proton subscription was renewed successfully.",
+                "expected_labels": ["receipt-billing"],
+            },
+            {
+                "sender": "<no-reply@winsim.de>",
+                "subject": "Ihre winSIM-Rechnung",
+                "snippet": "winSIM Rechnung",
+                "body": "Die aktuelle Mobilfunkrechnung für Ihre Rufnummer können Sie in Ihrer Servicewelt abrufen.",
+                "expected_labels": ["receipt-billing"],
+            },
+        ]
+
+        review_queue = self.classifier.classify_messages(
+            "founder-test-batch-x",
+            [
+                {
+                    "message_id": f"message-{index}",
+                    "date": f"2026-06-19T09:{index:02d}:00Z",
+                    "gmail_label_ids": [],
+                    "list_unsubscribe": None,
+                    "precedence": "",
+                    "source": "protonmail",
                     "sender": case["sender"],
                     "subject": case["subject"],
                     "snippet": case["snippet"],

@@ -1,16 +1,17 @@
 # V2 Alignment
 
 Status: Current product-direction alignment
-Current as of: 2026-06-22
+Current as of: 2026-06-29
 Builds on: `docs/archive/alignment-v1-gmail-mvp.md` and `docs/archive/prd-v1-gmail-mvp.md` as historical Gmail V1 artifacts
+Completed bounded milestone: `docs/archive/prd-memory-runtime-milestone-completed-2026-06-29.md`
 Current bounded PRD: `docs/prd.md`
 Implementation checkpoint: `docs/checkpoints/current-operating-model-2026-06-22.md`
 
 ## Mature product direction
 
-V2 should turn the current Gmail-only autonomous labeling workflow into the beginning of a real multi-inbox assistant for one person.
+V2 should turn the current Gmail-only autonomous labeling workflow into a browser-based, teachable inbox agent for one person's inboxes.
 
-The goal is not to jump straight to full automation everywhere. The goal is to extend the operating model that now works for one Gmail inbox into a product that can support two inboxes cleanly and produce useful summaries about what happened.
+The goal is not to jump straight to full automation everywhere. The goal is to pair a daily automation backbone with an inbox-native teaching loop, so the user can correct the agent in context and the agent can safely learn from that feedback.
 
 Unsubscribe management is part of the mature product. It is not a side utility.
 
@@ -26,14 +27,16 @@ The repo already proves more than the original Gmail MVP:
 - unsubscribe inventory, supported execution, and manual follow-up paths
 - local browser review and inspection tools for exceptions and spot checks
 
-This means V2 is no longer "build daily reports, then weekly reports, then ProtonMail." Those slices already exist in the repo. The current job is to keep the operating model stable, keep the docs synchronized, and choose the next bounded product move.
+This means V2 is no longer "build daily reports, then weekly reports, then ProtonMail." Those slices already exist in the repo. The current job is to turn that proved backend/workbench foundation into the actual Gmail release product surface.
 
 ## Target User
 
 - one user
-- managing two inboxes
-- one Gmail inbox
-- one ProtonMail inbox
+- managing their own inboxes
+- first release target: one Gmail inbox
+- MVP+1 target: add that same person's ProtonMail inbox
+- not a team product
+- not a shared-inbox workflow
 
 ## Core Product Job
 
@@ -42,7 +45,8 @@ Help one person stay in control of two noisy inboxes by:
 - labeling email consistently for retrieval
 - auto-handling the mail that is already well understood
 - surfacing what happened in clear reports
-- leaving only the uncertain or user-choice cases for manual follow-up
+- letting the user teach the agent in context when it gets something wrong
+- leaving only the uncertain or user-choice cases for bounded follow-up
 
 ## Current operating model
 
@@ -54,9 +58,24 @@ The intended steady-state operating model is:
 4. auto-apply current suggested labels where the provider flow supports it
 5. remove `INBOX` only for low-value or promotional Gmail mail
 6. produce a daily per-run report for that inbox
-7. leave only unlabeled or otherwise unresolved exceptions for manual follow-up
+7. show the user what happened in a minimizable inbox companion panel and daily dashboard
+8. let the user correct misclassifications from the inbox itself
+9. learn from that correction carefully, with confirmation before broader existing-message rewrites
+10. leave only unresolved or preference-sensitive cases for bounded follow-up
 
-Manual review remains available as a fallback path, not the default path.
+Manual review remains available as a fallback path, not the default path. The dashboard/workbench remains secondary support infrastructure, not the main product surface.
+
+## Primary Product Surface
+
+The first serious release surface should be:
+
+- a browser-based inbox companion sidebar attached to Gmail
+- minimizable when not needed
+- showing the currently selected email's classification, status, and a short plain-English reason
+- exposing `Correct / Teach` and unsubscribe actions when relevant
+- supporting short conversational acknowledgments and clarifying follow-up only when needed
+
+The sidebar should be robust and inbox-adjacent now, while preserving an architecture that could evolve toward a more magical thread-native feel later.
 
 ## Inbox Model
 
@@ -70,6 +89,8 @@ V2 should support:
 V2 should not force a merged unified inbox model first.
 
 The product should be able to tell the user what happened in Gmail and what happened in ProtonMail separately, even if both runs happen on the same day.
+
+The first launch target should still be Gmail-first. ProtonMail belongs in MVP+1, not as a blocker to the first serious Gmail release.
 
 ## Reporting model
 
@@ -87,6 +108,16 @@ Primary contents:
 - a short list of the unlabeled leftovers
 
 The daily report is not primarily an alert feed. It is an operational summary of what the assistant did.
+
+In the mature product, the daily dashboard should emphasize:
+
+- what came in
+- how the agent categorized it
+- what it auto-handled
+- what still needs attention
+- what unsubscribe opportunities it found
+
+Learning progress can appear as a small secondary section, but should not dominate the daily view.
 
 ### Weekly Report
 
@@ -118,15 +149,39 @@ Still out of scope for default autonomy:
 - unsubscribing from lists without explicit user selection or confirmation
 - provider-side ProtonMail mutation
 
+## Teaching Loop Rules
+
+When the user corrects the agent from the inbox:
+
+- the current email should be fixed immediately
+- the agent should respond briefly so the user knows it understood
+- the agent should say what it thinks it learned
+- if the inferred learning would change any other existing emails, it must surface that impact and ask for confirmation first
+- the user should be able to choose:
+  - apply only to this email
+  - apply to matching emails too
+  - use for future emails only
+  - refine the interpretation further
+- if the user refines the interpretation, the product should preserve the prior interpretation so the user can compare old vs revised understanding
+- if the user ignores a prompt, the system should keep working and leave the unresolved decision in a safe, batched follow-up state
+
+Prompting should stay bounded:
+
+- ideal day: `0`
+- normal acceptable day: `1-3`
+- heavy day: up to `5`
+
+Above that, the agent should batch and summarize instead of continuing to interrupt.
+
 ## Remaining roadmap
 
 Near-term product work now looks more like:
 
-1. tighten the current provider/account-aware operating model and artifact contracts
-2. improve the manual follow-up path for unlabeled and unsupported cases
-3. write clearer product and safety rules for subscription management
-4. decide whether ProtonMail should remain read-only or later gain bounded write actions
-5. consider combined cross-inbox reporting, scheduling, and multi-user support only if the one-user local workflow keeps proving useful
+1. ship the Gmail inbox companion sidebar as the primary product surface
+2. make in-inbox `Correct / Teach` conversational and immediate
+3. keep the daily dashboard and unsubscribe flows aligned with that inbox-native surface
+4. use the current workbench/review infrastructure as supporting product plumbing, not the destination UX
+5. add the founder's ProtonMail inbox in MVP+1 once the Gmail release flow is solid
 
 ## Non-goals for now
 
@@ -137,3 +192,9 @@ Do not assume immediate priority for:
 - merged cross-provider inbox UX
 - generic provider framework work beyond what the workflow actually needs
 - deleting or archiving mail automatically
+
+Do not let the product drift into:
+
+- a dashboard-first experience
+- a team/shared-inbox workflow
+- a generic all-provider platform before the Gmail release is solid

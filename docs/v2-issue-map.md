@@ -1,7 +1,7 @@
 # V2 Issue Map
 
 Status: Current candidate next-slice map
-Current as of: 2026-06-23
+Current as of: 2026-06-29
 Builds on: `docs/checkpoints/current-operating-model-2026-06-22.md`
 Current bounded PRD: `docs/prd.md`
 
@@ -20,63 +20,58 @@ The repo already proves the operating model through later slices beyond the orig
 - unsubscribe inventory and supported execution
 - maintenance refactors for UI responsibilities and artifact contracts
 
-The current bounded planning focus is Gmail trust hardening through `docs/prd.md` and `docs/issues/040-prove-bounded-gmail-autonomy-end-to-end.md`.
+The current bounded planning focus is the Gmail inbox companion release through `docs/prd.md`.
 
 ## Candidate Decision Lanes
 
-### Trust / Safety / Evaluation
+### Gmail Companion Surface
 
 Possible focus:
 
-- tighten the trust boundary for auto-action
-- define clearer eval policy and thresholds
-- make exception handling auditable and easier to inspect
+- build the Gmail companion sidebar shell
+- stabilize selected-email context and current-status rendering
+- make the inbox the primary product surface rather than the workbench
 
-### Exceptions / Review UX
-
-Possible focus:
-
-- improve the unlabeled-exception workflow
-- reduce friction in the local review and workbench path
-- make manual follow-up clearer for unsupported unsubscribe and edge cases
-
-### Reporting / Decision Support
+### In-Inbox Teaching Loop
 
 Possible focus:
 
-- make daily and weekly reports more decision-useful
-- add better trend, exception, and quality views
-- improve operator understanding of what changed and why
+- add `Correct / Teach` directly in Gmail
+- acknowledge user feedback in short conversational replies
+- preview broader impact before changing other existing emails
+- support refine-and-compare when the agent misunderstood feedback
 
-### Provider Boundary
-
-Possible focus:
-
-- keep ProtonMail read-only and tighten that contract
-- or explicitly decide what bounded ProtonMail write behavior, if any, should ever exist
-
-### Subscription / Unsubscribe Productization
+### Daily Summary / Unsubscribe
 
 Possible focus:
 
-- turn the inventory and execution slices into a clearer user-facing workflow
-- document stronger safety rules for unsubscribe execution and manual fallback
+- keep the sidebar useful on quiet days with a compact daily summary
+- surface unsubscribe opportunities in context
+- hand off cleanly to fuller dashboard and unsubscribe views when needed
+
+### Release Hardening
+
+Possible focus:
+
+- harden real-time selected-email continuity
+- enforce bounded prompting
+- verify graceful behavior when clarification prompts are ignored
+- prove the release flow against live Gmail browsing
 
 ## Selection Rule
 
 Prefer the next slice that:
 
 1. solves the most concrete current pain
-2. improves the trustable daily operating model directly
+2. moves the inbox-native Gmail release directly
 3. does not broaden provider risk or inbox-action scope without explicit approval
-4. is small enough to explain with one current PRD or scope note and one triaged issue
+4. is large enough to deliver a visible product step while still fitting in one current PRD and one triaged issue
 
 ## Next-Step Rule
 
 Before implementing from this map:
 
-1. identify the actual current pain
-2. run a focused grill on the smallest marketable and trustable next version
-3. write one current PRD or scope note for that slice
-4. triage the issue until it is ready
-5. then implement
+1. use `docs/prd.md` as the current Gmail release brief
+2. start with the sidebar-spine slice that freezes shared UI and selected-email contracts
+3. then parallelize the teaching-loop slice and the summary/unsubscribe slice
+4. finish with Gmail release hardening and supervised acceptance

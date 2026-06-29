@@ -134,6 +134,44 @@ class ProtonMailFetchCliTests(unittest.TestCase):
             self.assertEqual(processed_ids, ["founder-proton:pm-001"])
             self.assertIn("No new messages found", second_stdout.getvalue())
 
+    def test_main_decodes_rfc2047_sender_and_subject_headers(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            export_path = storage_dir / "proton_export.json"
+            export_path.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "pm-001",
+                            "mailbox": "inbox",
+                            "sender": "=?utf-8?q?Bj=C3=B6rn_from_Nuclino?= <hello@nuclino.com>",
+                            "subject": "=?utf-8?q?You=E2=80=99re_now_on_Jira_Free_plan?=",
+                            "date": "2026-06-19T08:00:00Z",
+                            "snippet": "Welcome.",
+                            "body": "Welcome.",
+                        }
+                    ]
+                )
+            )
+
+            exit_code = main(
+                [
+                    "--account-id",
+                    "founder-proton",
+                    "--storage-dir",
+                    temp_dir,
+                    "--source-path",
+                    str(export_path),
+                ],
+                stdout=io.StringIO(),
+            )
+
+            stored_batch = load_batch(storage_dir / "batches" / "founder-proton-batch-1.json")
+
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(stored_batch["items"][0]["sender"], "Björn from Nuclino <hello@nuclino.com>")
+            self.assertEqual(stored_batch["items"][0]["subject"], "You’re now on Jira Free plan")
+
 
 if __name__ == "__main__":
     unittest.main()

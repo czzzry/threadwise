@@ -1,0 +1,62 @@
+{
+  "batch_id": "teachable-review-batch",
+  "account_id": "founder-test",
+  "provider": "gmail",
+  "raw_messages": [
+    {
+      "id": "gmail-live-ashby",
+      "snippet": "A profile you follow has new activity.",
+      "labelIds": ["INBOX"],
+      "payload": {
+        "headers": [
+          {"name": "From", "value": "Ashby <notifications@ashbyhq.com>"},
+          {"name": "Subject", "value": "Portal reminder"},
+          {"name": "Date", "value": "Wed, 24 Jun 2026 09:00:00 +0000"}
+        ]
+      }
+    },
+    {
+      "id": "gmail-live-store",
+      "snippet": "Your recent order has shipped. View tracking details and receipt online.",
+      "labelIds": ["INBOX"],
+      "payload": {
+        "headers": [
+          {"name": "From", "value": "Store <orders@example.com>"},
+          {"name": "Subject", "value": "Your order is on the way"},
+          {"name": "Date", "value": "Wed, 24 Jun 2026 09:10:00 +0000"}
+        ]
+      }
+    }
+  ],
+  "fetch_failures": [],
+  "items": [
+    {
+      "source": "gmail",
+      "account_id": "founder-test",
+      "message_id": "gmail-live-ashby",
+      "sender": "Ashby <notifications@ashbyhq.com>",
+      "subject": "Portal reminder",
+      "date": "2026-06-24T09:00:00Z",
+      "snippet": "A profile you follow has new activity.",
+      "body": "A profile you follow has new activity.",
+      "interpretation": "Informational message with no confident category.",
+      "applied_labels": [],
+      "near_misses": [],
+      "confidence_band": "low"
+    },
+    {
+      "source": "gmail",
+      "account_id": "founder-test",
+      "message_id": "gmail-live-store",
+      "sender": "Store <orders@example.com>",
+      "subject": "Your order is on the way",
+      "date": "2026-06-24T09:10:00Z",
+      "snippet": "Your recent order has shipped. View tracking details and receipt online.",
+      "body": "Your recent order has shipped. View tracking details and receipt online.",
+      "interpretation": "Shipping confirmation for a recent online purchase.",
+      "applied_labels": ["shopping-order"],
+      "near_misses": ["receipt-billing"],
+      "confidence_band": "medium"
+    }
+  ]
+}

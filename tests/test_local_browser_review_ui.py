@@ -165,6 +165,200 @@ class LocalBrowserReviewUiTests(unittest.TestCase):
             self.assertIn("77.0%", page)
             self.assertIn("OpenAI vs your final result", page)
 
+    def test_workbench_surfaces_unified_review_queue_as_main_panel(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            output_dir = storage_dir / "classifier_eval"
+            runtime_dir = output_dir / "runtime_cascades"
+            runtime_dir.mkdir(parents=True, exist_ok=True)
+            (runtime_dir / "runtime-cascade-1.json").write_text(
+                json.dumps(
+                    {
+                        "generated_at": "2026-06-29T00:00:00Z",
+                        "providers": {
+                            "gmail": {
+                                "outcomes": [
+                                    {
+                                        "provider": "gmail",
+                                        "account_id": "founder-test",
+                                        "batch_id": "batch-1",
+                                        "message_id": "m-1",
+                                        "sender": "Vendor <vendor@example.com>",
+                                        "subject": "Quarterly update",
+                                        "sender_key": "vendor@example.com",
+                                        "subject_key": "quarterly update",
+                                        "stage": "llm-escalation",
+                                        "labels": ["newsletter"],
+                                        "llm_rationale": "Recurring update.",
+                                        "llm_confidence": "high",
+                                        "decision_provenance": {"llm_model": "gpt-test"},
+                                        "decision": {"confidence": "high", "safety_lane": "ordinary"},
+                                    }
+                                ]
+                            }
+                        },
+                    },
+                    indent=2,
+                )
+            )
+
+            app = LocalBrowserReviewApp(storage_dir, None)
+            page = app.render_page()
+
+            self.assertIn("Unified Review Queue", page)
+            self.assertIn("Runtime LLM candidate: gmail vendor@example.com", page)
+            self.assertIn("Refresh queue", page)
+
+    def test_workbench_surfaces_operational_readiness_panel(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            output_dir = storage_dir / "classifier_eval"
+            readiness_dir = output_dir / "operational_readiness_reports"
+            readiness_dir.mkdir(parents=True, exist_ok=True)
+            (readiness_dir / "operational-readiness-1.json").write_text(
+                json.dumps(
+                    {
+                        "overall_status": "WARN",
+                        "summary": {
+                            "latest_unresolved_rate": 0.1823,
+                            "latest_queue_pending_count": 7,
+                            "founder_resolved_gain_total": 9,
+                        },
+                        "reasons": ["Latest unresolved rate is still heavy."],
+                        "runs": [
+                            {
+                                "run_id": "runtime-cascade-1",
+                                "unresolved_rate": 0.1823,
+                                "caution_rate": 0.0456,
+                            }
+                        ],
+                    },
+                    indent=2,
+                )
+            )
+
+            app = LocalBrowserReviewApp(storage_dir, None)
+            page = app.render_page()
+
+            self.assertIn("Operational Readiness", page)
+            self.assertIn("WARN", page)
+            self.assertIn("18.23%", page)
+            self.assertIn("Refresh readiness", page)
+
+    def test_workbench_queue_api_can_refresh_and_approve_runtime_candidate(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            output_dir = storage_dir / "classifier_eval"
+            runtime_dir = output_dir / "runtime_cascades"
+            runtime_dir.mkdir(parents=True, exist_ok=True)
+            batch_dir = storage_dir / "batches"
+            batch_dir.mkdir(parents=True, exist_ok=True)
+            (batch_dir / "batch-1.json").write_text(
+                json.dumps(
+                    {
+                        "batch_id": "batch-1",
+                        "account_id": "founder-test",
+                        "provider": "gmail",
+                        "items": [
+                            {
+                                "message_id": "m-1",
+                                "sender": "Vendor <vendor@example.com>",
+                                "subject": "Quarterly update",
+                                "date": "2026-06-29T00:00:00Z",
+                                "snippet": "Update.",
+                                "body": "Update.",
+                            }
+                        ],
+                    },
+                    indent=2,
+                )
+            )
+            (runtime_dir / "runtime-cascade-1.json").write_text(
+                json.dumps(
+                    {
+                        "generated_at": "2026-06-29T00:00:00Z",
+                        "providers": {
+                            "gmail": {
+                                "outcomes": [
+                                    {
+                                        "provider": "gmail",
+                                        "account_id": "founder-test",
+                                        "batch_id": "batch-1",
+                                        "message_id": "m-1",
+                                        "sender": "Vendor <vendor@example.com>",
+                                        "subject": "Quarterly update",
+                                        "sender_key": "vendor@example.com",
+                                        "subject_key": "quarterly update",
+                                        "stage": "llm-escalation",
+                                        "labels": ["newsletter"],
+                                        "llm_rationale": "Recurring update.",
+                                        "llm_confidence": "high",
+                                        "decision_provenance": {"llm_model": "gpt-test"},
+                                        "decision": {"confidence": "high", "safety_lane": "ordinary"},
+                                    }
+                                ]
+                            }
+                        },
+                    },
+                    indent=2,
+                )
+            )
+
+            app = LocalBrowserReviewApp(storage_dir, None)
+            refresh_status, refresh_payload = app.handle_api_request("POST", "/api/unified-review-queue/refresh", {})
+            item_id = refresh_payload["items"][0]["item_id"]
+            action_status, action_payload = app.handle_api_request(
+                "POST",
+                f"/api/unified-review-queue/items/{item_id}/actions",
+                {"action": "approve"},
+            )
+
+            self.assertEqual(refresh_status, 200)
+            self.assertEqual(action_status, 200)
+            self.assertEqual(action_payload["status"], "approved")
+            rules_payload = json.loads((output_dir / "accepted_shadow_teachable_rules.json").read_text())
+            self.assertEqual(len(rules_payload["rules"]), 1)
+
+    def test_operational_readiness_api_refreshes_report(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            output_dir = storage_dir / "classifier_eval"
+            runtime_dir = output_dir / "runtime_cascades"
+            runtime_dir.mkdir(parents=True, exist_ok=True)
+            for index in range(1, 4):
+                (runtime_dir / f"runtime-cascade-{index}.json").write_text(
+                    json.dumps(
+                        {
+                            "generated_at": "2026-06-29T00:00:00Z",
+                            "summary": {
+                                "message_count": 100,
+                                "resolved_count": 90,
+                                "unresolved_count": 10,
+                                "accepted_memory_count": 30,
+                                "deterministic_count": 58,
+                                "llm_escalation_count": 2,
+                                "safety_review_count": 4,
+                            },
+                        },
+                        indent=2,
+                    )
+                )
+            (output_dir / "unified_review_queue.json").write_text(
+                json.dumps({"summary": {"pending_count": 5, "pending_by_type": {"founder-question": 1}}}, indent=2)
+            )
+            founder_dir = output_dir / "founder_answer_applications"
+            founder_dir.mkdir(parents=True, exist_ok=True)
+            (founder_dir / "application-1.json").write_text(
+                json.dumps({"question_id": "question-1", "impact_delta": {"resolved_gain": 5}}, indent=2)
+            )
+
+            app = LocalBrowserReviewApp(storage_dir, None)
+            status_code, payload = app.handle_api_request("POST", "/api/operational-readiness/refresh", {})
+
+            self.assertEqual(status_code, 200)
+            self.assertEqual(payload["overall_status"], "PASS")
+            self.assertTrue((output_dir / "operational_readiness_reports").exists())
+
     def test_workbench_lists_grouped_unsubscribe_candidates_and_excludes_transactional_mail(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
@@ -1155,6 +1349,583 @@ class LocalBrowserReviewUiTests(unittest.TestCase):
             self.assertEqual(response["items"][0]["review_state"], "pending")
             self.assertIn("EA/Account", response["allowed_labels"])
 
+    def test_teachable_rule_preview_requires_selected_examples_and_shows_batch_matches(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            self._write_batch(
+                Path(temp_dir),
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": "Ashby <notifications@ashbyhq.com>",
+                        "subject": "Portal reminder",
+                        "date": "2026-06-24T09:00:00Z",
+                        "interpretation": "Informational message with no confident category.",
+                        "applied_labels": [],
+                        "near_misses": [],
+                        "confidence_band": "low",
+                    },
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-002",
+                        "sender": "Store <orders@example.com>",
+                        "subject": "Order update",
+                        "date": "2026-06-24T09:10:00Z",
+                        "interpretation": "A routine order confirmation.",
+                        "applied_labels": ["shopping-order"],
+                        "near_misses": [],
+                        "confidence_band": "medium",
+                    },
+                ],
+            )
+
+            app = LocalBrowserReviewApp(Path(temp_dir), "founder-test-batch-1")
+            status_code, response = app.handle_api_request(
+                "POST",
+                "/api/teachable-rules/preview",
+                {
+                    "batch_id": "founder-test-batch-1",
+                    "instruction": "anything from Ashby should be job-related and kept visible",
+                    "message_ids": ["gmail-live-001"],
+                },
+            )
+
+            self.assertEqual(status_code, 200)
+            self.assertEqual(response["rule"]["label"], "job-related")
+            self.assertEqual(response["match_count"], 1)
+            self.assertEqual(response["matches"][0]["message_id"], "gmail-live-001")
+            self.assertEqual(response["matches"][0]["labels_after"], ["job-related"])
+
+    def test_teachable_rule_save_persists_memory_and_reloaded_batch_explains_match(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": "Ashby <notifications@ashbyhq.com>",
+                        "subject": "Portal reminder",
+                        "date": "2026-06-24T09:00:00Z",
+                        "interpretation": "Informational message with no confident category.",
+                        "applied_labels": [],
+                        "near_misses": [],
+                        "confidence_band": "low",
+                    }
+                ],
+            )
+
+            app = LocalBrowserReviewApp(storage_dir, "founder-test-batch-1")
+            status_code, response = app.handle_api_request(
+                "POST",
+                "/api/teachable-rules",
+                {
+                    "batch_id": "founder-test-batch-1",
+                    "instruction": "anything from Ashby should be job-related and kept visible",
+                    "message_ids": ["gmail-live-001"],
+                },
+            )
+            reloaded_status, reloaded = app.handle_api_request("GET", "/api/batches/founder-test-batch-1")
+            rule_file = storage_dir / "teachable_classification_rules.json"
+            rule_payload = json.loads(rule_file.read_text())
+
+            self.assertEqual(status_code, 200)
+            self.assertEqual(response["rule"]["source_examples"][0]["message_id"], "gmail-live-001")
+            self.assertEqual(rule_payload["rules"][0]["label"], "job-related")
+            self.assertEqual(reloaded_status, 200)
+            self.assertEqual(reloaded["items"][0]["suggested_labels"], ["EA/Work"])
+            self.assertEqual(reloaded["items"][0]["matched_teachable_rules"][0]["id"], "teach-001")
+
+    def test_teachable_rule_save_rejects_low_value_labels(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            self._write_batch(
+                Path(temp_dir),
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": "Spammy <promo@example.com>",
+                        "subject": "Promo blast",
+                        "date": "2026-06-24T09:00:00Z",
+                        "interpretation": "Informational message with no confident category.",
+                        "applied_labels": [],
+                        "near_misses": [],
+                        "confidence_band": "low",
+                    }
+                ],
+            )
+
+            app = LocalBrowserReviewApp(Path(temp_dir), "founder-test-batch-1")
+            status_code, response = app.handle_api_request(
+                "POST",
+                "/api/teachable-rules",
+                {
+                    "batch_id": "founder-test-batch-1",
+                    "instruction": "anything from promo@example.com should be spam-low-value",
+                    "message_ids": ["gmail-live-001"],
+                },
+            )
+
+            self.assertEqual(status_code, 400)
+            self.assertIn("cannot create low-value", response["error"])
+
+    def test_memory_proposal_preview_and_approve_persist_rule_with_provenance(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": '"OpenAI" <noreply@tm.openai.com>',
+                        "subject": "[Task Update] Weekly reflection",
+                        "date": "2026-06-24T09:00:00Z",
+                        "interpretation": "Informational message with no confident category.",
+                        "applied_labels": [],
+                        "near_misses": [],
+                        "confidence_band": "low",
+                        "final_labels": ["newsletter"],
+                    },
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-002",
+                        "sender": '"OpenAI" <noreply@tm.openai.com>',
+                        "subject": "[Task Update] Daily notes",
+                        "date": "2026-06-24T10:00:00Z",
+                        "interpretation": "Informational message with no confident category.",
+                        "applied_labels": [],
+                        "near_misses": [],
+                        "confidence_band": "low",
+                    },
+                ],
+            )
+
+            app = LocalBrowserReviewApp(storage_dir, "founder-test-batch-1")
+            preview_status, preview = app.handle_api_request(
+                "POST",
+                "/api/memory-proposals/preview",
+                {
+                    "batch_id": "founder-test-batch-1",
+                    "message_ids": ["gmail-live-001"],
+                    "scope": "sender-cluster",
+                    "label": "newsletter",
+                    "explanation": "Task updates should be readable later.",
+                },
+            )
+            approve_status, approved = app.handle_api_request(
+                "POST",
+                "/api/memory-proposals/approve",
+                {
+                    "proposal_id": preview["proposal"]["id"],
+                    "notes": "Approve proposal.",
+                },
+            )
+            rule_payload = json.loads((storage_dir / "teachable_classification_rules.json").read_text())
+
+            self.assertEqual(preview_status, 200)
+            self.assertEqual(preview["proposal"]["scope"], "sender-cluster")
+            self.assertGreaterEqual(preview["proposal"]["preview"]["match_count"], 1)
+            self.assertEqual(approve_status, 200)
+            self.assertEqual(approved["proposal"]["status"], "approved")
+            self.assertEqual(rule_payload["rules"][0]["provenance"]["proposal_id"], preview["proposal"]["id"])
+            self.assertEqual(rule_payload["rules"][0]["scope"], "sender-cluster")
+
+    def test_safety_disposition_preview_and_approve_persist_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": '"Microsoft" <account-security-noreply@accountprotection.microsoft.com>',
+                        "subject": "Your verification code 123456",
+                        "date": "2026-06-24T09:00:00Z",
+                        "interpretation": "Account-security message.",
+                        "applied_labels": ["account-security"],
+                        "near_misses": [],
+                        "confidence_band": "medium",
+                    },
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-002",
+                        "sender": '"Microsoft" <account-security-noreply@accountprotection.microsoft.com>',
+                        "subject": "Your verification code 987654",
+                        "date": "2026-06-24T10:00:00Z",
+                        "interpretation": "Account-security message.",
+                        "applied_labels": ["account-security"],
+                        "near_misses": [],
+                        "confidence_band": "medium",
+                    },
+                ],
+            )
+
+            app = LocalBrowserReviewApp(storage_dir, "founder-test-batch-1")
+            preview_status, preview = app.handle_api_request(
+                "POST",
+                "/api/safety-dispositions/preview",
+                {
+                    "batch_id": "founder-test-batch-1",
+                    "message_ids": ["gmail-live-001"],
+                    "scope": "sender-cluster",
+                    "disposition": "legitimate-security",
+                    "explanation": "Expected Microsoft verification flow.",
+                },
+            )
+            approve_status, approved = app.handle_api_request(
+                "POST",
+                "/api/safety-dispositions/approve",
+                {
+                    "disposition_id": preview["disposition"]["id"],
+                    "notes": "Approve safety disposition.",
+                },
+            )
+            artifact_payload = json.loads((storage_dir / "safety_dispositions.json").read_text())
+
+            self.assertEqual(preview_status, 200)
+            self.assertEqual(preview["disposition"]["scope"], "sender-cluster")
+            self.assertGreaterEqual(preview["disposition"]["preview"]["match_count"], 1)
+            self.assertEqual(approve_status, 200)
+            self.assertEqual(approved["disposition"]["status"], "approved")
+            self.assertEqual(artifact_payload["dispositions"][0]["disposition"], "legitimate-security")
+
+    def test_memory_proposal_preview_uses_batch_provider_and_account_for_outlookmail(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                items=[
+                    {
+                        "source": "outlookmail",
+                        "account_id": "founder-hotmail",
+                        "message_id": "outlook-live-001",
+                        "sender": "Utopia",
+                        "subject": "Utopia Age 91 - Age of Remembrance",
+                        "date": "2026-06-24T09:00:00Z",
+                        "interpretation": "Unresolved game update.",
+                        "applied_labels": [],
+                        "near_misses": [],
+                        "confidence_band": "low",
+                    },
+                    {
+                        "source": "outlookmail",
+                        "account_id": "founder-hotmail",
+                        "message_id": "outlook-live-002",
+                        "sender": "Utopia",
+                        "subject": "Utopia Age 92 - Age of Ancestry",
+                        "date": "2026-06-24T10:00:00Z",
+                        "interpretation": "Unresolved game update.",
+                        "applied_labels": [],
+                        "near_misses": [],
+                        "confidence_band": "low",
+                    },
+                ],
+            )
+
+            app = LocalBrowserReviewApp(storage_dir, "founder-test-batch-1")
+            preview_status, preview = app.handle_api_request(
+                "POST",
+                "/api/memory-proposals/preview",
+                {
+                    "batch_id": "founder-test-batch-1",
+                    "message_ids": ["outlook-live-001"],
+                    "scope": "sender",
+                    "label": "spam-low-value",
+                    "explanation": "Founder regrets signing up for this game mail.",
+                },
+            )
+
+            self.assertEqual(preview_status, 200)
+            self.assertEqual(preview["proposal"]["provider"], "outlookmail")
+            self.assertEqual(preview["proposal"]["account_id"], "founder-hotmail")
+            self.assertGreaterEqual(preview["proposal"]["preview"]["match_count"], 2)
+
+    def test_safety_disposition_preview_uses_batch_provider_and_account_for_outlookmail(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                items=[
+                    {
+                        "source": "outlookmail",
+                        "account_id": "founder-hotmail",
+                        "message_id": "outlook-live-001",
+                        "sender": "orderConfirmation",
+                        "subject": "ConfirmReceipt",
+                        "date": "2026-06-24T09:00:00Z",
+                        "interpretation": "Suspicious order scam.",
+                        "applied_labels": ["shopping-order"],
+                        "near_misses": [],
+                        "confidence_band": "medium",
+                    },
+                    {
+                        "source": "outlookmail",
+                        "account_id": "founder-hotmail",
+                        "message_id": "outlook-live-002",
+                        "sender": "orderConfirmation",
+                        "subject": "YourPackageConfirmation:abc123",
+                        "date": "2026-06-24T10:00:00Z",
+                        "interpretation": "Suspicious package scam.",
+                        "applied_labels": ["shopping-order"],
+                        "near_misses": [],
+                        "confidence_band": "medium",
+                    },
+                ],
+            )
+
+            app = LocalBrowserReviewApp(storage_dir, "founder-test-batch-1")
+            preview_status, preview = app.handle_api_request(
+                "POST",
+                "/api/safety-dispositions/preview",
+                {
+                    "batch_id": "founder-test-batch-1",
+                    "message_ids": ["outlook-live-001"],
+                    "scope": "sender",
+                    "disposition": "phishing",
+                    "explanation": "Fake order and package scam family.",
+                },
+            )
+
+            self.assertEqual(preview_status, 200)
+            self.assertEqual(preview["disposition"]["provider"], "outlookmail")
+            self.assertEqual(preview["disposition"]["account_id"], "founder-hotmail")
+            self.assertGreaterEqual(preview["disposition"]["preview"]["match_count"], 2)
+
+    def test_safety_disposition_preview_supports_family_cluster_scope(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                items=[
+                    {
+                        "source": "outlookmail",
+                        "account_id": "founder-hotmail",
+                        "message_id": "outlook-live-001",
+                        "sender": "UPS41538",
+                        "subject": "Package",
+                        "date": "2026-06-24T09:00:00Z",
+                        "snippet": "Package Delivery Notification Delivery on Hold Tracking ID# 1Z416074275839315 Confirm Address",
+                        "body": "Package Delivery Notification Delivery on Hold Tracking ID# 1Z416074275839315 Confirm Address",
+                        "interpretation": "Suspicious shipping scam.",
+                        "applied_labels": [],
+                        "near_misses": [],
+                        "confidence_band": "low",
+                    },
+                    {
+                        "source": "outlookmail",
+                        "account_id": "founder-hotmail",
+                        "message_id": "outlook-live-002",
+                        "sender": "EXPDeIivery",
+                        "subject": "Fw: lD#es-09898",
+                        "date": "2026-06-24T10:00:00Z",
+                        "snippet": "Express Delivery Notice Package Delivery Suspended Tracking Number: #zm-2038425426 Confirm Address",
+                        "body": "Express Delivery Notice Package Delivery Suspended Tracking Number: #zm-2038425426 Confirm Address",
+                        "interpretation": "Suspicious shipping scam.",
+                        "applied_labels": [],
+                        "near_misses": [],
+                        "confidence_band": "low",
+                    },
+                    {
+                        "source": "outlookmail",
+                        "account_id": "founder-hotmail",
+                        "message_id": "outlook-live-003",
+                        "sender": "CA.77",
+                        "subject": "Order",
+                        "date": "2026-06-24T11:00:00Z",
+                        "snippet": "UPS You Tracking Order:#eJy-09973260 You have (1) message from us. CONFIRM NOW!",
+                        "body": "UPS You Tracking Order:#eJy-09973260 You have (1) message from us. CONFIRM NOW!",
+                        "interpretation": "Suspicious shipping scam.",
+                        "applied_labels": [],
+                        "near_misses": [],
+                        "confidence_band": "low",
+                    },
+                ],
+            )
+
+            app = LocalBrowserReviewApp(storage_dir, "founder-test-batch-1")
+            preview_status, preview = app.handle_api_request(
+                "POST",
+                "/api/safety-dispositions/preview",
+                {
+                    "batch_id": "founder-test-batch-1",
+                    "message_ids": ["outlook-live-001", "outlook-live-002"],
+                    "scope": "family-cluster",
+                    "disposition": "phishing",
+                    "explanation": "Spoofed shipping notices asking the founder to confirm delivery details.",
+                },
+            )
+
+            self.assertEqual(preview_status, 200)
+            self.assertEqual(preview["disposition"]["scope"], "family-cluster")
+            self.assertIn("delivery", preview["disposition"]["match_signals"]["content_terms"])
+            self.assertGreaterEqual(preview["disposition"]["preview"]["match_count"], 3)
+
+    def test_batch_page_renders_memory_proposal_controls(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": '"OpenAI" <noreply@tm.openai.com>',
+                        "subject": "[Task Update] Weekly reflection",
+                        "date": "2026-06-24T09:00:00Z",
+                        "interpretation": "Informational message with no confident category.",
+                        "applied_labels": [],
+                        "near_misses": [],
+                        "confidence_band": "low",
+                    }
+                ],
+            )
+
+            app = LocalBrowserReviewApp(storage_dir, "founder-test-batch-1")
+            page = app.render_page()
+
+            self.assertIn("Preview memory proposal", page)
+            self.assertIn("Approve memory proposal", page)
+            self.assertIn("memory-proposal-scope", page)
+            self.assertIn("memory-proposal-label", page)
+            self.assertIn("Preview safety disposition", page)
+            self.assertIn("approve-safety-disposition", page)
+            self.assertIn("safety-disposition-value", page)
+            self.assertIn("Reviewed family cluster", page)
+            self.assertIn("Use this when the email is scam, phishing, suspicious, or legitimate security mail.", page)
+
+    def test_batch_page_prioritizes_safety_like_pending_items_and_renders_badges(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": "Store <orders@example.com>",
+                        "subject": "Order update",
+                        "date": "2026-06-24T09:00:00Z",
+                        "interpretation": "Routine order update.",
+                        "applied_labels": ["shopping-order"],
+                        "near_misses": [],
+                        "confidence_band": "medium",
+                    },
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-002",
+                        "sender": '"Microsoft" <account-security-noreply@accountprotection.microsoft.com>',
+                        "subject": "Your verification code 123456",
+                        "date": "2026-06-24T10:00:00Z",
+                        "interpretation": "Account-security message.",
+                        "applied_labels": ["account-security"],
+                        "near_misses": [],
+                        "confidence_band": "medium",
+                    },
+                ],
+            )
+            (storage_dir / "safety_dispositions.json").write_text(
+                json.dumps(
+                    {
+                        "status": "PROTOTYPE - local safety review dispositions",
+                        "generated_at": "2026-06-28T00:00:00Z",
+                        "disposition_count": 1,
+                        "dispositions": [
+                            {
+                                "id": "safety-gmail-sender-legitimate-security-account-security-noreply-accountprotection-microsoft-com",
+                                "provider": "gmail",
+                                "account_id": "founder-test",
+                                "source_batch_id": "seed-batch",
+                                "source_message_ids": ["seed-1"],
+                                "scope": "sender",
+                                "disposition": "legitimate-security",
+                                "source_examples": [
+                                    {
+                                        "provider": "gmail",
+                                        "message_id": "seed-1",
+                                        "sender": '"Microsoft" <account-security-noreply@accountprotection.microsoft.com>',
+                                        "subject": "Your verification code 999999",
+                                        "date": "2026-06-27T00:00:00Z",
+                                        "final_labels": ["account-security"],
+                                    }
+                                ],
+                                "explanation": "Expected verification flow.",
+                                "preview": {"match_count": 1, "matches": []},
+                                "status": "approved",
+                                "created_at": "2026-06-28T00:00:00Z",
+                                "updated_at": "2026-06-28T00:00:00Z",
+                                "review_notes": "Approved by founder.",
+                            }
+                        ],
+                    },
+                    indent=2,
+                )
+            )
+
+            app = LocalBrowserReviewApp(storage_dir, "founder-test-batch-1")
+            page = app.render_page()
+
+            self.assertIn("Top Safety Targets", page)
+            self.assertIn("Safety priority", page)
+            self.assertIn("approved-safety-memory", page)
+            self.assertIn("legitimate-security", page)
+            self.assertLess(page.find("gmail-live-002"), page.find("gmail-live-001"))
+
+    def test_disable_teachable_rule_endpoint_marks_rule_disabled(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": "Ashby <notifications@ashbyhq.com>",
+                        "subject": "Portal reminder",
+                        "date": "2026-06-24T09:00:00Z",
+                        "interpretation": "Informational message with no confident category.",
+                        "applied_labels": [],
+                        "near_misses": [],
+                        "confidence_band": "low",
+                    }
+                ],
+            )
+
+            app = LocalBrowserReviewApp(storage_dir, "founder-test-batch-1")
+            save_status, saved = app.handle_api_request(
+                "POST",
+                "/api/teachable-rules",
+                {
+                    "batch_id": "founder-test-batch-1",
+                    "instruction": "anything from Ashby should be job-related and kept visible",
+                    "message_ids": ["gmail-live-001"],
+                },
+            )
+            disable_status, disabled = app.handle_api_request(
+                "POST",
+                f"/api/teachable-rules/{saved['rule']['id']}/disable",
+                {"reason": "Too broad."},
+            )
+
+            self.assertEqual(save_status, 200)
+            self.assertEqual(disable_status, 200)
+            self.assertFalse(disabled["rule"]["enabled"])
+            self.assertEqual(disabled["rule"]["disabled_reason"], "Too broad.")
+
     def test_decision_post_persists_review_choice_and_updates_summary(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             batch_path = self._write_batch(
@@ -1432,13 +2203,19 @@ class LocalBrowserReviewUiTests(unittest.TestCase):
         return self._write_named_batch(storage_dir, "founder-test-batch-1", items)
 
     def _write_named_batch(self, storage_dir: Path, batch_id: str, items: list[dict]) -> Path:
+        item_account_ids = {
+            item.get("account_id")
+            for item in items
+            if item.get("account_id")
+        }
+        batch_account_id = next(iter(item_account_ids)) if len(item_account_ids) == 1 else "founder-test"
         batch_path = storage_dir / "batches" / f"{batch_id}.json"
         batch_path.parent.mkdir(parents=True, exist_ok=True)
         batch_path.write_text(
             json.dumps(
                 {
                     "batch_id": batch_id,
-                    "account_id": "founder-test",
+                    "account_id": batch_account_id,
                     "raw_messages": [
                         {
                             "id": item["message_id"],

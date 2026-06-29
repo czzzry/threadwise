@@ -32,6 +32,10 @@ tmp/
 .lavish/demo-ui-storage/
 data/gmail_fetch/
 data/gmail_credentials/
+data/classifier_eval/
+data/outlookmail_fetch/
+data/outlookmail_credentials/
+data/protonmail_fetch/
 data/protonmail_credentials/
 data/private/
 outputs/private/

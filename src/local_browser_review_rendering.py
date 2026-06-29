@@ -1,9 +1,13 @@
 import json
 from collections import Counter
 from html import escape
+from pathlib import Path
 
-from src.label_taxonomy import allowed_gmail_labels, gmail_label_name
+from src.label_taxonomy import CANONICAL_LABEL_ORDER, allowed_gmail_labels, gmail_label_name
+from src.local_artifacts import safety_dispositions_path
 from src.local_batch_summary import load_batch, summarize_batch
+from src.safety_disposition_store import SafetyDispositionStore, approved_safety_context, matches_safety_context
+from src.sender_utils import normalized_sender_email
 from src.trusted_sender_store import TrustedSenderStore
 
 
@@ -119,6 +123,18 @@ class LocalBrowserReviewRenderingMixin:
     .checkbox { margin-top: 6px; width: 18px; height: 18px; }
     #fetch-status { position: sticky; top: 0; z-index: 5; }
     .status-banner { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; border-radius: 12px; padding: 12px 14px; margin: 12px 0 20px; }
+    .teaching-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, 0.8fr); gap: 12px; align-items: start; }
+    .teaching-input { width: 100%; min-height: 92px; border: 1px solid var(--line); border-radius: 12px; padding: 10px; font: inherit; background: #fffdfa; }
+    .teaching-preview { border: 1px dashed var(--line); border-radius: 12px; padding: 12px; background: #fcf8f0; min-height: 80px; }
+    .teaching-select, .teaching-label-select { width: 100%; border: 1px solid var(--line); border-radius: 12px; padding: 10px; font: inherit; background: #fffdfa; }
+    .teaching-subgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+    .teach-select { display: inline-flex; align-items: center; gap: 8px; margin: 8px 0; }
+    .rule-match { background: var(--accent-soft); color: var(--accent); border: 1px solid #9dd8ca; }
+    .rule-inline-actions { display: inline-flex; gap: 6px; margin-left: 8px; }
+    .tiny-action { border: 0; border-radius: 999px; padding: 4px 8px; cursor: pointer; background: #ebe4d7; color: var(--ink); font-size: 0.78rem; }
+    .safety-priority { background: #fff4e5; border: 1px solid #f59e0b; color: #92400e; }
+    .safety-priority-card { border-color: #f59e0b; box-shadow: 0 10px 30px rgba(245, 158, 11, 0.12); }
+    @media (max-width: 760px) { .teaching-grid { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
@@ -236,6 +252,300 @@ class LocalBrowserReviewRenderingMixin:
       }
       window.location.href = `/?evaluation_id=${encodeURIComponent(payload.evaluation_id)}`;
     }
+    function selectedTeachingMessageIds() {
+      return [...document.querySelectorAll(".teach-example-checkbox:checked")].map((checkbox) => checkbox.dataset.messageId);
+    }
+    async function previewTeachingRule() {
+      const statusNode = document.getElementById("fetch-status");
+      const previewNode = document.getElementById("teaching-preview");
+      const instructionNode = document.getElementById("teaching-instruction");
+      const payload = {
+        batch_id: "__BATCH_ID__",
+        instruction: instructionNode ? instructionNode.value : "",
+        message_ids: selectedTeachingMessageIds()
+      };
+      const response = await fetch("/api/teachable-rules/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const responsePayload = await response.json();
+      if (!response.ok) {
+        if (statusNode) {
+          statusNode.textContent = responsePayload.error || "Could not preview teaching rule.";
+        }
+        if (previewNode) {
+          previewNode.textContent = responsePayload.error || "Could not preview teaching rule.";
+        }
+        return;
+      }
+      if (statusNode) {
+        statusNode.textContent = `Previewed rule ${responsePayload.rule.id}: ${responsePayload.match_count} matches in this batch.`;
+      }
+      if (previewNode) {
+        const matches = responsePayload.matches.map((match) => `${match.subject || match.message_id} -> ${match.labels_after.join(", ") || "(none)"}`);
+        previewNode.innerHTML = `<strong>${responsePayload.match_count} matches in this batch</strong><div class="meta">${matches.length ? matches.join("<br>") : "No current batch emails matched."}</div>`;
+      }
+    }
+    async function saveTeachingRule() {
+      const statusNode = document.getElementById("fetch-status");
+      const instructionNode = document.getElementById("teaching-instruction");
+      const payload = {
+        batch_id: "__BATCH_ID__",
+        instruction: instructionNode ? instructionNode.value : "",
+        message_ids: selectedTeachingMessageIds()
+      };
+      const response = await fetch("/api/teachable-rules", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const responsePayload = await response.json();
+      if (!response.ok) {
+        if (statusNode) {
+          statusNode.textContent = responsePayload.error || "Could not save teaching rule.";
+        }
+        return;
+      }
+      if (statusNode) {
+        statusNode.textContent = `Saved teaching rule ${responsePayload.rule.id}. Reloading batch with saved-rule matches.`;
+      }
+      window.location.reload();
+    }
+    async function previewMemoryProposal() {
+      const statusNode = document.getElementById("fetch-status");
+      const previewNode = document.getElementById("teaching-preview");
+      const explanationNode = document.getElementById("memory-proposal-explanation");
+      const scopeNode = document.getElementById("memory-proposal-scope");
+      const labelNode = document.getElementById("memory-proposal-label");
+      const payload = {
+        batch_id: "__BATCH_ID__",
+        message_ids: selectedTeachingMessageIds(),
+        scope: scopeNode ? scopeNode.value : "sender-cluster",
+        label: labelNode ? labelNode.value : "newsletter",
+        explanation: explanationNode ? explanationNode.value : ""
+      };
+      const response = await fetch("/api/memory-proposals/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const responsePayload = await response.json();
+      if (!response.ok) {
+        if (statusNode) {
+          statusNode.textContent = responsePayload.error || "Could not preview memory proposal.";
+        }
+        if (previewNode) {
+          previewNode.textContent = responsePayload.error || "Could not preview memory proposal.";
+        }
+        return;
+      }
+      if (statusNode) {
+        statusNode.textContent = `Prepared ${responsePayload.proposal.scope} memory proposal with ${responsePayload.proposal.preview.match_count} affected emails.`;
+      }
+      if (previewNode) {
+        previewNode.dataset.proposalId = responsePayload.proposal.id;
+        const matches = (responsePayload.proposal.preview.matches || []).map((match) => `${match.subject || match.message_id} -> ${match.labels_after.join(", ") || "(none)"}`);
+        previewNode.innerHTML = `
+          <strong>Proposal ready: ${escapeHtml(responsePayload.proposal.scope)} -> ${escapeHtml(responsePayload.proposal.label)}</strong>
+          <div class="meta">Instruction: ${escapeHtml(responsePayload.proposal.instruction)}</div>
+          <div class="meta">Preview matches: ${responsePayload.proposal.preview.match_count}</div>
+          <div class="meta">${matches.length ? matches.join("<br>") : "No current stored emails matched."}</div>
+        `;
+      }
+    }
+    async function approveMemoryProposal() {
+      const statusNode = document.getElementById("fetch-status");
+      const previewNode = document.getElementById("teaching-preview");
+      const proposalId = previewNode ? previewNode.dataset.proposalId : "";
+      if (!proposalId) {
+        if (statusNode) {
+          statusNode.textContent = "Preview a memory proposal first.";
+        }
+        return;
+      }
+      const response = await fetch("/api/memory-proposals/approve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ proposal_id: proposalId, notes: "Approved from browser workbench." })
+      });
+      const responsePayload = await response.json();
+      if (!response.ok) {
+        if (statusNode) {
+          statusNode.textContent = responsePayload.error || "Could not approve memory proposal.";
+        }
+        return;
+      }
+      if (statusNode) {
+        statusNode.textContent = `Approved memory proposal ${responsePayload.proposal.id}. Reloading batch.`;
+      }
+      window.location.reload();
+    }
+    async function rejectMemoryProposal() {
+      const statusNode = document.getElementById("fetch-status");
+      const previewNode = document.getElementById("teaching-preview");
+      const proposalId = previewNode ? previewNode.dataset.proposalId : "";
+      if (!proposalId) {
+        if (statusNode) {
+          statusNode.textContent = "Preview a memory proposal first.";
+        }
+        return;
+      }
+      const response = await fetch("/api/memory-proposals/reject", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ proposal_id: proposalId, notes: "Rejected from browser workbench." })
+      });
+      const responsePayload = await response.json();
+      if (!response.ok) {
+        if (statusNode) {
+          statusNode.textContent = responsePayload.error || "Could not reject memory proposal.";
+        }
+        return;
+      }
+      if (statusNode) {
+        statusNode.textContent = `Rejected memory proposal ${responsePayload.proposal.id}.`;
+      }
+      if (previewNode) {
+        previewNode.dataset.proposalId = "";
+      }
+    }
+    async function previewSafetyDisposition() {
+      const statusNode = document.getElementById("fetch-status");
+      const previewNode = document.getElementById("safety-preview");
+      const explanationNode = document.getElementById("safety-disposition-explanation");
+      const scopeNode = document.getElementById("safety-disposition-scope");
+      const dispositionNode = document.getElementById("safety-disposition-value");
+      const payload = {
+        batch_id: "__BATCH_ID__",
+        message_ids: selectedTeachingMessageIds(),
+        scope: scopeNode ? scopeNode.value : "sender-cluster",
+        disposition: dispositionNode ? dispositionNode.value : "phishing",
+        explanation: explanationNode ? explanationNode.value : ""
+      };
+      const response = await fetch("/api/safety-dispositions/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const responsePayload = await response.json();
+      if (!response.ok) {
+        if (statusNode) {
+          statusNode.textContent = responsePayload.error || "Could not preview safety disposition.";
+        }
+        if (previewNode) {
+          previewNode.textContent = responsePayload.error || "Could not preview safety disposition.";
+        }
+        return;
+      }
+      if (statusNode) {
+        statusNode.textContent = `Prepared ${responsePayload.disposition.disposition} safety disposition with ${responsePayload.disposition.preview.match_count} affected emails.`;
+      }
+      if (previewNode) {
+        previewNode.dataset.dispositionId = responsePayload.disposition.id;
+        const exampleSenders = [...new Set((responsePayload.disposition.source_examples || []).map((example) => example.sender).filter(Boolean))];
+        const signalTerms = responsePayload.disposition.match_signals || {};
+        const signalSummary = [
+          ...(signalTerms.subject_terms || []),
+          ...(signalTerms.content_terms || [])
+        ].slice(0, 8);
+        const matches = (responsePayload.disposition.preview.matches || []).map((match) => {
+          const sender = match.sender ? `${match.sender} - ` : "";
+          return `${sender}${match.subject || match.message_id}`;
+        });
+        previewNode.innerHTML = `
+          <strong>Safety review ready: ${escapeHtml(responsePayload.disposition.disposition)}</strong>
+          <div class="meta">Scope: ${escapeHtml(responsePayload.disposition.scope)}</div>
+          <div class="meta">Provider/account: ${escapeHtml(responsePayload.disposition.provider)} / ${escapeHtml(responsePayload.disposition.account_id || "(none)")}</div>
+          <div class="meta">Examples: ${exampleSenders.length ? exampleSenders.map(escapeHtml).join(", ") : "(none)"}</div>
+          <div class="meta">Signals: ${signalSummary.length ? signalSummary.map(escapeHtml).join(", ") : "(none)"}</div>
+          <div class="meta">Why: ${escapeHtml(responsePayload.disposition.explanation || "No explanation provided.")}</div>
+          <div class="meta">Preview matches: ${responsePayload.disposition.preview.match_count}</div>
+          <div class="meta">${matches.length ? matches.join("<br>") : "No current stored emails matched."}</div>
+        `;
+      }
+    }
+    async function approveSafetyDisposition() {
+      const statusNode = document.getElementById("fetch-status");
+      const previewNode = document.getElementById("safety-preview");
+      const dispositionId = previewNode ? previewNode.dataset.dispositionId : "";
+      if (!dispositionId) {
+        if (statusNode) {
+          statusNode.textContent = "Preview a safety disposition first.";
+        }
+        return;
+      }
+      const response = await fetch("/api/safety-dispositions/approve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ disposition_id: dispositionId, notes: "Approved from browser workbench." })
+      });
+      const responsePayload = await response.json();
+      if (!response.ok) {
+        if (statusNode) {
+          statusNode.textContent = responsePayload.error || "Could not approve safety disposition.";
+        }
+        return;
+      }
+      if (statusNode) {
+        statusNode.textContent = `Approved safety disposition ${responsePayload.disposition.id}.`;
+      }
+      if (previewNode) {
+        previewNode.dataset.dispositionId = responsePayload.disposition.id;
+      }
+    }
+    async function rejectSafetyDisposition() {
+      const statusNode = document.getElementById("fetch-status");
+      const previewNode = document.getElementById("safety-preview");
+      const dispositionId = previewNode ? previewNode.dataset.dispositionId : "";
+      if (!dispositionId) {
+        if (statusNode) {
+          statusNode.textContent = "Preview a safety disposition first.";
+        }
+        return;
+      }
+      const response = await fetch("/api/safety-dispositions/reject", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ disposition_id: dispositionId, notes: "Rejected from browser workbench." })
+      });
+      const responsePayload = await response.json();
+      if (!response.ok) {
+        if (statusNode) {
+          statusNode.textContent = responsePayload.error || "Could not reject safety disposition.";
+        }
+        return;
+      }
+      if (statusNode) {
+        statusNode.textContent = `Rejected safety disposition ${responsePayload.disposition.id}.`;
+      }
+      if (previewNode) {
+        previewNode.dataset.dispositionId = "";
+      }
+    }
+    async function disableTeachableRule(ruleId) {
+      const statusNode = document.getElementById("fetch-status");
+      const reason = window.prompt("Reason for disabling this saved rule?", "Too broad");
+      if (reason === null) {
+        return;
+      }
+      const response = await fetch(`/api/teachable-rules/${encodeURIComponent(ruleId)}/disable`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason })
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        if (statusNode) {
+          statusNode.textContent = payload.error || "Could not disable rule.";
+        }
+        return;
+      }
+      if (statusNode) {
+        statusNode.textContent = `Disabled saved rule ${payload.rule.id}. Reloading batch.`;
+      }
+      window.location.reload();
+    }
     async function saveUnsubscribeSelections() {
       const statusNode = document.getElementById("fetch-status");
       const candidateCheckboxes = [...document.querySelectorAll(".unsubscribe-checkbox")];
@@ -306,9 +616,86 @@ class LocalBrowserReviewRenderingMixin:
       window.alert(`Execution complete:\nExecuted: ${payload.executed_count}\nManual follow-up: ${payload.unsupported_count}\nFailed: ${payload.failed_count}`);
       window.location.reload();
     }
+    async function refreshUnifiedReviewQueue() {
+      const statusNode = document.getElementById("fetch-status");
+      if (statusNode) {
+        statusNode.textContent = "Refreshing unified review queue...";
+      }
+      const response = await fetch("/api/unified-review-queue/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({})
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        if (statusNode) {
+          statusNode.textContent = payload.error || "Could not refresh unified review queue.";
+        }
+        return;
+      }
+      if (statusNode) {
+        statusNode.textContent = `Unified queue refreshed. Pending now: ${payload.summary.pending_count || 0}.`;
+      }
+      window.location.reload();
+    }
+    async function refreshOperationalReadiness() {
+      const statusNode = document.getElementById("fetch-status");
+      if (statusNode) {
+        statusNode.textContent = "Refreshing operational readiness...";
+      }
+      const response = await fetch("/api/operational-readiness/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({})
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        if (statusNode) {
+          statusNode.textContent = payload.error || "Could not refresh operational readiness.";
+        }
+        return;
+      }
+      if (statusNode) {
+        statusNode.textContent = `Operational readiness refreshed: ${payload.overall_status}.`;
+      }
+      window.location.reload();
+    }
+    async function reviewUnifiedQueueItem(itemId, action, extraPayload = {}) {
+      const statusNode = document.getElementById("fetch-status");
+      if (statusNode) {
+        statusNode.textContent = `Submitting ${action} for ${itemId}...`;
+      }
+      const response = await fetch(`/api/unified-review-queue/items/${encodeURIComponent(itemId)}/actions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, ...extraPayload })
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        if (statusNode) {
+          statusNode.textContent = payload.error || "Could not apply queue action.";
+        }
+        return;
+      }
+      if (statusNode) {
+        const pending = payload.queue_summary ? payload.queue_summary.pending_count : null;
+        statusNode.textContent = pending === null
+          ? `Applied ${action} for ${itemId}.`
+          : `Applied ${action} for ${itemId}. Pending now: ${pending}.`;
+      }
+      window.location.reload();
+    }
     const fetchBatchButton = document.getElementById("fetch-batch");
     if (fetchBatchButton) {
       fetchBatchButton.addEventListener("click", fetchAnotherBatch);
+    }
+    const refreshUnifiedReviewQueueButton = document.getElementById("refresh-unified-review-queue");
+    if (refreshUnifiedReviewQueueButton) {
+      refreshUnifiedReviewQueueButton.addEventListener("click", refreshUnifiedReviewQueue);
+    }
+    const refreshOperationalReadinessButton = document.getElementById("refresh-operational-readiness");
+    if (refreshOperationalReadinessButton) {
+      refreshOperationalReadinessButton.addEventListener("click", refreshOperationalReadiness);
     }
     const runShadowEvalButton = document.getElementById("run-shadow-eval");
     if (runShadowEvalButton) {
@@ -325,6 +712,51 @@ class LocalBrowserReviewRenderingMixin:
     const executeUnsubscribeButton = document.getElementById("execute-unsubscribes");
     if (executeUnsubscribeButton) {
       executeUnsubscribeButton.addEventListener("click", executeUnsubscribes);
+    }
+    const previewTeachingButton = document.getElementById("preview-teaching-rule");
+    if (previewTeachingButton) {
+      previewTeachingButton.addEventListener("click", previewTeachingRule);
+    }
+    const saveTeachingButton = document.getElementById("save-teaching-rule");
+    if (saveTeachingButton) {
+      saveTeachingButton.addEventListener("click", saveTeachingRule);
+    }
+    const previewMemoryProposalButton = document.getElementById("preview-memory-proposal");
+    if (previewMemoryProposalButton) {
+      previewMemoryProposalButton.addEventListener("click", previewMemoryProposal);
+    }
+    const approveMemoryProposalButton = document.getElementById("approve-memory-proposal");
+    if (approveMemoryProposalButton) {
+      approveMemoryProposalButton.addEventListener("click", approveMemoryProposal);
+    }
+    const rejectMemoryProposalButton = document.getElementById("reject-memory-proposal");
+    if (rejectMemoryProposalButton) {
+      rejectMemoryProposalButton.addEventListener("click", rejectMemoryProposal);
+    }
+    const previewSafetyDispositionButton = document.getElementById("preview-safety-disposition");
+    if (previewSafetyDispositionButton) {
+      previewSafetyDispositionButton.addEventListener("click", previewSafetyDisposition);
+    }
+    const approveSafetyDispositionButton = document.getElementById("approve-safety-disposition");
+    if (approveSafetyDispositionButton) {
+      approveSafetyDispositionButton.addEventListener("click", approveSafetyDisposition);
+    }
+    const rejectSafetyDispositionButton = document.getElementById("reject-safety-disposition");
+    if (rejectSafetyDispositionButton) {
+      rejectSafetyDispositionButton.addEventListener("click", rejectSafetyDisposition);
+    }
+    for (const button of document.querySelectorAll(".disable-rule")) {
+      button.addEventListener("click", () => disableTeachableRule(button.dataset.ruleId));
+    }
+    for (const button of document.querySelectorAll(".queue-action")) {
+      button.addEventListener("click", () => reviewUnifiedQueueItem(button.dataset.itemId, button.dataset.action));
+    }
+    for (const button of document.querySelectorAll(".queue-answer")) {
+      button.addEventListener("click", () => reviewUnifiedQueueItem(
+        button.dataset.itemId,
+        "answer",
+        { answer_key: button.dataset.answerKey }
+      ));
     }
     for (const button of document.querySelectorAll(".taxonomy-option")) {
       button.addEventListener("click", () => button.classList.toggle("active"));
@@ -374,6 +806,8 @@ class LocalBrowserReviewRenderingMixin:
         ).replace("__BODY_HTML__", body_html)
 
     def _render_workbench(self) -> str:
+        operational_readiness_html = self._render_operational_readiness_panel()
+        unified_queue_html = self._render_unified_review_queue_panel()
         reminder_html = self._render_threshold_reminders()
         trusted_sender_html = self._render_trusted_sender_summary()
         unsubscribe_inventory_html = self._render_unsubscribe_inventory()
@@ -382,7 +816,9 @@ class LocalBrowserReviewRenderingMixin:
         if not batch_cards:
             batch_cards = '<div class="meta">No stored batches found yet.</div>'
         return (
-            '<section class="panel"><h2>Workbench actions</h2>'
+            operational_readiness_html
+            + unified_queue_html
+            + '<section class="panel"><h2>Workbench actions</h2>'
             '<div class="actions">'
             '<button type="button" class="action" id="fetch-batch">Fetch another batch</button>'
             '<button type="button" class="action secondary" id="run-shadow-eval">Run OpenAI comparison for 100 reviewed messages</button>'
@@ -399,6 +835,131 @@ class LocalBrowserReviewRenderingMixin:
             f"{batch_cards}"
             "</div>"
             "</section>"
+        )
+
+    def _render_operational_readiness_panel(self) -> str:
+        try:
+            report = self._load_operational_readiness()
+        except Exception as exc:
+            return (
+                '<section class="panel error-panel"><h2>Operational Readiness</h2>'
+                f'<p class="meta">Could not load readiness report: {escape(str(exc))}</p></section>'
+            )
+        summary = report.get("summary", {})
+        status = report.get("overall_status", "WARN")
+        progress = report.get("progress", {})
+        reasons_html = "".join(f'<li>{escape(reason)}</li>' for reason in report.get("reasons", []))
+        runs_html = "".join(
+            '<div class="field">'
+            f'<strong>{escape(run.get("run_id", ""))}</strong> '
+            f'<span class="pill">{run.get("unresolved_rate", 0) * 100:.2f}% unresolved</span> '
+            f'<span class="meta">{run.get("caution_rate", 0) * 100:.2f}% caution</span>'
+            '</div>'
+            for run in report.get("runs", [])[:5]
+        ) or '<p class="meta">No recent runs available.</p>'
+        return (
+            '<section class="panel">'
+            '<h2>Operational Readiness</h2>'
+            '<p class="meta">This is the day-to-day trust check for the recent loop: healthy, shaky, or stop.</p>'
+            '<div class="summary-grid">'
+            f'<div class="metric"><strong>{escape(status)}</strong><div class="meta">Current status</div></div>'
+            f'<div class="metric"><strong>{summary.get("latest_unresolved_rate", 0) * 100:.2f}%</strong><div class="meta">Latest unresolved</div></div>'
+            f'<div class="metric"><strong>{summary.get("latest_queue_pending_count", 0)}</strong><div class="meta">Queue debt</div></div>'
+            f'<div class="metric"><strong>{summary.get("founder_resolved_gain_total", 0)}</strong><div class="meta">Founder resolved gain</div></div>'
+            '</div>'
+            f'<p class="meta">Progress to target: {progress.get("unresolved_current_count", 0)}/'
+            f'{progress.get("unresolved_target_count", 0)} unresolved target on the latest corpus. '
+            f'Remaining gap: {progress.get("unresolved_remaining_gap_count", 0)} messages. '
+            f'Founder questions: {progress.get("founder_question_count", 0)}/'
+            f'{progress.get("founder_question_limit", 0)}.</p>'
+            '<div class="actions">'
+            '<button type="button" class="action secondary" id="refresh-operational-readiness">Refresh readiness</button>'
+            '</div>'
+            f'<ul>{reasons_html}</ul>'
+            f'{runs_html}'
+            '</section>'
+        )
+
+    def _render_unified_review_queue_panel(self) -> str:
+        try:
+            queue = self._load_or_build_unified_review_queue()
+        except Exception as exc:
+            return (
+                '<section class="panel error-panel"><h2>Unified Review Queue</h2>'
+                f'<p class="meta">Could not load queue: {escape(str(exc))}</p></section>'
+            )
+        summary = queue.get("summary", {})
+        top_items = [item for item in queue.get("items", []) if item.get("status") == "pending"][:10]
+        metrics = (
+            '<div class="summary-grid">'
+            f'<div class="metric"><strong>{summary.get("pending_count", 0)}</strong><div class="meta">Pending now</div></div>'
+            f'<div class="metric"><strong>{summary.get("pending_by_type", {}).get("founder-question", 0)}</strong><div class="meta">Founder questions</div></div>'
+            f'<div class="metric"><strong>{summary.get("pending_by_type", {}).get("runtime-llm-candidate", 0)}</strong><div class="meta">Runtime LLM candidates</div></div>'
+            f'<div class="metric"><strong>{summary.get("pending_by_type", {}).get("safety-disposition", 0)}</strong><div class="meta">Safety decisions</div></div>'
+            '</div>'
+        )
+        if not top_items:
+            items_html = '<p class="meta">No pending queue items right now.</p>'
+        else:
+            items_html = '<div class="items">' + "".join(self._render_unified_review_queue_item(item) for item in top_items) + "</div>"
+        provider_counts = summary.get("provider_counts", {})
+        provider_pills = "".join(
+            f'<span class="pill">{escape(provider)}: {count}</span>'
+            for provider, count in provider_counts.items()
+        ) or '<span class="meta">No provider pressure recorded yet.</span>'
+        return (
+            '<section class="panel">'
+            '<h2>Unified Review Queue</h2>'
+            '<p class="meta">This is now the main multi-inbox teaching loop. It ranks founder questions, safety work, runtime model candidates, and memory proposals in one place.</p>'
+            f'{metrics}'
+            f'<div style="margin-top: 12px;">{provider_pills}</div>'
+            '<div class="actions">'
+            '<button type="button" class="action secondary" id="refresh-unified-review-queue">Refresh queue</button>'
+            '</div>'
+            f'{items_html}'
+            '</section>'
+        )
+
+    def _render_unified_review_queue_item(self, item: dict) -> str:
+        rank = item.get("rank", {})
+        summary = item.get("summary", {})
+        question = item.get("decision_payload", {}).get("question", {})
+        reasons_html = "".join(f'<li>{escape(reason)}</li>' for reason in rank.get("reasons", []))
+        suggested_labels = summary.get("suggested_labels") or []
+        prompt_html = ""
+        if question.get("prompt"):
+            prompt_html = f'<div class="field"><strong>Prompt:</strong> {escape(question.get("prompt", ""))}</div>'
+        answer_buttons = ""
+        if item.get("item_type") == "founder-question":
+            question = item.get("decision_payload", {}).get("question", {})
+            answer_buttons = "".join(
+                f'<button type="button" class="action secondary queue-answer" '
+                f'data-item-id="{escape(item["item_id"])}" '
+                f'data-answer-key="{escape(option.get("answer_key", ""))}">{escape(option.get("description", option.get("answer_key", "Answer")))}</button>'
+                for option in question.get("answer_options", [])[:3]
+            )
+        action_buttons = ""
+        if item.get("item_type") == "founder-question":
+            action_buttons = answer_buttons
+        else:
+            action_buttons = (
+                f'<button type="button" class="action queue-action" data-item-id="{escape(item["item_id"])}" data-action="approve">Approve</button>'
+                f'<button type="button" class="action secondary queue-action" data-item-id="{escape(item["item_id"])}" data-action="reject">Reject</button>'
+            )
+        rendered_labels = ", ".join(gmail_label_name(label) for label in suggested_labels) if suggested_labels else "(none)"
+        return (
+            '<article class="item">'
+            f'<div class="field"><strong>Priority:</strong> {rank.get("score", 0)} '
+            f'<span class="pill">{escape(rank.get("lane", "review"))}</span></div>'
+            f'<div class="field"><strong>Type:</strong> {escape(item.get("item_type", ""))}</div>'
+            f'<div class="field"><strong>Provider:</strong> {escape(item.get("provider", "") or "(mixed)")}</div>'
+            f'<div class="field"><strong>Title:</strong> {escape(item.get("title", ""))}</div>'
+            f'<div class="field"><strong>Suggested labels:</strong> {escape(rendered_labels)}</div>'
+            f'{prompt_html}'
+            f'<div class="field"><strong>Impact:</strong> {escape(_queue_item_impact_text(item))}</div>'
+            f'<ul>{reasons_html}</ul>'
+            f'<div class="actions">{action_buttons}</div>'
+            '</article>'
         )
 
     def _list_batch_summaries(self) -> list[dict]:
@@ -752,11 +1313,110 @@ class LocalBrowserReviewRenderingMixin:
         )
 
     def _render_pending_items(self, batch_id: str, pending_items: list[dict]) -> str:
+        safety_contexts = _approved_safety_contexts_for_storage(self._storage_dir)
+        pending_items = [_enriched_pending_item(item, safety_contexts) for item in pending_items]
+        pending_items = _sorted_pending_items(pending_items)
         cards = "".join(
             self._render_pending_item_card(batch_id, index, len(pending_items), item)
             for index, item in enumerate(pending_items, start=1)
         )
-        return f'<section class="panel"><div class="items">{cards}</div></section>'
+        return (
+            self._render_teaching_panel(batch_id)
+            + self._render_safety_targets_panel(pending_items)
+            + f'<section class="panel"><div class="items">{cards}</div></section>'
+        )
+
+    def _render_safety_targets_panel(self, pending_items: list[dict]) -> str:
+        prioritized = [item for item in pending_items if item.get("safety_priority", {}).get("priority_score", 0) > 0][:5]
+        if not prioritized:
+            return ""
+        rows = "".join(
+            '<div class="field">'
+            f'<strong>{escape(item.get("subject") or item["message_id"])}</strong> '
+            f'<span class="pill safety-priority">score {item["safety_priority"]["priority_score"]}</span> '
+            f'<span class="meta">{escape(item.get("sender") or "(missing)")}</span>'
+            "</div>"
+            for item in prioritized
+        )
+        return (
+            '<section class="panel">'
+            '<h2>Top Safety Targets</h2>'
+            '<p class="meta">Approved safety memory and high-risk signals are pinned here first for batch review.</p>'
+            f"{rows}"
+            '</section>'
+        )
+
+    def _render_teaching_panel(self, batch_id: str) -> str:
+        return (
+            '<section class="panel">'
+            '<h2>Teach classification from selected emails</h2>'
+            '<div class="teaching-grid">'
+            '<div>'
+            '<textarea id="teaching-instruction" class="teaching-input" '
+            'aria-label="Teaching instruction">anything from recruiters, Ashby, Greenhouse, or Lever should be job-related and kept visible</textarea>'
+            '<div class="actions">'
+            '<button type="button" class="action secondary" id="preview-teaching-rule">Preview rule</button>'
+            '<button type="button" class="action" id="save-teaching-rule">Save rule</button>'
+            '</div>'
+            '<p class="meta">Select one or more pending email cards below, preview the local rule, then save it. '
+            'Saved rules can add retrieval labels but cannot create low-value inbox-removal labels.</p>'
+            '<hr style="margin: 16px 0; border: 0; border-top: 1px solid var(--line);">'
+            '<h3 style="margin: 0 0 8px;">Propose durable memory from a correction</h3>'
+            '<div class="teaching-subgrid">'
+            '<select id="memory-proposal-scope" class="teaching-select" aria-label="Memory proposal scope">'
+            '<option value="sender-cluster">This sender cluster</option>'
+            '<option value="sender">This sender</option>'
+            '<option value="global">Global preference</option>'
+            '</select>'
+            '<select id="memory-proposal-label" class="teaching-label-select" aria-label="Memory proposal label">'
+            f'{"".join(f"<option value=\"{escape(label)}\">{escape(gmail_label_name(label))}</option>" for label in CANONICAL_LABEL_ORDER)}'
+            '</select>'
+            '</div>'
+            '<textarea id="memory-proposal-explanation" class="teaching-input" '
+            'aria-label="Memory proposal explanation" '
+            'placeholder="Optional explanation. Required for global memory proposals."></textarea>'
+            '<div class="actions">'
+            '<button type="button" class="action secondary" id="preview-memory-proposal">Preview memory proposal</button>'
+            '<button type="button" class="action" id="approve-memory-proposal">Approve memory proposal</button>'
+            '<button type="button" class="action secondary" id="reject-memory-proposal">Reject proposal</button>'
+            '</div>'
+            '<p class="meta">This path creates a proposal first, shows affected emails, then writes durable memory only after approval.</p>'
+            '<hr style="margin: 16px 0; border: 0; border-top: 1px solid var(--line);">'
+            '<h3 style="margin: 0 0 8px;">Record a safety-lane disposition</h3>'
+            '<div class="teaching-subgrid">'
+            '<select id="safety-disposition-scope" class="teaching-select" aria-label="Safety disposition scope">'
+            '<option value="sender-cluster">This sender cluster</option>'
+            '<option value="sender">This sender</option>'
+            '<option value="family-cluster">Reviewed family cluster</option>'
+            '</select>'
+            '<select id="safety-disposition-value" class="teaching-label-select" aria-label="Safety disposition">'
+            '<option value="phishing">Phishing</option>'
+            '<option value="legitimate-security">Legitimate security</option>'
+            '<option value="benign-but-watch">Benign but watch</option>'
+            '<option value="not-safety">Not a safety issue</option>'
+            '</select>'
+            '</div>'
+            '<textarea id="safety-disposition-explanation" class="teaching-input" '
+            'aria-label="Safety disposition explanation" '
+            'placeholder="Optional note about why this belongs in the safety lane."></textarea>'
+            '<div class="actions">'
+            '<button type="button" class="action secondary" id="preview-safety-disposition">Preview safety disposition</button>'
+            '<button type="button" class="action" id="approve-safety-disposition">Approve safety disposition</button>'
+            '<button type="button" class="action secondary" id="reject-safety-disposition">Reject safety disposition</button>'
+            '</div>'
+            '<p class="meta">Use this when the email is scam, phishing, suspicious, or legitimate security mail. It stores a separate safety-review artifact and does not write ordinary durable classification memory.</p>'
+            '</div>'
+            '<div class="teaching-preview" id="teaching-preview">'
+            f'<strong>Batch:</strong> {escape(batch_id)}'
+            '<div class="meta">Preview results will appear here.</div>'
+            '</div>'
+            '<div class="teaching-preview" id="safety-preview">'
+            f'<strong>Batch:</strong> {escape(batch_id)}'
+            '<div class="meta">Safety review preview results will appear here.</div>'
+            '</div>'
+            '</div>'
+            '</section>'
+        )
 
     def _render_pending_item_card(self, batch_id: str, index: int, total_items: int, item: dict) -> str:
         preview = preview_text(item)
@@ -766,11 +1426,19 @@ class LocalBrowserReviewRenderingMixin:
             for label_name in allowed_gmail_labels()
         )
         suggested = ", ".join(gmail_label_name(label) for label in item.get("applied_labels", [])) or "(none)"
+        matched_rules = render_matched_teachable_rules(item)
         actionability_controls = render_actionability_controls(item)
         message_context = render_message_context(item)
+        safety_priority = compute_safety_priority(item)
+        safety_badges = render_safety_priority_badges(safety_priority)
+        priority_card_class = " safety-priority-card" if safety_priority["priority_score"] > 0 else ""
         return (
-            f'<article class="item" data-message-id="{escape(item["message_id"])}">'
+            f'<article class="item{priority_card_class}" data-message-id="{escape(item["message_id"])}">'
             f'<div class="meta">Item {index} of {total_items}</div>'
+            '<label class="teach-select">'
+            f'<input type="checkbox" class="teach-example-checkbox" data-message-id="{escape(item["message_id"])}">'
+            'Use as teaching example'
+            '</label>'
             f'<div class="field"><strong>Batch:</strong> {escape(batch_id)}</div>'
             f'<div class="field"><strong>Message ID:</strong> {escape(item["message_id"])}</div>'
             f'<div class="field"><strong>From:</strong> {escape(item.get("sender") or "(missing)")}</div>'
@@ -778,6 +1446,8 @@ class LocalBrowserReviewRenderingMixin:
             f'<div class="field"><strong>Date:</strong> {escape(item.get("date") or "(missing)")}</div>'
             f'<div class="field"><strong>Preview:</strong> {escape(preview)}</div>'
             f'<div class="field"><strong>Suggested labels:</strong> {escape(suggested)}</div>'
+            f"{safety_badges}"
+            f"{matched_rules}"
             f'<div class="field"><strong>Why:</strong> {escape(item.get("interpretation") or "(missing)")}</div>'
             f"{message_context}"
             f'<div class="taxonomy">{taxonomy_buttons}</div>'
@@ -819,7 +1489,25 @@ def serialize_item(item: dict) -> dict:
         "review_action": item["review_action"],
         "final_labels": [gmail_label_name(label) for label in item.get("final_labels") or []],
         "actionability": item.get("actionability"),
+        "matched_teachable_rules": item.get("matched_teachable_rules", []),
+        "decision_provenance": item.get("decision_provenance"),
     }
+
+
+def _queue_item_impact_text(item: dict) -> str:
+    summary = item.get("summary", {})
+    item_type = item.get("item_type", "")
+    if item_type == "founder-question":
+        return f"about {summary.get('estimated_unblocked_messages', 0)} messages may unblock"
+    if item_type == "runtime-llm-candidate":
+        return f"recurring family size about {summary.get('family_count', 0)}"
+    if item_type == "shadow-suggestion":
+        return f"shadow family size about {summary.get('family_count', 0)}"
+    if item_type == "memory-proposal":
+        return f"matches about {summary.get('match_count', 0)} messages"
+    if item_type == "safety-disposition":
+        return f"safety match preview about {summary.get('match_count', 0)} messages"
+    return "pending review"
 
 
 def build_summary(items: list[dict]) -> dict:
@@ -854,6 +1542,37 @@ def render_message_context(item: dict) -> str:
         parts.append(f'<div class="context-copy"><strong>Body:</strong> {escape(body)}</div>')
 
     return '<details class="context-panel"><summary>More context</summary>' + "".join(parts) + "</details>"
+
+
+def render_matched_teachable_rules(item: dict) -> str:
+    rules = item.get("matched_teachable_rules") or []
+    if not rules:
+        return ""
+    pills = "".join(
+        '<span class="pill rule-match">'
+        f'Matched {escape(rule.get("id", "rule"))}: {escape(rule.get("label", ""))}'
+        '<span class="rule-inline-actions">'
+        f'<button type="button" class="tiny-action disable-rule" data-rule-id="{escape(rule.get("id", ""))}">Disable</button>'
+        '</span>'
+        '</span>'
+        for rule in rules
+    )
+    return f'<div class="field"><strong>Saved rules:</strong> {pills}</div>'
+
+
+def render_safety_priority_badges(safety_priority: dict) -> str:
+    if safety_priority["priority_score"] <= 0:
+        return ""
+    pills = [
+        f'<span class="pill safety-priority">Safety priority {safety_priority["priority_score"]}</span>'
+    ]
+    if safety_priority["approved_disposition"]:
+        pills.append(
+            f'<span class="pill safety-priority">{escape(safety_priority["approved_disposition"])}</span>'
+        )
+    for reason in safety_priority["reasons"]:
+        pills.append(f'<span class="pill safety-priority">{escape(reason)}</span>')
+    return f'<div class="field"><strong>Safety:</strong> {"".join(pills)}</div>'
 
 
 def render_taxonomy_button(label_name: str, is_active: bool) -> str:
@@ -908,6 +1627,105 @@ def render_actionability_controls(item: dict) -> str:
         'data-actionability="keep-in-inbox">Keep in inbox</button>'
         "</div>"
     )
+
+
+def compute_safety_priority(item: dict) -> dict:
+    if item.get("safety_priority"):
+        return dict(item["safety_priority"])
+    score = 0
+    reasons = []
+    approved_disposition = ""
+    final_labels = set(item.get("final_labels") or [])
+    applied_labels = set(item.get("applied_labels") or [])
+    labels = final_labels or applied_labels
+    if "account-security" in labels:
+        score += 4
+        reasons.append("account-security")
+    approved_disposition = _approved_safety_disposition(item)
+    if approved_disposition:
+        score += 5
+        reasons.append("approved-safety-memory")
+        if approved_disposition == "phishing":
+            score += 2
+            reasons.append("phishing-memory")
+    if _looks_suspicious_item(item):
+        score += 3
+        reasons.append("suspicious-signal")
+    return {
+        "priority_score": score,
+        "reasons": reasons,
+        "approved_disposition": approved_disposition,
+    }
+
+
+def _approved_safety_disposition(item: dict) -> str:
+    if item.get("matched_approved_safety_disposition"):
+        return item["matched_approved_safety_disposition"]
+    provenance = item.get("decision_provenance") or {}
+    retrieved_safety_keys = provenance.get("retrieved_safety_keys") or []
+    if retrieved_safety_keys:
+        return "approved-safety-context"
+    return ""
+
+
+def _looks_suspicious_item(item: dict) -> bool:
+    text = f"{item.get('sender', '')} {item.get('subject', '')}".lower()
+    suspicious_terms = ("verify your account", "verification code", "invoice", "payment", "package", "urgent", "service report")
+    return any(term in text for term in suspicious_terms)
+
+
+def _sorted_pending_items(items: list[dict]) -> list[dict]:
+    return sorted(
+        items,
+        key=lambda item: (
+            -compute_safety_priority(item)["priority_score"],
+            item.get("date", ""),
+            normalized_sender_email(item.get("sender")) or item.get("sender", "").lower(),
+        ),
+        reverse=False,
+    )
+
+
+def _approved_safety_contexts_for_storage(storage_dir: Path) -> list[dict]:
+    store = SafetyDispositionStore(safety_dispositions_path(storage_dir))
+    contexts = []
+    for disposition in store.list_dispositions():
+        if disposition.status != "approved":
+            continue
+        contexts.append(approved_safety_context(disposition))
+    return contexts
+
+
+def _enriched_pending_item(item: dict, safety_contexts: list[dict]) -> dict:
+    enriched = dict(item)
+    matched = _match_safety_context(item, safety_contexts)
+    if matched:
+        enriched["matched_approved_safety_disposition"] = matched["disposition"]
+    enriched["safety_priority"] = compute_safety_priority(enriched)
+    return enriched
+
+
+def _match_safety_context(item: dict, safety_contexts: list[dict]) -> dict | None:
+    sender = normalized_sender_email(item.get("sender")) or item.get("sender", "").strip().lower()
+    subject = _normalized_subject(item.get("subject", ""))
+    for context in safety_contexts:
+        if matches_safety_context(
+            {
+                "sender": sender,
+                "subject": subject,
+                "snippet": item.get("snippet", ""),
+                "body": item.get("body", ""),
+            },
+            context,
+        ):
+            return context
+    return None
+
+
+def _normalized_subject(subject: str) -> str:
+    normalized = (subject or "").lower()
+    normalized = "".join("#" if char.isdigit() else char for char in normalized)
+    return " ".join(normalized.split())[:100]
 
 
 def is_plausible_inbox_removal_candidate(item: dict) -> bool:

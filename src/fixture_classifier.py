@@ -115,6 +115,12 @@ class FixtureBatchClassifier:
         elif self._looks_like_paypal_payment_receipt(text, sender_email):
             labels.append("receipt-billing")
             confidence_band = "medium"
+        elif self._looks_like_proton_subscription_renewal_notice(text, sender_email):
+            labels.append("receipt-billing")
+            confidence_band = "medium"
+        elif self._looks_like_winsim_invoice_notice(text, sender_email):
+            labels.append("receipt-billing")
+            confidence_band = "medium"
         elif self._looks_like_audible_order_confirmation(text, sender_email):
             labels.append("shopping-order")
             near_misses.append("receipt-billing")
@@ -124,6 +130,10 @@ class FixtureBatchClassifier:
             near_misses.append("receipt-billing")
             confidence_band = "medium"
         elif self._looks_like_merchant_order_confirmation(text, sender_email):
+            labels.append("shopping-order")
+            near_misses.append("receipt-billing")
+            confidence_band = "medium"
+        elif self._looks_like_steam_purchase_receipt(text, sender_email):
             labels.append("shopping-order")
             near_misses.append("receipt-billing")
             confidence_band = "medium"
@@ -162,6 +172,10 @@ class FixtureBatchClassifier:
             near_misses.append("receipt-billing")
             confidence_band = "medium"
         elif self._looks_like_dhl_shipment_update(text, sender_email):
+            labels.append("shopping-order")
+            near_misses.append("receipt-billing")
+            confidence_band = "medium"
+        elif self._looks_like_dhl_packstation_dropoff_receipt(text, sender_email):
             labels.append("shopping-order")
             near_misses.append("receipt-billing")
             confidence_band = "medium"
@@ -241,6 +255,9 @@ class FixtureBatchClassifier:
             near_misses.append("receipt-billing")
             confidence_band = "medium"
         elif self._looks_like_youtube_purchase_receipt(text, sender_email):
+            labels.append("receipt-billing")
+            confidence_band = "medium"
+        elif self._looks_like_shopify_billing_notice(text, sender_email):
             labels.append("receipt-billing")
             confidence_band = "medium"
         elif self._looks_like_irrelevant_linkedin_report_acknowledgement(text, sender_email):
@@ -411,6 +428,9 @@ class FixtureBatchClassifier:
         elif self._looks_like_td_service_disruption_notice(text, sender_email):
             labels.append("financial-account")
             confidence_band = "medium"
+        elif self._looks_like_schwab_estatement_notice(text, sender_email):
+            labels.append("financial-account")
+            confidence_band = "medium"
         elif self._looks_like_td_account_notice(text, sender_email):
             labels.append("financial-account")
             confidence_band = "medium"
@@ -460,6 +480,9 @@ class FixtureBatchClassifier:
             labels.append("account-security")
             confidence_band = "medium"
         elif self._looks_like_gumroad_authentication_token(text, sender_email):
+            labels.append("account-security")
+            confidence_band = "medium"
+        elif self._looks_like_github_oauth_application_notice(text, sender_email):
             labels.append("account-security")
             confidence_band = "medium"
         elif self._looks_like_amazon_account_access_attempt(text, sender_email):
@@ -586,6 +609,12 @@ class FixtureBatchClassifier:
             labels.append("shopping-order")
             near_misses.append("reply-needed")
             confidence_band = "medium"
+        elif self._looks_like_transit_ticket_receipt(text, sender_email):
+            labels.extend(["travel", "receipt-billing"])
+            confidence_band = "medium"
+        elif self._looks_like_train_ticket_document(text, sender_email):
+            labels.append("travel")
+            confidence_band = "medium"
         elif self._looks_like_bvg_order_confirmation(text, sender_email):
             labels.append("travel")
             confidence_band = "medium"
@@ -618,6 +647,14 @@ class FixtureBatchClassifier:
             near_misses.append("receipt-billing")
             confidence_band = "medium"
         elif self._looks_like_chronopost_shipment_notice(text, sender_email):
+            labels.append("shopping-order")
+            near_misses.append("receipt-billing")
+            confidence_band = "medium"
+        elif self._looks_like_zoxs_order_status_notice(text, sender_email):
+            labels.append("shopping-order")
+            near_misses.append("receipt-billing")
+            confidence_band = "medium"
+        elif self._looks_like_caventura_accounting_order_notice(text, sender_email):
             labels.append("shopping-order")
             near_misses.append("receipt-billing")
             confidence_band = "medium"
@@ -670,14 +707,14 @@ class FixtureBatchClassifier:
                 "date": message["date"],
                 "snippet": message.get("snippet"),
                 "body": message.get("body"),
-                "interpretation": self._interpretation_for(text, sender, gmail_label_ids),
+                "interpretation": self._interpretation_for(text, sender, sender_email, gmail_label_ids),
                 "applied_labels": labels,
                 "near_misses": near_misses,
                 "confidence_band": confidence_band,
             }
         )
 
-    def _interpretation_for(self, text: str, sender: str, gmail_label_ids: set[str]) -> str:
+    def _interpretation_for(self, text: str, sender: str, sender_email: str | None, gmail_label_ids: set[str]) -> str:
         if (
             "travel itinerary" in text
             and "receipt" in text
@@ -689,179 +726,201 @@ class FixtureBatchClassifier:
             return "Job application or interview process update that should stay easy to retrieve."
         if self._looks_like_job_alert_message(text, sender):
             return "Job alert or role recommendation that should stay easy to retrieve while job-searching."
-        if self._looks_like_job_platform_reengagement_message(text, normalized_sender_email(sender)):
+        if self._looks_like_job_platform_reengagement_message(text, sender_email):
             return "Job-platform re-engagement message that still belongs with other work and recruiting mail."
-        if self._looks_like_job_application_acknowledgement(text, normalized_sender_email(sender)):
+        if self._looks_like_job_application_acknowledgement(text, sender_email):
             return "Job application acknowledgement that should stay easy to retrieve while job-searching."
-        if self._looks_like_job_platform_welcome_message(text, normalized_sender_email(sender)):
+        if self._looks_like_job_platform_welcome_message(text, sender_email):
             return "Job-platform welcome or onboarding message that should stay easy to retrieve while job-searching."
         if self._looks_like_google_play_receipt(text, sender):
             return "Digital purchase or subscription receipt that should stay easy to retrieve with other order records."
-        if self._looks_like_requested_youtube_event_reminder(text, normalized_sender_email(sender)):
+        if self._looks_like_requested_youtube_event_reminder(text, sender_email):
             return "Requested event reminder that is promotional but still expected."
-        if self._looks_like_google_play_subscription_notice(text, normalized_sender_email(sender)):
+        if self._looks_like_google_play_subscription_notice(text, sender_email):
             return "Subscription change notice that should stay easy to retrieve with other order records."
-        if self._looks_like_amazon_subscription_billing_notice(text, normalized_sender_email(sender)):
+        if self._looks_like_amazon_subscription_billing_notice(text, sender_email):
             return "Subscription billing problem that should stay easy to retrieve with other order records."
-        if self._looks_like_interac_money_request_expiry(text, normalized_sender_email(sender)):
+        if self._looks_like_interac_money_request_expiry(text, sender_email):
             return "Expired money-request notice that should stay easy to retrieve with other financial records."
-        if self._looks_like_paypal_payment_receipt(text, normalized_sender_email(sender)):
+        if self._looks_like_paypal_payment_receipt(text, sender_email):
             return "Payment receipt that should stay easy to retrieve with other billing records."
-        if self._looks_like_audible_order_confirmation(text, normalized_sender_email(sender)):
+        if self._looks_like_proton_subscription_renewal_notice(text, sender_email):
+            return "Subscription renewal notice that should stay easy to retrieve with other billing records."
+        if self._looks_like_winsim_invoice_notice(text, sender_email):
+            return "Carrier invoice notice that should stay easy to retrieve with other billing records."
+        if self._looks_like_audible_order_confirmation(text, sender_email):
             return "Audible order confirmation that should stay easy to retrieve with other order records."
-        if self._looks_like_audible_membership_state_notice(text, normalized_sender_email(sender)):
+        if self._looks_like_audible_membership_state_notice(text, sender_email):
             return "Subscription membership state notice that should stay easy to retrieve with other order records."
-        if self._looks_like_merchant_order_confirmation(text, normalized_sender_email(sender)):
+        if self._looks_like_merchant_order_confirmation(text, sender_email):
             return "Merchant order or payment confirmation that should stay easy to retrieve with other order records."
-        if self._looks_like_talkpal_receipt(text, normalized_sender_email(sender)):
+        if self._looks_like_steam_purchase_receipt(text, sender_email):
+            return "Digital storefront purchase receipt that should stay easy to retrieve with other order records."
+        if self._looks_like_talkpal_receipt(text, sender_email):
             return "Subscription receipt that should stay easy to retrieve with other order records."
-        if self._looks_like_talkpal_subscription_activation(text, normalized_sender_email(sender)):
+        if self._looks_like_talkpal_subscription_activation(text, sender_email):
             return "Subscription activation notice that should stay easy to retrieve with other order records."
-        if self._looks_like_eversports_purchase_notice(text, normalized_sender_email(sender)):
+        if self._looks_like_eversports_purchase_notice(text, sender_email):
             return "Purchase confirmation that should stay easy to retrieve with other order records."
-        if self._looks_like_eversports_booking_notice(text, normalized_sender_email(sender)):
+        if self._looks_like_eversports_booking_notice(text, sender_email):
             return "Booked class or session details that likely belong with other calendar-style event records."
-        if self._looks_like_uber_trip_receipt(text, normalized_sender_email(sender)):
+        if self._looks_like_uber_trip_receipt(text, sender_email):
             return "Trip receipt that should stay easy to retrieve with other billing records."
-        if self._looks_like_amazon_return_flow_message(text, normalized_sender_email(sender)):
+        if self._looks_like_amazon_return_flow_message(text, sender_email):
             return "Return or refund flow update that should stay easy to retrieve with other order records."
-        if self._looks_like_amazon_return_retrocharge_notice(text, normalized_sender_email(sender)):
+        if self._looks_like_amazon_return_retrocharge_notice(text, sender_email):
             return "Return retrocharge notice that should stay easy to retrieve with other order records."
-        if self._looks_like_dhl_shipment_update(text, normalized_sender_email(sender)):
+        if self._looks_like_dhl_shipment_update(text, sender_email):
             return "Shipment update that should stay easy to retrieve with other order records."
-        if self._looks_like_restaurant_reservation_message(text, normalized_sender_email(sender)):
+        if self._looks_like_dhl_packstation_dropoff_receipt(text, sender_email):
+            return "Parcel drop-off receipt that should stay easy to retrieve with other order records."
+        if self._looks_like_restaurant_reservation_message(text, sender_email):
             return "Reservation or reminder that likely belongs with other calendar-style event records."
-        if self._looks_like_pid_travel_registration(text, normalized_sender_email(sender)):
+        if self._looks_like_pid_travel_registration(text, sender_email):
             return "Travel-service account registration that should stay easy to retrieve with other trip details."
         if self._looks_like_trainline_travel_update(text, sender):
             return "Train travel update that should stay easy to retrieve alongside other trip details."
         if self._looks_like_requested_promo_message(text):
             return "Solicited wishlist or price-drop reminder that is promotional but still expected."
-        if self._looks_like_ebay_member_message(text, normalized_sender_email(sender)):
+        if self._looks_like_ebay_member_message(text, sender_email):
             return "Marketplace member message tied to an item listing that likely needs a response."
-        if self._looks_like_marketplace_shipment_update(text, normalized_sender_email(sender)):
+        if self._looks_like_marketplace_shipment_update(text, sender_email):
             return "Marketplace or courier shipment update that should stay easy to retrieve with other order records."
+        if self._looks_like_transit_ticket_receipt(text, sender_email):
+            return "Transit purchase receipt that should stay with both trip details and billing records."
+        if self._looks_like_train_ticket_document(text, sender_email):
+            return "Train ticket document that should stay easy to retrieve with other trip details."
         if self._looks_like_reply_needed_text(text) and not self._looks_like_legal_notice(text, sender):
             return "Work request that likely needs a response."
+        if self._looks_like_github_oauth_application_notice(text, sender_email):
+            return "GitHub OAuth authorization notice that should stay easy to retrieve as an account-security alert."
         if self._looks_like_account_message(text, sender, gmail_label_ids):
             if "dokument" in text or "document" in text:
                 return "Account-related document delivery that likely belongs with other account notices."
             return "Account security or account-access alert that likely needs to stay easy to find."
-        if self._looks_like_prime_video_subscription_notice(text, normalized_sender_email(sender)):
+        if self._looks_like_prime_video_subscription_notice(text, sender_email):
             return "Subscription state update that should stay easy to retrieve with other order records."
-        if self._looks_like_prime_membership_resume_notice(text, normalized_sender_email(sender)):
+        if self._looks_like_prime_membership_resume_notice(text, sender_email):
             return "Prime membership state update that should stay easy to retrieve with other order records."
-        if self._looks_like_youtube_premium_welcome_notice(text, normalized_sender_email(sender)):
+        if self._looks_like_youtube_premium_welcome_notice(text, sender_email):
             return "Subscription welcome and recurring-charge notice that should stay easy to retrieve with other order records."
-        if self._looks_like_irrelevant_linkedin_report_acknowledgement(text, normalized_sender_email(sender)):
+        if self._looks_like_shopify_billing_notice(text, sender_email):
+            return "Shopify billing notice that should stay easy to retrieve with other billing records."
+        if self._looks_like_zoxs_order_status_notice(text, sender_email):
+            return "Merchant order-status update that should stay easy to retrieve with other order records."
+        if self._looks_like_caventura_accounting_order_notice(text, sender_email):
+            return "Merchant shipping or delivery-note document tied to an order."
+        if self._looks_like_irrelevant_linkedin_report_acknowledgement(text, sender_email):
             return "Report-status acknowledgement that looks low priority for this inbox."
-        if self._looks_like_irrelevant_knowledgehut_event_promo(text, normalized_sender_email(sender)):
+        if self._looks_like_irrelevant_knowledgehut_event_promo(text, sender_email):
             return "Marketing event invite from an irrelevant training sender that looks low priority for this inbox."
-        if self._looks_like_irrelevant_alexa_upgrade_notice(text, normalized_sender_email(sender)):
+        if self._looks_like_irrelevant_alexa_upgrade_notice(text, sender_email):
             return "Product upsell announcement that looks low priority for this inbox."
-        if self._looks_like_irrelevant_google_home_gemini_rollout(text, normalized_sender_email(sender)):
+        if self._looks_like_irrelevant_google_home_gemini_rollout(text, sender_email):
             return "Product rollout notice for a home device that looks low priority for this inbox."
-        if self._looks_like_irrelevant_service_policy_notice(text, normalized_sender_email(sender)):
+        if self._looks_like_irrelevant_service_policy_notice(text, sender_email):
             return "Service policy update that looks low priority for this inbox."
-        if self._looks_like_irrelevant_imf_data_portal_notice(text, normalized_sender_email(sender)):
+        if self._looks_like_irrelevant_imf_data_portal_notice(text, sender_email):
             return "IMF data-portal transition notice that looks low priority for this inbox."
-        if self._looks_like_irrelevant_recruiting_spam(text, normalized_sender_email(sender)):
+        if self._looks_like_irrelevant_recruiting_spam(text, sender_email):
             return "Recruiting-style spam that looks low priority for this inbox."
-        if self._looks_like_irrelevant_university_enquiry_followup(text, normalized_sender_email(sender)):
+        if self._looks_like_irrelevant_university_enquiry_followup(text, sender_email):
             return "Education-enquiry follow-up the founder no longer considers relevant for this inbox."
-        if self._looks_like_irrelevant_sun_life_cybersecurity_hub_promo(text, normalized_sender_email(sender)):
+        if self._looks_like_irrelevant_sun_life_cybersecurity_hub_promo(text, sender_email):
             return "Financial-provider awareness promo that looks low priority for this inbox."
-        if self._looks_like_irrelevant_marketplace_followup(text, normalized_sender_email(sender)):
+        if self._looks_like_irrelevant_marketplace_followup(text, sender_email):
             return "Marketplace follow-up or reminder that looks low priority for this inbox."
-        if self._looks_like_irrelevant_pmi_event_promo(text, normalized_sender_email(sender)):
+        if self._looks_like_irrelevant_pmi_event_promo(text, sender_email):
             return "Professional event promotion that looks low priority for this inbox."
-        if self._looks_like_irrelevant_amazon_answers_notice(text, normalized_sender_email(sender)):
+        if self._looks_like_irrelevant_amazon_answers_notice(text, sender_email):
             return "Amazon community follow-up that looks low priority for this inbox."
-        if self._looks_like_paypal_legal_update(text, normalized_sender_email(sender)):
+        if self._looks_like_paypal_legal_update(text, sender_email):
             return "Financial account legal-update notice that should stay easy to retrieve with other account records."
-        if self._looks_like_paypal_contact_change_notice(text, normalized_sender_email(sender)):
+        if self._looks_like_paypal_contact_change_notice(text, sender_email):
             return "Account-change notice that likely needs to stay easy to retrieve as an account-security alert."
-        if self._looks_like_paypal_trusted_device_notice(text, normalized_sender_email(sender)):
+        if self._looks_like_paypal_trusted_device_notice(text, sender_email):
             return "Trusted-device sign-in notice that likely needs to stay easy to retrieve as an account-security alert."
-        if self._looks_like_linkedin_subscription_cancellation(text, normalized_sender_email(sender)):
+        if self._looks_like_linkedin_subscription_cancellation(text, sender_email):
             return "Subscription cancellation notice that should stay easy to retrieve with other order records."
-        if self._looks_like_linkedin_subscription_purchase(text, normalized_sender_email(sender)):
+        if self._looks_like_linkedin_subscription_purchase(text, sender_email):
             return "Subscription purchase confirmation that should stay easy to retrieve with other order records."
-        if self._looks_like_td_security_advisory(text, normalized_sender_email(sender)):
+        if self._looks_like_td_security_advisory(text, sender_email):
             return "Financial account security advisory that should stay easy to retrieve with other account records."
-        if self._looks_like_td_service_disruption_notice(text, normalized_sender_email(sender)):
+        if self._looks_like_td_service_disruption_notice(text, sender_email):
             return "Financial account service reminder that should stay easy to retrieve with other account records."
-        if self._looks_like_interac_money_request_notice(text, normalized_sender_email(sender)):
+        if self._looks_like_schwab_estatement_notice(text, sender_email):
+            return "Brokerage account statement notice that should stay easy to retrieve with other financial records."
+        if self._looks_like_interac_money_request_notice(text, sender_email):
             return "Money-request notice that should stay easy to retrieve with other financial records."
-        if self._looks_like_slack_email_confirmation_notice(text, normalized_sender_email(sender)):
+        if self._looks_like_slack_email_confirmation_notice(text, sender_email):
             return "Slack email-confirmation notice that likely needs to stay easy to retrieve as an account-security alert."
-        if self._looks_like_ebay_new_device_notice(text, normalized_sender_email(sender)):
+        if self._looks_like_ebay_new_device_notice(text, sender_email):
             return "Marketplace sign-in notice that likely needs to stay easy to retrieve as an account-security alert."
-        if self._looks_like_battlenet_security_notice(text, normalized_sender_email(sender)):
+        if self._looks_like_battlenet_security_notice(text, sender_email):
             return "Gaming-account security notice that likely needs to stay easy to retrieve as an account-security alert."
-        if self._looks_like_ubisoft_security_code(text, normalized_sender_email(sender)):
+        if self._looks_like_ubisoft_security_code(text, sender_email):
             return "One-time security code that likely needs to stay easy to retrieve as an account-security alert."
-        if self._looks_like_linkedin_security_notice(text, normalized_sender_email(sender)):
+        if self._looks_like_linkedin_security_notice(text, sender_email):
             return "LinkedIn account-security message that likely needs to stay easy to retrieve."
-        if self._looks_like_kinguin_inactive_account_notice(text, normalized_sender_email(sender)):
+        if self._looks_like_kinguin_inactive_account_notice(text, sender_email):
             return "Inactive-account protection notice that likely needs to stay easy to retrieve as an account-security alert."
-        if self._looks_like_google_storage_cutoff_notice(text, normalized_sender_email(sender)):
+        if self._looks_like_google_storage_cutoff_notice(text, sender_email):
             return "Storage cutoff notice that likely needs to stay easy to retrieve as an account-security alert."
-        if self._looks_like_wifi_email_verification_notice(text, normalized_sender_email(sender)):
+        if self._looks_like_wifi_email_verification_notice(text, sender_email):
             return "Email verification notice that likely needs to stay easy to retrieve as an account-security alert."
-        if self._looks_like_trello_account_deletion_notice(text, normalized_sender_email(sender)):
+        if self._looks_like_trello_account_deletion_notice(text, sender_email):
             return "Dormant-account deletion notice that likely needs to stay easy to retrieve as an account-access alert."
-        if self._looks_like_prime_billing_problem_notice(text, normalized_sender_email(sender)):
+        if self._looks_like_prime_billing_problem_notice(text, sender_email):
             return "Subscription billing problem that likely needs to stay easy to retrieve as an account-access alert."
-        if self._looks_like_meetup_account_deactivation_notice(text, normalized_sender_email(sender)):
+        if self._looks_like_meetup_account_deactivation_notice(text, sender_email):
             return "Dormant-account deletion notice that likely needs to stay easy to retrieve as an account-access alert."
-        if self._looks_like_irrelevant_sun_life_survey(text, normalized_sender_email(sender)):
+        if self._looks_like_irrelevant_sun_life_survey(text, sender_email):
             return "Customer survey follow-up that looks low priority for this inbox."
-        if self._looks_like_irrelevant_coursera_roundup(text, normalized_sender_email(sender)):
+        if self._looks_like_irrelevant_coursera_roundup(text, sender_email):
             return "Course marketing roundup that looks low priority for this inbox."
-        if self._looks_like_irrelevant_komoot_weekend_suggestion(text, normalized_sender_email(sender)):
+        if self._looks_like_irrelevant_komoot_weekend_suggestion(text, sender_email):
             return "Activity recommendation email that looks low priority for this inbox."
-        if self._looks_like_irrelevant_audible_new_title_promo(text, normalized_sender_email(sender)):
+        if self._looks_like_irrelevant_audible_new_title_promo(text, sender_email):
             return "Content recommendation promo that looks low priority for this inbox."
-        if self._looks_like_irrelevant_xai_deprecation_notice(text, normalized_sender_email(sender)):
+        if self._looks_like_irrelevant_xai_deprecation_notice(text, sender_email):
             return "Vendor deprecation announcement that looks low priority for this inbox."
-        if self._looks_like_x_login_alert(text, normalized_sender_email(sender)):
+        if self._looks_like_x_login_alert(text, sender_email):
             return "New-login alert that likely needs to stay easy to retrieve as an account-security notice."
-        if self._looks_like_amazon_payment_declined_order_notice(text, normalized_sender_email(sender)):
+        if self._looks_like_amazon_payment_declined_order_notice(text, sender_email):
             return "Order-payment problem that should stay easy to retrieve with other order records."
-        if self._looks_like_book_marketplace_order_notice(text, normalized_sender_email(sender)):
+        if self._looks_like_book_marketplace_order_notice(text, sender_email):
             return "Book-marketplace order update that should stay easy to retrieve with other order records."
-        if self._looks_like_royal_mail_shipment_notice(text, normalized_sender_email(sender)):
+        if self._looks_like_royal_mail_shipment_notice(text, sender_email):
             return "Courier shipment update that should stay easy to retrieve with other order records."
-        if self._looks_like_gls_shipment_notice(text, normalized_sender_email(sender)):
+        if self._looks_like_gls_shipment_notice(text, sender_email):
             return "Parcel-tracking update that should stay easy to retrieve with other order records."
-        if self._looks_like_youtube_channel_membership_notice(text, normalized_sender_email(sender)):
+        if self._looks_like_youtube_channel_membership_notice(text, sender_email):
             return "Channel-membership purchase notice that should stay easy to retrieve with other order records."
-        if self._looks_like_amazon_seller_message_with_order_context(text, normalized_sender_email(sender)):
+        if self._looks_like_amazon_seller_message_with_order_context(text, sender_email):
             return "Seller or warranty message tied to an order that should stay easy to retrieve with other order records."
-        if self._looks_like_irrelevant_inaturalist_nudge(text, normalized_sender_email(sender)):
+        if self._looks_like_irrelevant_inaturalist_nudge(text, sender_email):
             return "Community engagement or event nudge that looks low priority for this inbox."
-        if self._looks_like_irrelevant_inaturalist_live_event_invite(text, normalized_sender_email(sender)):
+        if self._looks_like_irrelevant_inaturalist_live_event_invite(text, sender_email):
             return "Community webinar invite that looks low priority for this inbox."
-        if self._looks_like_irrelevant_xai_announcement(text, normalized_sender_email(sender)):
+        if self._looks_like_irrelevant_xai_announcement(text, sender_email):
             return "Vendor product announcement that looks low priority for this inbox."
-        if self._looks_like_irrelevant_coursera_promo(text, normalized_sender_email(sender)):
+        if self._looks_like_irrelevant_coursera_promo(text, sender_email):
             return "Course marketing email that looks low priority for this inbox."
-        if self._looks_like_irrelevant_przelewy24_notice(text, normalized_sender_email(sender)):
+        if self._looks_like_irrelevant_przelewy24_notice(text, sender_email):
             return "Transaction notice the founder wants treated as low priority for this inbox."
-        if self._looks_like_irrelevant_settlement_notice(text, normalized_sender_email(sender)):
+        if self._looks_like_irrelevant_settlement_notice(text, sender_email):
             return "Settlement or legal notice that appears legitimate but low priority for this inbox."
-        if self._looks_like_irrelevant_purple_wifi_upgrade_notice(text, normalized_sender_email(sender)):
+        if self._looks_like_irrelevant_purple_wifi_upgrade_notice(text, sender_email):
             return "Captive-portal or wifi upsell confirmation that looks low priority for this inbox."
-        if self._looks_like_irrelevant_sporcle_trophy_notice(text, normalized_sender_email(sender)):
+        if self._looks_like_irrelevant_sporcle_trophy_notice(text, sender_email):
             return "Gamified achievement email that looks low priority for this inbox."
-        if self._looks_like_irrelevant_institutional_memo(text, text, normalized_sender_email(sender)):
+        if self._looks_like_irrelevant_institutional_memo(text, text, sender_email):
             return "Institutional memo from an irrelevant sender that looks low priority for this inbox."
         if self._looks_like_financial_account_message(text, sender, gmail_label_ids):
             return "Financial account update or statement that is mainly useful for later retrieval."
         if self._looks_like_payment_scam_message(text, sender, gmail_label_ids, "", ""):
             return "Suspicious payment or transaction alert that looks more like low-value scam noise than a useful record."
-        if self._is_trusted_personal_sender(normalized_sender_email(sender)):
+        if self._is_trusted_personal_sender(sender_email):
             return "Direct message from a previously trusted personal sender."
         if self._looks_like_google_drive_personal_share(text, sender):
             return "Person-to-person file or folder share that likely belongs in personal retrieval."
@@ -1265,6 +1324,13 @@ class FixtureBatchClassifier:
             and "einlieferungsbeleg" in text
         )
 
+    def _looks_like_dhl_packstation_dropoff_receipt(self, text: str, sender_email: str | None) -> bool:
+        return (
+            sender_email == "noreply@dhl.de"
+            and "einlieferungsbeleg" in text
+            and "packstation" in text
+        )
+
     def _looks_like_amazon_shipping_confirmation(self, text: str, sender_email: str | None) -> bool:
         return (
             sender_email == "versandbestaetigung@amazon.de"
@@ -1334,6 +1400,19 @@ class FixtureBatchClassifier:
             sender_email == "appsupport@bvg.de"
             and "order confirmation" in text
             and "ticket has already been created" in text
+        )
+
+    def _looks_like_transit_ticket_receipt(self, text: str, sender_email: str | None) -> bool:
+        return (
+            sender_email == "keine-antwort@handyticket.de"
+            and "handyticket deutschland" in text
+            and "quittung für den ticketkauf" in text
+        )
+
+    def _looks_like_train_ticket_document(self, text: str, sender_email: str | None) -> bool:
+        return (
+            sender_email == "bilety@polregio.pl"
+            and "your ticket valid on" in text
         )
 
     def _looks_like_gite_reservation_reply(self, text: str, sender_email: str | None) -> bool:
@@ -1436,6 +1515,23 @@ class FixtureBatchClassifier:
                 or "your invoice is available" in text
                 or "votre commande a été expédiée" in text
             )
+        )
+
+    def _looks_like_zoxs_order_status_notice(self, text: str, sender_email: str | None) -> bool:
+        return (
+            sender_email == "noreply@zoxs.de"
+            and "statusupdate zu deiner bestellung" in text
+        )
+
+    def _looks_like_caventura_accounting_order_notice(self, text: str, sender_email: str | None) -> bool:
+        return (
+            sender_email == "accounting@caventura.com"
+            and "caventura gmbh" in text
+            and (
+                "versand ihrer bestellung" in text
+                or "lieferschein" in text
+            )
+            and ("bestellung" in text or "auftrag" in text)
         )
 
     def _looks_like_order_support_thread(self, text: str, sender_email: str | None) -> bool:
@@ -1879,6 +1975,18 @@ class FixtureBatchClassifier:
             and "purchase details" in text
         )
 
+    def _looks_like_shopify_billing_notice(self, text: str, sender_email: str | None) -> bool:
+        return (
+            sender_email == "billing@shopify.com"
+            and "bill for" in text
+        )
+
+    def _looks_like_winsim_invoice_notice(self, text: str, sender_email: str | None) -> bool:
+        return (
+            sender_email == "no-reply@winsim.de"
+            and "winsim-rechnung" in text
+        )
+
     def _looks_like_irrelevant_przelewy24_notice(self, text: str, sender_email: str | None) -> bool:
         return (
             sender_email in {"no-reply@przelewy24.pl", "info@przelewy24.pl"}
@@ -2060,6 +2168,12 @@ class FixtureBatchClassifier:
             )
         )
 
+    def _looks_like_steam_purchase_receipt(self, text: str, sender_email: str | None) -> bool:
+        return (
+            sender_email == "noreply@steampowered.com"
+            and "thank you for your steam purchase!" in text
+        )
+
     def _looks_like_find_my_device_notice(self, text: str, sender_email: str | None) -> bool:
         return (
             sender_email == "noreply-findmydevice@google.com"
@@ -2094,6 +2208,23 @@ class FixtureBatchClassifier:
             and "new login to your gumroad account" in text
         )
 
+    def _looks_like_proton_subscription_renewal_notice(self, text: str, sender_email: str | None) -> bool:
+        return (
+            sender_email == "no-reply@notify.proton.me"
+            and "subscription has been renewed" in text
+        )
+
+    def _looks_like_github_oauth_application_notice(self, text: str, sender_email: str | None) -> bool:
+        return (
+            sender_email == "noreply@github.com"
+            and "[github]" in text
+            and (
+                "third-party oauth application has been added to your account" in text
+                or "third-party github application has been added to your account" in text
+                or "is requesting updated permissions" in text
+            )
+        )
+
     def _looks_like_amazon_account_access_attempt(self, text: str, sender_email: str | None) -> bool:
         return (
             sender_email in {"account-update@amazon.de", "account-update@amazon.com"}
@@ -2103,9 +2234,19 @@ class FixtureBatchClassifier:
 
     def _looks_like_amazon_passkey_notice(self, text: str, sender_email: str | None) -> bool:
         return (
-            sender_email == "account-update@amazon.com"
+            sender_email in {"account-update@amazon.com", "account-update@amazon.ca"}
             and "passkey" in text
-            and "erfolgreich eingerichtet" in text
+            and (
+                "erfolgreich eingerichtet" in text
+                or "passkey added to your account" in text
+                or "passkey was added to your amazon account" in text
+            )
+        )
+
+    def _looks_like_schwab_estatement_notice(self, text: str, sender_email: str | None) -> bool:
+        return (
+            sender_email == "donotreply@mail.schwab.com"
+            and "your account estatement is available" in text
         )
 
     def _looks_like_telus_wifi_activation_notice(self, text: str, sender_email: str | None) -> bool:
