@@ -1,9 +1,9 @@
 # MVP+1 Portfolio Demo Alignment
 
-Status: Aligned next-phase direction, not yet an implementation PRD
+Status: Alignment source for the current MVP+1 PRD
 Current as of: 2026-06-30
-Depends on: closing and committing the Gmail MVP release state
-Builds on: `docs/prd.md`, `docs/v2-alignment.md`, `docs/portfolio.md`
+Implemented by: `docs/prd.md`
+Builds on: `docs/archive/prd-gmail-inbox-companion-release-completed-2026-06-30.md`, `docs/v2-alignment.md`, `docs/portfolio.md`
 
 ## Purpose
 
@@ -124,4 +124,4 @@ The repo workflow for this kind of phase is:
 6. Implement one approved bounded slice at a time, preferably test-first.
 7. End major steps with a handoff and current-state doc updates.
 
-This document completes step 2 for MVP+1. The next planning step, after MVP git closeout, is a bounded PRD for the design-review and demo-packaging work.
+This document completed step 2 for MVP+1. The bounded PRD now lives at `docs/prd.md`; the next workflow step is to execute the first triaged slice, `docs/issues/068-mvp-plus-one-design-review-and-aesthetic-direction.md`.

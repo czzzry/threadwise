@@ -1,7 +1,7 @@
 # V2 Alignment
 
 Status: Current product-direction alignment
-Current as of: 2026-06-29
+Current as of: 2026-06-30
 Builds on: `docs/archive/alignment-v1-gmail-mvp.md` and `docs/archive/prd-v1-gmail-mvp.md` as historical Gmail V1 artifacts
 Completed bounded milestone: `docs/archive/prd-memory-runtime-milestone-completed-2026-06-29.md`
 Current bounded PRD: `docs/prd.md`
@@ -29,14 +29,14 @@ The repo already proves more than the original Gmail MVP:
 - unsubscribe inventory, supported execution, and manual follow-up paths
 - local browser review and inspection tools for exceptions and spot checks
 
-This means V2 is no longer "build daily reports, then weekly reports, then ProtonMail." Those slices already exist in the repo. The current job is to turn that proved backend/workbench foundation into the actual Gmail release product surface.
+This means V2 is no longer "build daily reports, then weekly reports, then ProtonMail." Those slices already exist in the repo. The Gmail release product surface now exists; the current job is to package that release into a recruiter-ready portfolio demo before product expansion resumes.
 
 ## Target User
 
 - one user
 - managing their own inboxes
 - first release target: one Gmail inbox
-- MVP+1 target: add that same person's ProtonMail inbox
+- next product expansion target after the recruiter-ready demo: add that same person's ProtonMail inbox
 - not a team product
 - not a shared-inbox workflow
 
@@ -92,7 +92,7 @@ V2 should not force a merged unified inbox model first.
 
 The product should be able to tell the user what happened in Gmail and what happened in ProtonMail separately, even if both runs happen on the same day.
 
-The first launch target should still be Gmail-first. ProtonMail belongs in MVP+1, not as a blocker to the first serious Gmail release.
+The first launch target should still be Gmail-first. ProtonMail belongs after the recruiter-ready portfolio demo, not as a blocker to the first serious Gmail release or its public packaging.
 
 ## Reporting model
 
@@ -183,7 +183,8 @@ Near-term product work now looks more like:
 2. make in-inbox `Correct / Teach` conversational and immediate
 3. keep the daily dashboard and unsubscribe flows aligned with that inbox-native surface
 4. use the current workbench/review infrastructure as supporting product plumbing, not the destination UX
-5. add the founder's ProtonMail inbox in MVP+1 once the Gmail release flow is solid
+5. package the Gmail release as a recruiter-ready portfolio demo
+6. add the founder's ProtonMail inbox after the Gmail release flow and public demo story are solid
 
 ## Non-goals for now
 

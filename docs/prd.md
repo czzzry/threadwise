@@ -1,234 +1,202 @@
 # PRD
 
 Status: Current bounded-slice PRD
-Current as of: 2026-06-29
-Builds on: `docs/v2-alignment.md`, `docs/checkpoints/current-operating-model-2026-06-22.md`, `docs/handoff/2026-06-29-queue-drained-and-compiled-rules-hardened.md`
-Supersedes as current planning focus: `docs/archive/prd-memory-runtime-milestone-completed-2026-06-29.md`
-Release target: Gmail first serious release
-Next release target after this: founder's ProtonMail inbox in MVP+1
+Current as of: 2026-06-30
+Builds on: `docs/mvp-plus-one-portfolio-demo-alignment.md`, `docs/portfolio.md`, `docs/checkpoints/current-operating-model-2026-06-22.md`
+Supersedes as current planning focus: `docs/archive/prd-gmail-inbox-companion-release-completed-2026-06-30.md`
+Release target: recruiter-ready Threadwise portfolio demo
+Product target after this: product expansion planning, including inbox-agnostic / multi-inbox direction
 
-This PRD describes the current Threadwise Gmail-first release slice.
+This PRD describes the MVP+1 portfolio-demo release slice.
 
 ## Problem Statement
 
-The repo now proves the backend trust milestone that mattered most for the classifier itself:
+Threadwise now has a working Gmail-first supervised product surface:
 
-- deterministic plus memory plus founder feedback can reach under `10%` unresolved on the current stored corpora
-- the queue, safety lane, runtime cascade, unsubscribe plumbing, and reporting backbone all exist
+- Gmail daily triage with bounded provider-side write-back
+- limited `INBOX` removal for approved low-value categories
+- a browser-based Gmail companion sidebar
+- selected-email classification and short rationale
+- in-context `Correct / Teach`
+- broader-impact preview before multi-email changes
+- compact daily summary, fuller daily dashboard, and unsubscribe review handoff
 
-But that does not yet equal a real release product.
+That is enough for a real MVP, but it is not yet enough for a recruiter or hiring manager to understand the project quickly.
 
-The current system still feels too much like supporting infrastructure:
+The current repo still asks too much of a reviewer:
 
-- local workbench
-- review queue
-- readiness reports
-- batch tooling
+- they have to read several docs to understand the product story
+- the README does not yet show polished demo assets at the top
+- the strongest product loop is not visible without setup
+- the UI was built for proving behavior, not for portfolio-grade capture
+- public screenshots and video/GIF assets are still missing
+- the next-phase story can drift between ProtonMail expansion, backend capability, and portfolio packaging unless it is explicitly bounded
 
-The founder does not want the product to live mainly in a separate review tool.
+The founder wants MVP+1 to make Threadwise marketable as a portfolio project for an AI product engineer / product-minded full-stack builder.
 
-The next real product must live in the inbox itself.
+The next problem is:
 
-The founder wants a Gmail-first release where:
-
-- the agent appears as a browser-based companion sidebar in Gmail
-- the sidebar shows what the agent thinks about the currently selected email
-- the user can correct the agent in context
-- the agent can acknowledge feedback conversationally
-- the agent can learn from that feedback carefully
-- the agent can surface when a correction would affect other existing emails and ask before applying broader changes
-- the user can see a compact daily summary of what happened
-- unsubscribe opportunities are surfaced and actionable
-
-So the next product problem is no longer "can the classifier work?" It is:
-
-> Can we turn the proved backend into a trustworthy, inbox-native Gmail companion that feels like a teachable agent rather than a disconnected review system?
+> Can we turn the completed Gmail MVP into a polished, recruiter-readable portfolio artifact that shows the human-in-the-loop AI product loop in under a minute, without exposing private email or overclaiming product scope?
 
 ## Solution
 
-Build the first serious Gmail release as a browser-based inbox companion sidebar.
+Build a recruiter-ready demo and repo packaging pass around the existing Gmail-first product.
 
-The sidebar should be the primary product surface and should:
+The MVP+1 release should:
 
-- attach to the active Gmail browsing session
-- be minimizable
-- react to the currently selected email in real time
-- show the email's current classification, handling status, and a short plain-English reason
-- expose `Correct / Teach`
-- allow a short conversational correction loop
-- acknowledge what the agent understood
-- show whether the agent thinks the correction is:
-  - only for this email
-  - a sender or family lesson
-  - a broader future rule candidate
-- surface broader impact before changing any other existing emails
-- let the user choose:
-  - apply only to this email
-  - apply to matching emails too
-  - use for future emails only
-  - refine this
-- preserve the previous interpretation when refining so the user can compare old vs revised understanding
-- show unsubscribe availability for the current email when relevant
-- include a compact daily summary in the sidebar and hand off to fuller dashboard and unsubscribe views when needed
+- run the public demo through real Gmail UI using a Gmail test account seeded only with synthetic emails
+- polish the Threadwise sidebar, daily dashboard, teach flow, and unsubscribe review surfaces before capture
+- define and apply a coherent visual aesthetic for portfolio-quality screenshots/video
+- produce short GIF/video assets that communicate the product loop without requiring local setup
+- update the README and portfolio docs so the first screen explains Threadwise quickly
+- keep the deeper technical story available below the fold for hiring managers
+- clearly label synthetic demo data and roadmap content
+- keep the existing safety boundaries intact
 
-The release should remain Gmail-first:
+The first major phase is a design review:
 
-- Gmail is the release target
-- ProtonMail belongs in MVP+1 after the Gmail experience is real and trustworthy
-- the architecture should still preserve a path to a more magical thread-native experience later without requiring that risk now
+- audit the current capture surfaces
+- identify what can be changed visually in the Threadwise-controlled UI
+- identify what remains constrained by Gmail
+- propose 2-3 aesthetic directions
+- select one direction
+- implement it before writing the final capture script
+
+The working aesthetic direction to explore first is:
+
+> Calm AI operator.
+
+The product should feel calm, precise, and credible inside Gmail: compact but premium information density, restrained color, strong hierarchy, readable status pills, clear impact-preview panels, and obvious confirmation choices.
 
 ## User Stories
 
-1. As the inbox owner, I want the agent to appear in Gmail beside the email I am reading, so that the product feels like part of my inbox workflow.
-2. As the inbox owner, I want the companion sidebar to be minimizable, so that it does not dominate my inbox when I do not need it.
-3. As the inbox owner, I want the selected email's current classification shown first, so that I immediately know what the agent thinks this email is.
-4. As the inbox owner, I want a short plain-English reason shown by default, so that I can trust the decision without reading a long explanation.
-5. As the inbox owner, I want deeper reasoning and provenance behind a small details affordance, so that I can inspect the decision when I care without cluttering the everyday UI.
-6. As the inbox owner, I want the sidebar to tell me whether the email was auto-handled, left visible, or still needs attention, so that I understand what the agent already did.
-7. As the inbox owner, I want a clear `Correct / Teach` action on the selected email, so that I can quickly intervene when the agent is wrong.
-8. As the inbox owner, I want to relabel the current email quickly and optionally explain what I meant, so that I can both fix the email and teach the agent.
-9. As the inbox owner, I want the agent to reply briefly after I correct it, so that I know it understood my feedback.
-10. As the inbox owner, I want that acknowledgment to say what the agent thinks it learned, so that I can detect misunderstanding early.
-11. As the inbox owner, I want the agent to decide whether the feedback is a one-off fix, a sender or family lesson, or a broader rule candidate, so that learning becomes structured rather than ad hoc.
-12. As the inbox owner, I want corrections to start from the email I am looking at but to generalize across future or similar emails when appropriate, so that I do not have to teach the same thing repeatedly.
-13. As the inbox owner, I want the agent to tell me if my feedback would change existing classifications on other emails, so that broader consequences are visible before they happen.
-14. As the inbox owner, I want any broader existing-email rewrite to require confirmation first, so that the agent cannot silently change a large set of mail.
-15. As the inbox owner, I want the impact summary to tell me how many emails would change and how, so that I can judge whether the agent interpreted me correctly.
-16. As the inbox owner, I want to choose whether to apply a correction only to the current email, to matching existing emails too, or only to future emails, so that I control the blast radius.
-17. As the inbox owner, I want a `Refine this` option when the agent's interpretation is off, so that I can keep clarifying until we are aligned.
-18. As the inbox owner, I want the current and revised interpretation preserved during refinement, so that I can see whether the agent actually changed its understanding.
-19. As the inbox owner, I want broader confirmed changes to apply immediately or visibly refresh right away, so that the product feels responsive instead of deferred.
-20. As the inbox owner, I want the agent to remain mostly reactive, so that the inbox stays calm.
-21. As the inbox owner, I want bounded prompting, so that the agent can surface a few important clarifications without turning my day into endless chat.
-22. As the inbox owner, I want unanswered prompts to degrade gracefully, so that ignoring a clarification does not break the rest of the system.
-23. As the inbox owner, I want the sidebar to be useful even when nothing is wrong, so that it feels like the normal product surface rather than only an exception tool.
-24. As the inbox owner, I want the sidebar to show a compact daily summary of what happened, so that I understand the day's automation at a glance.
-25. As the inbox owner, I want that compact summary to be operational first, so that I see what came in, what was categorized, and what needs attention.
-26. As the inbox owner, I want the dashboard to be fuller than the sidebar, so that I can drill into details without bloating the inbox surface.
-27. As the inbox owner, I want the dashboard to remain secondary, so that the inbox stays the center of gravity for daily use.
-28. As the inbox owner, I want the sidebar to show when unsubscribe is available for the selected email, so that subscription management is visible in context.
-29. As the inbox owner, I want obvious one-email unsubscribe opportunities to be actionable from the sidebar, so that simple cases stay fast.
-30. As the inbox owner, I want broader subscription-family selection, preview, and confirmation in a fuller unsubscribe view, so that unsubscribe management remains explicit and safe.
-31. As the inbox owner, I want the dashboard to show what the agent changed today, so that I can trust the system without reading a giant audit log.
-32. As the inbox owner, I want the history emphasis to stay lightweight, so that the product remains practical instead of feeling like enterprise governance software.
-33. As the inbox owner, I want safety-sensitive mail to remain visibly separate, so that important caution cases are not flattened into ordinary category automation.
-34. As the inbox owner, I want the agent to ask more rather than less while I am still teaching it, so that early learning is careful and aligned.
-35. As the inbox owner, I want the product to stay focused on my personal inboxes and not drift into a team/shared-inbox tool, so that the experience remains sharp.
-36. As the product lead, I want Gmail to be the first serious release target, so that we can ship one coherent product before broadening to other providers.
-37. As the product lead, I want ProtonMail to be the next release after Gmail, so that the multi-inbox vision stays real without blocking the Gmail launch.
-38. As the product lead, I want the sidebar architecture to preserve a path to more magical thread-native rendering later, so that the first robust version does not trap the product in a dead-end UI model.
-39. As the product lead, I want the conversation model separate from the rendering surface, so that the same correction interaction can later appear in a more native-feeling presentation.
-40. As the product lead, I want provider adapters separated from the product interaction model, so that Gmail-first release decisions do not corrupt the future ProtonMail path.
+1. As a recruiter, I want the README to show what Threadwise does before I run anything, so that I can understand the project quickly.
+2. As a recruiter, I want a short GIF/video at the top of the README, so that I can see the product loop without installing dependencies.
+3. As a recruiter, I want the demo to use real Gmail UI, so that the project feels credible and not like a fake email toy.
+4. As a recruiter, I want the demo data to be clearly synthetic, so that I know private email is not being exposed.
+5. As a recruiter, I want the first visual to show categorized email and a daily briefing, so that I immediately understand the value proposition.
+6. As a recruiter, I want a second visual to show `Correct / Teach`, so that I understand the human-in-the-loop AI interaction.
+7. As a recruiter, I want the teach demo to show broader-impact preview, so that I see the safety model is deliberate.
+8. As a recruiter, I want a third visual to show unsubscribe approval, so that I see Threadwise can handle practical inbox cleanup safely.
+9. As a recruiter, I want small overlay captions, so that the demo explains itself even if I skim silently.
+10. As a recruiter, I want static screenshots below the GIFs, so that I can inspect the UI at my own pace.
+11. As a recruiter, I want the README to say what the founder built or directed, so that I can evaluate the candidate clearly.
+12. As a recruiter, I want the README to distinguish current behavior from roadmap, so that the project does not feel inflated.
+13. As a recruiter, I want the repo to look organized and intentional, so that I trust the work before digging into code.
+14. As a hiring manager, I want technical depth one click deeper, so that I can inspect architecture after the product hook lands.
+15. As a hiring manager, I want to understand the safety boundaries, so that I can see the product judgment behind the automation.
+16. As a hiring manager, I want to see that the Gmail companion is backed by tests and acceptance harnesses, so that the demo is not only a mockup.
+17. As a hiring manager, I want the implementation docs to separate historical planning from current scope, so that I can follow the engineering process.
+18. As a hiring manager, I want the demo to show behavior already implemented in the repo, so that the portfolio does not misrepresent capabilities.
+19. As a hiring manager, I want the demo route or capture path to be deterministic, so that reviewers can reproduce or update the assets later.
+20. As a hiring manager, I want the UI states to be polished but plausible, so that the product feels real rather than like a marketing-only facade.
+21. As the founder, I want the sidebar to look more intentional, so that screenshots communicate product taste as well as functionality.
+22. As the founder, I want to know how far the sidebar can visually change, so that design work stays realistic inside Gmail.
+23. As the founder, I want the design review to call out Gmail constraints, so that we do not waste time trying to redesign Gmail itself.
+24. As the founder, I want 2-3 aesthetic directions before implementation, so that the visual direction is chosen deliberately.
+25. As the founder, I want the selected aesthetic incorporated into the real Threadwise UI, so that demo assets come from the product surface.
+26. As the founder, I want the UI to be a little slicker for portfolio capture, so that the project competes visually without lying.
+27. As the founder, I want the daily briefing demo to be 10-20 seconds max, so that the README stays easy to skim.
+28. As the founder, I want the teach flow demo to be 10-20 seconds max, so that the core safety loop is concise.
+29. As the founder, I want the unsubscribe demo to be 10-20 seconds max, so that the cleanup feature is visible without bloating the README.
+30. As the founder, I want an optional roadmap micro-clip, so that the multi-inbox / inbox-agnostic direction is visible as "next" rather than current scope.
+31. As the founder, I want the roadmap clip to show Gmail to ProtonMail to Outlook/Hotmail, so that the future product direction is obvious.
+32. As the founder, I want roadmap visuals clearly labeled as future, so that reviewers do not confuse them with shipped behavior.
+33. As the founder, I want the demo Gmail account seeded with synthetic emails, so that capture does not expose private data.
+34. As the founder, I want synthetic emails chosen for demo clarity, so that categories and corrections are easy to understand.
+35. As the founder, I want sensitive areas avoided in demo data, so that the portfolio does not create privacy or reputational risk.
+36. As the founder, I want the README to include a demo disclaimer, so that the synthetic-data setup is transparent.
+37. As the founder, I want the public assets committed under `docs/assets/`, so that the README works on GitHub without local setup.
+38. As the founder, I want optional MP4 versions, so that higher-quality demo embeds or portfolio pages can use them later.
+39. As the founder, I want the interactive/local demo path to remain secondary, so that recruiters are not forced to run scripts.
+40. As the founder, I want the final MVP+1 closeout to include a clean git state, so that the public repo is publishable.
+41. As a future agent, I want the PRD to define capture surfaces and constraints, so that implementation does not drift into backend expansion.
+42. As a future agent, I want the first slice to be design review, so that screenshots are not captured from a rough UI.
+43. As a future agent, I want demo assets to be generated from deterministic flows, so that updates do not depend on ad hoc manual clicking.
+44. As a future agent, I want acceptance criteria for visual polish, so that "looks good" becomes reviewable.
+45. As a future agent, I want current docs updated after the demo pass, so that the repo stops saying screenshots are missing once they exist.
 
 ## Implementation Decisions
 
-- The release should be Gmail-first. The current bounded slice should not try to ship Gmail and ProtonMail as equal first-class product surfaces at the same time.
-- The primary product surface should be a browser-based Gmail companion sidebar. The current local workbench can inform the implementation, but it should not remain the main user-facing story.
-- The sidebar should be minimizable and should default to a compact operational state rather than an always-open chat transcript.
-- The selected-email view should lead with:
-  - current classification
-  - handling status
-  - short plain-English reason
-  - `Correct / Teach`
-- Reasoning should use a split presentation:
-  - short explanation by default
-  - deeper provenance and decision details only on demand
-- Correction should be a combined fast relabel plus optional free-form explanation interaction, not just one or the other.
-- The agent acknowledgment should remain short by default, but it must clearly state:
-  - what changed now
-  - what it thinks it learned
-  - whether it generalized or deferred generalization
-- Broader-change planning should be first-class product behavior. When the system infers that feedback would change other existing emails, it must compute and show proposed impact before applying it.
-- The confirmation model for broader learning should support four outcomes:
-  - apply only to this email
-  - apply to matching emails too
-  - use for future emails only
-  - refine this
-- Refinement should preserve the previous interpretation visibly rather than replacing it silently. The user needs to be able to compare the old and revised understanding.
-- In the early Gmail release, any change affecting emails beyond the current one should require confirmation. That is a release-trust rule, not merely a tuning preference.
-- The agent should be mostly reactive, but allowed to surface bounded prompts such as:
-  - clarification needed
-  - unsubscribe opportunities found
-  - change confirmation pending
-- Prompt budget should be productized:
-  - ideal day: `0`
-  - normal acceptable day: `1-3`
-  - heavy day: up to `5`
-  Beyond that, the system should batch and summarize rather than continuing to interrupt.
-- Unanswered prompts should not block the whole system. The affected decision should remain in a safe current state and stay available for later follow-up.
-- The daily dashboard should remain operational-first:
-  - what came in
-  - what was categorized
-  - what was auto-handled
-  - what needs attention
-  - what unsubscribe opportunities were found
-  A small learning-progress section is acceptable but should stay secondary.
-- The sidebar should show a compact daily summary and open or hand off to a fuller dashboard view for deeper inspection.
-- Unsubscribe should be split across surfaces:
-  - quick contextual signal and simple action in the sidebar when obvious
-  - fuller family-level selection, preview, and confirmation in the expanded unsubscribe view
-- The correction conversation model should be stored as structured product interaction state rather than being hardwired to one UI surface. This preserves the ability to evolve from companion sidebar to more thread-native rendering later.
-- Provider-specific selection context should feed a common product layer. The Gmail sidebar implementation should not embed product logic inside Gmail-specific DOM assumptions beyond what is needed to identify the selected message and render the panel.
-- Existing backend capabilities should be reused where possible:
-  - current classification/runtime artifacts for selected-email status
-  - current founder-feedback and memory logic for learning candidates
-  - current unsubscribe inventory and execution flow for subscription handling
-  - current reporting/readiness infrastructure for compact daily summary inputs
-- The product should visibly distinguish agent interaction from actual email content. Even if a later iteration becomes more native-feeling, the system should not confuse users into thinking the agent has literally sent an email when it has not.
+- MVP+1 is portfolio packaging, not provider expansion.
+- The immediate release target is a recruiter-ready Threadwise demo and README/portfolio refresh.
+- The demo should use real Gmail UI with a test Gmail account seeded only with synthetic emails.
+- The demo should not use private founder email, production credentials, or sensitive inbox content.
+- The demo may use overlay captions, but captions must not claim behavior that is not implemented.
+- The README should prioritize visual clarity first:
+  - one-line product pitch
+  - short GIF/video assets near the top
+  - concise synthetic-data disclaimer
+  - static screenshots
+  - deeper architecture and safety details lower down
+- The demo assets should include three short primary flows:
+  - daily briefing/report
+  - teach the agent safely
+  - unsubscribe with approval
+- The demo may include one roadmap micro-clip showing Gmail to ProtonMail to Outlook/Hotmail, but it must be labeled as "Next" or "Roadmap."
+- The first implementation phase should be design review and aesthetic direction before capture scripting.
+- The design review should define:
+  - current UI strengths and weaknesses
+  - visual-change boundaries inside Gmail
+  - 2-3 aesthetic options
+  - recommended direction
+  - concrete implementation checklist
+- The initial aesthetic to explore is "Calm AI operator."
+- The chosen aesthetic should be incorporated into Threadwise-controlled surfaces:
+  - Gmail companion sidebar
+  - daily dashboard
+  - teach/impact preview state
+  - unsubscribe review/handoff state
+  - demo overlay captions
+- The UI may be slightly more polished for portfolio capture than the raw internal product, but it must remain truthful to implemented behavior.
+- The interactive/local demo path should be secondary to committed README assets.
+- Public assets should be committed under `docs/assets/`.
+- Historical Gmail release planning should stay archived and linkable, but no longer drive the current PRD.
+- The product safety boundaries remain unchanged:
+  - no delete, trash, broad archive, send, or reply automation
+  - no real unsubscribe execution in a public demo without explicit test-account safety
+  - no private email content in public artifacts
+  - no provider-side ProtonMail mutation
 
 ## Testing Decisions
 
-- Good tests should prove user-visible behavior of the Gmail companion experience and its contracts, not internal DOM implementation details or helper wiring.
-- Prefer the highest seams available:
-  - sidebar application state and selected-email contract
-  - correction conversation and impact-confirmation APIs
-  - immediate write/apply behavior after confirmation
-  - compact daily summary rendering contracts
-  - unsubscribe quick-action and handoff behavior
-- Existing prior art in the repo already exists for:
-  - local browser review UI behavior
-  - unified review queue behavior
-  - founder-answer application and memory-impact behavior
-  - unsubscribe selection and execution flows
-  - runtime cascade and readiness reports
-- The sidebar slice should be tested first against:
-  - selected-email status rendering
-  - minimized/default state
-  - compact summary behavior
-  - safe behavior when no current email is selected
-- The correction/teaching slice should be tested first against:
-  - one-email correction
-  - broader impact estimation
-  - confirmation-first behavior for multi-email changes
-  - refine-this compare flow
-  - immediate visible update after confirmation
-- The unsubscribe slice should be tested first against:
-  - current-email unsubscribe availability
-  - quick-action cases
-  - handoff into fuller family-level unsubscribe flow
-  - explicit confirmation before execution
-- Gmail release hardening tests should emphasize:
-  - live selected-email context continuity
-  - stable agent acknowledgment loop
-  - bounded prompting behavior
-  - recoverability when the user ignores clarifications
+- Good tests should prove portfolio/demo behavior at the highest practical seam, not internal helper details.
+- Existing tests for the Gmail companion UI should continue to cover user-visible sidebar, dashboard, teach, and unsubscribe behavior.
+- Design implementation should preserve or expand tests around:
+  - sidebar selected-email rendering
+  - teach preview and confirmation copy
+  - daily dashboard route
+  - unsubscribe review handoff
+  - simulator/demo rendering where used
+- Visual capture should be validated with browser screenshots before recording final assets.
+- If a deterministic demo route or capture script is added, it should have a smoke test proving:
+  - the route loads
+  - required demo states exist
+  - no private data fixtures are referenced
+  - the capture viewport does not produce obvious overflow or clipped text
+- README asset references should be checked so committed GIFs/screenshots render through relative GitHub paths.
+- Demo copy should be reviewed against actual implemented behavior to avoid overclaiming.
+- If a real Gmail test account is used for capture, the capture checklist should confirm:
+  - only synthetic emails are visible
+  - no credentials or private account information appear in assets
+  - unsafe actions are simulated or explicitly bounded to the test account
 
 ## Out of Scope
 
-- shipping ProtonMail as part of the first Gmail release
-- team/shared-inbox workflows
-- delete, trash, broad archive, send, or reply automation
-- pretending the workbench/dashboard is the primary release surface
-- forcing the first Gmail release to feel fully native-thread-integrated before the robust companion model is proven
-- unlimited proactive prompting by the agent
-- silent multi-email reclassification in the early trust model
-- building a generic provider platform before the Gmail release is solid
+- Adding ProtonMail write-side behavior.
+- Shipping multi-inbox aggregation as part of this phase.
+- Building a generic provider platform.
+- Adding new autonomous inbox actions.
+- Deleting, trashing, broadly archiving, sending, or replying to email.
+- Making recruiters run a local server before seeing the product story.
+- Redesigning Gmail itself.
+- Using private founder email in public screenshots or videos.
+- Capturing demo assets before the design review/aesthetic pass.
+- Treating the roadmap micro-clip as current shipped functionality.
 
 ## Further Notes
 
-- The classifier and memory milestone is complete. The next risk is no longer backend classification leverage; it is the productization of that leverage into an inbox-native experience.
-- The Gmail release should be treated as a product-surface milestone, not another backend-accuracy milestone.
-- The most important distinction to preserve in execution is:
-  - inbox is primary
-  - dashboard/workbench is secondary
-- The architecture should preserve a path to a later more magical inbox-native rendering model, but the first serious version should optimize for robustness and releaseability rather than illusion.
+- This PRD intentionally moves MVP+1 away from backend expansion and toward portfolio packaging.
+- Product expansion to ProtonMail and inbox-agnostic workflows remains valuable, but it should follow the recruiter-ready demo pass.
+- The next slice should be design review and aesthetic direction, not GIF capture.
+- The final MVP+1 closeout should include committed assets, README/portfolio updates, tests/smokes, clean `git status`, push, and optional milestone tag.

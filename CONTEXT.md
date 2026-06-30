@@ -1,7 +1,7 @@
 # CONTEXT.md
 
 Status: Current repo context
-Current as of: 2026-06-29
+Current as of: 2026-06-30
 
 This file exists to keep agents from re-litigating old project stages or mistaking historical docs for current instructions.
 
@@ -12,7 +12,7 @@ Before doing substantial work, read these in order:
 1. `AGENTS.md`
 2. `CONTEXT.md`
 3. `docs/v2-alignment.md`
-4. `docs/prd.md` for the current Gmail inbox companion release slice
+4. `docs/prd.md` for the current MVP+1 portfolio demo release slice
 5. `docs/checkpoints/current-operating-model-2026-06-22.md`
 6. `docs/v2-issue-map.md`
 7. then only the specific current issue, handoff, or code relevant to the task
@@ -36,15 +36,15 @@ The repo is no longer blocked on basic implementation.
 
 ## Current Stage
 
-This is a post-MVP, post-proof repo that has completed the memory/runtime hardening milestone and is closing the Gmail release state.
+This is a post-MVP, post-proof repo that has completed the Gmail release state and is entering MVP+1 portfolio packaging.
 
 The main uncertainty is no longer "can this be built?" and no longer "can the classifier get under the current unresolved threshold?"
 
 The main uncertainty is now:
 
-- how to close, commit, and publish the Gmail-first release state cleanly
-- how to keep the inbox-native companion, daily dashboard, and unsubscribe review aligned as one product
-- how to sequence the recruiter-ready portfolio demo as MVP+1 without drifting back into tool-first side paths
+- how to make the Gmail-first product visually strong enough for recruiter-facing demo assets
+- how to package the README, portfolio docs, screenshots, and GIF/video assets so the project is understandable without setup
+- how to show the future inbox-agnostic direction as roadmap without implying it is already shipped
 
 ## Current Working Rule
 
@@ -60,9 +60,7 @@ The current product direction for Threadwise is:
 - secondary surface: dashboard/workbench for summary, unsubscribe, review, and debugging
 - MVP+1 target: recruiter-ready portfolio demo using real Gmail UI with synthetic email data
 
-The current bounded PRD already exists in `docs/prd.md`. Implementation should now follow that PRD plus the latest current checkpoint and handoff.
-
-The aligned MVP+1 direction is recorded in `docs/mvp-plus-one-portfolio-demo-alignment.md`. Do not start MVP+1 implementation until the Gmail MVP release state is committed and the MVP+1 work has been turned into a bounded PRD/slices.
+The current bounded PRD exists in `docs/prd.md` and covers the MVP+1 recruiter-ready portfolio demo release. The first current slice is `docs/issues/068-mvp-plus-one-design-review-and-aesthetic-direction.md`.
 
 ## Trust Order When Docs Differ
 
@@ -72,7 +70,7 @@ Use this order:
 2. `AGENTS.md` for workflow and guardrails
 3. `CONTEXT.md` for current stage and read order
 4. `docs/v2-alignment.md` for current product direction
-5. `docs/prd.md` for the current Gmail inbox companion release slice
+5. `docs/prd.md` for the current MVP+1 portfolio demo release slice
 6. `docs/checkpoints/current-operating-model-2026-06-22.md` for what the repo currently proves
 7. `docs/v2-issue-map.md` for candidate next-slice themes only
 8. `docs/archive/`, `docs/handoff/`, and `docs/deep-research/` as historical context only
