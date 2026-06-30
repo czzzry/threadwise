@@ -1,6 +1,6 @@
 # Status
 
-Current
+Completed
 Current as of: 2026-06-29
 Triage state: `ready-for-agent`
 Builds on: `docs/prd.md`
@@ -41,12 +41,12 @@ This slice should not yet implement the full correction conversation or unsubscr
 
 ## Acceptance criteria
 
-- [ ] The Gmail companion sidebar can render beside Gmail and be minimized and restored.
-- [ ] The sidebar updates when the selected email changes.
-- [ ] The selected-email panel shows current classification, handling status, and a short reason in that order.
-- [ ] The sidebar has a safe compact state when no selected-email context is available.
-- [ ] The sidebar shows a compact daily summary that makes sense without leaving Gmail.
-- [ ] A documented selected-email contract exists for downstream slices.
+- [x] The Gmail companion sidebar can render beside Gmail and be minimized and restored.
+- [x] The sidebar updates when the selected email changes.
+- [x] The selected-email panel shows current classification, handling status, and a short reason in that order.
+- [x] The sidebar has a safe compact state when no selected-email context is available.
+- [x] The sidebar shows a compact daily summary that makes sense without leaving Gmail.
+- [x] A documented selected-email contract exists for downstream slices.
 
 ## Output
 
@@ -54,3 +54,6 @@ This slice should not yet implement the full correction conversation or unsubscr
 - selected-email context contract
 - sidebar state contract
 
+## Completion note
+
+Completed as part of the Gmail companion release tranche. See `docs/handoff/2026-06-29-slice-063-gmail-companion-sidebar-spine.md` and the later Gmail release closeout handoffs for the live sidebar and selected-email contract validation.

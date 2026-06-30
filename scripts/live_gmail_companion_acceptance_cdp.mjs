@@ -64,6 +64,8 @@ try {
   const afterOpen = await sidebarSnapshot();
   const queueSelection = await selectQueueItem();
   const afterQueueSelection = await sidebarSnapshot();
+  const filterNavigation = await verifySummaryFilterNavigation();
+  const draftPersistence = await verifyDraftPersistence();
   const teachPreview = queueSelection
     ? await runTeachPreview()
     : { attempted: false };
@@ -80,12 +82,40 @@ try {
     afterOpen,
     queueSelection,
     afterQueueSelection,
+    filterNavigation,
+    draftPersistence,
     teachPreview,
   };
 
-  console.log(JSON.stringify(result, null, 2));
+  result.checks = buildChecks(result);
+  result.ok = Object.values(result.checks).every(Boolean);
+
+  if (!result.ok) {
+    console.error(JSON.stringify(result, null, 2));
+    process.exitCode = 1;
+  } else {
+    console.log(JSON.stringify(result, null, 2));
+  }
 } finally {
   socket.close();
+}
+
+function buildChecks(result) {
+  const queueText = result.queueSelection?.panelText || "";
+  const teachText = result.teachPreview?.finalText || result.teachPreview?.selected || "";
+  const summaryText = result.initial?.summary?.text || result.afterOpen?.summary?.text || "";
+  return {
+    sidebarLoaded: Boolean(result.afterOpen?.hasRoot && result.afterOpen?.subtitle),
+    queuePreviewReached: Boolean(result.queueSelection?.ok && queueText.includes("QUEUE PREVIEW")),
+    unsubscribeActionVisible: queueText.includes("Queue unsubscribe review"),
+    summaryFilterNavigation: Boolean(result.filterNavigation?.attempted && result.filterNavigation?.ok),
+    draftPersistsAcrossRefresh: Boolean(result.draftPersistence?.attempted && result.draftPersistence?.ok),
+    teachPreviewReached: Boolean(result.teachPreview?.attempted && result.teachPreview?.hasPreview),
+    impactWarningVisible: teachText.includes("Matching existing emails:"),
+    explicitChoiceCopyVisible: teachText.includes("Apply only to this email changes the current message only."),
+    keepDiscussingVisible: teachText.includes("Keep discussing"),
+    dailySummaryVisible: summaryText.includes("WHAT CHANGED TODAY") || summaryText.includes("What Changed Today"),
+  };
 }
 
 async function findGmailTarget() {
@@ -184,6 +214,16 @@ async function sidebarSnapshot() {
 }
 
 async function selectQueueItem() {
+  await evaluate(`(() => {
+    if (!globalThis.__eaTestHooks || typeof globalThis.__eaTestHooks.selectSummaryFilter !== 'function') {
+      return { ok: false, error: 'missing-filter-hook' };
+    }
+    return globalThis.__eaTestHooks.selectSummaryFilter('needs_attention_items');
+  })()`);
+  await waitFor(async () => {
+    const snapshot = await evaluate(`globalThis.__eaTestHooks.getSnapshot()`);
+    return snapshot.activeSummaryFilter === "needs_attention_items";
+  }, 10000);
   const selected = await evaluate(`(() => {
     const preferred = Array.from(document.querySelectorAll('[data-ea-summary-item]')).find((node) =>
       node.innerText.toLowerCase().includes('linkedin')
@@ -242,6 +282,70 @@ async function runTeachPreview() {
       finalText: ${JSON.stringify(finalText)},
     };
   })()`);
+}
+
+async function verifySummaryFilterNavigation() {
+  const result = await evaluate(`(() => {
+    if (!globalThis.__eaTestHooks || typeof globalThis.__eaTestHooks.selectSummaryFilter !== 'function') {
+      return { attempted: false, reason: 'filter-hook-missing' };
+    }
+    return { attempted: true, action: globalThis.__eaTestHooks.selectSummaryFilter('auto_handled_items') };
+  })()`);
+  if (!result.attempted) {
+    return result;
+  }
+  await waitFor(async () => {
+    const snapshot = await evaluate(`globalThis.__eaTestHooks.getSnapshot()`);
+    return snapshot.activeSummaryFilter === "auto_handled_items" && Boolean(snapshot.selectedEmail);
+  }, 10000);
+  const snapshot = await evaluate(`globalThis.__eaTestHooks.getSnapshot()`);
+  const panelText = await evaluate(`document.getElementById('ea-selected-email')?.innerText || ''`);
+  return {
+    attempted: true,
+    ok: snapshot.activeSummaryFilter === "auto_handled_items" && panelText.length > 0,
+    activeSummaryFilter: snapshot.activeSummaryFilter,
+    selectedMessageId: snapshot.selectedEmail?.message_id || "",
+    panelText: panelText.slice(0, 2000),
+  };
+}
+
+async function verifyDraftPersistence() {
+  const result = await evaluate(`(() => {
+    if (!globalThis.__eaTestHooks || typeof globalThis.__eaTestHooks.setDraft !== 'function' || typeof globalThis.__eaTestHooks.forceRefresh !== 'function') {
+      return { attempted: false, reason: 'draft-hooks-missing' };
+    }
+    const draft = globalThis.__eaTestHooks.setDraft(
+      'personal',
+      'Acceptance harness draft should survive a refresh.',
+    );
+    const refreshed = globalThis.__eaTestHooks.forceRefresh();
+    return { attempted: true, draft, refreshed };
+  })()`);
+  if (!result.attempted) {
+    return result;
+  }
+  await waitFor(async () => {
+    const draft = await evaluate(`globalThis.__eaTestHooks.getDraft()`);
+    return draft.targetLabel === 'personal' && draft.note === 'Acceptance harness draft should survive a refresh.';
+  }, 10000);
+  const after = await evaluate(`(() => {
+    const draft = globalThis.__eaTestHooks.getDraft();
+    return {
+      draft,
+      domLabel: document.getElementById('ea-target-label')?.value || '',
+      domNote: document.getElementById('ea-teach-note')?.value || '',
+    };
+  })()`);
+  const ok =
+    after.draft?.targetLabel === "personal" &&
+    after.draft?.note === "Acceptance harness draft should survive a refresh." &&
+    after.domLabel === "personal" &&
+    after.domNote === "Acceptance harness draft should survive a refresh.";
+  return {
+    attempted: true,
+    ok,
+    ...after,
+  };
 }
 
 async function settlePanel(predicate, timeoutMs) {

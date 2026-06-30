@@ -7,7 +7,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import sys
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
 
 from src.gmail_batch_review_store import GmailBatchReviewStore
 from src.gmail_cli_support import default_gmail_client_factory
@@ -155,7 +155,17 @@ class GmailCompanionApp:
             return
 
         if handler.command == "GET" and parsed.path == "/unsubscribe-review":
-            encoded = self.render_unsubscribe_review_page().encode("utf-8")
+            encoded = self.render_unsubscribe_review_page(parse_qs(parsed.query)).encode("utf-8")
+            handler.send_response(HTTPStatus.OK)
+            handler.send_header("Content-Type", "text/html; charset=utf-8")
+            handler.send_header("Content-Length", str(len(encoded)))
+            self._write_cors_headers(handler)
+            handler.end_headers()
+            handler.wfile.write(encoded)
+            return
+
+        if handler.command == "GET" and parsed.path == "/daily-dashboard":
+            encoded = self.render_daily_dashboard_page().encode("utf-8")
             handler.send_response(HTTPStatus.OK)
             handler.send_header("Content-Type", "text/html; charset=utf-8")
             handler.send_header("Content-Length", str(len(encoded)))
@@ -267,7 +277,7 @@ class GmailCompanionApp:
             "ui_state": {
                 "default_mode": "expanded",
                 "can_minimize": True,
-                "panel_title": "Email Agent",
+                "panel_title": "Threadwise",
                 "allowed_labels": [
                     {"id": label, "name": gmail_label_name(label)}
                     for label in CANONICAL_LABEL_ORDER
@@ -432,7 +442,10 @@ class GmailCompanionApp:
         )
         refreshed = self.sidebar_state(selected_context)
         return {
-            "acknowledgment": f"Queued {candidate.get('display_name') or 'this sender'} for unsubscribe review.",
+            "acknowledgment": (
+                f"Queued {candidate.get('display_name') or 'this sender'} for unsubscribe review. "
+                "Nothing has been unsubscribed yet."
+            ),
             "candidate": build_unsubscribe_detail(candidate, self._storage_dir),
             "sidebar_state": refreshed,
         }
@@ -486,7 +499,7 @@ class GmailCompanionApp:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Email Agent Simulator</title>
+  <title>Threadwise Simulator</title>
   <style>
     :root {
       color-scheme: light;
@@ -575,7 +588,7 @@ class GmailCompanionApp:
     <section class="hero">
       <div>
         <div class="eyebrow">Simulator</div>
-        <h1>Email Agent Inbox Simulator</h1>
+        <h1>Threadwise Inbox Simulator</h1>
         <p>Local-only environment for simulating realistic inbox behavior. This uses copied snapshot data and disables Gmail write-through, so teach/apply flows stay safe while still behaving like the real product.</p>
       </div>
       <div class="hero-actions">
@@ -599,7 +612,7 @@ class GmailCompanionApp:
           <div class="header-copy">
             <div class="header-top">
               <span class="dot"></span>
-              <div class="title">Email Agent</div>
+              <div class="title">Threadwise</div>
             </div>
             <div class="subtitle" id="sim-subtitle">Compact daily summary</div>
           </div>
@@ -638,6 +651,7 @@ class GmailCompanionApp:
     let teachResult = "";
     let teachError = "";
     let unsubscribeResult = "";
+    let detailsExpanded = false;
     let draftLabel = "";
     let draftNote = "";
     const unsyncedContext = {
@@ -1038,6 +1052,7 @@ class GmailCompanionApp:
           <div class="field-stack" style="margin-top:12px;">${changedItemsHtml}</div>
         </div>
         <div class="button-row" style="margin-top:12px;">
+          <a class="action-button primary" style="text-decoration:none;display:inline-flex;align-items:center;" href="/daily-dashboard" target="_blank" rel="noreferrer">Open daily dashboard</a>
           <a class="action-button secondary" style="text-decoration:none;display:inline-flex;align-items:center;" href="/unsubscribe-review" target="_blank" rel="noreferrer">Review unsubscribe candidates</a>
         </div>
         ${topLabels ? `<div class="label-row">${topLabels}</div>` : '<p class="empty" style="margin-top:12px;">No stored label mix yet.</p>'}
@@ -1252,7 +1267,7 @@ class GmailCompanionApp:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Email Agent Gmail Companion</title>
+  <title>Threadwise Gmail Companion</title>
   <style>
     :root {{
       color-scheme: light;
@@ -1321,47 +1336,83 @@ class GmailCompanionApp:
 </body>
 </html>"""
 
-    def render_unsubscribe_review_page(self) -> str:
+    def render_unsubscribe_review_page(self, query: dict[str, list[str]] | None = None) -> str:
+        query = query or {}
+        focus_list_key = first_query_value(query, "list_key")
         candidates = self._unsubscribe_store.list_candidates()
         executor = UnsubscribeExecutor(self._storage_dir)
-        cards = []
+        preview = executor.preview_selected_candidates()
+        cards_by_section = {
+            "selected": [],
+            "ready": [],
+            "manual": [],
+            "other": [],
+        }
         for candidate in candidates:
             detail = build_unsubscribe_detail(candidate, self._storage_dir)
-            preview = detail["preview"]
+            candidate_preview = detail["preview"]
+            latest_execution = detail.get("latest_execution") or {}
+            is_focused = bool(focus_list_key and detail.get("list_key") == focus_list_key)
             action_html = ""
-            if preview.get("url"):
-                target = ' target="_blank" rel="noreferrer"' if preview["url"].startswith("http") else ""
-                label = "Open unsubscribe link" if preview["url"].startswith("http") else "Open mail unsubscribe"
-                action_html = f'<a class="action" href="{escape_html(preview["url"])}"{target}>{label}</a>'
-            cards.append(
-                '<article class="card">'
+            if candidate_preview.get("url"):
+                target = ' target="_blank" rel="noreferrer"' if candidate_preview["url"].startswith("http") else ""
+                label = "Open unsubscribe link" if candidate_preview["url"].startswith("http") else "Open mail unsubscribe"
+                action_html = f'<a class="action" href="{escape_html(candidate_preview["url"])}"{target}>{label}</a>'
+            focus_html = '<div class="focus-note">Opened from inbox</div>' if is_focused else ""
+            latest_execution_html = (
+                f'<p><strong>Latest attempt:</strong> {escape_html(latest_execution.get("status") or "none")} - {escape_html(latest_execution.get("notes") or "No recorded execution yet.")}</p>'
+                if latest_execution
+                else '<p><strong>Latest attempt:</strong> none</p>'
+            )
+            card_html = (
+                f'<article class="card{" focused" if is_focused else ""}">'
+                f'{focus_html}'
                 f'<div class="eyebrow">Unsubscribe</div>'
                 f'<h2>{escape_html(detail.get("display_name") or "(unknown list)")}</h2>'
                 f'<p><strong>Sender:</strong> {escape_html(detail.get("sender") or "(unknown sender)")}</p>'
-                f'<p><strong>Status:</strong> {escape_html(preview.get("notes") or "(none)")}</p>'
+                f'<p><strong>Status:</strong> {escape_html(candidate_preview.get("notes") or "(none)")}</p>'
                 f'<p><strong>Selection:</strong> {escape_html(detail.get("decision_state") or "undecided")}</p>'
                 f'<p><strong>Evidence:</strong> {detail.get("evidence_count", 0)} messages</p>'
+                f'{latest_execution_html}'
                 f'{action_html}'
                 '</article>'
             )
-        if not cards:
-            cards.append('<article class="card"><h2>No unsubscribe candidates</h2><p>No unsubscribe candidates are stored yet.</p></article>')
-        preview = executor.preview_selected_candidates()
+            section_key = unsubscribe_section_key(detail, candidate_preview)
+            cards_by_section[section_key].append(card_html)
+
+        if not any(cards_by_section.values()):
+            cards_by_section["other"].append('<article class="card"><h2>No unsubscribe candidates</h2><p>No unsubscribe candidates are stored yet.</p></article>')
+
+        sections_html = "".join(
+            render_unsubscribe_section(title, description, cards_by_section[key])
+            for key, title, description in [
+                ("selected", "Queued From Inbox", "These are the subscriptions you already queued for later review from the inbox."),
+                ("ready", "Ready Now", "These have a supported unsubscribe path and are not queued yet."),
+                ("manual", "Manual Follow-Up", "These look like subscriptions, but the unsubscribe path still needs a manual step."),
+                ("other", "All Other Candidates", "Everything else the agent thinks may be a subscription family."),
+            ]
+            if cards_by_section[key]
+        )
         return f"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Email Agent Unsubscribe Review</title>
+  <title>Threadwise Unsubscribe Review</title>
   <style>
     body {{ margin:0; font-family: Georgia, 'Times New Roman', serif; background: linear-gradient(180deg,#f8f3e8 0%,#f2eadb 100%); color:#1f1a14; }}
     main {{ max-width: 980px; margin: 0 auto; padding: 24px; display:grid; gap:16px; }}
     .hero,.card {{ background:rgba(255,253,248,0.96); border:1px solid #d7cfbf; border-radius:20px; padding:18px; }}
     .grid {{ display:grid; grid-template-columns: repeat(auto-fit,minmax(260px,1fr)); gap:14px; }}
+    .section {{ display:grid; gap:12px; }}
     .eyebrow {{ color:#6b6255; font-size:0.72rem; text-transform:uppercase; letter-spacing:0.08em; }}
     h1,h2 {{ margin:8px 0 10px; }}
     p {{ line-height:1.45; }}
     .action {{ display:inline-block; margin-top:10px; border-radius:999px; background:#0f766e; color:#fff; padding:9px 12px; text-decoration:none; }}
+    .pill-row {{ display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }}
+    .pill {{ border-radius:999px; padding:6px 10px; background:#f1eadb; color:#5d5342; font-size:0.8rem; }}
+    .focused {{ border-color:#0f766e; box-shadow: inset 0 0 0 1px rgba(15,118,110,0.18); background:#f5fbfa; }}
+    .focus-note {{ display:inline-flex; align-items:center; padding:5px 10px; border-radius:999px; background:#d8f3ef; color:#0f766e; font-size:0.82rem; }}
   </style>
 </head>
 <body>
@@ -1370,9 +1421,127 @@ class GmailCompanionApp:
       <div class="eyebrow">Unsubscribe Review</div>
       <h1>Subscription cleanup</h1>
       <p>Selected for later unsubscribe: {preview.get("selected_count", 0)}. Ready now: {preview.get("ready_count", 0)}. Manual follow-up needed: {preview.get("unsupported_count", 0)}.</p>
+      <div class="pill-row">
+        <span class="pill">Queued: {preview.get("selected_count", 0)}</span>
+        <span class="pill">Ready now: {preview.get("ready_count", 0)}</span>
+        <span class="pill">Manual follow-up: {preview.get("unsupported_count", 0)}</span>
+        <span class="pill">All candidates: {len(candidates)}</span>
+      </div>
+    </section>
+    <section class="section">
+      {sections_html}
+    </section>
+  </main>
+</body>
+</html>"""
+
+    def render_daily_dashboard_page(self) -> str:
+        payload = build_companion_runtime_payload(self._storage_dir)
+        summary = payload.get("sidebar_state", {}).get("daily_summary", {})
+        changed_today = summary.get("changed_today", {})
+        selected_unsubscribe_examples = changed_today.get("selected_unsubscribe_examples", [])
+        sections = [
+            (
+                "Needs Attention",
+                "The emails still waiting for a confident decision or explicit follow-up.",
+                render_dashboard_email_cards(payload.get("needs_attention_items", []), empty_label="No needs-attention emails in the current snapshot."),
+            ),
+            (
+                "Kept Visible",
+                "Emails the agent understood but intentionally left easy to find in the inbox.",
+                render_dashboard_email_cards(payload.get("kept_visible_items", []), empty_label="No kept-visible emails in the current snapshot."),
+            ),
+            (
+                "Auto-Handled",
+                "Emails the agent already labeled or removed from inbox under the current bounded rules.",
+                render_dashboard_email_cards(payload.get("auto_handled_items", []), empty_label="No auto-handled emails in the current snapshot."),
+            ),
+            (
+                "Recent Queue",
+                "The freshest synced emails across the current local snapshot.",
+                render_dashboard_email_cards(payload.get("recent_items", []), empty_label="No recent synced emails in the current snapshot."),
+            ),
+        ]
+        top_labels_html = "".join(
+            f'<span class="pill">{escape_html(item.get("label", ""))} · {item.get("count", 0)}</span>'
+            for item in summary.get("top_labels", [])
+        )
+        changed_items_html = render_dashboard_changed_cards(changed_today.get("items", []))
+        unsubscribe_html = render_dashboard_unsubscribe_cards(selected_unsubscribe_examples)
+        sections_html = "".join(
+            render_dashboard_section(title, description, cards)
+            for title, description, cards in sections
+        )
+        return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Threadwise Daily Dashboard</title>
+  <style>
+    body {{ margin:0; font-family: Georgia, 'Times New Roman', serif; background: linear-gradient(180deg,#f8f3e8 0%,#f2eadb 100%); color:#1f1a14; }}
+    main {{ max-width: 1100px; margin: 0 auto; padding: 24px; display:grid; gap:16px; }}
+    .hero,.card {{ background:rgba(255,253,248,0.96); border:1px solid #d7cfbf; border-radius:20px; padding:18px; }}
+    .grid {{ display:grid; grid-template-columns: repeat(auto-fit,minmax(260px,1fr)); gap:14px; }}
+    .section {{ display:grid; gap:12px; }}
+    .eyebrow {{ color:#6b6255; font-size:0.72rem; text-transform:uppercase; letter-spacing:0.08em; }}
+    h1,h2 {{ margin:8px 0 10px; }}
+    p {{ line-height:1.45; }}
+    .pill-row {{ display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }}
+    .pill {{ border-radius:999px; padding:6px 10px; background:#f1eadb; color:#5d5342; font-size:0.8rem; }}
+    .metric-grid {{ display:grid; grid-template-columns: repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin-top:14px; }}
+    .metric {{ border-radius:14px; background:#f5efe2; padding:12px; }}
+    .metric strong {{ display:block; font-size:1.15rem; }}
+    .stack {{ display:grid; gap:10px; }}
+    .email-card {{ border:1px solid #d7cfbf; border-radius:16px; background:#fffdfa; padding:12px; }}
+    .email-card h3 {{ margin:0; font-size:0.98rem; line-height:1.3; }}
+    .meta {{ margin-top:6px; color:#6b6255; font-size:0.84rem; overflow-wrap:anywhere; }}
+    .copy {{ margin-top:8px; color:#1f1a14; line-height:1.45; }}
+    .action {{ display:inline-flex; align-items:center; margin-top:10px; border-radius:999px; background:#0f766e; color:#fff; padding:9px 12px; text-decoration:none; }}
+    @media (max-width: 820px) {{ .grid {{ grid-template-columns: 1fr; }} }}
+  </style>
+</head>
+<body>
+  <main>
+    <section class="hero">
+      <div class="eyebrow">Daily Dashboard</div>
+      <h1>What Threadwise did today</h1>
+      <p>This is the fuller secondary view behind the inbox sidebar: what came in, what the agent changed, what still needs attention, and what subscription cleanup is queued.</p>
+      <div class="metric-grid">
+        <div class="metric"><strong>{summary.get("processed_count", 0)}</strong><span>processed</span></div>
+        <div class="metric"><strong>{summary.get("auto_handled_count", 0)}</strong><span>auto-handled</span></div>
+        <div class="metric"><strong>{summary.get("needs_attention_count", 0)}</strong><span>need attention</span></div>
+        <div class="metric"><strong>{len(payload.get("kept_visible_items", []))}</strong><span>kept visible</span></div>
+      </div>
+      <div class="pill-row">
+        <span class="pill">Source: {escape_html(summary.get("source_label", "stored Gmail snapshot"))}</span>
+        {f'<span class="pill">Latest report: {escape_html(summary.get("report_date", ""))}</span>' if summary.get("report_date") else ""}
+        <span class="pill">Unsubscribe candidates: {summary.get("unsubscribe_candidate_count", 0)}</span>
+      </div>
+      {f'<div class="pill-row">{top_labels_html}</div>' if top_labels_html else ""}
     </section>
     <section class="grid">
-      {''.join(cards)}
+      <article class="card">
+        <div class="eyebrow">What Changed Today</div>
+        <h2>Provider-side changes</h2>
+        <div class="metric-grid">
+          <div class="metric"><strong>{changed_today.get("label_writes_count", 0)}</strong><span>labels written</span></div>
+          <div class="metric"><strong>{changed_today.get("inbox_removed_count", 0)}</strong><span>removed from inbox</span></div>
+          <div class="metric"><strong>{changed_today.get("taught_count", 0)}</strong><span>teaching changes</span></div>
+          <div class="metric"><strong>{changed_today.get("selected_unsubscribe_count", 0)}</strong><span>unsubscribe queued</span></div>
+        </div>
+        <div class="stack" style="margin-top:12px;">{changed_items_html}</div>
+      </article>
+      <article class="card">
+        <div class="eyebrow">Subscriptions</div>
+        <h2>Queued unsubscribe review</h2>
+        <p>The inbox sidebar can queue subscriptions for later review. This page shows the currently queued families.</p>
+        <div class="stack">{unsubscribe_html}</div>
+        <a class="action" href="/unsubscribe-review" target="_blank" rel="noreferrer">Open unsubscribe review</a>
+      </article>
+    </section>
+    <section class="section">
+      {sections_html}
     </section>
   </main>
 </body>
@@ -1384,7 +1553,7 @@ class GmailCompanionApp:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Email Agent</title>
+  <title>Threadwise</title>
   <style>
     :root {
       color-scheme: light;
@@ -1484,7 +1653,7 @@ class GmailCompanionApp:
           <div class="header-copy">
             <div class="header-top">
               <span class="dot"></span>
-              <div class="title">Email Agent</div>
+              <div class="title">Threadwise</div>
             </div>
             <div class="subtitle" id="subtitle">Compact daily summary</div>
           </div>
@@ -1535,6 +1704,54 @@ class GmailCompanionApp:
         .replaceAll("'", "&#39;");
     }
 
+    function contextFromItem(item) {
+      return {
+        provider: "gmail",
+        message_id: item?.message_id || "",
+        subject: item?.subject || "",
+        sender: item?.sender || "",
+      };
+    }
+
+    function openHarnessItemPreview(item, clearDraft = true) {
+      if (!item) {
+        return;
+      }
+      currentContext = contextFromItem(item);
+      resetTeachState(clearDraft);
+      refreshState();
+    }
+
+    function relatedHarnessItemsForContext(context) {
+      if (!context || !harnessState) {
+        return [];
+      }
+      const sender = String(context.sender || "").trim().toLowerCase();
+      const subject = String(context.subject || "").trim().toLowerCase();
+      const seen = new Set();
+      const results = [];
+      const groups = [
+        harnessState.needs_attention_items || [],
+        harnessState.recent_items || [],
+        harnessState.kept_visible_items || [],
+        harnessState.auto_handled_items || [],
+      ];
+      for (const group of groups) {
+        for (const item of group) {
+          if (!item || !item.message_id || seen.has(item.message_id)) {
+            continue;
+          }
+          const itemSender = String(item.sender || "").trim().toLowerCase();
+          const itemSubject = String(item.subject || "").trim().toLowerCase();
+          if ((sender && itemSender === sender) || (subject && itemSubject === subject)) {
+            seen.add(item.message_id);
+            results.push(item);
+          }
+        }
+      }
+      return results;
+    }
+
     function renderSelectedEmail(selectedEmail) {
       const stepCopy = nextStepCopy(selectedEmail);
       if (!selectedEmail || !selectedEmail.found) {
@@ -1545,6 +1762,35 @@ class GmailCompanionApp:
         const reason = hasSnapshotMiss && selectedEmail.reason
           ? `<div style="margin-top:12px;border-radius:14px;background:#fff4dd;padding:12px;color:#8a4b00;line-height:1.45;">${escapeHtml(selectedEmail.reason)}</div>`
           : "";
+        const relatedItems = relatedHarnessItemsForContext(currentContext).slice(0, 4);
+        const fallbackItems = (((harnessState || {}).needs_attention_items) || []).slice(0, 4);
+        const relatedHtml = relatedItems.length
+          ? `
+            <div class="reason-wrap">
+              <div class="reason-label">Closest synced emails</div>
+              <div class="empty">These are the best local matches the agent can explain right now.</div>
+              <div class="detail-list">${relatedItems.map((item) => `
+                <button type="button" class="list-item" data-related-message-id="${escapeHtml(item.message_id)}">
+                  <div class="list-item-subject">${escapeHtml(item.subject || "(no subject)")}</div>
+                  <div class="list-item-meta">${escapeHtml(item.sender || "(unknown sender)")}</div>
+                </button>
+              `).join("")}</div>
+            </div>
+          `
+          : "";
+        const fallbackHtml = fallbackItems.length
+          ? `
+            <div class="reason-wrap">
+              <div class="reason-label">Current Queue</div>
+              <div class="detail-list">${fallbackItems.map((item) => `
+                <button type="button" class="list-item" data-related-message-id="${escapeHtml(item.message_id)}">
+                  <div class="list-item-subject">${escapeHtml(item.subject || "(no subject)")}</div>
+                  <div class="list-item-meta">${escapeHtml(item.sender || "(unknown sender)")}</div>
+                </button>
+              `).join("")}</div>
+            </div>
+          `
+          : "";
         selectedEmailNode.innerHTML = `
           <div class="empty">${title}</div>
           ${reason}
@@ -1552,11 +1798,13 @@ class GmailCompanionApp:
             <div class="reason-label">${escapeHtml(stepCopy.title)}</div>
             <div class="reason">${escapeHtml(stepCopy.body)}</div>
           </div>
-          <ol class="checklist">
-            <li>Current category</li>
-            <li>Handling status</li>
-            <li>Short reason</li>
-          </ol>
+          <div class="empty">The agent can only explain and teach from the latest stored sync, so use a queue item below for now or rerun the Gmail sync.</div>
+          <div class="button-row">
+            ${relatedItems[0] ? '<button type="button" class="action-button primary" data-action="preview-closest-match">Preview closest synced match</button>' : ""}
+            ${fallbackItems[0] ? '<button type="button" class="action-button secondary" data-action="open-needs-attention">Open needs-attention queue</button>' : ""}
+          </div>
+          ${relatedHtml}
+          ${fallbackHtml}
         `;
         return;
       }
@@ -1566,10 +1814,6 @@ class GmailCompanionApp:
         const selected = (draftLabel || selectedEmail.internal_label || "") === option.id ? " selected" : "";
         return `<option value="${escapeHtml(option.id)}"${selected}>${escapeHtml(option.name)}</option>`;
       }).join("");
-      const unsubscribeLine = selectedEmail.unsubscribe_available
-        ? (() => {
-      const unsubscribe = selectedEmail.unsubscribe || null;
-      const preview = (unsubscribe && unsubscribe.preview) || null;
       const details = selectedEmail.details || {};
       const matchedRuleList = (details.matched_rule_ids || []).length
         ? `<div class="empty">Matched rules: ${escapeHtml((details.matched_rule_ids || []).join(', '))}</div>`
@@ -1577,12 +1821,30 @@ class GmailCompanionApp:
       const unsubscribeReasonList = (details.unsubscribe_reasons || []).length
         ? `<div class="empty">Unsubscribe qualified because: ${escapeHtml((details.unsubscribe_reasons || []).join(', '))}</div>`
         : "";
+      const detailsButtonLabel = detailsExpanded ? "Hide details" : "Show details";
+      const detailsHtml = detailsExpanded
+        ? `
+          <div class="empty">Decision source: ${escapeHtml(details.review_action || "n/a")}</div>
+          <div class="empty">Label write status: ${escapeHtml(details.write_status || "not written")}</div>
+          <div class="empty">Inbox removal status: ${escapeHtml(details.inbox_status || "not removed")}</div>
+          <div class="empty">Matched saved rules: ${escapeHtml(String(details.matched_rule_count || 0))}</div>
+          ${matchedRuleList}
+          ${unsubscribeReasonList}
+        `
+        : '<div class="empty">Open details to inspect decision source, Gmail write status, inbox handling, and matched rules.</div>';
+      const unsubscribeLine = selectedEmail.unsubscribe_available
+        ? (() => {
+      const unsubscribe = selectedEmail.unsubscribe || null;
+      const preview = (unsubscribe && unsubscribe.preview) || null;
+      const reviewLinkLabel = unsubscribe && unsubscribe.decision_state === "selected"
+        ? "Open queued review"
+        : "Review all subscriptions";
       const actions = preview
               ? `
                 <div class="button-row" style="margin-top:10px;">
                   ${preview.status === "ready" ? '<button type="button" class="action-button info" data-action="select-unsubscribe">Queue unsubscribe</button>' : ''}
                   ${preview.url ? `<a class="action-button secondary" style="text-decoration:none;display:inline-flex;align-items:center;" href="${escapeHtml(preview.url)}"${preview.url.startsWith('http') ? ' target="_blank" rel="noreferrer"' : ''}>${preview.url.startsWith('http') ? 'Open unsubscribe' : 'Open mail unsubscribe'}</a>` : ''}
-                  ${unsubscribe ? `<a class="action-button secondary" style="text-decoration:none;display:inline-flex;align-items:center;" href="${escapeHtml(unsubscribe.handoff_path || '/unsubscribe-review')}" target="_blank" rel="noreferrer">Review all subscriptions</a>` : ''}
+                  ${unsubscribe ? `<a class="action-button secondary" style="text-decoration:none;display:inline-flex;align-items:center;" href="${escapeHtml(unsubscribe.handoff_path || '/unsubscribe-review')}" target="_blank" rel="noreferrer">${escapeHtml(reviewLinkLabel)}</a>` : ''}
                 </div>
               `
               : "";
@@ -1633,13 +1895,11 @@ class GmailCompanionApp:
           <div class="reason">${escapeHtml(selectedEmail.reason || "No short reason is stored yet.")}</div>
         </div>
         <div class="reason-wrap">
-          <div class="reason-label">Details</div>
-          <div class="empty">Decision source: ${escapeHtml(details.review_action || "n/a")}</div>
-          <div class="empty">Label write status: ${escapeHtml(details.write_status || "not written")}</div>
-          <div class="empty">Inbox removal status: ${escapeHtml(details.inbox_status || "not removed")}</div>
-          <div class="empty">Matched saved rules: ${escapeHtml(String(details.matched_rule_count || 0))}</div>
-          ${matchedRuleList}
-          ${unsubscribeReasonList}
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+            <div class="reason-label">Details</div>
+            <button type="button" class="action-button secondary" data-action="toggle-details">${escapeHtml(detailsButtonLabel)}</button>
+          </div>
+          ${detailsHtml}
         </div>
         ${unsubscribeLine}
         <div class="reason-wrap">
@@ -1705,6 +1965,7 @@ class GmailCompanionApp:
 
     function renderDailySummary(summary) {
       const changedToday = summary.changed_today || {};
+      const selectedUnsubscribeExamples = changedToday.selected_unsubscribe_examples || [];
       const bucketLabel = {
         needs_attention_items: "Needs attention",
         recent_items: "Recent",
@@ -1716,20 +1977,33 @@ class GmailCompanionApp:
       ).join("");
       const changedItemsHtml = (changedToday.items || []).length
         ? (changedToday.items || []).map((item) => `
-            <div class="note">
-              <strong>${escapeHtml(item.subject || "(no subject)")}</strong><br>
-              ${escapeHtml(item.sender || "(unknown sender)")}<br>
-              ${escapeHtml(item.change_summary || "")}
-            </div>
+            <button type="button" class="list-item" data-changed-message-id="${escapeHtml(item.message_id || "")}">
+              <div class="list-item-subject">${escapeHtml(item.subject || "(no subject)")}</div>
+              <div class="list-item-meta">${escapeHtml(item.sender || "(unknown sender)")}</div>
+              <div class="empty">${escapeHtml(item.change_summary || "")}</div>
+            </button>
           `).join("")
         : '<div class="empty">No tracked agent changes in this stored batch yet.</div>';
+      const queuedSubscriptionsHtml = selectedUnsubscribeExamples.length
+        ? `
+          <div class="reason-wrap" style="margin-top:12px;background:#fffdfa;">
+            <div class="reason-label">Queued subscriptions</div>
+            <div class="detail-list">${selectedUnsubscribeExamples.map((item) => `
+              <a class="list-item" style="text-decoration:none;" href="${escapeHtml(item.handoff_path || "/unsubscribe-review")}" target="_blank" rel="noreferrer">
+                <div class="list-item-subject">${escapeHtml(item.display_name || "(unknown list)")}</div>
+                <div class="list-item-meta">${escapeHtml(item.sender || "(unknown sender)")}</div>
+              </a>
+            `).join("")}</div>
+          </div>
+        `
+        : "";
       dailySummaryNode.innerHTML = `
         <div class="empty">${summary.run_count > 1 ? `Rolling view across the last ${summary.run_count} Gmail runs` : "Latest run snapshot"}</div>
         <div class="summary-grid">
           <button class="metric-button" data-harness-filter="recent_items"><strong>${summary.processed_count}</strong><span>processed</span></button>
           <button class="metric-button" data-harness-filter="auto_handled_items"><strong>${summary.auto_handled_count}</strong><span>auto-handled</span></button>
           <button class="metric-button" data-harness-filter="needs_attention_items"><strong>${summary.needs_attention_count}</strong><span>need attention</span></button>
-          <button class="metric-button" data-harness-filter="kept_visible_items"><strong>${summary.unlabeled_count}</strong><span>unlabeled</span></button>
+          <button class="metric-button" data-harness-filter="kept_visible_items"><strong>${(harnessState && harnessState.kept_visible_items ? harnessState.kept_visible_items.length : summary.unlabeled_count)}</strong><span>kept visible</span></button>
         </div>
         <div class="label-row">
           <span class="label-chip">Unsubscribe candidates · ${summary.unsubscribe_candidate_count || 0}</span>
@@ -1748,9 +2022,11 @@ class GmailCompanionApp:
             <div class="metric-button"><strong>${changedToday.taught_count || 0}</strong><span>teaching changes</span></div>
             <div class="metric-button"><strong>${changedToday.selected_unsubscribe_count || 0}</strong><span>unsubscribe queued</span></div>
           </div>
+          ${queuedSubscriptionsHtml}
           <div class="detail-list">${changedItemsHtml}</div>
         </div>
         <div class="button-row" style="margin-top:12px;">
+          <a class="action-button primary" style="text-decoration:none;display:inline-flex;align-items:center;" href="/daily-dashboard" target="_blank" rel="noreferrer">Open daily dashboard</a>
           <a class="action-button secondary" style="text-decoration:none;display:inline-flex;align-items:center;" href="/unsubscribe-review" target="_blank" rel="noreferrer">Review unsubscribe candidates</a>
         </div>
         ${(summary.top_labels || []).length ? `<div class="label-row">${topLabels}</div>` : '<p class="empty">No stored label mix yet.</p>'}
@@ -1874,6 +2150,7 @@ class GmailCompanionApp:
       if (!(state.selected_email && state.selected_email.found)) {
         previousTeachPreview = null;
         unsubscribeResult = "";
+        detailsExpanded = false;
       }
       subtitleNode.textContent = state.selected_email && state.selected_email.found
         ? "Selected email loaded"
@@ -2022,6 +2299,45 @@ class GmailCompanionApp:
       if (unsubscribeButton) {
         event.preventDefault();
         unsubscribeSelectCurrent();
+        return;
+      }
+      const detailsButton = event.target.closest("[data-action='toggle-details']");
+      if (detailsButton) {
+        event.preventDefault();
+        detailsExpanded = !detailsExpanded;
+        renderSelectedEmail((harnessState || {}).sidebar_state ? harnessState.sidebar_state.selected_email : null);
+        return;
+      }
+      const previewClosestButton = event.target.closest("[data-action='preview-closest-match']");
+      if (previewClosestButton) {
+        event.preventDefault();
+        openHarnessItemPreview(relatedHarnessItemsForContext(currentContext)[0]);
+        return;
+      }
+      const queueButton = event.target.closest("[data-action='open-needs-attention']");
+      if (queueButton) {
+        event.preventDefault();
+        activeHarnessFilter = "needs_attention_items";
+        renderHarnessList();
+        renderDetailList();
+        const firstItem = (((harnessState || {}).needs_attention_items) || [])[0];
+        if (firstItem) {
+          openHarnessItemPreview(firstItem);
+        }
+        return;
+      }
+      const relatedButton = event.target.closest("[data-related-message-id], [data-changed-message-id]");
+      if (relatedButton) {
+        event.preventDefault();
+        const targetId =
+          relatedButton.getAttribute("data-related-message-id")
+          || relatedButton.getAttribute("data-changed-message-id");
+        const item =
+          (((harnessState || {}).recent_items) || []).find((candidate) => candidate.message_id === targetId)
+          || (((harnessState || {}).needs_attention_items) || []).find((candidate) => candidate.message_id === targetId)
+          || (((harnessState || {}).auto_handled_items) || []).find((candidate) => candidate.message_id === targetId)
+          || (((harnessState || {}).kept_visible_items) || []).find((candidate) => candidate.message_id === targetId);
+        openHarnessItemPreview(item);
       }
     });
 
@@ -2155,7 +2471,7 @@ def build_unsubscribe_detail(candidate: dict | None, storage_dir: Path) -> dict 
         "qualification_reasons": list(candidate.get("qualification_reasons") or []),
         "latest_execution": candidate.get("latest_execution"),
         "preview": preview,
-        "handoff_path": "/unsubscribe-review",
+        "handoff_path": f"/unsubscribe-review?{urlencode({'list_key': candidate.get('list_key', '')})}",
     }
 
 
@@ -2174,6 +2490,87 @@ def build_selected_email_details(
         "matched_rule_ids": [rule.get("id") for rule in matched_rules if rule.get("id")],
         "unsubscribe_reasons": list((unsubscribe_candidate or {}).get("qualification_reasons") or []),
     }
+
+
+def unsubscribe_section_key(detail: dict, preview: dict) -> str:
+    if detail.get("decision_state") == "selected":
+        return "selected"
+    if preview.get("status") == "ready":
+        return "ready"
+    if preview.get("status") == "unsupported":
+        return "manual"
+    return "other"
+
+
+def render_unsubscribe_section(title: str, description: str, cards: list[str]) -> str:
+    return (
+        '<section class="hero">'
+        f'<div class="eyebrow">{escape_html(title)}</div>'
+        f'<h2>{escape_html(title)}</h2>'
+        f'<p>{escape_html(description)}</p>'
+        f'<div class="grid">{"".join(cards)}</div>'
+        '</section>'
+    )
+
+
+def render_dashboard_section(title: str, description: str, cards_html: str) -> str:
+    return (
+        '<section class="card">'
+        f'<div class="eyebrow">{escape_html(title)}</div>'
+        f'<h2>{escape_html(title)}</h2>'
+        f'<p>{escape_html(description)}</p>'
+        f'<div class="stack">{cards_html}</div>'
+        '</section>'
+    )
+
+
+def render_dashboard_email_cards(items: list[dict], empty_label: str) -> str:
+    if not items:
+        return f'<div class="email-card"><div class="copy">{escape_html(empty_label)}</div></div>'
+    cards = []
+    for item in items[:10]:
+        cards.append(
+            '<article class="email-card">'
+            f'<h3>{escape_html(item.get("subject") or "(no subject)")}</h3>'
+            f'<div class="meta">{escape_html(item.get("sender") or "(unknown sender)")}</div>'
+            '<div class="pill-row">'
+            f'<span class="pill">{escape_html(item.get("classification") or "Uncategorized")}</span>'
+            f'<span class="pill">{escape_html(item.get("status_label") or item.get("status") or "")}</span>'
+            '</div>'
+            '</article>'
+        )
+    return "".join(cards)
+
+
+def render_dashboard_changed_cards(items: list[dict]) -> str:
+    if not items:
+        return '<div class="email-card"><div class="copy">No tracked agent changes in this stored batch yet.</div></div>'
+    cards = []
+    for item in items:
+        cards.append(
+            '<article class="email-card">'
+            f'<h3>{escape_html(item.get("subject") or "(no subject)")}</h3>'
+            f'<div class="meta">{escape_html(item.get("sender") or "(unknown sender)")}</div>'
+            f'<div class="copy">{escape_html(item.get("change_summary") or "")}</div>'
+            '</article>'
+        )
+    return "".join(cards)
+
+
+def render_dashboard_unsubscribe_cards(items: list[dict]) -> str:
+    if not items:
+        return '<div class="email-card"><div class="copy">No subscriptions are queued yet.</div></div>'
+    cards = []
+    for item in items:
+        handoff_path = item.get("handoff_path") or "/unsubscribe-review"
+        cards.append(
+            '<article class="email-card">'
+            f'<h3>{escape_html(item.get("display_name") or "(unknown list)")}</h3>'
+            f'<div class="meta">{escape_html(item.get("sender") or "(unknown sender)")}</div>'
+            f'<a class="action" href="{escape_html(handoff_path)}" target="_blank" rel="noreferrer">Open focused review</a>'
+            '</article>'
+        )
+    return "".join(cards)
 
 
 def escape_html(value: str) -> str:
@@ -2275,6 +2672,7 @@ def build_changed_today_summary(storage_dir: Path, batch_id: str) -> dict:
             "taught_count": 0,
             "selected_unsubscribe_count": 0,
             "items": [],
+            "selected_unsubscribe_examples": [],
         }
     batch = load_json_or_default(storage_dir / "batches" / f"{batch_id}.json", {})
     items = batch.get("items", [])
@@ -2309,17 +2707,27 @@ def build_changed_today_summary(storage_dir: Path, batch_id: str) -> dict:
                 "change_summary": change_summary,
             }
         )
-    selected_unsubscribe_count = sum(
-        1
-        for candidate in load_json_or_default(unsubscribe_selections_path(storage_dir), {"candidates": {}}).get("candidates", {}).values()
+    selected_candidates = [
+        candidate
+        for candidate in UnsubscribeInventoryStore(storage_dir).list_candidates()
         if candidate.get("decision_state") == "selected"
-    )
+    ]
+    selected_unsubscribe_count = len(selected_candidates)
+    selected_unsubscribe_examples = [
+        {
+            "display_name": candidate.get("display_name") or "(unknown list)",
+            "sender": candidate.get("sender") or "",
+            "handoff_path": f"/unsubscribe-review?{urlencode({'list_key': candidate.get('list_key', '')})}",
+        }
+        for candidate in selected_candidates
+    ][:3]
     return {
         "label_writes_count": label_writes_count,
         "inbox_removed_count": inbox_removed_count,
         "taught_count": taught_count,
         "selected_unsubscribe_count": selected_unsubscribe_count,
         "items": changed_items[:6],
+        "selected_unsubscribe_examples": selected_unsubscribe_examples,
     }
 
 
@@ -2529,10 +2937,10 @@ def build_apply_acknowledgment(
 ) -> str:
     label_name = gmail_label_name(target_label)
     if mode == "current-only":
-        return f"I relabeled this email to {label_name} and did not teach a broader rule."
+        return f"I relabeled only this email to {label_name}. I did not change other stored emails or save a broader future rule."
     if mode == "future-only":
-        return f"I relabeled this email to {label_name} and saved a sender-level lesson for future mail."
-    return f"I relabeled this email to {label_name}, saved the sender-level lesson, and rewrote {matched_existing_count} matching stored emails."
+        return f"I relabeled this email to {label_name} and saved a sender-level lesson for future mail. No other existing stored emails were rewritten."
+    return f"I relabeled this email to {label_name}, rewrote {matched_existing_count} matching stored emails, and saved the sender-level lesson for future mail."
 
 
 def load_latest_report(storage_dir: Path) -> dict | None:

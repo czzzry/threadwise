@@ -36,15 +36,15 @@ The repo is no longer blocked on basic implementation.
 
 ## Current Stage
 
-This is a post-MVP, post-proof repo that has completed the current memory/runtime hardening milestone.
+This is a post-MVP, post-proof repo that has completed the memory/runtime hardening milestone and is closing the Gmail release state.
 
 The main uncertainty is no longer "can this be built?" and no longer "can the classifier get under the current unresolved threshold?"
 
 The main uncertainty is now:
 
-- what exact Gmail release product are we finishing next
-- how the inbox-native companion experience should become the primary user-facing surface
-- how to sequence Gmail first and ProtonMail in MVP+1 without drifting back into tool-first side paths
+- how to close, commit, and publish the Gmail-first release state cleanly
+- how to keep the inbox-native companion, daily dashboard, and unsubscribe review aligned as one product
+- how to sequence the recruiter-ready portfolio demo as MVP+1 without drifting back into tool-first side paths
 
 ## Current Working Rule
 
@@ -58,9 +58,11 @@ The current product direction for Threadwise is:
 - primary surface: browser-based inbox companion sidebar
 - core interaction: in-inbox `Correct / Teach` loop with short agent acknowledgments
 - secondary surface: dashboard/workbench for summary, unsubscribe, review, and debugging
-- MVP+1 target: add the founder's ProtonMail inbox
+- MVP+1 target: recruiter-ready portfolio demo using real Gmail UI with synthetic email data
 
-Before more implementation, write the next bounded PRD for the Gmail inbox companion release slice.
+The current bounded PRD already exists in `docs/prd.md`. Implementation should now follow that PRD plus the latest current checkpoint and handoff.
+
+The aligned MVP+1 direction is recorded in `docs/mvp-plus-one-portfolio-demo-alignment.md`. Do not start MVP+1 implementation until the Gmail MVP release state is committed and the MVP+1 work has been turned into a bounded PRD/slices.
 
 ## Trust Order When Docs Differ
 
@@ -87,6 +89,6 @@ Use this order:
 
 If a task is implementation work on an already-triaged bounded slice, proceed.
 
-If a task is about the Gmail inbox companion release, in-inbox teaching loop, sidebar UX, or release sequencing to ProtonMail, treat that as current product-definition work and keep the docs aligned as decisions are made.
+If a task is about the Gmail inbox companion release, in-inbox teaching loop, sidebar UX, daily dashboard, unsubscribe review handoff, or the recruiter-ready portfolio demo, treat that as current product-definition work and keep the docs aligned as decisions are made.
 
 If a task changes product scope, chooses the next major slice, or pushes beyond the current trust boundary, stop and align first.

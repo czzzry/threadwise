@@ -16,6 +16,7 @@
   let teachResult = "";
   let unsubscribeResult = "";
   let activeSummaryFilter = "needs_attention_items";
+  let detailsExpanded = false;
   let teachDraft = {
     targetLabel: "",
     note: "",
@@ -73,7 +74,7 @@
           <div style="display:grid;gap:6px;">
             <div style="display:flex;align-items:center;gap:8px;">
               <span style="width:10px;height:10px;border-radius:999px;background:#0f766e;box-shadow:0 0 0 4px rgba(15,118,110,0.12);"></span>
-              <div style="font-size:1.08rem;font-weight:700;">Email Agent</div>
+              <div style="font-size:1.08rem;font-weight:700;">Threadwise</div>
             </div>
             <div id="ea-subtitle" style="color:#6b6255;font-size:0.88rem;line-height:1.35;">Connecting to local companion server</div>
           </div>
@@ -126,12 +127,8 @@
   }
 
   function selectedContext() {
-    const messageNode =
-      document.querySelector("[data-legacy-message-id]") ||
-      document.querySelector("[data-message-id]");
-    const senderNode =
-      document.querySelector("[email][data-hovercard-id]") ||
-      document.querySelector("span[email]");
+    const messageNode = selectedMessageNode();
+    const senderNode = selectedSenderNode(messageNode);
     return {
       provider: "gmail",
       message_id: messageNode
@@ -149,6 +146,43 @@
     };
   }
 
+  function selectedMessageNode() {
+    const visibleCandidates = Array.from(
+      document.querySelectorAll("[data-legacy-message-id], [data-message-id]"),
+    ).filter(isVisibleNode);
+    if (visibleCandidates.length) {
+      return visibleCandidates[visibleCandidates.length - 1];
+    }
+    return (
+      document.querySelector("[data-legacy-message-id]") ||
+      document.querySelector("[data-message-id]")
+    );
+  }
+
+  function selectedSenderNode(messageNode) {
+    const scopedRoot =
+      messageNode?.closest("[role='listitem'], .adn, .ii, .h7, [data-thread-perm-id]") ||
+      document;
+    return (
+      scopedRoot.querySelector?.("[email][data-hovercard-id]") ||
+      scopedRoot.querySelector?.("span[email]") ||
+      document.querySelector("[email][data-hovercard-id]") ||
+      document.querySelector("span[email]")
+    );
+  }
+
+  function isVisibleNode(node) {
+    if (!node || typeof node.getBoundingClientRect !== "function") {
+      return false;
+    }
+    const style = window.getComputedStyle(node);
+    if (!style || style.display === "none" || style.visibility === "hidden") {
+      return false;
+    }
+    const rect = node.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  }
+
   function contextFromItem(item) {
     return {
       provider: "gmail",
@@ -156,6 +190,22 @@
       subject: item?.subject || "",
       sender: item?.sender || "",
     };
+  }
+
+  function openItemPreview(item, options = {}) {
+    if (!item) {
+      return false;
+    }
+    manualPreviewContext = contextFromItem(item);
+    teachPreview = null;
+    previousTeachPreview = null;
+    teachResult = "";
+    unsubscribeResult = "";
+    if (options.clearDraft !== false) {
+      teachDraft = { targetLabel: "", note: "" };
+    }
+    refreshSelection(true);
+    return true;
   }
 
   function firstText(selectors) {
@@ -169,8 +219,8 @@
   }
 
   function refreshSelection(force = false) {
-    lastLiveContext = selectedContext();
-    const context = manualPreviewContext || lastLiveContext;
+    lastLiveContext = stabilizedLiveContext(selectedContext());
+    const context = chooseRefreshContext();
     const payload = JSON.stringify({
       provider: context.provider || "",
       message_id: context.message_id || "",
@@ -194,6 +244,95 @@
       }
       renderState(response.payload);
     });
+  }
+
+  function chooseRefreshContext() {
+    if (manualPreviewContext) {
+      return manualPreviewContext;
+    }
+    if (shouldHoldSelectedContext()) {
+      return (lastSidebarState && lastSidebarState.selected_context) || lastLiveContext;
+    }
+    return lastLiveContext;
+  }
+
+  function stabilizedLiveContext(nextContext) {
+    const previous = lastLiveContext || {};
+    if (!isMeaningfulContext(nextContext)) {
+      return previous;
+    }
+    if (shouldPreferPreviousContext(nextContext, previous)) {
+      return previous;
+    }
+    return nextContext;
+  }
+
+  function shouldPreferPreviousContext(nextContext, previousContext) {
+    if (!isMeaningfulContext(previousContext)) {
+      return false;
+    }
+    if (contextsMatch(nextContext, previousContext)) {
+      return contextStrength(nextContext) < contextStrength(previousContext);
+    }
+    return hasTeachDraftChanges() && contextStrength(nextContext) < contextStrength(previousContext);
+  }
+
+  function shouldHoldSelectedContext() {
+    const selectedContext = (lastSidebarState && lastSidebarState.selected_context) || {};
+    if (!hasTeachDraftChanges() || !isMeaningfulContext(selectedContext)) {
+      return false;
+    }
+    return (
+      contextsMatch(lastLiveContext, selectedContext) ||
+      contextStrength(lastLiveContext) < contextStrength(selectedContext)
+    );
+  }
+
+  function hasTeachDraftChanges() {
+    return Boolean((teachDraft.targetLabel || "").trim() || (teachDraft.note || "").trim());
+  }
+
+  function isMeaningfulContext(context) {
+    return Boolean(context && (context.message_id || context.subject || context.sender));
+  }
+
+  function contextStrength(context) {
+    if (!context) {
+      return 0;
+    }
+    let strength = 0;
+    if (context.message_id) {
+      strength += 4;
+    }
+    if (context.subject) {
+      strength += 2;
+    }
+    if (context.sender) {
+      strength += 1;
+    }
+    return strength;
+  }
+
+  function contextsMatch(left, right) {
+    if (!left || !right) {
+      return false;
+    }
+    if (left.message_id && right.message_id) {
+      return left.message_id === right.message_id;
+    }
+    const leftSender = normalizedSender(left.sender || "");
+    const rightSender = normalizedSender(right.sender || "");
+    const leftSubject = normalizedSubject(left.subject || "");
+    const rightSubject = normalizedSubject(right.subject || "");
+    return Boolean(leftSender && rightSender && leftSubject && rightSubject && leftSender === rightSender && leftSubject === rightSubject);
+  }
+
+  function normalizedSender(value) {
+    return String(value || "").trim().toLowerCase();
+  }
+
+  function normalizedSubject(value) {
+    return String(value || "").trim().toLowerCase();
   }
 
   function renderError(message) {
@@ -228,6 +367,7 @@
     if (!(selected && selected.found)) {
       previousTeachPreview = null;
       unsubscribeResult = "";
+      detailsExpanded = false;
     }
 
     subtitle.textContent = showingQueuePreview
@@ -243,7 +383,19 @@
       const reason = hasSnapshotMiss && selected.reason
         ? `<div style="margin-top:12px;border-radius:14px;background:#fff4dd;padding:12px;color:#8a4b00;line-height:1.45;">${escapeHtml(selected.reason)}</div>`
         : "";
+      const relatedItems = relatedSummaryItemsForContext(lastLiveContext).slice(0, 4);
+      const primaryRelatedItem = relatedItems[0] || null;
+      const relatedHtml = relatedItems.length
+        ? `
+          <div style="margin-top:14px;border-top:1px solid #e5dccb;padding-top:14px;">
+            <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">Closest synced emails</div>
+            <div style="margin-top:8px;color:#6b6255;line-height:1.45;">These are the best local matches the agent can explain right now.</div>
+            <div style="display:grid;gap:8px;margin-top:10px;">${renderSummaryItemCards(relatedItems)}</div>
+          </div>
+        `
+        : "";
       const fallbackItems = summaryItemsForFilter("needs_attention_items").slice(0, 4);
+      const primaryFallbackItem = fallbackItems[0] || null;
       const fallbackHtml = fallbackItems.length
         ? `
           <div style="margin-top:14px;border-top:1px solid #e5dccb;padding-top:14px;">
@@ -270,6 +422,19 @@
           <div style="margin-top:8px;color:#1f1a14;line-height:1.45;">${escapeHtml(stepCopy.body)}</div>
         </div>
         <div style="margin-top:12px;color:#6b6255;line-height:1.45;">The agent can only explain and teach from the latest stored sync, so use a queue item below for now or rerun the Gmail sync.</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
+          ${
+            primaryRelatedItem
+              ? `<button type="button" data-ea-related-item="${escapeHtml(primaryRelatedItem.message_id || "")}" style="border:0;background:#0f766e;color:#fff;border-radius:999px;padding:9px 12px;cursor:pointer;font:inherit;">Preview closest synced match</button>`
+              : ""
+          }
+          ${
+            primaryFallbackItem
+              ? '<button type="button" data-ea-action="open-needs-attention" style="border:0;background:#ebe4d7;color:#1f1a14;border-radius:999px;padding:9px 12px;cursor:pointer;font:inherit;">Open needs-attention queue</button>'
+              : ""
+          }
+        </div>
+        ${relatedHtml}
         ${fallbackHtml}
       `);
     } else {
@@ -288,7 +453,10 @@
       const previewHtml = teachPreview
         ? `${renderPreviousTeachPreviewHtml(previousTeachPreview)}${renderTeachPreviewHtml(teachPreview)}`
         : teachResult
-          ? `<div style="margin-top:12px;border-radius:14px;background:#d8f3ef;padding:12px;color:#0f766e;line-height:1.45;">${escapeHtml(teachResult)}</div>`
+          ? `<div style="margin-top:12px;border-radius:14px;background:#d8f3ef;padding:12px;color:#0f766e;line-height:1.45;">
+              <div style="font-weight:700;">Lesson applied</div>
+              <div style="margin-top:8px;">${escapeHtml(teachResult)}</div>
+            </div>`
           : renderPreviousTeachPreviewHtml(previousTeachPreview);
       const details = selected.details || {};
       const decisionSource = humanDecisionSource(details.review_action || "");
@@ -300,8 +468,22 @@
       const unsubscribeReasonList = (details.unsubscribe_reasons || []).length
         ? `<div style="margin-top:6px;color:#6b6255;line-height:1.45;">Unsubscribe qualified because: ${escapeHtml((details.unsubscribe_reasons || []).join(", "))}</div>`
         : "";
+      const detailsButtonLabel = detailsExpanded ? "Hide details" : "Show details";
+      const detailsHtml = detailsExpanded
+        ? `
+          <div style="margin-top:10px;color:#6b6255;line-height:1.45;">Decision source: ${escapeHtml(decisionSource)}</div>
+          <div style="margin-top:6px;color:#6b6255;line-height:1.45;">Label write status: ${escapeHtml(writeStatusLabel)}</div>
+          <div style="margin-top:6px;color:#6b6255;line-height:1.45;">Inbox handling: ${escapeHtml(inboxStatusLabel)}</div>
+          <div style="margin-top:6px;color:#6b6255;line-height:1.45;">Matched saved rules: ${escapeHtml(String(details.matched_rule_count || 0))}</div>
+          ${matchedRuleList}
+          ${unsubscribeReasonList}
+        `
+        : `<div style="margin-top:8px;color:#6b6255;line-height:1.45;">Open details to inspect decision source, Gmail write status, inbox handling, and matched rules.</div>`;
       const unsubscribe = selected.unsubscribe || null;
       const unsubscribePreview = (unsubscribe && unsubscribe.preview) || null;
+      const reviewLinkLabel = unsubscribe && unsubscribe.decision_state === "selected"
+        ? "Open queued review"
+        : "Review all subscriptions";
       const unsubscribeLine = unsubscribe
         ? `
           <div style="margin-top:14px;border-radius:14px;background:#f5efe2;padding:12px;">
@@ -310,9 +492,9 @@
             <div style="margin-top:6px;color:#6b6255;line-height:1.45;">${escapeHtml((unsubscribePreview && unsubscribePreview.notes) || "Unsubscribe available")}</div>
             ${unsubscribeResult ? `<div style="margin-top:12px;border-radius:14px;background:#d8f3ef;padding:12px;color:#0f766e;line-height:1.45;">${escapeHtml(unsubscribeResult)}</div>` : ""}
             <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
-              ${unsubscribePreview && unsubscribePreview.status === "ready" ? '<button type="button" data-ea-action="select-unsubscribe" style="border:0;background:#1f6f8b;color:#fff;border-radius:999px;padding:9px 12px;cursor:pointer;font:inherit;">Queue unsubscribe</button>' : ""}
+              ${unsubscribePreview && unsubscribePreview.status === "ready" ? '<button type="button" data-ea-action="select-unsubscribe" style="border:0;background:#1f6f8b;color:#fff;border-radius:999px;padding:9px 12px;cursor:pointer;font:inherit;">Queue unsubscribe review</button>' : ""}
               ${unsubscribePreview && unsubscribePreview.url ? `<a href="${escapeHtml(unsubscribePreview.url)}"${unsubscribePreview.url.startsWith("http") ? ' target="_blank" rel="noreferrer"' : ''} style="border:0;background:#ebe4d7;color:#1f1a14;border-radius:999px;padding:9px 12px;display:inline-flex;align-items:center;text-decoration:none;font:inherit;">${unsubscribePreview.url.startsWith("http") ? "Open unsubscribe" : "Open mail unsubscribe"}</a>` : ""}
-              <a href="${escapeHtml(`${LOCAL_ORIGIN}${unsubscribe.handoff_path || "/unsubscribe-review"}`)}" target="_blank" rel="noreferrer" style="border:0;background:#ebe4d7;color:#1f1a14;border-radius:999px;padding:9px 12px;display:inline-flex;align-items:center;text-decoration:none;font:inherit;">Review all subscriptions</a>
+              <a href="${escapeHtml(`${LOCAL_ORIGIN}${unsubscribe.handoff_path || "/unsubscribe-review"}`)}" target="_blank" rel="noreferrer" style="border:0;background:#ebe4d7;color:#1f1a14;border-radius:999px;padding:9px 12px;display:inline-flex;align-items:center;text-decoration:none;font:inherit;">${reviewLinkLabel}</a>
             </div>
           </div>
         `
@@ -364,13 +546,11 @@
           <div style="margin-top:8px;color:#1f1a14;line-height:1.45;">${escapeHtml(selected.reason || "No short reason is stored yet.")}</div>
         </div>
         <div style="margin-top:14px;border-radius:14px;background:#f5efe2;padding:12px;">
-          <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">Details</div>
-          <div style="margin-top:8px;color:#6b6255;line-height:1.45;">Decision source: ${escapeHtml(decisionSource)}</div>
-          <div style="margin-top:6px;color:#6b6255;line-height:1.45;">Label write status: ${escapeHtml(writeStatusLabel)}</div>
-          <div style="margin-top:6px;color:#6b6255;line-height:1.45;">Inbox handling: ${escapeHtml(inboxStatusLabel)}</div>
-          <div style="margin-top:6px;color:#6b6255;line-height:1.45;">Matched saved rules: ${escapeHtml(String(details.matched_rule_count || 0))}</div>
-          ${matchedRuleList}
-          ${unsubscribeReasonList}
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+            <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">Details</div>
+            <button type="button" data-ea-action="toggle-details" style="border:0;background:#ebe4d7;color:#1f1a14;border-radius:999px;padding:7px 10px;cursor:pointer;font:inherit;">${detailsButtonLabel}</button>
+          </div>
+          ${detailsHtml}
         </div>
         ${unsubscribeLine}
         <div style="margin-top:14px;border-top:1px solid #e5dccb;padding-top:14px;">
@@ -391,6 +571,7 @@
     }
 
     const changedToday = summary.changed_today || {};
+    const selectedUnsubscribeExamples = changedToday.selected_unsubscribe_examples || [];
     const focus = summaryFocusCopy(activeSummaryFilter);
     const topLabels = (summary.top_labels || [])
       .map(
@@ -398,15 +579,16 @@
           `<span style="border-radius:999px;padding:6px 10px;background:#f1eadb;color:#5d5342;font-size:0.8rem;">${escapeHtml(item.label)} - ${item.count}</span>`,
       )
       .join("");
-    const metricButtonStyle = (key) =>
+      const metricButtonStyle = (key) =>
       `border:0;border-radius:14px;background:${activeSummaryFilter === key ? "#e7f6f4" : "#f5efe2"};box-shadow:${activeSummaryFilter === key ? "inset 0 0 0 1px rgba(15,118,110,0.22)" : "none"};padding:12px;text-align:left;cursor:pointer;font:inherit;color:#1f1a14;`;
+    const keptVisibleCount = summary.kept_visible_count ?? countForFilter("kept_visible_items");
     setHtml(dailySummaryNode, `
       <div style="margin-top:10px;color:#6b6255;line-height:1.45;">${summary.run_count > 1 ? `Rolling view across the last ${summary.run_count} Gmail runs` : "Latest run snapshot"}</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px;">
         <button type="button" data-ea-summary-filter="recent_items" style="${metricButtonStyle("recent_items")}"><strong style="display:block;font-size:1.15rem;">${summary.processed_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">processed</span></button>
         <button type="button" data-ea-summary-filter="auto_handled_items" style="${metricButtonStyle("auto_handled_items")}"><strong style="display:block;font-size:1.15rem;">${summary.auto_handled_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">auto-handled</span></button>
         <button type="button" data-ea-summary-filter="needs_attention_items" style="${metricButtonStyle("needs_attention_items")}"><strong style="display:block;font-size:1.15rem;">${summary.needs_attention_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">need attention</span></button>
-        <button type="button" data-ea-summary-filter="kept_visible_items" style="${metricButtonStyle("kept_visible_items")}"><strong style="display:block;font-size:1.15rem;">${summary.unlabeled_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">unlabeled</span></button>
+        <button type="button" data-ea-summary-filter="kept_visible_items" style="${metricButtonStyle("kept_visible_items")}"><strong style="display:block;font-size:1.15rem;">${keptVisibleCount || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">kept visible</span></button>
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;">
         <span style="border-radius:999px;padding:6px 10px;background:#f1eadb;color:#5d5342;font-size:0.8rem;">Unsubscribe candidates - ${summary.unsubscribe_candidate_count || 0}</span>
@@ -425,19 +607,35 @@
           <div style="border-radius:14px;background:#fffdfa;padding:12px;"><strong style="display:block;font-size:1.15rem;">${changedToday.taught_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">teaching changes</span></div>
           <div style="border-radius:14px;background:#fffdfa;padding:12px;"><strong style="display:block;font-size:1.15rem;">${changedToday.selected_unsubscribe_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">unsubscribe queued</span></div>
         </div>
+        ${
+          selectedUnsubscribeExamples.length
+            ? `<div style="margin-top:12px;border-radius:12px;background:#fffdfa;padding:12px;">
+                <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">Queued subscriptions</div>
+                <div style="display:grid;gap:8px;margin-top:10px;">
+                  ${selectedUnsubscribeExamples.map((item) => `
+                    <a href="${escapeHtml(`${LOCAL_ORIGIN}${item.handoff_path}`)}" target="_blank" rel="noreferrer" style="text-decoration:none;border:1px solid #d7cfbf;border-radius:14px;background:#fffdfa;padding:10px 12px;color:#1f1a14;">
+                      <div style="font-size:0.95rem;font-weight:700;line-height:1.25;">${escapeHtml(item.display_name || "(unknown list)")}</div>
+                      <div style="margin-top:4px;color:#6b6255;font-size:0.82rem;overflow-wrap:anywhere;">${escapeHtml(item.sender || "(unknown sender)")}</div>
+                    </a>
+                  `).join("")}
+                </div>
+              </div>`
+            : ""
+        }
         <div style="margin-top:12px;display:grid;gap:8px;">${
           (changedToday.items || []).length
             ? (changedToday.items || []).map((item) => `
-              <div style="border:1px solid #d7cfbf;border-radius:14px;background:#fffdfa;padding:10px 12px;color:#1f1a14;">
+              <button type="button" data-ea-changed-item="${escapeHtml(item.message_id || "")}" style="width:100%;text-align:left;border:1px solid #d7cfbf;border-radius:14px;background:#fffdfa;padding:10px 12px;color:#1f1a14;cursor:pointer;font:inherit;">
                 <div style="font-size:0.95rem;font-weight:700;line-height:1.25;">${escapeHtml(item.subject || "(no subject)")}</div>
                 <div style="margin-top:4px;color:#6b6255;font-size:0.82rem;overflow-wrap:anywhere;">${escapeHtml(item.sender || "(unknown sender)")}</div>
                 <div style="margin-top:6px;color:#6b6255;line-height:1.45;">${escapeHtml(item.change_summary || "")}</div>
-              </div>
+              </button>
             `).join("")
             : '<div style="color:#6b6255;line-height:1.45;">No tracked agent changes in this stored batch yet.</div>'
         }</div>
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;">
+        <a href="${LOCAL_ORIGIN}/daily-dashboard" target="_blank" rel="noreferrer" style="border:0;background:#0f766e;color:#fff;border-radius:999px;padding:9px 12px;display:inline-flex;align-items:center;text-decoration:none;font:inherit;">Open daily dashboard</a>
         <a href="${LOCAL_ORIGIN}/unsubscribe-review" target="_blank" rel="noreferrer" style="border:0;background:#ebe4d7;color:#1f1a14;border-radius:999px;padding:9px 12px;display:inline-flex;align-items:center;text-decoration:none;font:inherit;">Review unsubscribe candidates</a>
       </div>
       ${
@@ -581,6 +779,39 @@
       .join("");
   }
 
+  function relatedSummaryItemsForContext(context) {
+    if (!context) {
+      return [];
+    }
+    const sender = normalizedSender(context.sender || "");
+    const subject = normalizedSubject(context.subject || "");
+    const seen = new Set();
+    const results = [];
+    const groups = [
+      summaryItemsForFilter("needs_attention_items"),
+      summaryItemsForFilter("recent_items"),
+      summaryItemsForFilter("kept_visible_items"),
+      summaryItemsForFilter("auto_handled_items"),
+    ];
+    for (const group of groups) {
+      for (const item of group) {
+        if (!item || !item.message_id || seen.has(item.message_id)) {
+          continue;
+        }
+        const itemSender = normalizedSender(item.sender || "");
+        const itemSubject = normalizedSubject(item.subject || "");
+        const senderMatch = sender && itemSender && sender === itemSender;
+        const subjectMatch = subject && itemSubject && subject === itemSubject;
+        if (!senderMatch && !subjectMatch) {
+          continue;
+        }
+        seen.add(item.message_id);
+        results.push(item);
+      }
+    }
+    return results;
+  }
+
   function findSummaryItem(messageId) {
     if (!lastHarnessState || !messageId) {
       return null;
@@ -602,6 +833,13 @@
 
   function renderTeachPreviewHtml(preview) {
     const impact = preview.impact || {};
+    const matchingCount = impact.matching_existing_count || 0;
+    const severityTone = matchingCount >= 50
+      ? { bg: "#fff4dd", fg: "#8a4b00", label: "Large existing-email change" }
+      : matchingCount > 0
+        ? { bg: "#eef7f5", fg: "#0f766e", label: "Existing-email change to confirm" }
+        : { bg: "#eef7f5", fg: "#0f766e", label: "Future-facing lesson" };
+    const targetLabelName = humanLabelNameFromId((preview.selected_label_after || [])[0] || "");
     const examples = (impact.matching_existing_examples || [])
       .map(
         (item) =>
@@ -611,17 +849,27 @@
     return `
       <div style="margin-top:12px;border-radius:14px;background:#fff8eb;padding:12px;color:#1f1a14;line-height:1.45;">
         <div style="font-weight:700;">${escapeHtml(preview.acknowledgment || "Preview ready.")}</div>
-        <div style="margin-top:8px;color:#6b6255;">Matching existing emails: ${impact.matching_existing_count || 0}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;">
+          <span style="display:inline-flex;align-items:center;padding:5px 10px;border-radius:999px;background:${severityTone.bg};color:${severityTone.fg};font-size:0.82rem;">${escapeHtml(severityTone.label)}</span>
+          <span style="display:inline-flex;align-items:center;padding:5px 10px;border-radius:999px;background:#f1eadb;color:#5d5342;font-size:0.82rem;">Current email -> ${escapeHtml(targetLabelName)}</span>
+          <span style="display:inline-flex;align-items:center;padding:5px 10px;border-radius:999px;background:#f1eadb;color:#5d5342;font-size:0.82rem;">Matching existing emails: ${matchingCount}</span>
+        </div>
+        <div style="margin-top:10px;color:#6b6255;line-height:1.45;">${escapeHtml(previewChoiceExplainer(matchingCount))}</div>
+        <div style="margin-top:10px;border-radius:12px;background:#fffdfa;padding:10px 12px;color:#6b6255;line-height:1.45;">
+          <div><strong style="color:#1f1a14;">Apply only to this email</strong> changes the current message only.</div>
+          <div style="margin-top:6px;"><strong style="color:#1f1a14;">Apply to current + ${matchingCount} matching emails</strong> rewrites those existing stored emails too.</div>
+          <div style="margin-top:6px;"><strong style="color:#1f1a14;">Apply to current + future emails only</strong> saves the lesson without rewriting other stored emails today.</div>
+        </div>
         ${
           examples
             ? `<ol style="margin:8px 0 0;padding-left:18px;color:#6b6255;">${examples}</ol>`
             : ""
         }
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
-          <button type="button" data-ea-apply="current-only" style="border:0;background:#0f766e;color:#fff;border-radius:999px;padding:9px 12px;cursor:pointer;font:inherit;">Apply only here</button>
-          <button type="button" data-ea-apply="matching-existing" style="border:0;background:#1f6f8b;color:#fff;border-radius:999px;padding:9px 12px;cursor:pointer;font:inherit;">Apply to matching emails too</button>
-          <button type="button" data-ea-apply="future-only" style="border:0;background:#7b5d2a;color:#fff;border-radius:999px;padding:9px 12px;cursor:pointer;font:inherit;">Use for future emails only</button>
-          <button type="button" data-ea-action="refine-teach" style="border:0;background:#ebe4d7;color:#1f1a14;border-radius:999px;padding:9px 12px;cursor:pointer;font:inherit;">Refine this</button>
+          <button type="button" data-ea-apply="current-only" style="border:0;background:#0f766e;color:#fff;border-radius:999px;padding:9px 12px;cursor:pointer;font:inherit;">Apply only to this email</button>
+          <button type="button" data-ea-apply="matching-existing" style="border:0;background:#1f6f8b;color:#fff;border-radius:999px;padding:9px 12px;cursor:pointer;font:inherit;">Apply to current + ${matchingCount} matching emails</button>
+          <button type="button" data-ea-apply="future-only" style="border:0;background:#7b5d2a;color:#fff;border-radius:999px;padding:9px 12px;cursor:pointer;font:inherit;">Apply to current + future emails only</button>
+          <button type="button" data-ea-action="refine-teach" style="border:0;background:#ebe4d7;color:#1f1a14;border-radius:999px;padding:9px 12px;cursor:pointer;font:inherit;">Keep discussing</button>
         </div>
       </div>
     `;
@@ -632,13 +880,31 @@
       return "";
     }
     const impact = previousPreview.impact || {};
+    const targetLabelName = humanLabelNameFromId((previousPreview.selected_label_after || [])[0] || "");
     return `
       <div data-ea-previous-preview="true" style="margin-top:12px;border-radius:14px;background:#f5efe2;padding:12px;color:#1f1a14;line-height:1.45;">
         <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">Previous interpretation</div>
         <div style="margin-top:8px;font-weight:700;">${escapeHtml(previousPreview.acknowledgment || "Previous preview")}</div>
-        <div style="margin-top:6px;color:#6b6255;">Matching existing emails: ${impact.matching_existing_count || 0}</div>
+        <div style="margin-top:6px;color:#6b6255;">Would relabel to ${escapeHtml(targetLabelName)} and change ${impact.matching_existing_count || 0} existing emails.</div>
+        <div style="margin-top:6px;color:#6b6255;">Use this to compare the old understanding against the current one before you confirm anything broader.</div>
       </div>
     `;
+  }
+
+  function previewChoiceExplainer(matchingCount) {
+    if (matchingCount > 0) {
+      return "Nothing beyond the current email changes unless you explicitly approve it. Use the broader apply option only if this lesson really should rewrite those stored emails too.";
+    }
+    return "This lesson only changes the current email now and teaches future behavior. There are no other stored emails waiting on this exact rule today.";
+  }
+
+  function humanLabelNameFromId(labelId) {
+    if (!labelId) {
+      return "Uncategorized";
+    }
+    const allowedLabels = ((((lastSidebarState || {}).ui_state || {}).allowed_labels) || []);
+    const match = allowedLabels.find((item) => item.id === labelId);
+    return match ? match.name : labelId;
   }
 
   async function handlePanelClick(event) {
@@ -646,25 +912,35 @@
     if (summaryFilterButton) {
       event.preventDefault();
       activeSummaryFilter = summaryFilterButton.getAttribute("data-ea-summary-filter") || "needs_attention_items";
-      if (lastHarnessState) {
-        renderState(lastHarnessState);
-      }
+      openFirstSummaryItemIfHelpful(activeSummaryFilter);
       return;
     }
     const summaryItemButton = event.target.closest("[data-ea-summary-item]");
     if (summaryItemButton) {
       event.preventDefault();
       const item = findSummaryItem(summaryItemButton.getAttribute("data-ea-summary-item") || "");
-      if (!item) {
-        return;
-      }
-      manualPreviewContext = contextFromItem(item);
-      teachPreview = null;
-      previousTeachPreview = null;
-      teachResult = "";
-      unsubscribeResult = "";
-      teachDraft = { targetLabel: "", note: "" };
-      refreshSelection(true);
+      openItemPreview(item);
+      return;
+    }
+    const changedItemButton = event.target.closest("[data-ea-changed-item]");
+    if (changedItemButton) {
+      event.preventDefault();
+      const item = findSummaryItem(changedItemButton.getAttribute("data-ea-changed-item") || "");
+      openItemPreview(item);
+      return;
+    }
+    const relatedItemButton = event.target.closest("[data-ea-related-item]");
+    if (relatedItemButton) {
+      event.preventDefault();
+      const item = findSummaryItem(relatedItemButton.getAttribute("data-ea-related-item") || "");
+      openItemPreview(item);
+      return;
+    }
+    const queueButton = event.target.closest("[data-ea-action='open-needs-attention']");
+    if (queueButton) {
+      event.preventDefault();
+      activeSummaryFilter = "needs_attention_items";
+      openFirstSummaryItemIfHelpful(activeSummaryFilter);
       return;
     }
     const previewButton = event.target.closest("[data-ea-action='preview-teach']");
@@ -701,6 +977,15 @@
       event.preventDefault();
       return applyTeach(applyButton.getAttribute("data-ea-apply"));
     }
+    const detailsButton = event.target.closest("[data-ea-action='toggle-details']");
+    if (detailsButton) {
+      event.preventDefault();
+      detailsExpanded = !detailsExpanded;
+      if (lastSidebarState) {
+        renderState(lastSidebarState);
+      }
+      return;
+    }
     const unsubscribeButton = event.target.closest("[data-ea-action='select-unsubscribe']");
     if (unsubscribeButton) {
       event.preventDefault();
@@ -716,6 +1001,25 @@
       unsubscribeResult = "";
       refreshSelection(true);
     }
+  }
+
+  function openFirstSummaryItemIfHelpful(filter) {
+    const items = summaryItemsForFilter(filter);
+    if (!items.length) {
+      if (lastHarnessState) {
+        renderState(lastHarnessState);
+      }
+      return;
+    }
+    const currentMessageId = ((lastSidebarState || {}).selected_email || {}).message_id || "";
+    if (manualPreviewContext && currentMessageId && items.some((item) => item.message_id === currentMessageId)) {
+      if (lastHarnessState) {
+        renderState(lastHarnessState);
+      }
+      return;
+    }
+    const firstItem = items[0];
+    openItemPreview(firstItem);
   }
 
   function handlePanelInput(event) {
@@ -885,10 +1189,11 @@
         return {
           previousPayload,
           activeSummaryFilter,
-          manualPreviewContext,
-          lastLiveContext,
-          selectedContext: lastSidebarState?.selected_context || {},
-          selectedEmail: lastSidebarState?.selected_email || null,
+        manualPreviewContext,
+        detailsExpanded,
+        lastLiveContext,
+        selectedContext: lastSidebarState?.selected_context || {},
+        selectedEmail: lastSidebarState?.selected_email || null,
           recentCount: (lastHarnessState?.recent_items || []).length,
           needsAttentionCount: (lastHarnessState?.needs_attention_items || []).length,
         };
@@ -898,14 +1203,42 @@
         if (!item) {
           return { ok: false, error: "item-not-found" };
         }
-        manualPreviewContext = contextFromItem(item);
-        teachPreview = null;
-        previousTeachPreview = null;
-        teachResult = "";
-        unsubscribeResult = "";
-        teachDraft = { targetLabel: "", note: "" };
-        refreshSelection(true);
+        openItemPreview(item);
         return { ok: true, messageId: item.message_id || "", subject: item.subject || "" };
+      },
+      selectSummaryFilter(filter) {
+        if (!filter) {
+          return { ok: false, error: "missing-filter" };
+        }
+        activeSummaryFilter = filter;
+        openFirstSummaryItemIfHelpful(filter);
+        return { ok: true, filter };
+      },
+      setDraft(targetLabel, note) {
+        if (typeof targetLabel === "string" && targetLabel) {
+          teachDraft.targetLabel = targetLabel;
+        }
+        if (typeof note === "string") {
+          teachDraft.note = note;
+        }
+        const selectNode = document.getElementById("ea-target-label");
+        const noteNode = document.getElementById("ea-teach-note");
+        if (selectNode && teachDraft.targetLabel) {
+          selectNode.value = teachDraft.targetLabel;
+        }
+        if (noteNode) {
+          noteNode.value = teachDraft.note;
+        }
+        return { ok: true, draft: { ...teachDraft } };
+      },
+      getDraft() {
+        syncTeachDraftFromDom();
+        return { ...teachDraft };
+      },
+      forceRefresh() {
+        syncTeachDraftFromDom();
+        refreshSelection(true);
+        return { ok: true };
       },
       previewTeach(targetLabel, note) {
         if (!lastSidebarState || !lastSidebarState.selected_email || !lastSidebarState.selected_email.found) {

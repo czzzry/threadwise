@@ -21,6 +21,7 @@ The Gmail path is now a usable supervised release workflow for one inbox:
 5. write a daily report artifact
 6. leave only unlabeled exceptions for manual follow-up
 7. show the current email, compact daily summary, queue-preview path, teaching preview, and unsubscribe context in the Gmail companion sidebar during real inbox browsing
+8. open a fuller daily dashboard and focused unsubscribe review when the sidebar needs to hand off into a broader operational view
 
 Manual browser review, explicit review/apply flows, retries, and local inspection commands remain available as fallback and verification paths.
 
@@ -90,6 +91,7 @@ Still out of scope by default:
 - live selected-email fallback into queue preview from unsynced Gmail messages
 - live `Correct / Teach` preview path with broader-impact confirmation
 - compact in-sidebar daily summary and unsubscribe surfacing
+- fuller daily dashboard route for what changed today, queue buckets, and queued unsubscribe review
 - daily and weekly report generation
 - provider/account-aware local artifact handling
 - ProtonMail read-only import and live Bridge paths
@@ -104,6 +106,7 @@ Still out of scope by default:
 - ProtonMail write-side behavior is still unresolved product scope
 - the local artifact model is central enough that it likely needs stronger explicit versioning and decision notes over time
 - the isolated automation-browser path still relies on host-driven injection/message fulfillment for deterministic live Gmail acceptance instead of unpacked-extension parity by itself
+- the live acceptance harness still proves the inbox companion through host-driven injection rather than a pure unpacked-extension parity path
 
 ## Next documentation needs
 

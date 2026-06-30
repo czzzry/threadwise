@@ -1,6 +1,6 @@
 # Status
 
-Current
+Completed
 Current as of: 2026-06-29
 Triage state: `ready-for-agent`
 Builds on: `docs/prd.md`, `docs/issues/063-gmail-companion-sidebar-spine.md`
@@ -47,12 +47,12 @@ This slice should reuse existing memory/feedback infrastructure where possible, 
 
 ## Acceptance criteria
 
-- [ ] The user can correct the selected email directly from the Gmail companion sidebar.
-- [ ] The agent replies with a short acknowledgment that reflects the correction and inferred lesson.
-- [ ] If the inferred lesson would rewrite other existing emails, the system shows impact before applying it.
-- [ ] The user can choose current-only, matching-existing, future-only, or refine.
-- [ ] Refinement preserves visible old vs revised interpretation.
-- [ ] Confirmed broader changes apply immediately or clearly refresh in place.
+- [x] The user can correct the selected email directly from the Gmail companion sidebar.
+- [x] The agent replies with a short acknowledgment that reflects the correction and inferred lesson.
+- [x] If the inferred lesson would rewrite other existing emails, the system shows impact before applying it.
+- [x] The user can choose current-only, matching-existing, future-only, or refine.
+- [x] Refinement preserves visible old vs revised interpretation.
+- [x] Confirmed broader changes apply immediately or clearly refresh in place.
 
 ## Output
 
@@ -60,3 +60,6 @@ This slice should reuse existing memory/feedback infrastructure where possible, 
 - structured acknowledgment and interpretation model
 - impact preview and confirmation flow
 
+## Completion note
+
+Completed as part of the Gmail companion release tranche. The simulator and live Gmail acceptance handoffs cover the teach preview, impact confirmation, refine/compare behavior, and visible refresh paths.

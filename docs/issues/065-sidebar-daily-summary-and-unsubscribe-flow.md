@@ -1,6 +1,6 @@
 # Status
 
-Current
+Completed
 Current as of: 2026-06-29
 Triage state: `ready-for-agent`
 Builds on: `docs/prd.md`, `docs/issues/063-gmail-companion-sidebar-spine.md`
@@ -39,12 +39,12 @@ This slice should not invent a brand-new dashboard system. It should reuse the e
 
 ## Acceptance criteria
 
-- [ ] The sidebar default state includes a compact daily summary that is operationally useful.
-- [ ] The summary clearly distinguishes categorized mail, auto-handled mail, and attention-needed mail.
-- [ ] The user can see what the agent changed today without reading a long audit log.
-- [ ] Unsubscribe availability appears in current-email context when relevant.
-- [ ] Simple safe unsubscribe actions can be initiated from the sidebar.
-- [ ] Broader unsubscribe cases hand off to a fuller explicit review flow.
+- [x] The sidebar default state includes a compact daily summary that is operationally useful.
+- [x] The summary clearly distinguishes categorized mail, auto-handled mail, and attention-needed mail.
+- [x] The user can see what the agent changed today without reading a long audit log.
+- [x] Unsubscribe availability appears in current-email context when relevant.
+- [x] Simple safe unsubscribe actions can be initiated from the sidebar.
+- [x] Broader unsubscribe cases hand off to a fuller explicit review flow.
 
 ## Output
 
@@ -52,3 +52,6 @@ This slice should not invent a brand-new dashboard system. It should reuse the e
 - contextual unsubscribe signal and quick flow
 - handoff into fuller unsubscribe view
 
+## Completion note
+
+Completed as part of the Gmail companion release tranche. The sidebar now exposes the compact daily summary, changed-today navigation, unsubscribe context, queued unsubscribe handoff, and fuller dashboard/review routes.
