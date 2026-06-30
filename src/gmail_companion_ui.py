@@ -529,72 +529,91 @@ class GmailCompanionApp:
       --warn-ink: #8a4b00;
     }
     * { box-sizing: border-box; }
-    body { margin: 0; font-family: Georgia, 'Times New Roman', serif; background: radial-gradient(circle at top, #fbf6ec 0%, #f4ede0 58%, #efe6d7 100%); color: var(--ink); }
-    main { padding: 16px; display: grid; gap: 14px; min-height: 100vh; }
-    .hero { border: 1px solid var(--line); border-radius: 22px; background: rgba(255, 253, 248, 0.96); box-shadow: 0 20px 60px rgba(31, 26, 20, 0.08); padding: 18px 20px; display: flex; align-items: end; justify-content: space-between; gap: 16px; }
-    .eyebrow { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; }
+    body { margin: 0; min-height: 100vh; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: radial-gradient(circle at 18px 18px, rgba(36,24,18,.05) 2px, transparent 2px) 0 0 / 36px 36px, linear-gradient(135deg,#f7efe0 0%,#fdfaf2 52%,#e7f3ee 100%); color: var(--ink); }
+    main { min-height: 100vh; padding: 34px; display: grid; place-items: center; }
+    .hero { display: none; }
+    .eyebrow { color: var(--muted); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.14em; font-weight: 820; }
     .hero h1 { margin: 6px 0 0; font-size: 1.6rem; }
     .hero p { margin: 6px 0 0; color: var(--muted); line-height: 1.45; max-width: 58rem; }
     .hero-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-    .button { border: 0; border-radius: 999px; padding: 10px 14px; cursor: pointer; font: inherit; }
-    .button.primary { background: var(--accent); color: #fff; }
-    .button.secondary { background: #ebe4d7; color: var(--ink); }
-    .layout { display: grid; grid-template-columns: minmax(280px, 0.85fr) minmax(380px, 1.2fr) minmax(360px, 0.95fr); gap: 14px; align-items: start; }
-    .card { border: 1px solid var(--line); border-radius: 20px; background: rgba(255,255,255,0.78); padding: 14px; }
-    .card-title { margin-top: 6px; font-size: 1.08rem; font-weight: 700; }
+    .button { border: 2px solid #241812; border-radius: 11px; padding: 10px 14px; cursor: pointer; font: inherit; font-weight: 760; box-shadow: 2px 2px 0 #241812; }
+    .button.primary { background: #2eb67d; color: #241812; }
+    .button.secondary { background: #e9efe2; color: var(--ink); }
+    .layout { width: min(1180px, 100%); min-height: 690px; display: grid; grid-template-columns: 1fr 420px; gap: 28px; align-items: stretch; }
+    .layout > .card:nth-of-type(2) { display: none; }
+    .card { border: 1px solid rgba(60,64,67,.22); border-radius: 18px; background: #fff; padding: 0; overflow: hidden; box-shadow: 0 24px 70px rgba(36,24,18,.08); display:grid; grid-template-columns:178px minmax(0,1fr); grid-template-rows:64px 46px 1fr; }
+    .card::before { content: "☰  Gmail        Search mail                                      ?   ⚙   Demo account"; grid-column:1 / 3; grid-row:1; height:64px; display:flex; align-items:center; gap:14px; padding:0 18px; border-bottom:1px solid #e8eaed; color:#3c4043; font-size:20px; font-weight:650; white-space:pre; }
+    .card > .eyebrow { grid-column:1; grid-row:2 / 4; margin:0; padding:18px 12px 0 24px; border-right:1px solid #e8eaed; color:transparent; position:relative; letter-spacing:0; }
+    .card > .eyebrow::before { content:"+   Compose\\a\\a Inbox                 14\\a Starred\\a Snoozed\\a Sent\\a Drafts\\a\\a EA/Work\\a EA/Promotions"; white-space:pre; color:#3c4043; font-size:14px; font-weight:500; line-height:2.35; text-transform:none; letter-spacing:0; }
+    .card > .eyebrow::first-line { background:#c2e7ff; border-radius:18px; }
+    .card-title { grid-column:2; grid-row:2; height:46px; margin:0; padding:0 16px; display:flex; align-items:center; color:#d93025; border-bottom:3px solid #d93025; font-size:0.84rem; font-weight:800; }
+    .card-title::before { content:"□  ↻   ⋮    Primary"; }
+    .card-title { font-size:0; }
+    .card-title::before { font-size:0.84rem; }
     .label-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
     .chip-button, .pill { border-radius: 999px; padding: 6px 10px; background: #f1eadb; color: #5d5342; font-size: 0.8rem; }
     .chip-button { border: 0; cursor: pointer; font: inherit; }
     .chip-button.active { background: var(--accent-soft); color: var(--accent); }
-    .list-stack { display: grid; gap: 8px; margin-top: 12px; max-height: 70vh; overflow: auto; }
-    .list-item { width: 100%; text-align: left; border: 1px solid var(--line); border-radius: 14px; background: #fffdfa; padding: 10px 12px; cursor: pointer; font: inherit; color: var(--ink); }
-    .list-item.active { border-color: var(--accent); background: #f5fbfa; box-shadow: inset 0 0 0 1px rgba(15,118,110,0.18); }
-    .list-item-subject { font-size: 0.95rem; font-weight: 700; line-height: 1.25; }
-    .list-item-meta { margin-top: 4px; color: var(--muted); font-size: 0.82rem; overflow-wrap: anywhere; }
+    .card > .label-row { grid-column:2; grid-row:2; align-self:end; justify-self:end; margin:0 14px 10px 0; }
+    .card > .label-row .chip-button { max-width:0; overflow:hidden; padding:0; }
+    .card > .label-row .chip-button.active { max-width:none; padding:4px 8px; background:#fde4e2; color:#c5221f; }
+    .list-stack { grid-column:2; grid-row:3; display:block; margin-top:0; max-height:none; overflow:hidden; }
+    .list-item { width:100%; min-height:40px; text-align:left; border:0; border-bottom:1px solid #f1f3f4; border-radius:0; background:#fff; padding:0 12px 0 16px; cursor:pointer; font:inherit; color:#202124; display:grid; grid-template-columns:18px minmax(104px,.24fr) minmax(0,1fr) 58px; column-gap:12px; align-items:center; }
+    .list-item::before { content:"□"; color:#b8bec5; font-size:16px; }
+    .list-item::after { content:"9:18 AM"; color:#5f6368; font-size:0.78rem; justify-self:end; }
+    .list-item.active { border-color: #f1f3f4; background: #f2f6fc; box-shadow: inset 3px 0 0 #d93025; }
+    .list-item-subject { font-size: 0.84rem; font-weight: 800; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .list-item-meta { margin-top: 0; color: #5f6368; font-size: 0.82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .card .list-item .label-row { display:none; }
     .message-title { margin-top: 8px; font-size: 1.25rem; font-weight: 700; line-height: 1.2; }
     .message-meta { margin-top: 8px; color: var(--muted); line-height: 1.45; overflow-wrap: anywhere; }
     .message-body { margin-top: 14px; border-radius: 16px; background: var(--soft); padding: 14px; color: var(--ink); line-height: 1.55; min-height: 260px; white-space: pre-wrap; }
     .note { margin-top: 12px; border-radius: 14px; background: rgba(255,255,255,0.65); padding: 12px; color: var(--muted); line-height: 1.45; }
     .summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
     .metric-button { border: 0; border-radius: 14px; background: var(--soft); padding: 12px; text-align: left; cursor: pointer; font: inherit; color: var(--ink); }
+    .metric-button { border: 2px solid #241812; box-shadow: 2px 2px 0 rgba(36,24,18,.18); background: #fffdf7; }
     .metric-button.active { background: #e7f6f4; box-shadow: inset 0 0 0 1px rgba(15,118,110,0.22); }
+    .teach-card { border: 3px solid #241812; background: #ffe1a3; padding: 0; overflow: hidden; }
+    .teach-card > .reason-label { display: flex; align-items: center; min-height: 40px; padding: 0 13px; border-bottom: 3px solid #241812; background: #ffc64a; color: #241812; font-weight: 900; }
+    .teach-card > .field-stack, .teach-card > .preview-card, .teach-card > .success-card, .teach-card > .error-card, .teach-card > .note { margin: 12px; }
     .empty { color: var(--muted); line-height: 1.45; }
-    .panel { background: rgba(255,253,248,0.98); border: 1px solid rgba(215,207,191,0.95); border-radius: 22px; box-shadow: 0 20px 60px rgba(31,26,20,0.16); overflow: hidden; }
+    .panel { background: var(--paper); border: 3px solid #241812; border-radius: 18px; box-shadow: 6px 6px 0 #241812; overflow: hidden; align-self: start; }
     .panel.minimized .content { display: none; }
-    .header { display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:16px 16px 14px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#fff8eb 0%,#f6eedf 100%); }
-    .header-copy { display:grid;gap:6px; }
+    .header { display:flex;align-items:center;justify-content:space-between;gap:12px;padding:17px 18px;border-bottom:3px solid #241812;background:#fff4d7; }
+    .header-copy { display:grid;gap:6px;min-width:0; }
     .header-top { display:flex;align-items:center;gap:8px; }
     .brand-lockup { display:flex;align-items:center;gap:10px;min-width:0; }
-    .brand-mark { width:34px;height:34px;border-radius:10px;border:1px solid rgba(33,25,18,0.18);box-shadow:0 3px 10px rgba(31,26,20,0.16);flex:0 0 auto; }
-    .brand-kicker { color:#c88616;font-size:0.68rem;letter-spacing:0.12em;text-transform:uppercase;white-space:nowrap; }
+    .brand-mark { width:42px;height:42px;border-radius:12px;border:2px solid #241812;box-shadow:3px 3px 0 #241812;flex:0 0 auto;background:#fff8df; }
+    .brand-kicker { color:#ad6400;font-family:ui-serif,Georgia,"Times New Roman",serif;font-size:0.68rem;font-weight:900;letter-spacing:0.13em;text-transform:uppercase;white-space:normal;line-height:1.05; }
     .dot { width:10px;height:10px;border-radius:999px;background:var(--accent);box-shadow:0 0 0 4px rgba(15,118,110,0.12); }
-    .title { font-size:1.08rem;font-weight:700; }
+    .title { font-size:1.35rem;font-weight:840;letter-spacing:-0.04em;line-height:1; }
     .subtitle { color: var(--muted); font-size:0.88rem; line-height:1.35; }
-    .minimize { border: 0; background: #ebe4d7; color: var(--ink); border-radius: 999px; padding: 8px 12px; cursor: pointer; font: inherit; }
-    .content { padding:14px; display:grid; gap:12px; }
-    .hero-card { border:1px solid var(--line);border-radius:18px;padding:14px;background:linear-gradient(180deg,#fffdfa 0%,#faf5ea 100%); }
-    .secondary-card { border:1px solid var(--line);border-radius:16px;padding:14px;background:#fffdfa; }
-    .subject { margin-top: 8px; font-size: 1.08rem; font-weight: 700; line-height: 1.2; }
+    .minimize { border:2px solid #241812;background:#e9efe2;color:var(--ink);border-radius:11px;font-weight:760;padding:9px 12px;box-shadow:2px 2px 0 #241812;cursor:pointer;font:inherit; }
+    .content { padding:14px; display:grid; gap:13px; }
+    .hero-card { border:3px solid #241812;border-radius:18px;padding:16px;background:#fffdf7;box-shadow:2px 2px 0 rgba(36,24,18,.18); }
+    .secondary-card { border:3px solid #241812;border-radius:18px;padding:16px;background:#e9efe2;box-shadow:2px 2px 0 rgba(36,24,18,.18); }
+    .subject { margin-top: 7px; font-size: 1.3rem; font-weight: 840; line-height: 1.04; letter-spacing: -0.015em; }
     .sender { margin-top: 6px; color: var(--muted); font-size: 0.88rem; overflow-wrap: anywhere; }
     .pill-row { display:flex;flex-wrap:wrap;gap:8px;margin-top:12px; }
-    .pill { display:inline-flex;align-items:center;padding:5px 10px;font-size:0.82rem; }
-    .classification-pill { background:#efe7d4;color:#5f512f; }
-    .status-pill { background:var(--accent-soft);color:var(--accent); }
+    .pill { display:inline-flex;align-items:center;padding:7px 10px;font-size:0.78rem;border:2px solid #241812;border-radius:999px;background:#f1eadf;color:#241812;font-weight:760;box-shadow:2px 2px 0 rgba(36,24,18,.28); }
+    .classification-pill { background:#f1eadf;color:#241812; }
+    .status-pill { background:#dff8ed;color:#09633c; }
     .warn-pill { background:var(--warn-soft);color:var(--warn-ink); }
-    .reason-wrap { margin-top:14px;border-radius:14px;background:var(--soft);padding:12px; }
+    .agent-copy { margin-top:10px;color:#6f5e4c;line-height:1.36;font-weight:720; }
+    .reason-wrap { margin-top:12px;border:2px solid #241812;border-radius:14px;background:#fffdf7;padding:12px; }
     .reason-label { font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted); }
     .reason { margin-top:8px;color:var(--ink);line-height:1.45; }
     .field-stack { display:grid;gap:8px;margin-top:10px; }
-    .select, .textarea { width:100%;border-radius:12px;border:1px solid var(--line);background:#fffdfa;color:var(--ink);font:inherit; }
+    .select, .textarea { width:100%;border-radius:11px;border:2px solid #241812;background:#fffdf7;color:var(--ink);font:inherit;box-shadow:2px 2px 0 rgba(36,24,18,.18); }
     .select { padding:10px 12px; }
     .textarea { min-height:84px;padding:10px 12px;resize:vertical; }
     .button-row { display:flex;flex-wrap:wrap;gap:8px; }
-    .action-button { border:0;border-radius:999px;padding:9px 12px;cursor:pointer;font:inherit; }
-    .action-button.primary { background: var(--accent); color:#fff; }
-    .action-button.secondary { background:#ebe4d7;color:var(--ink); }
-    .action-button.info { background:#1f6f8b;color:#fff; }
-    .action-button.future { background:#7b5d2a;color:#fff; }
-    .preview-card { margin-top:12px;border-radius:14px;background:#fff8eb;padding:12px;color:var(--ink);line-height:1.45; }
+    .action-button { border:2px solid #241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812; }
+    .action-button.primary { background:#2eb67d;color:#241812; }
+    .action-button.secondary { background:#fffdf7;color:var(--ink); }
+    .action-button.info { background:#3d6df2;color:#fff; }
+    .action-button.future { background:#ffc64a;color:#241812; }
+    .preview-card { margin-top:12px;border:2px solid #241812;border-radius:14px;background:#fffdf7;padding:12px;color:var(--ink);line-height:1.45; }
     .success-card { margin-top:12px;border-radius:14px;background:var(--accent-soft);padding:12px;color:var(--accent);line-height:1.45; }
     .error-card { margin-top:12px;border-radius:14px;background:var(--warn-soft);padding:12px;color:var(--warn-ink);line-height:1.45; }
     @media (max-width: 1200px) { .layout { grid-template-columns: 1fr; } }
@@ -631,7 +650,7 @@ class GmailCompanionApp:
               <img class="brand-mark" src="/assets/brand/threadwise-app-icon.png" alt="" aria-hidden="true">
               <div>
                 <div class="title">Threadwise</div>
-                <div class="brand-kicker">Clear threads</div>
+                <div class="brand-kicker">CLEAR THREADS. BETTER INBOX.</div>
               </div>
             </div>
             <div class="subtitle" id="sim-subtitle">Compact daily summary</div>
@@ -640,7 +659,7 @@ class GmailCompanionApp:
         </header>
         <div class="content">
           <section class="hero-card">
-            <div class="eyebrow">Selected Email</div>
+            <div class="eyebrow">Agent View</div>
             <div id="sim-selected-email"></div>
           </section>
           <section class="secondary-card">
@@ -721,7 +740,7 @@ class GmailCompanionApp:
         recent_items: "Most recent synced emails across the current local snapshot.",
         auto_handled_items: "Items the agent already handled automatically.",
         kept_visible_items: "Items the agent understood but intentionally left visible.",
-      }[activeHarnessFilter] || "Current queue slice.";
+      }[activeFilter] || "Current queue slice.";
     }
 
     function itemsForActiveFilter() {
@@ -957,51 +976,16 @@ class GmailCompanionApp:
           : teachResult
             ? `<div class="success-card">${escapeHtml(teachResult)}</div>`
             : renderPreviousTeachPreview(previousTeachPreview);
-      const overviewCard = `
-        <div class="reason-wrap">
-          <div class="reason-label">Agent view</div>
-          <div class="summary-grid" style="margin-top:10px;">
-            <div class="metric-button" style="cursor:default;">
-              <strong>${escapeHtml(selected.classification || "Uncategorized")}</strong>
-              <span>category</span>
-            </div>
-            <div class="metric-button" style="cursor:default;">
-              <strong>${escapeHtml(selected.status_label || "Unknown")}</strong>
-              <span>handling</span>
-            </div>
-          </div>
-        </div>
-      `;
-      const nextStepCard = `
-        <div class="reason-wrap" style="background:${selected.status === "needs-attention" ? "#fff8eb" : "#eef7f5"};">
-          <div class="reason-label">${escapeHtml(stepCopy.title)}</div>
-          <div class="reason">${escapeHtml(stepCopy.body)}</div>
-        </div>
-      `;
       selectedEmailNode.innerHTML = `
         <div class="subject">${escapeHtml(selected.subject || "(no subject)")}</div>
         <div class="sender">${escapeHtml(selected.sender || "(unknown sender)")}</div>
+        <div class="agent-copy">${escapeHtml(selected.reason || stepCopy.body || "Threadwise reviewed this email and kept the decision visible for approval.")}</div>
         <div class="pill-row">
           <span class="pill classification-pill">${escapeHtml(selected.classification || "Uncategorized")}</span>
           <span class="pill ${selected.status === "needs-attention" ? "warn-pill" : "status-pill"}">${escapeHtml(selected.status_label || "")}</span>
         </div>
-        ${overviewCard}
-        ${nextStepCard}
-        <div class="reason-wrap">
-          <div class="reason-label">Why</div>
-          <div class="reason">${escapeHtml(selected.reason || "No short reason is stored yet.")}</div>
-        </div>
-        <div class="reason-wrap">
-          <div class="reason-label">Details</div>
-          <div class="empty">Decision source: ${escapeHtml(details.review_action || "n/a")}</div>
-          <div class="empty">Label write status: ${escapeHtml(details.write_status || "not written")}</div>
-          <div class="empty">Inbox removal status: ${escapeHtml(details.inbox_status || "not removed")}</div>
-          <div class="empty">Matched saved rules: ${escapeHtml(String(details.matched_rule_count || 0))}</div>
-          ${matchedRuleList}
-          ${unsubscribeReasonList}
-        </div>
         ${unsubscribeLine}
-        <div class="reason-wrap">
+        <div class="reason-wrap teach-card">
           <div class="reason-label">Correct / Teach</div>
           <div class="field-stack">
             <select id="sim-target-label" class="select">${labelOptions}</select>
@@ -1420,23 +1404,23 @@ class GmailCompanionApp:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Threadwise Unsubscribe Review</title>
   <style>
-    body {{ margin:0; font-family: Georgia, 'Times New Roman', serif; background: radial-gradient(circle at top,#fff8eb 0%,#f4ecdd 52%,#ede1cf 100%); color:#211912; }}
-    main {{ max-width: 980px; margin: 0 auto; padding: 24px; display:grid; gap:16px; }}
-    .hero,.card {{ background:rgba(255,252,244,0.97); border:1px solid rgba(84,68,45,0.2); border-radius:12px; padding:18px; box-shadow:0 10px 30px rgba(31,26,20,0.07); }}
-    .hero {{ background:linear-gradient(180deg,#fff8eb 0%,#fbf1df 100%); }}
+    body {{ margin:0; min-height:100vh; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: radial-gradient(circle at 18px 18px, rgba(36,24,18,.05) 2px, transparent 2px) 0 0 / 36px 36px, linear-gradient(135deg,#f7efe0 0%,#fdfaf2 52%,#e7f3ee 100%); color:#241812; }}
+    main {{ max-width: 1180px; margin: 0 auto; padding: 34px; display:grid; gap:18px; }}
+    .hero,.card {{ background:#fffdf7; border:3px solid #241812; border-radius:18px; padding:18px; box-shadow:5px 5px 0 #241812; }}
+    .hero {{ background:#fff7e8; }}
     .hero-heading {{ display:flex; align-items:center; gap:12px; }}
-    .brand-mark {{ width:42px; height:42px; border-radius:12px; border:1px solid rgba(33,25,18,0.18); box-shadow:0 4px 12px rgba(31,26,20,0.16); flex:0 0 auto; }}
+    .brand-mark {{ width:42px; height:42px; border-radius:12px; border:2px solid #241812; box-shadow:3px 3px 0 #241812; flex:0 0 auto; background:#fff8df; }}
     .grid {{ display:grid; grid-template-columns: repeat(auto-fit,minmax(260px,1fr)); gap:14px; }}
     .section {{ display:grid; gap:12px; }}
-    .eyebrow {{ color:#6b6255; font-size:0.72rem; text-transform:uppercase; letter-spacing:0.08em; }}
+    .eyebrow {{ color:#6b6255; font-size:0.72rem; text-transform:uppercase; letter-spacing:0.14em; font-weight:820; }}
     h1,h2 {{ margin:8px 0 10px; }}
     h1 {{ font-size:2rem; line-height:1.05; }}
     p {{ line-height:1.45; }}
-    .action {{ display:inline-block; margin-top:10px; border-radius:999px; background:#0f766e; color:#fff; padding:9px 12px; text-decoration:none; }}
+    .action {{ display:inline-block; margin-top:10px; border:2px solid #241812; border-radius:11px; background:#2eb67d; color:#241812; padding:9px 12px; text-decoration:none; font-weight:800; box-shadow:3px 3px 0 #241812; }}
     .pill-row {{ display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }}
-    .pill {{ border-radius:999px; padding:6px 10px; background:#f1eadb; color:#5d5342; font-size:0.8rem; }}
-    .focused {{ border-color:#0f766e; box-shadow: inset 0 0 0 1px rgba(15,118,110,0.18); background:#f5fbfa; }}
-    .focus-note {{ display:inline-flex; align-items:center; padding:5px 10px; border-radius:999px; background:#d8f3ef; color:#0f766e; font-size:0.82rem; }}
+    .pill {{ border:2px solid #241812; border-radius:999px; padding:6px 10px; background:#f1eadf; color:#241812; font-size:0.8rem; font-weight:760; box-shadow:2px 2px 0 rgba(36,24,18,.28); }}
+    .focused {{ border-color:#2eb67d; background:#f5fbfa; }}
+    .focus-note {{ display:inline-flex; align-items:center; padding:6px 10px; border:2px solid #241812; border-radius:999px; background:#dff8ed; color:#09633c; font-size:0.82rem; font-weight:760; }}
   </style>
 </head>
 <body>
@@ -1508,29 +1492,29 @@ class GmailCompanionApp:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Threadwise Daily Dashboard</title>
   <style>
-    body {{ margin:0; font-family: Georgia, 'Times New Roman', serif; background: radial-gradient(circle at top,#fff8eb 0%,#f4ecdd 52%,#ede1cf 100%); color:#211912; }}
-    main {{ max-width: 1100px; margin: 0 auto; padding: 24px; display:grid; gap:16px; }}
-    .hero,.card {{ background:rgba(255,252,244,0.97); border:1px solid rgba(84,68,45,0.2); border-radius:12px; padding:18px; box-shadow:0 10px 30px rgba(31,26,20,0.07); }}
-    .hero {{ background:linear-gradient(180deg,#fff8eb 0%,#fbf1df 100%); }}
+    body {{ margin:0; min-height:100vh; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: radial-gradient(circle at 18px 18px, rgba(36,24,18,.05) 2px, transparent 2px) 0 0 / 36px 36px, linear-gradient(135deg,#f7efe0 0%,#fdfaf2 52%,#e7f3ee 100%); color:#241812; }}
+    main {{ max-width: 1180px; margin: 0 auto; padding: 34px; display:grid; gap:18px; }}
+    .hero,.card {{ background:#fffdf7; border:3px solid #241812; border-radius:18px; padding:18px; box-shadow:5px 5px 0 #241812; }}
+    .hero {{ background:#fff7e8; }}
     .hero-heading {{ display:flex; align-items:center; gap:12px; }}
-    .brand-mark {{ width:42px; height:42px; border-radius:12px; border:1px solid rgba(33,25,18,0.18); box-shadow:0 4px 12px rgba(31,26,20,0.16); flex:0 0 auto; }}
+    .brand-mark {{ width:42px; height:42px; border-radius:12px; border:2px solid #241812; box-shadow:3px 3px 0 #241812; flex:0 0 auto; background:#fff8df; }}
     .grid {{ display:grid; grid-template-columns: repeat(auto-fit,minmax(260px,1fr)); gap:14px; }}
     .section {{ display:grid; gap:12px; }}
-    .eyebrow {{ color:#6b6255; font-size:0.72rem; text-transform:uppercase; letter-spacing:0.08em; }}
+    .eyebrow {{ color:#6b6255; font-size:0.72rem; text-transform:uppercase; letter-spacing:0.14em; font-weight:820; }}
     h1,h2 {{ margin:8px 0 10px; }}
     h1 {{ font-size:2rem; line-height:1.05; }}
     p {{ line-height:1.45; }}
     .pill-row {{ display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }}
-    .pill {{ border-radius:999px; padding:6px 10px; background:#f1eadb; color:#5d5342; font-size:0.8rem; }}
+    .pill {{ border:2px solid #241812; border-radius:999px; padding:6px 10px; background:#f1eadf; color:#241812; font-size:0.8rem; font-weight:760; box-shadow:2px 2px 0 rgba(36,24,18,.28); }}
     .metric-grid {{ display:grid; grid-template-columns: repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin-top:14px; }}
-    .metric {{ border-radius:10px; background:#f5efe2; padding:12px; }}
+    .metric {{ border:2px solid #241812; border-radius:11px; background:#fffdf7; padding:12px; box-shadow:2px 2px 0 rgba(36,24,18,.18); }}
     .metric strong {{ display:block; font-size:1.15rem; }}
     .stack {{ display:grid; gap:10px; }}
-    .email-card {{ border:1px solid rgba(84,68,45,0.2); border-radius:10px; background:#fffdfa; padding:12px; }}
+    .email-card {{ border:2px solid #241812; border-radius:11px; background:#fffdf7; padding:12px; box-shadow:2px 2px 0 rgba(36,24,18,.18); }}
     .email-card h3 {{ margin:0; font-size:0.98rem; line-height:1.3; }}
     .meta {{ margin-top:6px; color:#6b6255; font-size:0.84rem; overflow-wrap:anywhere; }}
     .copy {{ margin-top:8px; color:#1f1a14; line-height:1.45; }}
-    .action {{ display:inline-flex; align-items:center; margin-top:10px; border-radius:999px; background:#0f766e; color:#fff; padding:9px 12px; text-decoration:none; }}
+    .action {{ display:inline-flex; align-items:center; margin-top:10px; border:2px solid #241812; border-radius:11px; background:#2eb67d; color:#241812; padding:9px 12px; text-decoration:none; font-weight:800; box-shadow:3px 3px 0 #241812; }}
     @media (max-width: 820px) {{ .grid {{ grid-template-columns: 1fr; }} }}
   </style>
 </head>
@@ -1609,22 +1593,22 @@ class GmailCompanionApp:
     }
     * { box-sizing: border-box; }
     body { margin: 0; font-family: Georgia, 'Times New Roman', serif; background: radial-gradient(circle at top, #fbf6ec 0%, #f4ede0 58%, #efe6d7 100%); color: var(--ink); }
-    .shell { width: 100%; min-height: 100vh; padding: 14px; }
-    .panel { background: rgba(255, 252, 244, 0.99); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 18px 48px rgba(31, 26, 20, 0.18), 0 1px 0 rgba(255,255,255,0.72) inset; overflow: hidden; }
+    .shell { width: 100%; min-height: 100vh; padding: 14px; background: radial-gradient(circle at 18px 18px, rgba(36,24,18,.05) 2px, transparent 2px) 0 0 / 36px 36px, linear-gradient(135deg,#f7efe0 0%,#fdfaf2 52%,#e7f3ee 100%); }
+    .panel { background: #fff7e8; border: 3px solid #241812; border-radius: 18px; box-shadow: 6px 6px 0 #241812; overflow: hidden; }
     .panel.minimized .content, .panel.minimized .footer { display: none; }
     .panel.minimized { width: 84px; }
-    .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 14px 14px 13px; border-bottom: 1px solid var(--line); background: linear-gradient(180deg, #fff6e3 0%, #f7edd9 100%); }
-    .header-copy { display: grid; gap: 6px; }
+    .header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 17px 18px; border-bottom: 3px solid #241812; background: #fff4d7; }
+    .header-copy { display: grid; gap: 6px; min-width: 0; }
     .header-top { display: flex; align-items: center; gap: 8px; }
     .dot { width: 10px; height: 10px; border-radius: 999px; background: var(--accent); box-shadow: 0 0 0 4px rgba(15, 118, 110, 0.12); }
     .brand-lockup { display: flex; align-items: center; gap: 10px; min-width: 0; }
-    .brand-mark { width: 34px; height: 34px; border-radius: 10px; border: 1px solid rgba(33,25,18,0.18); box-shadow: 0 3px 10px rgba(31,26,20,0.16); flex: 0 0 auto; }
-    .brand-kicker { color: var(--gold); font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; white-space: nowrap; }
-    .title { font-size: 1.04rem; font-weight: 700; line-height: 1; }
+    .brand-mark { width: 42px; height: 42px; border-radius: 12px; border: 2px solid #241812; box-shadow: 3px 3px 0 #241812; flex: 0 0 auto; background: #fff8df; }
+    .brand-kicker { color: #ad6400; font-family: ui-serif, Georgia, "Times New Roman", serif; font-size: 0.68rem; font-weight: 900; letter-spacing: 0.13em; text-transform: uppercase; white-space: normal; line-height: 1.05; }
+    .title { font-size: 1.35rem; font-weight: 840; letter-spacing: -0.04em; line-height: 1; }
     .subtitle { color: var(--muted); font-size: 0.88rem; line-height: 1.35; }
-    .minimize { border: 1px solid var(--line); background: #f0e5d2; color: var(--ink); border-radius: 999px; padding: 7px 10px; cursor: pointer; font: inherit; font-size: 0.84rem; }
+    .minimize { border: 2px solid #241812; background: #e9efe2; color: var(--ink); border-radius: 11px; padding: 9px 12px; cursor: pointer; font: inherit; font-weight: 760; box-shadow: 2px 2px 0 #241812; }
     .content { padding: 12px; display: grid; gap: 10px; }
-    .hero { border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: linear-gradient(180deg, #fffdfa 0%, #fbf3e3 100%); }
+    .hero { border: 3px solid #241812; border-radius: 18px; padding: 16px; background: #fffdf7; box-shadow: 2px 2px 0 rgba(36,24,18,.18); }
     .eyebrow { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; }
     .subject { margin-top: 8px; font-size: 1.08rem; font-weight: 700; line-height: 1.2; }
     .sender { margin-top: 6px; color: var(--muted); font-size: 0.88rem; overflow-wrap: anywhere; }
@@ -1636,7 +1620,7 @@ class GmailCompanionApp:
     .reason-wrap { margin-top: 14px; border-radius: 10px; background: var(--soft); padding: 12px; }
     .reason-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
     .reason { margin-top: 8px; color: var(--ink); line-height: 1.45; }
-    .secondary-card { border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: #fffdfa; }
+    .secondary-card { border: 3px solid #241812; border-radius: 18px; padding: 16px; background: #e9efe2; box-shadow: 2px 2px 0 rgba(36,24,18,.18); }
     .empty { margin-top: 10px; color: var(--muted); line-height: 1.45; }
     .checklist { margin: 10px 0 0; padding-left: 18px; color: var(--muted); }
     .checklist li + li { margin-top: 6px; }
@@ -1661,12 +1645,12 @@ class GmailCompanionApp:
     .metric-button.active { background: #e7f6f4; box-shadow: inset 0 0 0 1px rgba(15,118,110,0.22); }
     .detail-list { display: grid; gap: 8px; margin-top: 12px; }
     .field-stack { display: grid; gap: 8px; margin-top: 10px; }
-    .select, .textarea { width: 100%; border-radius: 12px; border: 1px solid var(--line); background: #fffdfa; color: var(--ink); font: inherit; }
+    .select, .textarea { width: 100%; border-radius: 11px; border: 2px solid #241812; background: #fffdf7; color: var(--ink); font: inherit; box-shadow: 2px 2px 0 rgba(36,24,18,.18); }
     .select { padding: 10px 12px; }
     .textarea { min-height: 84px; padding: 10px 12px; resize: vertical; }
     .button-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
-    .action-button { border: 0; border-radius: 999px; padding: 9px 12px; cursor: pointer; font: inherit; }
-    .action-button.primary { background: var(--accent); color: #fff; }
+    .action-button { border: 2px solid #241812; border-radius: 11px; padding: 9px 12px; cursor: pointer; font: inherit; font-weight: 800; box-shadow: 3px 3px 0 #241812; }
+    .action-button.primary { background: #2eb67d; color: #241812; }
     .action-button.secondary { background: #ebe4d7; color: var(--ink); }
     .action-button.info { background: #1f6f8b; color: #fff; }
     .action-button.future { background: #7b5d2a; color: #fff; }
@@ -1697,7 +1681,7 @@ class GmailCompanionApp:
               <img class="brand-mark" src="/assets/brand/threadwise-app-icon.png" alt="" aria-hidden="true">
               <div>
                 <div class="title">Threadwise</div>
-                <div class="brand-kicker">Clear threads</div>
+                <div class="brand-kicker">CLEAR THREADS. BETTER INBOX.</div>
               </div>
             </div>
             <div class="subtitle" id="subtitle">Compact daily summary</div>
@@ -1706,7 +1690,7 @@ class GmailCompanionApp:
         </header>
         <div class="content">
           <section class="hero">
-            <div class="eyebrow">Selected Email</div>
+            <div class="eyebrow">Agent View</div>
             <div id="selected-email"></div>
           </section>
           <section class="secondary-card">

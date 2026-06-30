@@ -6,7 +6,7 @@
   const ROOT_ID = "email-agent-companion-root";
   const LOCAL_ORIGIN = "http://127.0.0.1:8021";
   const BRAND_ICON_URL = `${LOCAL_ORIGIN}/assets/brand/threadwise-app-icon.png`;
-  const PANEL_WIDTH = "408px";
+  const PANEL_WIDTH = "420px";
   const PANEL_WIDTH_MINIMIZED = "82px";
   let minimized = false;
   let previousPayload = "";
@@ -70,30 +70,32 @@
       pointerEvents: "auto",
     });
     setHtml(root, `
-      <div id="ea-panel" style="background:rgba(255,252,244,0.99);border:1px solid rgba(84,68,45,0.24);border-radius:14px;box-shadow:0 18px 48px rgba(31,26,20,0.18),0 1px 0 rgba(255,255,255,0.72) inset;overflow:hidden;font-family:Georgia,'Times New Roman',serif;color:#211912;">
-        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:14px 14px 13px;border-bottom:1px solid rgba(84,68,45,0.18);background:linear-gradient(180deg,#fff6e3 0%,#f7edd9 100%);">
+      <div id="ea-panel" style="background:#fff7e8;border:3px solid #241812;border-radius:18px;box-shadow:6px 6px 0 #241812;overflow:hidden;font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#241812;">
+        <div style="display:grid;grid-template-columns:52px 1fr auto;align-items:center;gap:12px;padding:17px 18px;border-bottom:3px solid #241812;background:#fff4d7;">
           <div style="display:flex;align-items:center;gap:10px;min-width:0;">
-            <img src="${BRAND_ICON_URL}" alt="" aria-hidden="true" style="width:34px;height:34px;border-radius:10px;border:1px solid rgba(33,25,18,0.18);box-shadow:0 3px 10px rgba(31,26,20,0.16);flex:0 0 auto;">
+            <img src="${BRAND_ICON_URL}" alt="" aria-hidden="true" style="width:42px;height:42px;border-radius:12px;border:2px solid #241812;box-shadow:3px 3px 0 #241812;flex:0 0 auto;background:#fff8df;">
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;min-width:0;">
             <div style="display:grid;gap:3px;min-width:0;">
-              <div style="font-size:1.04rem;font-weight:700;line-height:1;">Threadwise</div>
-              <div style="color:#8b640f;font-size:0.68rem;letter-spacing:0.12em;text-transform:uppercase;white-space:nowrap;">Clear threads</div>
+              <div style="font-size:1.35rem;font-weight:840;letter-spacing:-0.04em;line-height:1;">Threadwise</div>
+              <div style="color:#ad6400;font-family:ui-serif,Georgia,'Times New Roman',serif;font-size:0.68rem;font-weight:900;letter-spacing:0.13em;text-transform:uppercase;line-height:1.05;">CLEAR THREADS. BETTER INBOX.</div>
             </div>
           </div>
-          <button id="ea-minimize" type="button" style="border:1px solid rgba(84,68,45,0.18);background:#f0e5d2;color:#211912;border-radius:999px;padding:7px 10px;cursor:pointer;font:inherit;font-size:0.84rem;">Minimize</button>
+          <button id="ea-minimize" type="button" style="border:2px solid #241812;background:#e9efe2;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:760;box-shadow:2px 2px 0 #241812;">Minimize</button>
         </div>
-        <div id="ea-subtitle" style="padding:9px 14px;border-bottom:1px solid rgba(84,68,45,0.12);background:#fffaf0;color:#6b6255;font-size:0.84rem;line-height:1.35;">Connecting to local companion server</div>
-        <div id="ea-content" style="padding:12px;display:grid;gap:10px;">
-          <section style="border:1px solid rgba(84,68,45,0.18);border-radius:10px;padding:12px;background:linear-gradient(180deg,#fffdfa 0%,#fbf3e3 100%);">
-            <div style="color:#6b6255;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.1em;">Selected Email</div>
+        <div id="ea-subtitle" style="display:none;">Connecting to local companion server</div>
+        <div id="ea-content" style="padding:14px;display:grid;gap:13px;">
+          <section style="border:3px solid #241812;border-radius:18px;padding:16px;background:#fffdf7;box-shadow:2px 2px 0 rgba(36,24,18,.18);">
+            <div style="color:#6b6255;font-size:0.68rem;text-transform:uppercase;letter-spacing:0.14em;font-weight:820;">Agent View</div>
             <div id="ea-selected-email"></div>
           </section>
-          <section style="border:1px solid rgba(84,68,45,0.18);border-radius:10px;padding:12px;background:#fffdfa;">
-            <div style="color:#6b6255;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.1em;">Today</div>
+          <section style="border:3px solid #241812;border-radius:18px;padding:16px;background:#e9efe2;box-shadow:2px 2px 0 rgba(36,24,18,.18);">
+            <div style="color:#6b6255;font-size:0.68rem;text-transform:uppercase;letter-spacing:0.14em;font-weight:820;">Today</div>
             <div id="ea-daily-summary"></div>
           </section>
         </div>
-        <div id="ea-footer" style="padding:0 12px 12px;">
-          <div style="border:1px dashed rgba(84,68,45,0.22);border-radius:10px;padding:10px 12px;background:rgba(255,255,255,0.55);color:#6b6255;font-size:0.82rem;line-height:1.4;">
+        <div id="ea-footer" style="padding:0 14px 14px;">
+          <div style="border:2px dashed rgba(36,24,18,.38);border-radius:11px;padding:10px 12px;background:rgba(255,253,247,.72);color:#6b6255;font-size:0.82rem;line-height:1.4;">
             Live Gmail sidebar mode is using the same stored inbox snapshot and queue buckets as the local harness.
           </div>
         </div>
@@ -536,37 +538,37 @@
         </div>
       `;
       setHtml(selectedEmailNode, `
-        <div style="margin-top:8px;font-size:1.08rem;font-weight:700;line-height:1.2;">${escapeHtml(selected.subject || "(no subject)")}</div>
+        <div style="margin-top:7px;font-size:1.45rem;font-weight:840;letter-spacing:-0.015em;line-height:1.04;">${escapeHtml(selected.subject || "(no subject)")}</div>
         <div style="margin-top:6px;color:#6b6255;font-size:0.88rem;overflow-wrap:anywhere;">${escapeHtml(selected.sender || "(unknown sender)")}</div>
         <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;">
-          <span style="display:inline-flex;align-items:center;padding:5px 10px;border-radius:999px;background:#efe7d4;color:#5f512f;font-size:0.82rem;">${escapeHtml(selected.classification || "Uncategorized")}</span>
-          <span style="${statusStyle}">${escapeHtml(selected.status_label)}</span>
+          <span style="display:inline-flex;align-items:center;padding:7px 10px;border:2px solid #241812;border-radius:999px;background:#f1eadf;color:#241812;font-size:0.78rem;font-weight:760;box-shadow:2px 2px 0 rgba(36,24,18,.28);">${escapeHtml(selected.classification || "Uncategorized")}</span>
+          <span style="${statusStyle};border:2px solid #241812;box-shadow:2px 2px 0 rgba(36,24,18,.28);font-weight:760;">${escapeHtml(selected.status_label)}</span>
         </div>
         ${previewModeBanner}
         ${overviewCard}
         ${nextStepCard}
-        <div style="margin-top:14px;border-radius:14px;background:#f5efe2;padding:12px;">
+        <div style="margin-top:14px;border:2px solid #241812;border-radius:14px;background:#fffdf7;padding:12px;">
           <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">Why</div>
           <div style="margin-top:8px;color:#1f1a14;line-height:1.45;">${escapeHtml(selected.reason || "No short reason is stored yet.")}</div>
         </div>
-        <div style="margin-top:14px;border-radius:14px;background:#f5efe2;padding:12px;">
+        <div style="margin-top:14px;border:2px solid #241812;border-radius:14px;background:#fffdf7;padding:12px;">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
             <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">Details</div>
-            <button type="button" data-ea-action="toggle-details" style="border:0;background:#ebe4d7;color:#1f1a14;border-radius:999px;padding:7px 10px;cursor:pointer;font:inherit;">${detailsButtonLabel}</button>
+            <button type="button" data-ea-action="toggle-details" style="border:2px solid #241812;background:#fffdf7;color:#241812;border-radius:11px;padding:7px 10px;cursor:pointer;font:inherit;font-weight:800;box-shadow:2px 2px 0 #241812;">${detailsButtonLabel}</button>
           </div>
           ${detailsHtml}
         </div>
         ${unsubscribeLine}
-        <div style="margin-top:14px;border-top:1px solid #e5dccb;padding-top:14px;">
-          <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">Correct / Teach</div>
-          <div style="display:grid;gap:8px;margin-top:10px;">
-            <select id="ea-target-label" style="width:100%;padding:10px 12px;border-radius:12px;border:1px solid #d7cfbf;background:#fffdfa;color:#1f1a14;font:inherit;">
+        <div style="margin-top:14px;border:3px solid #241812;border-radius:18px;background:#ffe1a3;overflow:hidden;">
+          <div style="min-height:40px;display:flex;align-items:center;padding:0 13px;border-bottom:3px solid #241812;background:#ffc64a;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.14em;color:#241812;font-weight:900;">Correct / Teach</div>
+          <div style="display:grid;gap:8px;margin:12px;">
+            <select id="ea-target-label" style="width:100%;padding:10px 12px;border-radius:11px;border:2px solid #241812;background:#fffdf7;color:#1f1a14;font:inherit;box-shadow:2px 2px 0 rgba(36,24,18,.18);">
               ${labelOptions}
             </select>
-            <textarea id="ea-teach-note" rows="3" placeholder="Tell the agent what it got wrong or what it should learn." style="width:100%;padding:10px 12px;border-radius:12px;border:1px solid #d7cfbf;background:#fffdfa;color:#1f1a14;font:inherit;resize:vertical;">${escapeHtml(teachDraft.note)}</textarea>
+            <textarea id="ea-teach-note" rows="3" placeholder="Tell the agent what it got wrong or what it should learn." style="width:100%;padding:10px 12px;border-radius:11px;border:2px solid #241812;background:#fffdf7;color:#1f1a14;font:inherit;resize:vertical;box-shadow:2px 2px 0 rgba(36,24,18,.18);">${escapeHtml(teachDraft.note)}</textarea>
             <div style="display:flex;gap:8px;flex-wrap:wrap;">
-              <button type="button" data-ea-action="preview-teach" style="border:0;background:#0f766e;color:#fff;border-radius:999px;padding:9px 12px;cursor:pointer;font:inherit;">Preview lesson</button>
-              <button type="button" data-ea-action="clear-teach" style="border:0;background:#ebe4d7;color:#1f1a14;border-radius:999px;padding:9px 12px;cursor:pointer;font:inherit;">Clear</button>
+              <button type="button" data-ea-action="preview-teach" style="border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Preview lesson</button>
+              <button type="button" data-ea-action="clear-teach" style="border:2px solid #241812;background:#fffdf7;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Clear</button>
             </div>
           </div>
           ${previewHtml}
@@ -584,7 +586,7 @@
       )
       .join("");
       const metricButtonStyle = (key) =>
-      `border:0;border-radius:14px;background:${activeSummaryFilter === key ? "#e7f6f4" : "#f5efe2"};box-shadow:${activeSummaryFilter === key ? "inset 0 0 0 1px rgba(15,118,110,0.22)" : "none"};padding:12px;text-align:left;cursor:pointer;font:inherit;color:#1f1a14;`;
+      `border:2px solid #241812;border-radius:11px;background:${activeSummaryFilter === key ? "#dff8ed" : "#fffdf7"};box-shadow:2px 2px 0 rgba(36,24,18,.18);padding:12px;text-align:left;cursor:pointer;font:inherit;color:#241812;`;
     const keptVisibleCount = summary.kept_visible_count ?? countForFilter("kept_visible_items");
     setHtml(dailySummaryNode, `
       <div style="margin-top:10px;color:#6b6255;line-height:1.45;">${summary.run_count > 1 ? `Rolling view across the last ${summary.run_count} Gmail runs` : "Latest run snapshot"}</div>
@@ -595,21 +597,21 @@
         <button type="button" data-ea-summary-filter="kept_visible_items" style="${metricButtonStyle("kept_visible_items")}"><strong style="display:block;font-size:1.15rem;">${keptVisibleCount || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">kept visible</span></button>
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;">
-        <span style="border-radius:999px;padding:6px 10px;background:#f1eadb;color:#5d5342;font-size:0.8rem;">Unsubscribe candidates - ${summary.unsubscribe_candidate_count || 0}</span>
-        ${summary.report_date ? `<span style="border-radius:999px;padding:6px 10px;background:#f1eadb;color:#5d5342;font-size:0.8rem;">Latest report - ${escapeHtml(summary.report_date)}</span>` : ""}
+        <span style="border:2px solid #241812;border-radius:999px;padding:6px 10px;background:#f1eadf;color:#241812;font-size:0.8rem;font-weight:760;box-shadow:2px 2px 0 rgba(36,24,18,.28);">Unsubscribe candidates - ${summary.unsubscribe_candidate_count || 0}</span>
+        ${summary.report_date ? `<span style="border:2px solid #241812;border-radius:999px;padding:6px 10px;background:#f1eadf;color:#241812;font-size:0.8rem;font-weight:760;box-shadow:2px 2px 0 rgba(36,24,18,.28);">Latest report - ${escapeHtml(summary.report_date)}</span>` : ""}
       </div>
-      <div style="margin-top:12px;border-radius:14px;background:#eef7f5;padding:12px;">
+      <div style="margin-top:12px;border:2px solid #241812;border-radius:14px;background:#dff8ed;padding:12px;">
         <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">Viewing</div>
         <div style="margin-top:8px;font-weight:700;line-height:1.35;">${escapeHtml(focus.label)} · ${focus.count}</div>
         <div style="margin-top:6px;color:#1f1a14;line-height:1.45;">${escapeHtml(focus.description)}</div>
       </div>
-      <div style="margin-top:12px;border-radius:14px;background:#f5efe2;padding:12px;">
+      <div style="margin-top:12px;border:2px solid #241812;border-radius:14px;background:#fffdf7;padding:12px;">
         <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">What Changed Today</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;">
-          <div style="border-radius:14px;background:#fffdfa;padding:12px;"><strong style="display:block;font-size:1.15rem;">${changedToday.label_writes_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">labels written</span></div>
-          <div style="border-radius:14px;background:#fffdfa;padding:12px;"><strong style="display:block;font-size:1.15rem;">${changedToday.inbox_removed_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">removed from inbox</span></div>
-          <div style="border-radius:14px;background:#fffdfa;padding:12px;"><strong style="display:block;font-size:1.15rem;">${changedToday.taught_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">teaching changes</span></div>
-          <div style="border-radius:14px;background:#fffdfa;padding:12px;"><strong style="display:block;font-size:1.15rem;">${changedToday.selected_unsubscribe_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">unsubscribe queued</span></div>
+          <div style="border:2px solid #241812;border-radius:11px;background:#fffdf7;padding:12px;box-shadow:2px 2px 0 rgba(36,24,18,.18);"><strong style="display:block;font-size:1.15rem;">${changedToday.label_writes_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">labels written</span></div>
+          <div style="border:2px solid #241812;border-radius:11px;background:#fffdf7;padding:12px;box-shadow:2px 2px 0 rgba(36,24,18,.18);"><strong style="display:block;font-size:1.15rem;">${changedToday.inbox_removed_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">removed from inbox</span></div>
+          <div style="border:2px solid #241812;border-radius:11px;background:#fffdf7;padding:12px;box-shadow:2px 2px 0 rgba(36,24,18,.18);"><strong style="display:block;font-size:1.15rem;">${changedToday.taught_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">teaching changes</span></div>
+          <div style="border:2px solid #241812;border-radius:11px;background:#fffdf7;padding:12px;box-shadow:2px 2px 0 rgba(36,24,18,.18);"><strong style="display:block;font-size:1.15rem;">${changedToday.selected_unsubscribe_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">unsubscribe queued</span></div>
         </div>
         ${
           selectedUnsubscribeExamples.length
@@ -639,8 +641,8 @@
         }</div>
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;">
-        <a href="${LOCAL_ORIGIN}/daily-dashboard" target="_blank" rel="noreferrer" style="border:0;background:#0f766e;color:#fff;border-radius:999px;padding:9px 12px;display:inline-flex;align-items:center;text-decoration:none;font:inherit;">Open daily dashboard</a>
-        <a href="${LOCAL_ORIGIN}/unsubscribe-review" target="_blank" rel="noreferrer" style="border:0;background:#ebe4d7;color:#1f1a14;border-radius:999px;padding:9px 12px;display:inline-flex;align-items:center;text-decoration:none;font:inherit;">Review unsubscribe candidates</a>
+        <a href="${LOCAL_ORIGIN}/daily-dashboard" target="_blank" rel="noreferrer" style="border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;display:inline-flex;align-items:center;text-decoration:none;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Open daily dashboard</a>
+        <a href="${LOCAL_ORIGIN}/unsubscribe-review" target="_blank" rel="noreferrer" style="border:2px solid #241812;background:#fffdf7;color:#241812;border-radius:11px;padding:9px 12px;display:inline-flex;align-items:center;text-decoration:none;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Review unsubscribe candidates</a>
       </div>
       ${
         (summary.top_labels || []).length
@@ -851,15 +853,15 @@
       )
       .join("");
     return `
-      <div style="margin-top:12px;border-radius:14px;background:#fff8eb;padding:12px;color:#1f1a14;line-height:1.45;">
+      <div style="margin:12px;border:2px solid #241812;border-radius:14px;background:#fffdf7;padding:12px;color:#241812;line-height:1.45;">
         <div style="font-weight:700;">${escapeHtml(preview.acknowledgment || "Preview ready.")}</div>
         <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;">
-          <span style="display:inline-flex;align-items:center;padding:5px 10px;border-radius:999px;background:${severityTone.bg};color:${severityTone.fg};font-size:0.82rem;">${escapeHtml(severityTone.label)}</span>
-          <span style="display:inline-flex;align-items:center;padding:5px 10px;border-radius:999px;background:#f1eadb;color:#5d5342;font-size:0.82rem;">Current email -> ${escapeHtml(targetLabelName)}</span>
-          <span style="display:inline-flex;align-items:center;padding:5px 10px;border-radius:999px;background:#f1eadb;color:#5d5342;font-size:0.82rem;">Matching existing emails: ${matchingCount}</span>
+          <span style="display:inline-flex;align-items:center;padding:7px 10px;border:2px solid #241812;border-radius:999px;background:${severityTone.bg};color:${severityTone.fg};font-size:0.78rem;font-weight:760;box-shadow:2px 2px 0 rgba(36,24,18,.28);">${escapeHtml(severityTone.label)}</span>
+          <span style="display:inline-flex;align-items:center;padding:7px 10px;border:2px solid #241812;border-radius:999px;background:#f1eadf;color:#241812;font-size:0.78rem;font-weight:760;box-shadow:2px 2px 0 rgba(36,24,18,.28);">Current email -> ${escapeHtml(targetLabelName)}</span>
+          <span style="display:inline-flex;align-items:center;padding:7px 10px;border:2px solid #241812;border-radius:999px;background:#f1eadf;color:#241812;font-size:0.78rem;font-weight:760;box-shadow:2px 2px 0 rgba(36,24,18,.28);">Matching existing emails: ${matchingCount}</span>
         </div>
         <div style="margin-top:10px;color:#6b6255;line-height:1.45;">${escapeHtml(previewChoiceExplainer(matchingCount))}</div>
-        <div style="margin-top:10px;border-radius:12px;background:#fffdfa;padding:10px 12px;color:#6b6255;line-height:1.45;">
+        <div style="margin-top:10px;border:2px solid #241812;border-radius:11px;background:#fffdf7;padding:10px 12px;color:#6b6255;line-height:1.45;">
           <div><strong style="color:#1f1a14;">Apply only to this email</strong> changes the current message only.</div>
           <div style="margin-top:6px;"><strong style="color:#1f1a14;">Apply to current + ${matchingCount} matching emails</strong> rewrites those existing stored emails too.</div>
           <div style="margin-top:6px;"><strong style="color:#1f1a14;">Apply to current + future emails only</strong> saves the lesson without rewriting other stored emails today.</div>
@@ -870,10 +872,10 @@
             : ""
         }
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
-          <button type="button" data-ea-apply="current-only" style="border:0;background:#0f766e;color:#fff;border-radius:999px;padding:9px 12px;cursor:pointer;font:inherit;">Apply only to this email</button>
-          <button type="button" data-ea-apply="matching-existing" style="border:0;background:#1f6f8b;color:#fff;border-radius:999px;padding:9px 12px;cursor:pointer;font:inherit;">Apply to current + ${matchingCount} matching emails</button>
-          <button type="button" data-ea-apply="future-only" style="border:0;background:#7b5d2a;color:#fff;border-radius:999px;padding:9px 12px;cursor:pointer;font:inherit;">Apply to current + future emails only</button>
-          <button type="button" data-ea-action="refine-teach" style="border:0;background:#ebe4d7;color:#1f1a14;border-radius:999px;padding:9px 12px;cursor:pointer;font:inherit;">Keep discussing</button>
+          <button type="button" data-ea-apply="current-only" style="border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Apply only to this email</button>
+          <button type="button" data-ea-apply="matching-existing" style="border:2px solid #241812;background:#3d6df2;color:#fff;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Apply to current + ${matchingCount} matching emails</button>
+          <button type="button" data-ea-apply="future-only" style="border:2px solid #241812;background:#ffc64a;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Apply to current + future emails only</button>
+          <button type="button" data-ea-action="refine-teach" style="border:2px solid #241812;background:#fffdf7;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Keep discussing</button>
         </div>
       </div>
     `;
@@ -886,7 +888,7 @@
     const impact = previousPreview.impact || {};
     const targetLabelName = humanLabelNameFromId((previousPreview.selected_label_after || [])[0] || "");
     return `
-      <div data-ea-previous-preview="true" style="margin-top:12px;border-radius:14px;background:#f5efe2;padding:12px;color:#1f1a14;line-height:1.45;">
+      <div data-ea-previous-preview="true" style="margin:12px;border:2px solid #241812;border-radius:14px;background:#fffdf7;padding:12px;color:#241812;line-height:1.45;">
         <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">Previous interpretation</div>
         <div style="margin-top:8px;font-weight:700;">${escapeHtml(previousPreview.acknowledgment || "Previous preview")}</div>
         <div style="margin-top:6px;color:#6b6255;">Would relabel to ${escapeHtml(targetLabelName)} and change ${impact.matching_existing_count || 0} existing emails.</div>
