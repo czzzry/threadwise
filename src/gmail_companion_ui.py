@@ -575,6 +575,7 @@ class GmailCompanionApp:
     .message-body { margin-top: 14px; border-radius: 16px; background: var(--soft); padding: 14px; color: var(--ink); line-height: 1.55; min-height: 260px; white-space: pre-wrap; }
     .note { margin-top: 12px; border-radius: 14px; background: rgba(255,255,255,0.65); padding: 12px; color: var(--muted); line-height: 1.45; }
     .summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+    .summary-grid--three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .metric-button { border: 0; border-radius: 14px; background: var(--soft); padding: 12px; text-align: left; cursor: pointer; font: inherit; color: var(--ink); }
     .metric-button { border: 2px solid #241812; box-shadow: 2px 2px 0 rgba(36,24,18,.18); background: #fffdf7; }
     .metric-button.active { background: #e7f6f4; box-shadow: inset 0 0 0 1px rgba(15,118,110,0.22); }
@@ -695,7 +696,7 @@ class GmailCompanionApp:
     const minimizeButton = document.getElementById('sim-minimize');
     let harnessState = null;
     let currentContext = {};
-    let activeFilter = "needs_attention_items";
+    let activeFilter = "recent_items";
     let minimized = false;
     let teachPreview = null;
     let previousTeachPreview = null;
@@ -845,11 +846,13 @@ class GmailCompanionApp:
 
     function renderFilterPills() {
       const filters = [
-        ["needs_attention_items", `Needs attention (${((harnessState || {}).needs_attention_items || []).length})`],
         ["recent_items", `Recent (${((harnessState || {}).recent_items || []).length})`],
         ["auto_handled_items", `Auto-handled (${((harnessState || {}).auto_handled_items || []).length})`],
         ["kept_visible_items", `Kept visible (${((harnessState || {}).kept_visible_items || []).length})`],
       ];
+      if (!filters.some(([key]) => key === activeFilter)) {
+        activeFilter = "recent_items";
+      }
       filterNode.innerHTML = filters.map(([key, label]) => `
         <button type="button" class="chip-button ${key === activeFilter ? "active" : ""}" data-filter="${key}">${escapeHtml(label)}</button>
       `).join("");
@@ -1041,10 +1044,9 @@ class GmailCompanionApp:
         : '<div class="empty">No tracked agent changes in this stored batch yet.</div>';
       dailySummaryNode.innerHTML = `
         <div class="empty">${summary.run_count > 1 ? `Rolling view across the last ${summary.run_count} Gmail runs` : "Latest run snapshot"}</div>
-        <div class="summary-grid">
+        <div class="summary-grid summary-grid--three">
           <button class="metric-button ${activeFilter === "recent_items" ? "active" : ""}" data-filter="recent_items"><strong>${summary.processed_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">processed</span></button>
           <button class="metric-button ${activeFilter === "auto_handled_items" ? "active" : ""}" data-filter="auto_handled_items"><strong>${summary.auto_handled_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">auto-handled</span></button>
-          <button class="metric-button ${activeFilter === "needs_attention_items" ? "active" : ""}" data-filter="needs_attention_items"><strong>${summary.needs_attention_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">need attention</span></button>
           <button class="metric-button ${activeFilter === "kept_visible_items" ? "active" : ""}" data-filter="kept_visible_items"><strong>${summary.unlabeled_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">unlabeled</span></button>
         </div>
         <div class="label-row">
@@ -1640,6 +1642,7 @@ class GmailCompanionApp:
     .checklist { margin: 10px 0 0; padding-left: 18px; color: var(--muted); }
     .checklist li + li { margin-top: 6px; }
     .summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+    .summary-grid--three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .metric { border-radius: 10px; background: var(--soft); padding: 12px; }
     .metric strong { display: block; font-size: 1.15rem; }
     .metric span { color: var(--muted); font-size: 0.82rem; }
@@ -1735,7 +1738,7 @@ class GmailCompanionApp:
     const refreshHarnessButton = document.getElementById("refresh-harness");
     let currentContext = {};
     let harnessState = null;
-    let activeHarnessFilter = "needs_attention_items";
+    let activeHarnessFilter = "recent_items";
     let teachPreview = null;
     let previousTeachPreview = null;
     let teachResult = "";
@@ -2091,11 +2094,13 @@ class GmailCompanionApp:
         return;
       }
       const filters = [
-        ["needs_attention_items", `Needs attention (${(harnessState.needs_attention_items || []).length})`],
         ["recent_items", `Recent (${(harnessState.recent_items || []).length})`],
         ["auto_handled_items", `Auto-handled (${(harnessState.auto_handled_items || []).length})`],
         ["kept_visible_items", `Kept visible (${(harnessState.kept_visible_items || []).length})`],
       ];
+      if (!filters.some(([key]) => key === activeHarnessFilter)) {
+        activeHarnessFilter = "recent_items";
+      }
       harnessFilterPillsNode.innerHTML = filters.map(([key, label]) => `
         <button type="button" class="label-chip" data-harness-filter="${key}" style="border:0;cursor:pointer;${key === activeHarnessFilter ? "background:#d8f3ef;color:#0f766e;" : ""}">${escapeHtml(label)}</button>
       `).join("");

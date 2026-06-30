@@ -16,7 +16,7 @@
   let previousTeachPreview = null;
   let teachResult = "";
   let unsubscribeResult = "";
-  let activeSummaryFilter = "needs_attention_items";
+  let activeSummaryFilter = "recent_items";
   let detailsExpanded = false;
   let teachDraft = {
     targetLabel: "",
@@ -586,10 +586,9 @@
     const keptVisibleCount = summary.kept_visible_count ?? countForFilter("kept_visible_items");
     setHtml(dailySummaryNode, `
       <div style="margin-top:10px;color:#6b6255;line-height:1.45;">${summary.run_count > 1 ? `Rolling view across the last ${summary.run_count} Gmail runs` : "Latest run snapshot"}</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px;">
+      <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px;">
         <button type="button" data-ea-summary-filter="recent_items" style="${metricButtonStyle("recent_items")}"><strong style="display:block;font-size:1.15rem;">${summary.processed_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">processed</span></button>
         <button type="button" data-ea-summary-filter="auto_handled_items" style="${metricButtonStyle("auto_handled_items")}"><strong style="display:block;font-size:1.15rem;">${summary.auto_handled_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">auto-handled</span></button>
-        <button type="button" data-ea-summary-filter="needs_attention_items" style="${metricButtonStyle("needs_attention_items")}"><strong style="display:block;font-size:1.15rem;">${summary.needs_attention_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">need attention</span></button>
         <button type="button" data-ea-summary-filter="kept_visible_items" style="${metricButtonStyle("kept_visible_items")}"><strong style="display:block;font-size:1.15rem;">${keptVisibleCount || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">kept visible</span></button>
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;">
