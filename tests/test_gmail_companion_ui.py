@@ -6,11 +6,81 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from src.gmail_companion_rendering import (
+    escape_html,
+    render_dashboard_email_cards,
+    server_origin,
+    unsubscribe_section_key,
+)
+from src.gmail_companion_state import (
+    build_selected_email_state,
+    classify_handling_status,
+    selected_context_from_query,
+    selected_email_contract,
+)
 from src.gmail_companion_ui import GmailCompanionApp, main
 from src.gmail_writer import MockGmailLabelClient
 
 
 class GmailCompanionUiTests(unittest.TestCase):
+    def test_companion_state_module_preserves_selected_context_contract(self) -> None:
+        context = selected_context_from_query(
+            {
+                "provider": ["gmail"],
+                "message_id": ["msg-1"],
+                "thread_id": ["thread-1"],
+                "subject": ["Subject"],
+                "sender": ["Sender <sender@example.com>"],
+                "page_url": ["https://mail.google.com"],
+                "selected_at": ["2026-06-30T10:00:00Z"],
+            }
+        )
+
+        self.assertEqual(
+            context,
+            {
+                "provider": "gmail",
+                "message_id": "msg-1",
+                "thread_id": "thread-1",
+                "subject": "Subject",
+                "sender": "Sender <sender@example.com>",
+                "page_url": "https://mail.google.com",
+                "selected_at": "2026-06-30T10:00:00Z",
+            },
+        )
+        self.assertEqual(selected_email_contract()["contract_version"], "gmail-companion-selected-email-v1")
+
+    def test_companion_state_module_preserves_selected_email_status_rules(self) -> None:
+        self.assertEqual(
+            classify_handling_status({"review_state": "pending", "applied_labels": []}, None, None),
+            ("needs-attention", "Needs attention"),
+        )
+        self.assertEqual(
+            classify_handling_status({"review_state": "reviewed", "final_labels": ["promotions"]}, "applied", "applied"),
+            ("auto-handled", "Auto-handled"),
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            selected = build_selected_email_state(
+                Path(temp_dir),
+                [],
+                {"message_id": "missing-1", "subject": "Fresh email", "sender": "New <new@example.com>"},
+            )
+
+        self.assertFalse(selected["found"])
+        self.assertEqual(selected["status"], "not-in-snapshot")
+        self.assertEqual(selected["status_label"], "Not in local snapshot")
+
+    def test_companion_rendering_module_preserves_shared_helpers(self) -> None:
+        self.assertEqual(escape_html('<a href="x">Tom & Jerry</a>'), "&lt;a href=&quot;x&quot;&gt;Tom &amp; Jerry&lt;/a&gt;")
+        self.assertEqual(server_origin("127.0.0.1:8021"), "http://127.0.0.1:8021")
+        self.assertEqual(server_origin("https://example.test"), "https://example.test")
+        self.assertEqual(unsubscribe_section_key({"decision_state": "selected"}, {"status": "ready"}), "selected")
+        self.assertIn(
+            "No recent mail",
+            render_dashboard_email_cards([], empty_label="No recent mail"),
+        )
+
     def test_extension_assets_have_valid_javascript_and_manifest(self) -> None:
         repo_root = Path(__file__).resolve().parent.parent
 
