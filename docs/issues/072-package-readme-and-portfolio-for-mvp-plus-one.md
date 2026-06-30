@@ -2,8 +2,8 @@
 
 Current
 Current as of: 2026-06-30
-Triage state: `ready-for-agent`
-Builds on: `docs/prd.md`, `docs/issues/071-capture-recruiter-ready-demo-assets.md`
+Triage state: `needs-triage`
+Builds on: `docs/prd.md`, `docs/issues/077-recapture-final-recruiter-demo-assets-from-approved-ui.md`
 
 # Title
 
@@ -15,7 +15,7 @@ Docs / Portfolio packaging
 
 ## Blocked by
 
-- `docs/issues/071-capture-recruiter-ready-demo-assets.md`
+- `docs/issues/077-recapture-final-recruiter-demo-assets-from-approved-ui.md`
 
 ## User stories covered
 
@@ -28,6 +28,8 @@ Update the public repo reading experience so Threadwise is understandable and im
 The README should lead with the product story, the Threadwise logo, the short demo assets, and an explicit synthetic-data disclaimer. Deeper technical architecture, safety boundaries, and process evidence should remain available below the fold or in linked docs.
 
 The founder-provided primary logo should be made prominent in README/portfolio packaging. The current logo sheet may need extraction into separate public assets before embedding.
+
+This slice must use the final assets from `077`, not the earlier asset pass from `071`, because `071` was generated before the approved mock was fully implemented.
 
 ## Acceptance criteria
 
