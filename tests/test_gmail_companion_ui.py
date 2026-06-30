@@ -470,6 +470,7 @@ class GmailCompanionUiTests(unittest.TestCase):
                         "review_state": "pending",
                         "final_labels": [],
                         "applied_labels": [],
+                        "near_misses": ["job-related", "promotions"],
                     },
                     {
                         "source": "gmail",
@@ -495,6 +496,7 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertEqual(state["selected_context"]["message_id"], "gmail-live-001")
             self.assertTrue(state["sidebar_state"]["selected_email"]["found"])
             self.assertEqual(state["sidebar_state"]["selected_email"]["status"], "needs-attention")
+            self.assertEqual(state["sidebar_state"]["selected_email"]["suggested_label"], "job-related")
             self.assertEqual(len(state["needs_attention_items"]), 1)
             self.assertEqual(len(state["recent_items"]), 2)
             self.assertEqual(state["auto_handled_items"], [])

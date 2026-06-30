@@ -1151,7 +1151,7 @@
   }
 
   function currentDraftTargetLabel(selected) {
-    return teachDraft.targetLabel || selected.internal_label || "";
+    return teachDraft.targetLabel || selected.internal_label || selected.suggested_label || "";
   }
 
   function syncTeachDraftFromDom() {

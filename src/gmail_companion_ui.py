@@ -578,7 +578,9 @@ class GmailCompanionApp:
     .metric-button { border: 0; border-radius: 14px; background: var(--soft); padding: 12px; text-align: left; cursor: pointer; font: inherit; color: var(--ink); }
     .metric-button { border: 2px solid #241812; box-shadow: 2px 2px 0 rgba(36,24,18,.18); background: #fffdf7; }
     .metric-button.active { background: #e7f6f4; box-shadow: inset 0 0 0 1px rgba(15,118,110,0.22); }
-    .teach-card { border: 3px solid #241812; background: #ffe1a3; padding: 0; overflow: hidden; }
+    .metric-button strong { display:block;font-size:1.15rem;line-height:1; }
+    .metric-button span { display:block;margin-top:3px; }
+    .teach-card { border: 3px solid #241812; border-radius:18px; background: #ffe1a3; padding: 0; overflow: hidden; box-shadow:2px 2px 0 rgba(36,24,18,.18); }
     .teach-card > .reason-label { display: flex; align-items: center; min-height: 40px; padding: 0 13px; border-bottom: 3px solid #241812; background: #ffc64a; color: #241812; font-weight: 900; }
     .teach-panel { margin: 12px; display: grid; gap: 12px; }
     .teach-panel .field-stack { margin-top: 0; }
@@ -950,7 +952,7 @@ class GmailCompanionApp:
       }
       const allowedLabels = ((((harnessState || {}).sidebar_state || {}).ui_state || {}).allowed_labels) || [];
       const labelOptions = allowedLabels.map((option) => {
-        const selectedAttr = (draftLabel || selected.internal_label || "") === option.id ? " selected" : "";
+        const selectedAttr = (draftLabel || selected.internal_label || selected.suggested_label || "") === option.id ? " selected" : "";
         return `<option value="${escapeHtml(option.id)}"${selectedAttr}>${escapeHtml(option.name)}</option>`;
       }).join("");
       const unsubscribe = selected.unsubscribe || null;
@@ -1094,7 +1096,7 @@ class GmailCompanionApp:
       currentContext = harnessState.selected_context || currentContext;
       const selected = selectedEmail();
       if (selected && selected.found && !draftLabel) {
-        draftLabel = selected.internal_label || "";
+        draftLabel = selected.internal_label || selected.suggested_label || "";
       }
       if (!(selected && selected.found)) {
         previousTeachPreview = null;
@@ -1659,6 +1661,8 @@ class GmailCompanionApp:
     .list-item-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
     .metric-button { border: 0; border-radius: 14px; background: var(--soft); padding: 12px; text-align: left; cursor: pointer; font: inherit; color: var(--ink); }
     .metric-button.active { background: #e7f6f4; box-shadow: inset 0 0 0 1px rgba(15,118,110,0.22); }
+    .metric-button strong { display:block;font-size:1.15rem;line-height:1; }
+    .metric-button span { display:block;margin-top:3px; }
     .detail-list { display: grid; gap: 8px; margin-top: 12px; }
     .field-stack { display: grid; gap: 8px; margin-top: 10px; }
     .select, .textarea { width: 100%; border-radius: 11px; border: 2px solid #241812; background: #fffdf7; color: var(--ink); font: inherit; box-shadow: 2px 2px 0 rgba(36,24,18,.18); }
@@ -1862,7 +1866,7 @@ class GmailCompanionApp:
       const statusClass = selectedEmail.status === "needs-attention" ? "pill status-pill warn-pill" : "pill status-pill";
       const allowedLabels = (((harnessState || {}).sidebar_state || {}).ui_state || {}).allowed_labels || [];
       const labelOptions = allowedLabels.map((option) => {
-        const selected = (draftLabel || selectedEmail.internal_label || "") === option.id ? " selected" : "";
+        const selected = (draftLabel || selectedEmail.internal_label || selectedEmail.suggested_label || "") === option.id ? " selected" : "";
         return `<option value="${escapeHtml(option.id)}"${selected}>${escapeHtml(option.name)}</option>`;
       }).join("");
       const details = selectedEmail.details || {};
@@ -2195,7 +2199,7 @@ class GmailCompanionApp:
       const state = harnessState.sidebar_state;
       currentContext = harnessState.selected_context || currentContext;
       if (state.selected_email && state.selected_email.found && !draftLabel) {
-        draftLabel = state.selected_email.internal_label || "";
+        draftLabel = state.selected_email.internal_label || state.selected_email.suggested_label || "";
       }
       if (!(state.selected_email && state.selected_email.found)) {
         previousTeachPreview = null;
@@ -2442,6 +2446,7 @@ def build_selected_email_state(storage_dir: Path, unsubscribe_candidates: list[d
         return {
             "found": False,
             "internal_label": None,
+            "suggested_label": None,
             "classification": None,
             "status": "not-in-snapshot" if has_context else "idle",
             "status_label": "Not in local snapshot" if has_context else "Waiting for message selection",
@@ -2472,6 +2477,7 @@ def build_selected_email_state(storage_dir: Path, unsubscribe_candidates: list[d
         "batch_id": batch.get("batch_id"),
         "message_id": item.get("message_id"),
         "internal_label": labels[0] if labels else None,
+        "suggested_label": suggested_label_for_item(item),
         "classification": classification,
         "status": status,
         "status_label": status_label,
@@ -2495,6 +2501,16 @@ def classify_handling_status(item: dict, write_status: str | None, inbox_status:
     if item.get("review_action") == "auto-approve":
         return "auto-labeled", "Auto-labeled"
     return "kept-visible", "Kept visible"
+
+
+def suggested_label_for_item(item: dict) -> str | None:
+    labels = item.get("final_labels") or item.get("applied_labels") or []
+    if labels:
+        return labels[0]
+    for candidate in item.get("near_misses") or []:
+        if candidate in CANONICAL_LABEL_ORDER:
+            return candidate
+    return None
 
 
 def find_unsubscribe_candidate(candidates: list[dict], sender: str) -> dict | None:
@@ -2817,6 +2833,7 @@ def build_companion_runtime_payload(storage_dir: Path) -> dict:
                         "sender": item.get("sender", ""),
                         "sender_address": sender_address,
                         "internal_label": labels[0] if labels else None,
+                        "suggested_label": suggested_label_for_item(item),
                         "classification": classification,
                         "status": status,
                         "status_label": status_label,
