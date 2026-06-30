@@ -11,10 +11,7 @@ from urllib.parse import parse_qs, urlparse
 from src.gmail_cli_support import default_gmail_client_factory
 from src.gmail_writer import MockGmailLabelWriter
 from src.label_taxonomy import CANONICAL_LABEL_ORDER, gmail_label_name
-from src.local_artifacts import memory_proposals_path, teachable_rules_path
 from src.live_gmail_client import GMAIL_MODIFY_SCOPE
-from src.memory_proposal_store import MemoryProposalStore
-from src.teachable_rule_memory import TeachableRuleMemory
 from src.unsubscribe_inventory_store import UnsubscribeInventoryStore
 from src.unsubscribe_execution import UnsubscribeExecutor
 
@@ -29,22 +26,20 @@ from src.gmail_companion_rendering import (
     unsubscribe_section_key,
 )
 from src.gmail_companion_state import (
-    apply_label_to_message,
-    apply_label_to_preview_matches,
-    build_apply_acknowledgment,
-    build_companion_memory_proposal,
     build_companion_runtime_payload,
     build_daily_summary,
     build_selected_email_state,
-    build_teach_acknowledgment,
     build_unsubscribe_detail,
     find_matching_item,
     find_unsubscribe_candidate,
     first_query_value,
-    load_items_for_gmail_write_through,
-    load_selected_storage_item,
     selected_context_from_query,
     selected_email_contract,
+)
+from src.teaching_loop import (
+    apply_sidebar_teaching,
+    build_sidebar_teach_preview,
+    load_items_for_gmail_write_through,
 )
 
 
@@ -343,52 +338,13 @@ class GmailCompanionApp:
         target_label = payload["target_label"]
         note = (payload.get("note") or "").strip()
         scope = payload.get("scope") or "sender"
-        current = load_selected_storage_item(self._storage_dir, selected_context)
-        proposal = build_companion_memory_proposal(
+        return build_sidebar_teach_preview(
             self._storage_dir,
-            current=current,
+            selected_context=selected_context,
             target_label=target_label,
             note=note,
             scope=scope,
         )
-        preview = proposal.preview
-        affected_existing = [
-            match for match in preview.get("matches", [])
-            if match.get("message_id") != current["message_id"]
-        ]
-        normalized_existing = [
-            {
-                **match,
-                "labels_after": [target_label],
-            }
-            for match in affected_existing
-        ]
-        return {
-            "acknowledgment": build_teach_acknowledgment(
-                current=current,
-                target_label=target_label,
-                note=note,
-                affected_existing_count=len(affected_existing),
-                scope=scope,
-            ),
-            "selected_message_id": current["message_id"],
-            "selected_batch_id": current["batch_id"],
-            "selected_label_before": list(current.get("final_labels") or current.get("applied_labels") or []),
-            "selected_label_after": [target_label],
-            "proposal": proposal.to_dict(),
-            "impact": {
-                "current_message_will_change": True,
-                "matching_existing_count": len(affected_existing),
-                "matching_existing_examples": normalized_existing[:5],
-                "scope": scope,
-            },
-            "options": [
-                {"id": "current-only", "label": "Apply only here"},
-                {"id": "matching-existing", "label": "Apply to matching emails too"},
-                {"id": "future-only", "label": "Use for future emails only"},
-                {"id": "refine", "label": "Refine this"},
-            ],
-        }
 
     def teach_apply(self, payload: dict) -> dict:
         selected_context = payload.get("selected_context") or {}
@@ -396,60 +352,26 @@ class GmailCompanionApp:
         note = (payload.get("note") or "").strip()
         scope = payload.get("scope") or "sender"
         mode = payload["mode"]
-        if mode not in {"current-only", "matching-existing", "future-only"}:
-            raise ValueError("Unsupported apply mode.")
-
-        current = load_selected_storage_item(self._storage_dir, selected_context)
-        proposal = build_companion_memory_proposal(
+        teaching_result = apply_sidebar_teaching(
             self._storage_dir,
-            current=current,
+            selected_context=selected_context,
             target_label=target_label,
             note=note,
             scope=scope,
+            mode=mode,
         )
-
-        apply_label_to_message(
-            self._storage_dir,
-            batch_id=current["batch_id"],
-            message_id=current["message_id"],
-            label=target_label,
-            note=note,
-            review_action="sidebar-current-only" if mode == "current-only" else f"sidebar-{mode}",
-        )
-
-        matched_existing_count = 0
-        proposal_record = None
-        if mode in {"matching-existing", "future-only"}:
-            store = MemoryProposalStore(memory_proposals_path(self._storage_dir))
-            store.save_proposal(proposal)
-            memory = TeachableRuleMemory(teachable_rules_path(self._storage_dir))
-            proposal_record = store.review_proposal(proposal.id, "approved", rules_memory=memory)
-            if mode == "matching-existing":
-                matched_existing_count = apply_label_to_preview_matches(
-                    self._storage_dir,
-                    proposal.preview.get("matches", []),
-                    selected_message_id=current["message_id"],
-                    label=target_label,
-                    note=note,
-                )
-
         write_through_summary = self._write_teach_result_to_gmail(
-            current["account_id"],
-            current["message_id"],
-            mode,
-            proposal.preview.get("matches", []),
+            teaching_result["current"]["account_id"],
+            teaching_result["current"]["message_id"],
+            teaching_result["mode"],
+            teaching_result["preview_matches"],
         )
         refreshed = self.sidebar_state(selected_context)
         return {
-            "acknowledgment": build_apply_acknowledgment(
-                current=current,
-                target_label=target_label,
-                mode=mode,
-                matched_existing_count=matched_existing_count,
-            ),
-            "mode": mode,
-            "matched_existing_count": matched_existing_count,
-            "proposal": proposal_record.to_dict() if proposal_record else None,
+            "acknowledgment": teaching_result["acknowledgment"],
+            "mode": teaching_result["mode"],
+            "matched_existing_count": teaching_result["matched_existing_count"],
+            "proposal": teaching_result["proposal"],
             "gmail_write_through": write_through_summary,
             "sidebar_state": refreshed,
         }
