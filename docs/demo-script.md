@@ -31,6 +31,9 @@ Recommended static screenshots after GIF capture:
 - Overlay style: short warm ink-and-paper captions, bottom-left or top-left, never covering selected-email text or primary actions.
 - Caption text: use the exact captions in this document unless the UI implementation makes a small wording adjustment necessary.
 - Motion: slow cursor movement, one decision per clip, no frantic scrolling.
+- Cursor visibility: keep the pointer large/visible enough for GIF playback, and move it deliberately between the email, Threadwise controls, text fields, and approval choices.
+- Typing visibility: when text is entered, the insertion caret should be visible before typing begins, and typed text should appear slowly enough to follow in a silent GIF.
+- Text-entry rhythm: for teach/correction text, prefer a short scripted sentence typed at roughly 8-14 characters per second instead of pasting instantly.
 - Audio: none required; captions must stand alone.
 - Current-scope disclaimer for README or first asset caption:
   - `Demo uses a Gmail test account populated with synthetic emails. No private inbox data is shown.`
@@ -82,9 +85,10 @@ Timeline:
 | Time | Action | Visible state | Caption |
 | --- | --- | --- | --- |
 | 0-3s | Select or start on the RoleScout Jobs email. | Sidebar shows sender, subject, current label, and short rationale. | `Threadwise explains the selected email decision.` |
-| 3-7s | Click `Correct / Teach`. | Correction route appears: `Promotions -> Work` or `promotions -> job-related`. | `Corrections happen in context, next to the email.` |
-| 7-12s | Show broader-impact preview. | Preview says the learned rule affects matching RoleScout job recommendation emails. | `Broader changes require approval before they apply.` |
-| 12-17s | Choose the safest visible option, preferably `Use for future only`. | Acknowledgment confirms the rule is saved for future mail without rewriting existing messages. | `Human choice controls whether learning stays future-only or updates matches.` |
+| 3-7s | Move the cursor deliberately into the `Correct / Teach` area and click the text box. | The insertion caret is visible in the teach note field before typing starts. | `Corrections happen in context, next to the email.` |
+| 7-12s | Type a short teaching note slowly enough to read. | Text appears in the box, e.g. `RoleScout job alerts should be work.` | `The user teaches the agent in plain language.` |
+| 12-16s | Click preview and show broader-impact preview. | Preview says the learned rule affects matching RoleScout job recommendation emails. | `Broader changes require approval before they apply.` |
+| 16-20s | Choose the safest visible option, preferably `Use for future only`. | Acknowledgment confirms the rule is saved for future mail without rewriting existing messages. | `Human choice controls whether learning stays future-only or updates matches.` |
 
 Preferred visible copy:
 
@@ -92,6 +96,7 @@ Preferred visible copy:
 - Correction: `Promotions -> Work`
 - Learning summary: `RoleScout job recommendations should be treated as work-adjacent.`
 - Impact preview: `4 matching emails`
+- Typed note: `RoleScout job alerts should be work.`
 - Choices:
   - `Use for future only`
   - `Apply to 4`

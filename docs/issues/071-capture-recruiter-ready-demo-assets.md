@@ -37,6 +37,7 @@ This slice should use the approved UI aesthetic and the demo script to produce s
 - [ ] Assets use only synthetic Gmail/demo data.
 - [ ] Assets do not reveal private email, credentials, browser profile data, or sensitive account details.
 - [ ] Captions are readable and do not overclaim current functionality.
+- [ ] Cursor movement, text-field caret visibility, and typed text entry are slow and clear enough to follow in the teach demo GIF.
 - [ ] Assets are saved under `docs/assets/` with stable names.
 - [ ] A visual QA pass verifies no obvious clipping, unreadable text, or awkward framing.
 
