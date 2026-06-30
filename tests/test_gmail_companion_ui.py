@@ -129,7 +129,7 @@ class GmailCompanionUiTests(unittest.TestCase):
         page = app.render_panel()
 
         self.assertIn("Minimize", page)
-        self.assertIn("Compact daily summary", page)
+        self.assertIn("CLEAR THREADS. BETTER INBOX.", page)
         self.assertIn("Agent View", page)
         self.assertIn("Today", page)
         self.assertIn("Synced Inbox Fixtures", page)

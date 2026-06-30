@@ -593,7 +593,7 @@ class GmailCompanionApp:
     .header-top { display:flex;align-items:center;gap:8px; }
     .brand-lockup { display:flex;align-items:center;gap:10px;min-width:0; }
     .brand-mark { width:42px;height:42px;border-radius:12px;border:2px solid #241812;box-shadow:3px 3px 0 #241812;flex:0 0 auto;background:#fff8df; }
-    .brand-kicker { color:#ad6400;font-family:ui-serif,Georgia,"Times New Roman",serif;font-size:0.68rem;font-weight:900;letter-spacing:0.13em;text-transform:uppercase;white-space:normal;line-height:1.05; }
+    .brand-kicker { color:#ad6400;font-family:ui-serif,Georgia,"Times New Roman",serif;font-size:0.58rem;font-weight:900;letter-spacing:0.08em;text-transform:uppercase;white-space:nowrap;line-height:1.05; }
     .dot { width:10px;height:10px;border-radius:999px;background:var(--accent);box-shadow:0 0 0 4px rgba(15,118,110,0.12); }
     .title { font-size:1.35rem;font-weight:840;letter-spacing:-0.04em;line-height:1; }
     .subtitle { color: var(--muted); font-size:0.88rem; line-height:1.35; }
@@ -662,7 +662,6 @@ class GmailCompanionApp:
                 <div class="brand-kicker">CLEAR THREADS. BETTER INBOX.</div>
               </div>
             </div>
-            <div class="subtitle" id="sim-subtitle">Compact daily summary</div>
           </div>
           <button id="sim-minimize" class="minimize" type="button">Minimize</button>
         </header>
@@ -687,7 +686,6 @@ class GmailCompanionApp:
     const filterNode = document.getElementById("sim-filter-pills");
     const listNode = document.getElementById("sim-list");
     const messageNode = document.getElementById("sim-message");
-    const subtitleNode = document.getElementById("sim-subtitle");
     const selectedEmailNode = document.getElementById("sim-selected-email");
     const teachPanelNode = document.getElementById("sim-teach-panel");
     const dailySummaryNode = document.getElementById("sim-daily-summary");
@@ -927,7 +925,6 @@ class GmailCompanionApp:
     function renderSelectedPanel() {
       const selected = selectedEmail();
       const stepCopy = nextStepCopy(selected);
-      subtitleNode.textContent = selected && selected.found ? "Selected email loaded" : "Compact daily summary";
       if (!selected || !selected.found) {
         const queueItems = (((harnessState || {}).needs_attention_items) || []).slice(0, 4);
         selectedEmailNode.innerHTML = `
@@ -1617,7 +1614,7 @@ class GmailCompanionApp:
     .dot { width: 10px; height: 10px; border-radius: 999px; background: var(--accent); box-shadow: 0 0 0 4px rgba(15, 118, 110, 0.12); }
     .brand-lockup { display: flex; align-items: center; gap: 10px; min-width: 0; }
     .brand-mark { width: 42px; height: 42px; border-radius: 12px; border: 2px solid #241812; box-shadow: 3px 3px 0 #241812; flex: 0 0 auto; background: #fff8df; }
-    .brand-kicker { color: #ad6400; font-family: ui-serif, Georgia, "Times New Roman", serif; font-size: 0.68rem; font-weight: 900; letter-spacing: 0.13em; text-transform: uppercase; white-space: normal; line-height: 1.05; }
+    .brand-kicker { color: #ad6400; font-family: ui-serif, Georgia, "Times New Roman", serif; font-size: 0.58rem; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; line-height: 1.05; }
     .title { font-size: 1.35rem; font-weight: 840; letter-spacing: -0.04em; line-height: 1; }
     .subtitle { color: var(--muted); font-size: 0.88rem; line-height: 1.35; }
     .minimize { border: 2px solid #241812; background: #e9efe2; color: var(--ink); border-radius: 11px; padding: 9px 12px; cursor: pointer; font: inherit; font-weight: 760; box-shadow: 2px 2px 0 #241812; }
@@ -1704,7 +1701,6 @@ class GmailCompanionApp:
                 <div class="brand-kicker">CLEAR THREADS. BETTER INBOX.</div>
               </div>
             </div>
-            <div class="subtitle" id="subtitle">Compact daily summary</div>
           </div>
           <button id="minimize" class="minimize" type="button">Minimize</button>
         </header>
@@ -1730,7 +1726,6 @@ class GmailCompanionApp:
   </div>
   <script>
     const panelNode = document.getElementById("panel");
-    const subtitleNode = document.getElementById("subtitle");
     const selectedEmailNode = document.getElementById("selected-email");
     const teachPanelNode = document.getElementById("teach-panel");
     const dailySummaryNode = document.getElementById("daily-summary");
@@ -2206,9 +2201,6 @@ class GmailCompanionApp:
         unsubscribeResult = "";
         detailsExpanded = false;
       }
-      subtitleNode.textContent = state.selected_email && state.selected_email.found
-        ? "Selected email loaded"
-        : "Compact daily summary";
       renderSelectedEmail(state.selected_email);
       renderDailySummary(state.daily_summary);
       renderHarnessList();

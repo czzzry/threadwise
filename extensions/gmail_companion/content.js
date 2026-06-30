@@ -78,12 +78,11 @@
           <div style="display:flex;align-items:center;gap:10px;min-width:0;">
             <div style="display:grid;gap:3px;min-width:0;">
               <div style="font-size:1.35rem;font-weight:840;letter-spacing:-0.04em;line-height:1;">Threadwise</div>
-              <div style="color:#ad6400;font-family:ui-serif,Georgia,'Times New Roman',serif;font-size:0.68rem;font-weight:900;letter-spacing:0.13em;text-transform:uppercase;line-height:1.05;">CLEAR THREADS. BETTER INBOX.</div>
+              <div style="color:#ad6400;font-family:ui-serif,Georgia,'Times New Roman',serif;font-size:0.58rem;font-weight:900;letter-spacing:0.08em;text-transform:uppercase;line-height:1.05;white-space:nowrap;">CLEAR THREADS. BETTER INBOX.</div>
             </div>
           </div>
           <button id="ea-minimize" type="button" style="border:2px solid #241812;background:#e9efe2;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:760;box-shadow:2px 2px 0 #241812;">Minimize</button>
         </div>
-        <div id="ea-subtitle" style="display:none;">Connecting to local companion server</div>
         <div id="ea-content" style="padding:14px;display:grid;gap:13px;">
           <section style="border:3px solid #241812;border-radius:18px;padding:16px;background:#fffdf7;box-shadow:2px 2px 0 rgba(36,24,18,.18);">
             <div style="color:#6b6255;font-size:0.68rem;text-transform:uppercase;letter-spacing:0.14em;font-weight:820;">Agent View</div>
@@ -124,14 +123,12 @@
     }
     const content = root.querySelector("#ea-content");
     const footer = root.querySelector("#ea-footer");
-    const subtitle = root.querySelector("#ea-subtitle");
     const button = root.querySelector("#ea-minimize");
-    if (!content || !footer || !subtitle || !button) {
+    if (!content || !footer || !button) {
       return;
     }
     content.style.display = minimized ? "none" : "grid";
     footer.style.display = minimized ? "none" : "block";
-    subtitle.style.display = minimized ? "none" : "block";
     root.style.width = minimized ? PANEL_WIDTH_MINIMIZED : PANEL_WIDTH;
     button.textContent = minimized ? "Open" : "Minimize";
   }
@@ -346,13 +343,9 @@
   }
 
   function renderError(message) {
-    const subtitle = document.getElementById("ea-subtitle");
     const selectedEmailNode = document.getElementById("ea-selected-email");
     const teachPanelNode = document.getElementById("ea-teach-panel");
     const dailySummaryNode = document.getElementById("ea-daily-summary");
-    if (subtitle) {
-      subtitle.textContent = "Connection failed";
-    }
     if (selectedEmailNode) {
       setHtml(selectedEmailNode, `<div style="margin-top:10px;color:#8a4b00;line-height:1.45;">${escapeHtml(message)}</div>`);
     }
@@ -367,11 +360,10 @@
   function renderState(state) {
     lastHarnessState = normalizeHarnessState(state);
     lastSidebarState = lastHarnessState.sidebar_state;
-    const subtitle = document.getElementById("ea-subtitle");
     const selectedEmailNode = document.getElementById("ea-selected-email");
     const teachPanelNode = document.getElementById("ea-teach-panel");
     const dailySummaryNode = document.getElementById("ea-daily-summary");
-    if (!subtitle || !selectedEmailNode || !teachPanelNode || !dailySummaryNode) {
+    if (!selectedEmailNode || !teachPanelNode || !dailySummaryNode) {
       return;
     }
 
@@ -385,11 +377,6 @@
       detailsExpanded = false;
     }
 
-    subtitle.textContent = showingQueuePreview
-      ? "Queue preview loaded"
-      : selected && selected.found
-        ? "Selected email loaded"
-        : "Compact daily summary";
     if (!selected || !selected.found) {
       const hasSnapshotMiss = selected && selected.status === "not-in-snapshot";
       const title = hasSnapshotMiss
