@@ -2,7 +2,7 @@
 
 Current
 Current as of: 2026-06-30
-Triage state: `needs-triage`
+Triage state: `ready-for-agent`
 Builds on: `docs/prd.md`, `docs/issues/075-implement-approved-threadwise-mock-fidelity-in-live-surfaces.md`
 
 # Title
@@ -49,4 +49,3 @@ The previous asset pass produced useful motion experiments, but the capture stag
 - Do not replace README assets in this slice.
 - Do not use private email or live account data.
 - Do not add new product behavior solely for the capture path.
-

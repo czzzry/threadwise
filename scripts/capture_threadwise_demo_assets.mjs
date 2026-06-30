@@ -11,6 +11,7 @@ const outputDir = path.join(repoRoot, "docs/assets");
 const workDir = path.join("/private/tmp", `threadwise-demo-capture-${Date.now()}`);
 const fps = 8;
 const viewport = { width: 1280, height: 800 };
+const includeMp4 = process.argv.includes("--include-mp4");
 
 const clips = [
   {
@@ -76,9 +77,15 @@ async function main() {
     for (const clip of clips) {
       console.log(`Capturing ${clip.id}...`);
       await captureClip(client, clip);
-      console.log(`Encoding ${clip.id}...`);
-      await encodeClip(clip);
-      console.log(`Wrote ${clip.gif} and ${clip.mp4}`);
+      console.log(`Encoding ${clip.id} GIF...`);
+      await encodeGif(clip);
+      if (includeMp4) {
+        console.log(`Encoding ${clip.id} MP4...`);
+        await encodeMp4(clip);
+        console.log(`Wrote ${clip.gif} and ${clip.mp4}`);
+      } else {
+        console.log(`Wrote ${clip.gif}`);
+      }
     }
 
     console.log("Writing capture notes...");
@@ -125,11 +132,10 @@ async function captureStill(client, clip) {
   await writeFile(path.join(outputDir, clip.screenshot.file), screenshot.data, "base64");
 }
 
-async function encodeClip(clip) {
+async function encodeGif(clip) {
   const framePattern = path.join(workDir, clip.id, "%04d.png");
   const palettePath = path.join(workDir, `${clip.id}-palette.png`);
   const gifPath = path.join(outputDir, clip.gif);
-  const mp4Path = path.join(outputDir, clip.mp4);
 
   await run("ffmpeg", [
     "-y",
@@ -146,6 +152,12 @@ async function encodeClip(clip) {
     "-filter_complex", "scale=960:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=4",
     gifPath,
   ]);
+}
+
+async function encodeMp4(clip) {
+  const framePattern = path.join(workDir, clip.id, "%04d.png");
+  const mp4Path = path.join(outputDir, clip.mp4);
+
   await run("ffmpeg", [
     "-y",
     "-framerate", String(fps),
@@ -157,46 +169,58 @@ async function encodeClip(clip) {
 }
 
 async function writeCaptureNotes() {
-  const body = `# Threadwise Demo Capture Notes
-
-Status: Generated asset notes
-Current as of: 2026-06-30
-Builds on: \`docs/demo-script.md\`, \`docs/issues/071-capture-recruiter-ready-demo-assets.md\`
-
-Generated assets:
-
-- \`docs/assets/threadwise-daily-briefing.gif\`
-- \`docs/assets/threadwise-daily-briefing.mp4\`
-- \`docs/assets/threadwise-teach-safely.gif\`
-- \`docs/assets/threadwise-teach-safely.mp4\`
-- \`docs/assets/threadwise-unsubscribe-approval.gif\`
-- \`docs/assets/threadwise-unsubscribe-approval.mp4\`
-- \`docs/assets/threadwise-roadmap-next.gif\`
-- \`docs/assets/threadwise-roadmap-next.mp4\`
-- \`docs/assets/threadwise-daily-dashboard.png\`
-- \`docs/assets/threadwise-teach-preview.png\`
-- \`docs/assets/threadwise-unsubscribe-review.png\`
-- \`docs/assets/threadwise-roadmap-next.png\`
-
-Capture method:
-
-- deterministic synthetic capture stage: \`docs/assets/demo-stage/threadwise-demo-stage.html\`
-- Chrome DevTools screenshots at \`${fps}\` fps
-- GIF/MP4 encoding via \`ffmpeg\`
-- output viewport: \`${viewport.width}x${viewport.height}\`
-- GIF scale: \`960px\` wide
-
-Safety:
-
-- all visible emails, senders, domains, and account labels are synthetic demo data
-- no private inbox, credentials, OAuth screen, account settings, delete, archive, send, reply, or real unsubscribe execution is shown
-- roadmap asset is explicitly labeled as future direction, not shipped behavior
-
-Review notes:
-
-- first pass intentionally uses a controlled Gmail-like synthetic stage so cursor movement, zooms, captions, and typing/caret visibility are deterministic
-- final README placement can choose GIF or MP4 depending on GitHub rendering and file size
-`;
+  const lines = [
+    "# Threadwise Demo Capture Notes",
+    "",
+    "Status: Generated asset notes",
+    "Current as of: 2026-06-30",
+    "Builds on: `docs/demo-script.md`, `docs/issues/071-capture-recruiter-ready-demo-assets.md`",
+    "",
+    "Generated assets:",
+    "",
+    "- `docs/assets/threadwise-daily-briefing.gif`",
+    "- `docs/assets/threadwise-teach-safely.gif`",
+    "- `docs/assets/threadwise-unsubscribe-approval.gif`",
+    "- `docs/assets/threadwise-roadmap-next.gif`",
+    "- `docs/assets/threadwise-daily-dashboard.png`",
+    "- `docs/assets/threadwise-teach-preview.png`",
+    "- `docs/assets/threadwise-unsubscribe-review.png`",
+    "- `docs/assets/threadwise-roadmap-next.png`",
+  ];
+  if (includeMp4) {
+    lines.push(
+      "- `docs/assets/threadwise-daily-briefing.mp4`",
+      "- `docs/assets/threadwise-teach-safely.mp4`",
+      "- `docs/assets/threadwise-unsubscribe-approval.mp4`",
+      "- `docs/assets/threadwise-roadmap-next.mp4`",
+    );
+  } else {
+    lines.push("- MP4 versions are pending GIF approval.");
+  }
+  lines.push(
+    "",
+    "Capture method:",
+    "",
+    `- deterministic synthetic capture stage: \`docs/assets/demo-stage/threadwise-demo-stage.html\``,
+    `- Chrome DevTools screenshots at \`${fps}\` fps`,
+    "- GIF encoding via `ffmpeg`",
+    "- MP4 encoding via `ffmpeg` when `--include-mp4` is passed",
+    `- output viewport: \`${viewport.width}x${viewport.height}\``,
+    "- GIF scale: `960px` wide",
+    "",
+    "Safety:",
+    "",
+    "- all visible emails, senders, domains, and account labels are synthetic demo data",
+    "- no private inbox, credentials, OAuth screen, account settings, delete, archive, send, reply, or real unsubscribe execution is shown",
+    "- roadmap asset is explicitly labeled as future direction, not shipped behavior",
+    "",
+    "Review notes:",
+    "",
+    "- first pass intentionally uses a controlled Gmail-like synthetic stage so cursor movement, zooms, captions, and typing/caret visibility are deterministic",
+    "- MP4 generation is gated behind `--include-mp4` so the founder can approve the GIF direction before long-form exports are produced",
+    "- final README placement can choose GIF or MP4 depending on GitHub rendering and file size",
+  );
+  const body = lines.join("\n");
   await writeFile(path.join(outputDir, "threadwise-capture-notes.md"), body);
 }
 

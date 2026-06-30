@@ -2,7 +2,7 @@
 
 Current
 Current as of: 2026-06-30
-Triage state: `needs-triage`
+Triage state: `ready-for-agent`
 Builds on: `docs/prd.md`, `docs/issues/076-rebuild-demo-capture-around-final-implemented-ui.md`
 
 # Title
@@ -55,4 +55,3 @@ The first review output should be GIFs only, so the founder can judge motion, pa
 - Do not generate MP4s before the founder approves the GIF direction.
 - Do not use private inbox data.
 - Do not show roadmap states as current shipped behavior.
-

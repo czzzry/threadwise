@@ -844,12 +844,11 @@
                 <img class="tw-icon" src="${iconPath}" alt="">
                 <div>
                   <div class="tw-title">Threadwise</div>
-                  <div class="tw-kicker">Clear threads</div>
+                  <div class="tw-kicker">CLEAR THREADS. BETTER INBOX.</div>
                 </div>
               </div>
               <button class="button">Minimize</button>
             </div>
-            <div class="tw-subtitle">Selected email loaded</div>
           </div>
           <div class="tw-body">${body}</div>
         </aside>
@@ -881,11 +880,11 @@
           <div class="metric-grid">
             <div class="metric"><strong>24</strong><span>processed</span></div>
             <div class="metric"><strong>14</strong><span>auto-handled</span></div>
-            <div class="metric"><strong>4</strong><span>need attention</span></div>
+            <div class="metric"><strong>4</strong><span>review needed</span></div>
             <div class="metric"><strong>3</strong><span>unsubscribe</span></div>
           </div>
           <div class="note-box">
-            <strong>Viewing · Needs attention</strong><br>
+            <strong>Viewing · Review needed</strong><br>
             Uncertain mail stays visible until a human decides.
           </div>
           <div class="buttons">
@@ -906,11 +905,11 @@
               <div class="dash-title">What Threadwise did today</div>
             </div>
           </div>
-          <p style="font-size:17px;line-height:1.45;margin:0;color:var(--ink);">The fuller view behind the inbox sidebar: what came in, what was handled, and what still needs attention.</p>
+          <p style="font-size:17px;line-height:1.45;margin:0;color:var(--ink);">The fuller view behind the inbox sidebar: what came in, what was handled, and what still needs review.</p>
           <div class="dash-grid">
             <div class="dash-metric"><strong>24</strong><span>processed</span></div>
             <div class="dash-metric"><strong>14</strong><span>auto-handled</span></div>
-            <div class="dash-metric"><strong>4</strong><span>need attention</span></div>
+            <div class="dash-metric"><strong>4</strong><span>review needed</span></div>
             <div class="dash-metric"><strong>3</strong><span>unsubscribe candidates</span></div>
           </div>
           <div class="dash-cards">
@@ -923,7 +922,7 @@
               </div>
             </div>
             <div class="dash-card">
-              <div class="eyebrow">Needs Attention</div>
+              <div class="eyebrow">Review Needed</div>
               <div class="dash-list">
                 <div class="dash-item">RoleScout Jobs · category needs correction</div>
                 <div class="dash-item">Hiring Coordinator · reply needed</div>
@@ -1129,7 +1128,7 @@
         setCaption("Threadwise runs inside Gmail, using synthetic demo mail.");
         setCursor(246, 236);
       } else if (t < 7.4) {
-        setCaption("Daily briefing: categorized, handled, and needs-attention mail in one view.");
+        setCaption("Daily briefing: categorized, handled, and review-needed mail in one view.");
         const p = phase(t, 3, 7);
         setCursor(lerp(246, 1038, p), lerp(236, 530, p));
         setHighlight({ x: 908, y: 429, w: 322, h: 207 }, t > 4.2);

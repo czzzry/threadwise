@@ -7,23 +7,21 @@ Builds on: `docs/demo-script.md`, `docs/issues/071-capture-recruiter-ready-demo-
 Generated assets:
 
 - `docs/assets/threadwise-daily-briefing.gif`
-- `docs/assets/threadwise-daily-briefing.mp4`
 - `docs/assets/threadwise-teach-safely.gif`
-- `docs/assets/threadwise-teach-safely.mp4`
 - `docs/assets/threadwise-unsubscribe-approval.gif`
-- `docs/assets/threadwise-unsubscribe-approval.mp4`
 - `docs/assets/threadwise-roadmap-next.gif`
-- `docs/assets/threadwise-roadmap-next.mp4`
 - `docs/assets/threadwise-daily-dashboard.png`
 - `docs/assets/threadwise-teach-preview.png`
 - `docs/assets/threadwise-unsubscribe-review.png`
 - `docs/assets/threadwise-roadmap-next.png`
+- MP4 versions are pending GIF approval.
 
 Capture method:
 
 - deterministic synthetic capture stage: `docs/assets/demo-stage/threadwise-demo-stage.html`
 - Chrome DevTools screenshots at `8` fps
-- GIF/MP4 encoding via `ffmpeg`
+- GIF encoding via `ffmpeg`
+- MP4 encoding via `ffmpeg` when `--include-mp4` is passed
 - output viewport: `1280x800`
 - GIF scale: `960px` wide
 
@@ -36,4 +34,5 @@ Safety:
 Review notes:
 
 - first pass intentionally uses a controlled Gmail-like synthetic stage so cursor movement, zooms, captions, and typing/caret visibility are deterministic
+- MP4 generation is gated behind `--include-mp4` so the founder can approve the GIF direction before long-form exports are produced
 - final README placement can choose GIF or MP4 depending on GitHub rendering and file size

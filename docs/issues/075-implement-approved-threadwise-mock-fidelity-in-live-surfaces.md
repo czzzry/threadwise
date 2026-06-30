@@ -1,6 +1,6 @@
 # Status
 
-Current
+Completed
 Current as of: 2026-06-30
 Triage state: `ready-for-human`
 Builds on: `docs/prd.md`, `docs/issues/074-lock-approved-threadwise-mock-as-final-fidelity-target.md`
@@ -41,7 +41,7 @@ This is a fidelity pass, not a loose restyle. The implemented surfaces should ca
 - [x] Existing product behavior and safety boundaries are unchanged.
 - [x] Focused tests or smoke checks cover the changed rendering surfaces.
 - [x] Browser screenshots are captured side-by-side against the approved mock.
-- [ ] Founder approval is received before demo capture work resumes.
+- [x] Founder approval is received before demo capture work resumes.
 
 ## Implementation notes
 

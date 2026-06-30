@@ -28,6 +28,7 @@ Recommended static screenshots after GIF capture:
 - Browser viewport: desktop, 1440 x 900 preferred.
 - Gmail account: test/demo account only, with a visible `Demo account` or equivalent marker when possible.
 - Visible Gmail data: only the synthetic seed messages below.
+- Source of truth: use the approved final UI surfaces. If the stage file or capture route drifts from the live design, fix that before producing final assets.
 - Overlay style: short warm ink-and-paper captions, bottom-left or top-left, never covering selected-email text or primary actions.
 - Caption text: use the exact captions in this document unless the UI implementation makes a small wording adjustment necessary.
 - Motion: slow cursor movement, one decision per clip, no frantic scrolling.
@@ -37,6 +38,19 @@ Recommended static screenshots after GIF capture:
 - Audio: none required; captions must stand alone.
 - Current-scope disclaimer for README or first asset caption:
   - `Demo uses a Gmail test account populated with synthetic emails. No private inbox data is shown.`
+
+## Capture Order
+
+Produce the first pass in this order:
+
+1. Daily briefing / report GIF
+2. Teach safely GIF
+3. Unsubscribe approval GIF
+4. Optional roadmap / next GIF
+5. Static screenshots for README and portfolio placement
+6. MP4 versions only after the GIFs are approved
+
+If any clip reveals a layout mismatch, stop and fix the source surface before continuing the remaining clips.
 
 ## Flow 1: Daily Briefing / Report
 
@@ -53,15 +67,15 @@ Timeline:
 | Time | Action | Visible state | Caption |
 | --- | --- | --- | --- |
 | 0-3s | Open on Gmail inbox with Threadwise sidebar already loaded. | Synthetic inbox rows show a mix of work, receipts, newsletter, promotions, and low-value mail. | `Threadwise runs inside Gmail, using synthetic demo mail.` |
-| 3-7s | Hover or briefly point at the sidebar `Today` summary. | Counts are visible: processed, auto-handled, need attention, unsubscribe candidates. | `Daily briefing: what arrived, what was labeled, and what still needs attention.` |
-| 7-13s | Click the daily dashboard/report handoff. | Dashboard/report shows category breakdown and a short list of unresolved or attention-needed items. | `Low-risk categories are handled; uncertain items stay visible.` |
+| 3-7s | Hover or briefly point at the sidebar `Today` summary. | Counts are visible: processed, auto-handled, unresolved, unsubscribe candidates. | `Daily briefing: what arrived, what was labeled, and what still needs review.` |
+| 7-13s | Click the daily dashboard/report handoff. | Dashboard/report shows category breakdown and a short list of unresolved items. | `Low-risk categories are handled; uncertain items stay visible.` |
 | 13-18s | Pause on the report summary. | Gmail-first scope and safety language remain visible or implied by captions. | `Current demo scope: Gmail-first, supervised, synthetic data.` |
 
 Must show:
 
 - Categorized email.
 - What happened today.
-- A small unresolved/needs-attention set.
+- A small unresolved/review-needed set.
 - No private account information.
 
 Do not show:
@@ -220,7 +234,7 @@ Use these as overlay captions or README captions.
 
 - Daily briefing:
   - `Threadwise runs inside Gmail, using synthetic demo mail.`
-  - `Daily briefing: categorized, handled, and needs-attention mail in one view.`
+  - `Daily briefing: categorized, handled, and unresolved mail in one view.`
   - `Low-risk cleanup is bounded; uncertain mail stays visible.`
 - Teach safely:
   - `Correct the agent next to the selected email.`
