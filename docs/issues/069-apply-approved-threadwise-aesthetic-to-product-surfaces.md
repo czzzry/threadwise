@@ -1,6 +1,6 @@
 # Status
 
-Current
+Completed
 Current as of: 2026-06-30
 Triage state: `ready-for-agent`
 Builds on: `docs/prd.md`, `docs/issues/068-mvp-plus-one-design-review-and-aesthetic-direction.md`
@@ -31,14 +31,14 @@ The current logo sheet should be treated as a brand source. Extract or prepare t
 
 ## Acceptance criteria
 
-- [ ] The Gmail companion sidebar reflects the approved warm ink-and-paper aesthetic.
-- [ ] The daily dashboard visually belongs to the same product family as the sidebar.
-- [ ] The teach/impact preview has clear hierarchy and emphasizes confirmation before broader changes.
-- [ ] The unsubscribe review/handoff surface matches the same visual system.
-- [ ] The square Threadwise app icon or equivalent extracted logo treatment appears in appropriate product/demo UI contexts.
-- [ ] Existing user-visible behavior and safety boundaries are unchanged.
-- [ ] Existing focused tests pass or are updated for intentional copy/structure changes.
-- [ ] A browser screenshot or visual smoke check verifies the updated surfaces do not have obvious overflow, clipping, or unreadable text.
+- [x] The Gmail companion sidebar reflects the approved warm ink-and-paper aesthetic.
+- [x] The daily dashboard visually belongs to the same product family as the sidebar.
+- [x] The teach/impact preview has clear hierarchy and emphasizes confirmation before broader changes.
+- [x] The unsubscribe review/handoff surface matches the same visual system.
+- [x] The square Threadwise app icon or equivalent extracted logo treatment appears in appropriate product/demo UI contexts.
+- [x] Existing user-visible behavior and safety boundaries are unchanged.
+- [x] Existing focused tests pass or are updated for intentional copy/structure changes.
+- [x] A browser screenshot or visual smoke check verifies the updated surfaces do not have obvious overflow, clipping, or unreadable text.
 
 ## Output
 
@@ -53,3 +53,24 @@ The current logo sheet should be treated as a brand source. Extract or prepare t
 - Do not add new inbox actions.
 - Do not redesign Gmail itself.
 - Do not make the roadmap multi-inbox state look shipped.
+
+## Completion note
+
+Completed with a scoped visual pass over the demo-facing Threadwise surfaces:
+
+- Gmail companion sidebar
+- local simulator / harness panel
+- daily dashboard
+- unsubscribe review
+
+The square app icon was extracted from `docs/design ideas/threadwise logo.png` into `docs/assets/brand/threadwise-app-icon.png` and used as the compact product mark.
+
+Validation:
+
+- `node --check extensions/gmail_companion/content.js`
+- `python3 -m py_compile src/gmail_companion_ui.py`
+- `python3 -m unittest tests.test_gmail_companion_ui`
+- Browser smoke screenshots:
+  - `/tmp/threadwise-simulator-069-loaded.png`
+  - `/tmp/threadwise-dashboard-069.png`
+  - `/tmp/threadwise-unsubscribe-069.png`

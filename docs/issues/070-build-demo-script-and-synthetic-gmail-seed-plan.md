@@ -1,6 +1,6 @@
 # Status
 
-Current
+Completed
 Current as of: 2026-06-30
 Triage state: `ready-for-agent`
 Builds on: `docs/prd.md`, `docs/issues/068-mvp-plus-one-design-review-and-aesthetic-direction.md`
@@ -31,14 +31,14 @@ This slice should make the capture work deterministic enough that the next slice
 
 ## Acceptance criteria
 
-- [ ] `docs/demo-script.md` defines the three 10-20 second primary demo flows.
-- [ ] The daily briefing/report flow shows categorized email and what happened today.
-- [ ] The teach flow shows selected email context, correction, impact preview, and explicit human choice.
-- [ ] The unsubscribe flow shows unsubscribe availability and approval/review behavior without implying autonomous unsubscribe.
-- [ ] The optional roadmap micro-clip is clearly labeled as "Next" or "Roadmap."
-- [ ] The synthetic Gmail seed plan lists realistic fake emails, sender names, subjects, snippets, and intended categories.
-- [ ] The plan explicitly excludes private email, sensitive content, credentials, and unsafe real-world actions.
-- [ ] The plan includes caption text for each GIF/video.
+- [x] `docs/demo-script.md` defines the three 10-20 second primary demo flows.
+- [x] The daily briefing/report flow shows categorized email and what happened today.
+- [x] The teach flow shows selected email context, correction, impact preview, and explicit human choice.
+- [x] The unsubscribe flow shows unsubscribe availability and approval/review behavior without implying autonomous unsubscribe.
+- [x] The optional roadmap micro-clip is clearly labeled as "Next" or "Roadmap."
+- [x] The synthetic Gmail seed plan lists realistic fake emails, sender names, subjects, snippets, and intended categories.
+- [x] The plan explicitly excludes private email, sensitive content, credentials, and unsafe real-world actions.
+- [x] The plan includes caption text for each GIF/video.
 
 ## Output
 
@@ -52,3 +52,20 @@ This slice should make the capture work deterministic enough that the next slice
 - Do not modify product UI in this slice unless needed to clarify script assumptions.
 - Do not use private inbox data.
 - Do not perform real unsubscribe/delete/archive/send actions.
+
+## Completion note
+
+Completed in `docs/demo-script.md`.
+
+The script defines:
+
+- three primary 10-20 second flows
+- optional roadmap micro-clip labeled as future scope
+- exact overlay captions
+- 24 synthetic Gmail seed messages
+- capture safety checklist
+
+Validation:
+
+- reviewed acceptance criteria coverage against this issue
+- checked copy for synthetic-data, roadmap, and unsafe-action boundaries

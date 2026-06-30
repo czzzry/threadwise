@@ -5,8 +5,9 @@
   }
   const ROOT_ID = "email-agent-companion-root";
   const LOCAL_ORIGIN = "http://127.0.0.1:8021";
-  const PANEL_WIDTH = "392px";
-  const PANEL_WIDTH_MINIMIZED = "84px";
+  const BRAND_ICON_URL = `${LOCAL_ORIGIN}/assets/brand/threadwise-app-icon.png`;
+  const PANEL_WIDTH = "408px";
+  const PANEL_WIDTH_MINIMIZED = "82px";
   let minimized = false;
   let previousPayload = "";
   let lastHarnessState = null;
@@ -69,29 +70,30 @@
       pointerEvents: "auto",
     });
     setHtml(root, `
-      <div id="ea-panel" style="background:rgba(255,253,248,0.98);border:1px solid rgba(215,207,191,0.95);border-radius:22px;box-shadow:0 20px 60px rgba(31,26,20,0.16);overflow:hidden;font-family:Georgia,'Times New Roman',serif;color:#1f1a14;">
-        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:16px 16px 14px;border-bottom:1px solid #d7cfbf;background:linear-gradient(180deg,#fff8eb 0%,#f6eedf 100%);">
-          <div style="display:grid;gap:6px;">
-            <div style="display:flex;align-items:center;gap:8px;">
-              <span style="width:10px;height:10px;border-radius:999px;background:#0f766e;box-shadow:0 0 0 4px rgba(15,118,110,0.12);"></span>
-              <div style="font-size:1.08rem;font-weight:700;">Threadwise</div>
+      <div id="ea-panel" style="background:rgba(255,252,244,0.99);border:1px solid rgba(84,68,45,0.24);border-radius:14px;box-shadow:0 18px 48px rgba(31,26,20,0.18),0 1px 0 rgba(255,255,255,0.72) inset;overflow:hidden;font-family:Georgia,'Times New Roman',serif;color:#211912;">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:14px 14px 13px;border-bottom:1px solid rgba(84,68,45,0.18);background:linear-gradient(180deg,#fff6e3 0%,#f7edd9 100%);">
+          <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+            <img src="${BRAND_ICON_URL}" alt="" aria-hidden="true" style="width:34px;height:34px;border-radius:10px;border:1px solid rgba(33,25,18,0.18);box-shadow:0 3px 10px rgba(31,26,20,0.16);flex:0 0 auto;">
+            <div style="display:grid;gap:3px;min-width:0;">
+              <div style="font-size:1.04rem;font-weight:700;line-height:1;">Threadwise</div>
+              <div style="color:#8b640f;font-size:0.68rem;letter-spacing:0.12em;text-transform:uppercase;white-space:nowrap;">Clear threads</div>
             </div>
-            <div id="ea-subtitle" style="color:#6b6255;font-size:0.88rem;line-height:1.35;">Connecting to local companion server</div>
           </div>
-          <button id="ea-minimize" type="button" style="border:0;background:#ebe4d7;color:#1f1a14;border-radius:999px;padding:8px 12px;cursor:pointer;font:inherit;">Minimize</button>
+          <button id="ea-minimize" type="button" style="border:1px solid rgba(84,68,45,0.18);background:#f0e5d2;color:#211912;border-radius:999px;padding:7px 10px;cursor:pointer;font:inherit;font-size:0.84rem;">Minimize</button>
         </div>
-        <div id="ea-content" style="padding:14px;display:grid;gap:12px;">
-          <section style="border:1px solid #d7cfbf;border-radius:18px;padding:14px;background:linear-gradient(180deg,#fffdfa 0%,#faf5ea 100%);">
-            <div style="color:#6b6255;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;">Selected Email</div>
+        <div id="ea-subtitle" style="padding:9px 14px;border-bottom:1px solid rgba(84,68,45,0.12);background:#fffaf0;color:#6b6255;font-size:0.84rem;line-height:1.35;">Connecting to local companion server</div>
+        <div id="ea-content" style="padding:12px;display:grid;gap:10px;">
+          <section style="border:1px solid rgba(84,68,45,0.18);border-radius:10px;padding:12px;background:linear-gradient(180deg,#fffdfa 0%,#fbf3e3 100%);">
+            <div style="color:#6b6255;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.1em;">Selected Email</div>
             <div id="ea-selected-email"></div>
           </section>
-          <section style="border:1px solid #d7cfbf;border-radius:16px;padding:14px;background:#fffdfa;">
-            <div style="color:#6b6255;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;">Today</div>
+          <section style="border:1px solid rgba(84,68,45,0.18);border-radius:10px;padding:12px;background:#fffdfa;">
+            <div style="color:#6b6255;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.1em;">Today</div>
             <div id="ea-daily-summary"></div>
           </section>
         </div>
-        <div id="ea-footer" style="padding:0 14px 14px;">
-          <div style="border:1px dashed #d7cfbf;border-radius:16px;padding:12px 14px;background:rgba(255,255,255,0.55);color:#6b6255;font-size:0.84rem;line-height:1.4;">
+        <div id="ea-footer" style="padding:0 12px 12px;">
+          <div style="border:1px dashed rgba(84,68,45,0.22);border-radius:10px;padding:10px 12px;background:rgba(255,255,255,0.55);color:#6b6255;font-size:0.82rem;line-height:1.4;">
             Live Gmail sidebar mode is using the same stored inbox snapshot and queue buckets as the local harness.
           </div>
         </div>
@@ -116,12 +118,14 @@
     }
     const content = root.querySelector("#ea-content");
     const footer = root.querySelector("#ea-footer");
+    const subtitle = root.querySelector("#ea-subtitle");
     const button = root.querySelector("#ea-minimize");
-    if (!content || !footer || !button) {
+    if (!content || !footer || !subtitle || !button) {
       return;
     }
     content.style.display = minimized ? "none" : "grid";
     footer.style.display = minimized ? "none" : "block";
+    subtitle.style.display = minimized ? "none" : "block";
     root.style.width = minimized ? PANEL_WIDTH_MINIMIZED : PANEL_WIDTH;
     button.textContent = minimized ? "Open" : "Minimize";
   }

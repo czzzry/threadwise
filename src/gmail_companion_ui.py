@@ -33,6 +33,7 @@ from src.unsubscribe_execution import UnsubscribeExecutor
 
 DEFAULT_STORAGE_DIR = Path("data/gmail_fetch")
 DEFAULT_CREDENTIALS_DIR = Path("data/gmail_credentials")
+THREADWISE_APP_ICON_PATH = Path("docs/assets/brand/threadwise-app-icon.png")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -168,6 +169,19 @@ class GmailCompanionApp:
             encoded = self.render_daily_dashboard_page().encode("utf-8")
             handler.send_response(HTTPStatus.OK)
             handler.send_header("Content-Type", "text/html; charset=utf-8")
+            handler.send_header("Content-Length", str(len(encoded)))
+            self._write_cors_headers(handler)
+            handler.end_headers()
+            handler.wfile.write(encoded)
+            return
+
+        if handler.command == "GET" and parsed.path == "/assets/brand/threadwise-app-icon.png":
+            if not THREADWISE_APP_ICON_PATH.exists():
+                self._write_json(handler, HTTPStatus.NOT_FOUND, {"error": "Brand icon not found"})
+                return
+            encoded = THREADWISE_APP_ICON_PATH.read_bytes()
+            handler.send_response(HTTPStatus.OK)
+            handler.send_header("Content-Type", "image/png")
             handler.send_header("Content-Length", str(len(encoded)))
             self._write_cors_headers(handler)
             handler.end_headers()
@@ -550,6 +564,9 @@ class GmailCompanionApp:
     .header { display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:16px 16px 14px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#fff8eb 0%,#f6eedf 100%); }
     .header-copy { display:grid;gap:6px; }
     .header-top { display:flex;align-items:center;gap:8px; }
+    .brand-lockup { display:flex;align-items:center;gap:10px;min-width:0; }
+    .brand-mark { width:34px;height:34px;border-radius:10px;border:1px solid rgba(33,25,18,0.18);box-shadow:0 3px 10px rgba(31,26,20,0.16);flex:0 0 auto; }
+    .brand-kicker { color:#c88616;font-size:0.68rem;letter-spacing:0.12em;text-transform:uppercase;white-space:nowrap; }
     .dot { width:10px;height:10px;border-radius:999px;background:var(--accent);box-shadow:0 0 0 4px rgba(15,118,110,0.12); }
     .title { font-size:1.08rem;font-weight:700; }
     .subtitle { color: var(--muted); font-size:0.88rem; line-height:1.35; }
@@ -610,9 +627,12 @@ class GmailCompanionApp:
       <section class="panel">
         <header class="header">
           <div class="header-copy">
-            <div class="header-top">
-              <span class="dot"></span>
-              <div class="title">Threadwise</div>
+            <div class="brand-lockup">
+              <img class="brand-mark" src="/assets/brand/threadwise-app-icon.png" alt="" aria-hidden="true">
+              <div>
+                <div class="title">Threadwise</div>
+                <div class="brand-kicker">Clear threads</div>
+              </div>
             </div>
             <div class="subtitle" id="sim-subtitle">Compact daily summary</div>
           </div>
@@ -1400,13 +1420,17 @@ class GmailCompanionApp:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Threadwise Unsubscribe Review</title>
   <style>
-    body {{ margin:0; font-family: Georgia, 'Times New Roman', serif; background: linear-gradient(180deg,#f8f3e8 0%,#f2eadb 100%); color:#1f1a14; }}
+    body {{ margin:0; font-family: Georgia, 'Times New Roman', serif; background: radial-gradient(circle at top,#fff8eb 0%,#f4ecdd 52%,#ede1cf 100%); color:#211912; }}
     main {{ max-width: 980px; margin: 0 auto; padding: 24px; display:grid; gap:16px; }}
-    .hero,.card {{ background:rgba(255,253,248,0.96); border:1px solid #d7cfbf; border-radius:20px; padding:18px; }}
+    .hero,.card {{ background:rgba(255,252,244,0.97); border:1px solid rgba(84,68,45,0.2); border-radius:12px; padding:18px; box-shadow:0 10px 30px rgba(31,26,20,0.07); }}
+    .hero {{ background:linear-gradient(180deg,#fff8eb 0%,#fbf1df 100%); }}
+    .hero-heading {{ display:flex; align-items:center; gap:12px; }}
+    .brand-mark {{ width:42px; height:42px; border-radius:12px; border:1px solid rgba(33,25,18,0.18); box-shadow:0 4px 12px rgba(31,26,20,0.16); flex:0 0 auto; }}
     .grid {{ display:grid; grid-template-columns: repeat(auto-fit,minmax(260px,1fr)); gap:14px; }}
     .section {{ display:grid; gap:12px; }}
     .eyebrow {{ color:#6b6255; font-size:0.72rem; text-transform:uppercase; letter-spacing:0.08em; }}
     h1,h2 {{ margin:8px 0 10px; }}
+    h1 {{ font-size:2rem; line-height:1.05; }}
     p {{ line-height:1.45; }}
     .action {{ display:inline-block; margin-top:10px; border-radius:999px; background:#0f766e; color:#fff; padding:9px 12px; text-decoration:none; }}
     .pill-row {{ display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }}
@@ -1418,8 +1442,13 @@ class GmailCompanionApp:
 <body>
   <main>
     <section class="hero">
-      <div class="eyebrow">Unsubscribe Review</div>
-      <h1>Subscription cleanup</h1>
+      <div class="hero-heading">
+        <img class="brand-mark" src="/assets/brand/threadwise-app-icon.png" alt="" aria-hidden="true">
+        <div>
+          <div class="eyebrow">Unsubscribe Review</div>
+          <h1>Subscription cleanup</h1>
+        </div>
+      </div>
       <p>Selected for later unsubscribe: {preview.get("selected_count", 0)}. Ready now: {preview.get("ready_count", 0)}. Manual follow-up needed: {preview.get("unsupported_count", 0)}.</p>
       <div class="pill-row">
         <span class="pill">Queued: {preview.get("selected_count", 0)}</span>
@@ -1479,21 +1508,25 @@ class GmailCompanionApp:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Threadwise Daily Dashboard</title>
   <style>
-    body {{ margin:0; font-family: Georgia, 'Times New Roman', serif; background: linear-gradient(180deg,#f8f3e8 0%,#f2eadb 100%); color:#1f1a14; }}
+    body {{ margin:0; font-family: Georgia, 'Times New Roman', serif; background: radial-gradient(circle at top,#fff8eb 0%,#f4ecdd 52%,#ede1cf 100%); color:#211912; }}
     main {{ max-width: 1100px; margin: 0 auto; padding: 24px; display:grid; gap:16px; }}
-    .hero,.card {{ background:rgba(255,253,248,0.96); border:1px solid #d7cfbf; border-radius:20px; padding:18px; }}
+    .hero,.card {{ background:rgba(255,252,244,0.97); border:1px solid rgba(84,68,45,0.2); border-radius:12px; padding:18px; box-shadow:0 10px 30px rgba(31,26,20,0.07); }}
+    .hero {{ background:linear-gradient(180deg,#fff8eb 0%,#fbf1df 100%); }}
+    .hero-heading {{ display:flex; align-items:center; gap:12px; }}
+    .brand-mark {{ width:42px; height:42px; border-radius:12px; border:1px solid rgba(33,25,18,0.18); box-shadow:0 4px 12px rgba(31,26,20,0.16); flex:0 0 auto; }}
     .grid {{ display:grid; grid-template-columns: repeat(auto-fit,minmax(260px,1fr)); gap:14px; }}
     .section {{ display:grid; gap:12px; }}
     .eyebrow {{ color:#6b6255; font-size:0.72rem; text-transform:uppercase; letter-spacing:0.08em; }}
     h1,h2 {{ margin:8px 0 10px; }}
+    h1 {{ font-size:2rem; line-height:1.05; }}
     p {{ line-height:1.45; }}
     .pill-row {{ display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }}
     .pill {{ border-radius:999px; padding:6px 10px; background:#f1eadb; color:#5d5342; font-size:0.8rem; }}
     .metric-grid {{ display:grid; grid-template-columns: repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin-top:14px; }}
-    .metric {{ border-radius:14px; background:#f5efe2; padding:12px; }}
+    .metric {{ border-radius:10px; background:#f5efe2; padding:12px; }}
     .metric strong {{ display:block; font-size:1.15rem; }}
     .stack {{ display:grid; gap:10px; }}
-    .email-card {{ border:1px solid #d7cfbf; border-radius:16px; background:#fffdfa; padding:12px; }}
+    .email-card {{ border:1px solid rgba(84,68,45,0.2); border-radius:10px; background:#fffdfa; padding:12px; }}
     .email-card h3 {{ margin:0; font-size:0.98rem; line-height:1.3; }}
     .meta {{ margin-top:6px; color:#6b6255; font-size:0.84rem; overflow-wrap:anywhere; }}
     .copy {{ margin-top:8px; color:#1f1a14; line-height:1.45; }}
@@ -1504,8 +1537,13 @@ class GmailCompanionApp:
 <body>
   <main>
     <section class="hero">
-      <div class="eyebrow">Daily Dashboard</div>
-      <h1>What Threadwise did today</h1>
+      <div class="hero-heading">
+        <img class="brand-mark" src="/assets/brand/threadwise-app-icon.png" alt="" aria-hidden="true">
+        <div>
+          <div class="eyebrow">Daily Dashboard</div>
+          <h1>What Threadwise did today</h1>
+        </div>
+      </div>
       <p>This is the fuller secondary view behind the inbox sidebar: what came in, what the agent changed, what still needs attention, and what subscription cleanup is queued.</p>
       <div class="metric-grid">
         <div class="metric"><strong>{summary.get("processed_count", 0)}</strong><span>processed</span></div>
@@ -1559,11 +1597,12 @@ class GmailCompanionApp:
       color-scheme: light;
       --bg: #f3efe4;
       --panel: #fffdf8;
-      --ink: #1f1a14;
+      --ink: #211912;
       --muted: #6b6255;
-      --line: #d7cfbf;
+      --line: rgba(84,68,45,0.2);
       --accent: #0f766e;
       --accent-soft: #d8f3ef;
+      --gold: #c88616;
       --warn-soft: #fff4dd;
       --warn-ink: #8a4b00;
       --soft: #f5efe2;
@@ -1571,18 +1610,21 @@ class GmailCompanionApp:
     * { box-sizing: border-box; }
     body { margin: 0; font-family: Georgia, 'Times New Roman', serif; background: radial-gradient(circle at top, #fbf6ec 0%, #f4ede0 58%, #efe6d7 100%); color: var(--ink); }
     .shell { width: 100%; min-height: 100vh; padding: 14px; }
-    .panel { background: rgba(255, 253, 248, 0.98); border: 1px solid rgba(215, 207, 191, 0.95); border-radius: 22px; box-shadow: 0 20px 60px rgba(31, 26, 20, 0.16); overflow: hidden; }
+    .panel { background: rgba(255, 252, 244, 0.99); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 18px 48px rgba(31, 26, 20, 0.18), 0 1px 0 rgba(255,255,255,0.72) inset; overflow: hidden; }
     .panel.minimized .content, .panel.minimized .footer { display: none; }
     .panel.minimized { width: 84px; }
-    .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 16px 16px 14px; border-bottom: 1px solid var(--line); background: linear-gradient(180deg, #fff8eb 0%, #f6eedf 100%); }
+    .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 14px 14px 13px; border-bottom: 1px solid var(--line); background: linear-gradient(180deg, #fff6e3 0%, #f7edd9 100%); }
     .header-copy { display: grid; gap: 6px; }
     .header-top { display: flex; align-items: center; gap: 8px; }
     .dot { width: 10px; height: 10px; border-radius: 999px; background: var(--accent); box-shadow: 0 0 0 4px rgba(15, 118, 110, 0.12); }
-    .title { font-size: 1.08rem; font-weight: 700; }
+    .brand-lockup { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .brand-mark { width: 34px; height: 34px; border-radius: 10px; border: 1px solid rgba(33,25,18,0.18); box-shadow: 0 3px 10px rgba(31,26,20,0.16); flex: 0 0 auto; }
+    .brand-kicker { color: var(--gold); font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; white-space: nowrap; }
+    .title { font-size: 1.04rem; font-weight: 700; line-height: 1; }
     .subtitle { color: var(--muted); font-size: 0.88rem; line-height: 1.35; }
-    .minimize { border: 0; background: #ebe4d7; color: var(--ink); border-radius: 999px; padding: 8px 12px; cursor: pointer; font: inherit; }
-    .content { padding: 14px; display: grid; gap: 12px; }
-    .hero { border: 1px solid var(--line); border-radius: 18px; padding: 14px; background: linear-gradient(180deg, #fffdfa 0%, #faf5ea 100%); }
+    .minimize { border: 1px solid var(--line); background: #f0e5d2; color: var(--ink); border-radius: 999px; padding: 7px 10px; cursor: pointer; font: inherit; font-size: 0.84rem; }
+    .content { padding: 12px; display: grid; gap: 10px; }
+    .hero { border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: linear-gradient(180deg, #fffdfa 0%, #fbf3e3 100%); }
     .eyebrow { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; }
     .subject { margin-top: 8px; font-size: 1.08rem; font-weight: 700; line-height: 1.2; }
     .sender { margin-top: 6px; color: var(--muted); font-size: 0.88rem; overflow-wrap: anywhere; }
@@ -1591,21 +1633,21 @@ class GmailCompanionApp:
     .classification-pill { background: #efe7d4; color: #5f512f; }
     .status-pill { background: var(--accent-soft); color: var(--accent); }
     .warn-pill { background: var(--warn-soft); color: var(--warn-ink); }
-    .reason-wrap { margin-top: 14px; border-radius: 14px; background: var(--soft); padding: 12px; }
+    .reason-wrap { margin-top: 14px; border-radius: 10px; background: var(--soft); padding: 12px; }
     .reason-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
     .reason { margin-top: 8px; color: var(--ink); line-height: 1.45; }
-    .secondary-card { border: 1px solid var(--line); border-radius: 16px; padding: 14px; background: #fffdfa; }
+    .secondary-card { border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: #fffdfa; }
     .empty { margin-top: 10px; color: var(--muted); line-height: 1.45; }
     .checklist { margin: 10px 0 0; padding-left: 18px; color: var(--muted); }
     .checklist li + li { margin-top: 6px; }
     .summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
-    .metric { border-radius: 14px; background: var(--soft); padding: 12px; }
+    .metric { border-radius: 10px; background: var(--soft); padding: 12px; }
     .metric strong { display: block; font-size: 1.15rem; }
     .metric span { color: var(--muted); font-size: 0.82rem; }
     .label-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
     .label-chip { border-radius: 999px; padding: 6px 10px; background: #f1eadb; color: #5d5342; font-size: 0.8rem; }
     .footer { padding: 0 14px 14px; }
-    .footer-card { border: 1px dashed var(--line); border-radius: 16px; padding: 12px 14px; background: rgba(255,255,255,0.55); color: var(--muted); font-size: 0.84rem; line-height: 1.4; }
+    .footer-card { border: 1px dashed var(--line); border-radius: 10px; padding: 10px 12px; background: rgba(255,255,255,0.55); color: var(--muted); font-size: 0.84rem; line-height: 1.4; }
     .harness { display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 14px; align-items: start; }
     .list-card { border: 1px solid var(--line); border-radius: 18px; padding: 14px; background: rgba(255,255,255,0.72); }
     .list-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -1651,9 +1693,12 @@ class GmailCompanionApp:
       <section id="panel" class="panel">
         <header class="header">
           <div class="header-copy">
-            <div class="header-top">
-              <span class="dot"></span>
-              <div class="title">Threadwise</div>
+            <div class="brand-lockup">
+              <img class="brand-mark" src="/assets/brand/threadwise-app-icon.png" alt="" aria-hidden="true">
+              <div>
+                <div class="title">Threadwise</div>
+                <div class="brand-kicker">Clear threads</div>
+              </div>
             </div>
             <div class="subtitle" id="subtitle">Compact daily summary</div>
           </div>
