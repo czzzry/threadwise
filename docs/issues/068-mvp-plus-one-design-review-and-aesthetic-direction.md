@@ -1,6 +1,6 @@
 # Status
 
-Current
+Completed
 Current as of: 2026-06-30
 Triage state: `ready-for-agent`
 Builds on: `docs/prd.md`, `docs/mvp-plus-one-portfolio-demo-alignment.md`
@@ -27,14 +27,14 @@ The output should be specific enough for the next implementation slice to apply 
 
 ## Acceptance criteria
 
-- [ ] The current Threadwise demo/capture surfaces are audited for visual strengths, weaknesses, and capture risks.
-- [ ] The review distinguishes full-control, partial-control, and constrained-by-Gmail areas.
-- [ ] The review proposes 2-3 aesthetic directions for the portfolio demo.
-- [ ] Each direction includes concrete implications for layout, color, type scale, status treatments, action hierarchy, and demo captions.
-- [ ] The recommendation identifies one preferred aesthetic direction.
-- [ ] The review includes a concrete implementation checklist for the chosen direction.
-- [ ] The review calls out any risks where a slicker portfolio UI could overstate implemented behavior.
-- [ ] The founder can approve, reject, or annotate the design direction before implementation.
+- [x] The current Threadwise demo/capture surfaces are audited for visual strengths, weaknesses, and capture risks.
+- [x] The review distinguishes full-control, partial-control, and constrained-by-Gmail areas.
+- [x] The review proposes 2-3 aesthetic directions for the portfolio demo.
+- [x] Each direction includes concrete implications for layout, color, type scale, status treatments, action hierarchy, and demo captions.
+- [x] The recommendation identifies one preferred aesthetic direction.
+- [x] The review includes a concrete implementation checklist for the chosen direction.
+- [x] The review calls out any risks where a slicker portfolio UI could overstate implemented behavior.
+- [x] The founder can approve, reject, or annotate the design direction before implementation.
 
 ## Output
 
@@ -48,3 +48,17 @@ The output should be specific enough for the next implementation slice to apply 
 - Do not seed the Gmail demo account in this slice.
 - Do not change product scope or add new inbox actions.
 - Do not redesign Gmail itself.
+
+## Completion note
+
+Completed with founder approval of the warm ink-and-paper Threadwise redesign direction.
+
+Design references:
+
+- `docs/design ideas/Threadwise_design.html`
+- `docs/design ideas/threadwise logo.png`
+
+Follow-on logo handling is nested into later slices rather than split into a standalone issue:
+
+- `069`: extract/use the square app icon in the product/demo UI aesthetic.
+- `072`: make the primary logo prominent in README, portfolio, and promo assets.

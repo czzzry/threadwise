@@ -125,10 +125,15 @@ The product should feel calm, precise, and credible inside Gmail: compact but pr
 - The demo may use overlay captions, but captions must not claim behavior that is not implemented.
 - The README should prioritize visual clarity first:
   - one-line product pitch
+  - prominent Threadwise logo treatment
   - short GIF/video assets near the top
   - concise synthetic-data disclaimer
   - static screenshots
   - deeper architecture and safety details lower down
+- The founder-provided Threadwise logo direction should be used as the brand source for MVP+1:
+  - use the square app icon in product/demo UI where space is tight
+  - use the primary logo and tagline in README, portfolio, and promo assets
+  - extract separate public assets from the current logo sheet before final packaging
 - The demo assets should include three short primary flows:
   - daily briefing/report
   - teach the agent safely
@@ -148,6 +153,7 @@ The product should feel calm, precise, and credible inside Gmail: compact but pr
   - teach/impact preview state
   - unsubscribe review/handoff state
   - demo overlay captions
+  - Threadwise app icon and brand treatments
 - The UI may be slightly more polished for portfolio capture than the raw internal product, but it must remain truthful to implemented behavior.
 - The interactive/local demo path should be secondary to committed README assets.
 - Public assets should be committed under `docs/assets/`.
