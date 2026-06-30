@@ -554,9 +554,9 @@ class GmailCompanionApp:
     .chip-button, .pill { border-radius: 999px; padding: 6px 10px; background: #f1eadb; color: #5d5342; font-size: 0.8rem; }
     .chip-button { border: 0; cursor: pointer; font: inherit; }
     .chip-button.active { background: var(--accent-soft); color: var(--accent); }
-    .card > .label-row { grid-column:2; grid-row:2; align-self:end; justify-self:end; margin:0 14px 10px 0; }
-    .card > .label-row .chip-button { max-width:0; overflow:hidden; padding:0; }
-    .card > .label-row .chip-button.active { max-width:none; padding:4px 8px; background:#fde4e2; color:#c5221f; }
+    .card > .label-row { grid-column:2; grid-row:2; align-self:stretch; justify-self:stretch; margin:0; padding:0 12px 0 142px; display:flex; align-items:center; gap:12px; border-bottom:3px solid #d93025; overflow:hidden; }
+    .card > .label-row .chip-button { height:46px; border-radius:0; padding:0 2px; background:transparent;color:#5f6368;font-weight:700;white-space:nowrap;box-shadow:none; }
+    .card > .label-row .chip-button.active { background:transparent;color:#d93025;box-shadow:inset 0 -3px 0 #d93025; }
     .list-stack { grid-column:2; grid-row:3; display:block; margin-top:0; max-height:none; overflow:hidden; }
     .list-item { width:100%; min-height:40px; text-align:left; border:0; border-bottom:1px solid #f1f3f4; border-radius:0; background:#fff; padding:0 12px 0 16px; cursor:pointer; font:inherit; color:#202124; display:grid; grid-template-columns:18px minmax(104px,.24fr) minmax(0,1fr) 58px; column-gap:12px; align-items:center; }
     .list-item::before { content:"□"; color:#b8bec5; font-size:16px; }
@@ -565,6 +565,11 @@ class GmailCompanionApp:
     .list-item-subject { font-size: 0.84rem; font-weight: 800; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .list-item-meta { margin-top: 0; color: #5f6368; font-size: 0.82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .card .list-item .label-row { display:none; }
+    .field-stack .list-item { display:block;min-height:auto;border:2px solid #241812;border-radius:12px;background:#fffdf7;padding:9px 10px;box-shadow:2px 2px 0 rgba(36,24,18,.18); }
+    .field-stack .list-item::before, .field-stack .list-item::after { content:none; }
+    .field-stack .list-item .label-row { display:flex;margin-top:8px;gap:6px; }
+    .field-stack .list-item .pill { font-size:0.68rem;padding:4px 7px;box-shadow:1px 1px 0 rgba(36,24,18,.22); }
+    .field-stack .list-item-subject, .field-stack .list-item-meta { white-space:normal; }
     .message-title { margin-top: 8px; font-size: 1.25rem; font-weight: 700; line-height: 1.2; }
     .message-meta { margin-top: 8px; color: var(--muted); line-height: 1.45; overflow-wrap: anywhere; }
     .message-body { margin-top: 14px; border-radius: 16px; background: var(--soft); padding: 14px; color: var(--ink); line-height: 1.55; min-height: 260px; white-space: pre-wrap; }
@@ -575,6 +580,8 @@ class GmailCompanionApp:
     .metric-button.active { background: #e7f6f4; box-shadow: inset 0 0 0 1px rgba(15,118,110,0.22); }
     .teach-card { border: 3px solid #241812; background: #ffe1a3; padding: 0; overflow: hidden; }
     .teach-card > .reason-label { display: flex; align-items: center; min-height: 40px; padding: 0 13px; border-bottom: 3px solid #241812; background: #ffc64a; color: #241812; font-weight: 900; }
+    .teach-panel { margin: 12px; display: grid; gap: 12px; }
+    .teach-panel .field-stack { margin-top: 0; }
     .teach-card > .field-stack, .teach-card > .preview-card, .teach-card > .success-card, .teach-card > .error-card, .teach-card > .note { margin: 12px; }
     .empty { color: var(--muted); line-height: 1.45; }
     .panel { background: var(--paper); border: 3px solid #241812; border-radius: 18px; box-shadow: 6px 6px 0 #241812; overflow: hidden; align-self: start; }
@@ -662,6 +669,10 @@ class GmailCompanionApp:
             <div class="eyebrow">Agent View</div>
             <div id="sim-selected-email"></div>
           </section>
+          <section class="teach-card">
+            <div class="reason-label">Correct / Teach</div>
+            <div id="sim-teach-panel" class="teach-panel"></div>
+          </section>
           <section class="secondary-card">
             <div class="eyebrow">Today</div>
             <div id="sim-daily-summary"></div>
@@ -676,6 +687,7 @@ class GmailCompanionApp:
     const messageNode = document.getElementById("sim-message");
     const subtitleNode = document.getElementById("sim-subtitle");
     const selectedEmailNode = document.getElementById("sim-selected-email");
+    const teachPanelNode = document.getElementById("sim-teach-panel");
     const dailySummaryNode = document.getElementById("sim-daily-summary");
     const refreshButton = document.getElementById("sim-refresh");
     const unsyncedButton = document.getElementById("sim-unsynced");
@@ -933,6 +945,7 @@ class GmailCompanionApp:
             <div class="field-stack">${renderQueueCards(queueItems)}</div>
           </div>
         `;
+        teachPanelNode.innerHTML = '<div class="empty">Select a synced email to preview or teach a correction.</div>';
         return;
       }
       const allowedLabels = ((((harnessState || {}).sidebar_state || {}).ui_state || {}).allowed_labels) || [];
@@ -985,18 +998,17 @@ class GmailCompanionApp:
           <span class="pill ${selected.status === "needs-attention" ? "warn-pill" : "status-pill"}">${escapeHtml(selected.status_label || "")}</span>
         </div>
         ${unsubscribeLine}
-        <div class="reason-wrap teach-card">
-          <div class="reason-label">Correct / Teach</div>
-          <div class="field-stack">
-            <select id="sim-target-label" class="select">${labelOptions}</select>
-            <textarea id="sim-teach-note" class="textarea" placeholder="Tell the agent what it got wrong or what it should learn.">${escapeHtml(draftNote)}</textarea>
-            <div class="button-row">
-              <button type="button" class="action-button primary" data-action="preview-teach">Preview lesson</button>
-              <button type="button" class="action-button secondary" data-action="clear-teach">Clear</button>
-            </div>
+      `;
+      teachPanelNode.innerHTML = `
+        <div class="field-stack">
+          <select id="sim-target-label" class="select">${labelOptions}</select>
+          <textarea id="sim-teach-note" class="textarea" placeholder="Tell the agent what it got wrong or what it should learn.">${escapeHtml(draftNote)}</textarea>
+          <div class="button-row">
+            <button type="button" class="action-button primary" data-action="preview-teach">Preview lesson</button>
+            <button type="button" class="action-button secondary" data-action="clear-teach">Clear</button>
           </div>
-          ${feedbackHtml}
         </div>
+        ${feedbackHtml}
       `;
       const labelNode = document.getElementById("sim-target-label");
       const noteNode = document.getElementById("sim-teach-note");
@@ -1620,6 +1632,10 @@ class GmailCompanionApp:
     .reason-wrap { margin-top: 14px; border-radius: 10px; background: var(--soft); padding: 12px; }
     .reason-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
     .reason { margin-top: 8px; color: var(--ink); line-height: 1.45; }
+    .teach-card { border: 3px solid #241812; border-radius: 18px; background: #ffe1a3; overflow: hidden; box-shadow: 2px 2px 0 rgba(36,24,18,.18); }
+    .teach-card > .reason-label { display: flex; align-items: center; min-height: 40px; padding: 0 13px; border-bottom: 3px solid #241812; background: #ffc64a; color: #241812; font-weight: 900; }
+    .teach-panel { margin: 12px; display: grid; gap: 12px; }
+    .teach-panel .field-stack { margin-top: 0; }
     .secondary-card { border: 3px solid #241812; border-radius: 18px; padding: 16px; background: #e9efe2; box-shadow: 2px 2px 0 rgba(36,24,18,.18); }
     .empty { margin-top: 10px; color: var(--muted); line-height: 1.45; }
     .checklist { margin: 10px 0 0; padding-left: 18px; color: var(--muted); }
@@ -1693,6 +1709,10 @@ class GmailCompanionApp:
             <div class="eyebrow">Agent View</div>
             <div id="selected-email"></div>
           </section>
+          <section class="teach-card">
+            <div class="reason-label">Correct / Teach</div>
+            <div id="teach-panel" class="teach-panel"></div>
+          </section>
           <section class="secondary-card">
             <div class="eyebrow">Today</div>
             <div id="daily-summary"></div>
@@ -1708,6 +1728,7 @@ class GmailCompanionApp:
     const panelNode = document.getElementById("panel");
     const subtitleNode = document.getElementById("subtitle");
     const selectedEmailNode = document.getElementById("selected-email");
+    const teachPanelNode = document.getElementById("teach-panel");
     const dailySummaryNode = document.getElementById("daily-summary");
     const minimizeButton = document.getElementById("minimize");
     const harnessListNode = document.getElementById("harness-list");
@@ -1835,6 +1856,7 @@ class GmailCompanionApp:
           ${relatedHtml}
           ${fallbackHtml}
         `;
+        teachPanelNode.innerHTML = '<div class="empty">Select a synced email to preview or teach a correction.</div>';
         return;
       }
       const statusClass = selectedEmail.status === "needs-attention" ? "pill status-pill warn-pill" : "pill status-pill";
@@ -1931,18 +1953,17 @@ class GmailCompanionApp:
           ${detailsHtml}
         </div>
         ${unsubscribeLine}
-        <div class="reason-wrap">
-          <div class="reason-label">Correct / Teach</div>
-          <div class="field-stack">
-            <select id="teach-target-label" class="select">${labelOptions}</select>
-            <textarea id="teach-note" class="textarea" placeholder="Tell the agent what it got wrong or what it should learn.">${escapeHtml(draftNote)}</textarea>
-            <div class="button-row">
-              <button type="button" class="action-button primary" data-action="preview-teach">Preview lesson</button>
-              <button type="button" class="action-button secondary" data-action="clear-teach">Clear</button>
-            </div>
+      `;
+      teachPanelNode.innerHTML = `
+        <div class="field-stack">
+          <select id="teach-target-label" class="select">${labelOptions}</select>
+          <textarea id="teach-note" class="textarea" placeholder="Tell the agent what it got wrong or what it should learn.">${escapeHtml(draftNote)}</textarea>
+          <div class="button-row">
+            <button type="button" class="action-button primary" data-action="preview-teach">Preview lesson</button>
+            <button type="button" class="action-button secondary" data-action="clear-teach">Clear</button>
           </div>
-          ${feedbackHtml}
         </div>
+        ${feedbackHtml}
       `;
       const labelNode = document.getElementById("teach-target-label");
       const noteNode = document.getElementById("teach-note");

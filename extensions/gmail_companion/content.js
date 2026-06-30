@@ -89,6 +89,10 @@
             <div style="color:#6b6255;font-size:0.68rem;text-transform:uppercase;letter-spacing:0.14em;font-weight:820;">Agent View</div>
             <div id="ea-selected-email"></div>
           </section>
+          <section style="border:3px solid #241812;border-radius:18px;background:#ffe1a3;overflow:hidden;box-shadow:2px 2px 0 rgba(36,24,18,.18);">
+            <div style="min-height:40px;display:flex;align-items:center;padding:0 13px;border-bottom:3px solid #241812;background:#ffc64a;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.14em;color:#241812;font-weight:900;">Correct / Teach</div>
+            <div id="ea-teach-panel" style="display:grid;gap:12px;margin:12px;"></div>
+          </section>
           <section style="border:3px solid #241812;border-radius:18px;padding:16px;background:#e9efe2;box-shadow:2px 2px 0 rgba(36,24,18,.18);">
             <div style="color:#6b6255;font-size:0.68rem;text-transform:uppercase;letter-spacing:0.14em;font-weight:820;">Today</div>
             <div id="ea-daily-summary"></div>
@@ -344,12 +348,16 @@
   function renderError(message) {
     const subtitle = document.getElementById("ea-subtitle");
     const selectedEmailNode = document.getElementById("ea-selected-email");
+    const teachPanelNode = document.getElementById("ea-teach-panel");
     const dailySummaryNode = document.getElementById("ea-daily-summary");
     if (subtitle) {
       subtitle.textContent = "Connection failed";
     }
     if (selectedEmailNode) {
       setHtml(selectedEmailNode, `<div style="margin-top:10px;color:#8a4b00;line-height:1.45;">${escapeHtml(message)}</div>`);
+    }
+    if (teachPanelNode) {
+      setHtml(teachPanelNode, `<div style="color:#8a4b00;line-height:1.45;">Connect the local companion server before teaching corrections.</div>`);
     }
     if (dailySummaryNode) {
       setHtml(dailySummaryNode, `<div style="margin-top:10px;color:#6b6255;line-height:1.45;">Make sure the local companion server is running on 127.0.0.1:8021.</div>`);
@@ -361,8 +369,9 @@
     lastSidebarState = lastHarnessState.sidebar_state;
     const subtitle = document.getElementById("ea-subtitle");
     const selectedEmailNode = document.getElementById("ea-selected-email");
+    const teachPanelNode = document.getElementById("ea-teach-panel");
     const dailySummaryNode = document.getElementById("ea-daily-summary");
-    if (!subtitle || !selectedEmailNode || !dailySummaryNode) {
+    if (!subtitle || !selectedEmailNode || !teachPanelNode || !dailySummaryNode) {
       return;
     }
 
@@ -443,6 +452,7 @@
         ${relatedHtml}
         ${fallbackHtml}
       `);
+      setHtml(teachPanelNode, `<div style="color:#6b6255;line-height:1.45;">Select a synced email to preview or teach a correction.</div>`);
     } else {
       const statusStyle =
         selected.status === "needs-attention"
@@ -559,20 +569,19 @@
           ${detailsHtml}
         </div>
         ${unsubscribeLine}
-        <div style="margin-top:14px;border:3px solid #241812;border-radius:18px;background:#ffe1a3;overflow:hidden;">
-          <div style="min-height:40px;display:flex;align-items:center;padding:0 13px;border-bottom:3px solid #241812;background:#ffc64a;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.14em;color:#241812;font-weight:900;">Correct / Teach</div>
-          <div style="display:grid;gap:8px;margin:12px;">
-            <select id="ea-target-label" style="width:100%;padding:10px 12px;border-radius:11px;border:2px solid #241812;background:#fffdf7;color:#1f1a14;font:inherit;box-shadow:2px 2px 0 rgba(36,24,18,.18);">
-              ${labelOptions}
-            </select>
-            <textarea id="ea-teach-note" rows="3" placeholder="Tell the agent what it got wrong or what it should learn." style="width:100%;padding:10px 12px;border-radius:11px;border:2px solid #241812;background:#fffdf7;color:#1f1a14;font:inherit;resize:vertical;box-shadow:2px 2px 0 rgba(36,24,18,.18);">${escapeHtml(teachDraft.note)}</textarea>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;">
-              <button type="button" data-ea-action="preview-teach" style="border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Preview lesson</button>
-              <button type="button" data-ea-action="clear-teach" style="border:2px solid #241812;background:#fffdf7;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Clear</button>
-            </div>
+      `);
+      setHtml(teachPanelNode, `
+        <div style="display:grid;gap:8px;">
+          <select id="ea-target-label" style="width:100%;padding:10px 12px;border-radius:11px;border:2px solid #241812;background:#fffdf7;color:#1f1a14;font:inherit;box-shadow:2px 2px 0 rgba(36,24,18,.18);">
+            ${labelOptions}
+          </select>
+          <textarea id="ea-teach-note" rows="3" placeholder="Tell the agent what it got wrong or what it should learn." style="width:100%;padding:10px 12px;border-radius:11px;border:2px solid #241812;background:#fffdf7;color:#1f1a14;font:inherit;resize:vertical;box-shadow:2px 2px 0 rgba(36,24,18,.18);">${escapeHtml(teachDraft.note)}</textarea>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button type="button" data-ea-action="preview-teach" style="border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Preview lesson</button>
+            <button type="button" data-ea-action="clear-teach" style="border:2px solid #241812;background:#fffdf7;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Clear</button>
           </div>
-          ${previewHtml}
         </div>
+        ${previewHtml}
       `);
     }
 

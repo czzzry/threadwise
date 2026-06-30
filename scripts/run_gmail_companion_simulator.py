@@ -12,7 +12,7 @@ if str(REPO_ROOT) not in sys.path:
 from src.gmail_companion_ui import main as run_companion_main
 
 
-DEFAULT_SOURCE_STORAGE_DIR = Path("data/gmail_fetch")
+DEFAULT_SOURCE_STORAGE_DIR = Path("examples/gmail_companion_demo")
 DEFAULT_SIMULATOR_STORAGE_DIR = Path("data/gmail_companion_simulator")
 
 
