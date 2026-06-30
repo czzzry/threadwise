@@ -1,5 +1,4 @@
 import argparse
-import json
 import sys
 from collections import Counter
 from collections.abc import Sequence
@@ -7,9 +6,8 @@ from pathlib import Path
 from typing import TextIO
 
 from src.cli_paths import resolve_optional_path, resolve_path
-from src.gmail_batch_review_store import GmailBatchReviewStore
 from src.gmail_cli_support import default_gmail_client_factory
-from src.gmail_writer import MockGmailLabelWriter
+from src.gmail_automation import execute_auto_apply_plan, prepare_auto_apply_batch
 from src.label_taxonomy import gmail_label_name
 from src.live_gmail_client import GMAIL_MODIFY_SCOPE, SetupError
 
@@ -49,34 +47,24 @@ def main(
     client_secret_path = resolve_optional_path(args.client_secret_path, repo_root)
 
     try:
-        batch_store = GmailBatchReviewStore(storage_dir)
-        stored_batch = batch_store.load_batch(args.batch_id)
-        pending_count = sum(1 for item in stored_batch["items"] if item.get("review_state") != "reviewed")
-        write_status_map = _load_write_status_map(storage_dir, args.batch_id)
-        auto_items = _auto_approve_items(stored_batch["items"], write_status_map)
-        _print_dry_run(auto_items, pending_count, output)
+        plan = prepare_auto_apply_batch(storage_dir, args.batch_id)
+        _print_dry_run(plan.auto_items, plan.pending_count, output)
 
         confirmation = input_stream.readline().strip()
         if confirmation.upper() != "AUTOAPPLY":
             output.write("No Gmail labels were auto-applied.\n")
             return 0
 
-        batch_store.persist_reviewed_items(args.batch_id, stored_batch["items"])
-
         gmail_client_factory = gmail_client_factory or default_gmail_client_factory
         gmail_client = gmail_client_factory(
-            stored_batch["account_id"],
+            plan.account_id,
             credentials_dir,
             client_secret_path,
             GMAIL_MODIFY_SCOPE,
         )
-        writer = MockGmailLabelWriter(
-            gmail_client=gmail_client,
-            storage_dir=storage_dir,
-            label_name_resolver=gmail_label_name,
-        )
-        write_summary = writer.write_reviewed_labels(args.batch_id, auto_items)
-        inbox_summary = writer.remove_inbox_for_low_value_messages(args.batch_id, auto_items)
+        result = execute_auto_apply_plan(storage_dir, plan, gmail_client)
+        write_summary = result.write_summary
+        inbox_summary = result.inbox_summary
         output.write(f"Auto-applied Gmail label updates: {write_summary['applied_count']}\n")
         output.write(f"Failed Gmail label updates: {write_summary['failed_count']}\n")
         output.write(f"Removed from INBOX: {inbox_summary['applied_count']}\n")
@@ -85,36 +73,6 @@ def main(
     except SetupError as exc:
         error_output.write(f"{exc}\n")
         return 2
-
-
-def _auto_approve_items(items: list[dict], write_status_map: dict[str, str]) -> list[dict]:
-    auto_items: list[dict] = []
-    for item in items:
-        labels = list(item.get("applied_labels") or [])
-        final_labels = list(item.get("final_labels") or [])
-        if item.get("review_state") == "reviewed":
-            if item.get("review_action") != "auto-approve":
-                continue
-            if write_status_map.get(item["message_id"]) == "applied":
-                continue
-            if not final_labels:
-                continue
-            auto_items.append(item)
-            continue
-        if not labels:
-            continue
-        item["review_state"] = "reviewed"
-        item["review_action"] = "auto-approve"
-        item["final_labels"] = list(labels)
-        auto_items.append(item)
-    return auto_items
-
-
-def _load_write_status_map(storage_dir: Path, batch_id: str) -> dict[str, str]:
-    path = storage_dir / f"{batch_id}_write_status.json"
-    if not path.exists():
-        return {}
-    return json.loads(path.read_text())
 
 
 def _print_dry_run(auto_items: list[dict], pending_count: int, output: TextIO) -> None:

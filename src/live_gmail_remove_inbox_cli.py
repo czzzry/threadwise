@@ -8,6 +8,7 @@ from src.cli_paths import resolve_optional_path, resolve_path
 from src.gmail_batch_review_store import GmailBatchReviewStore
 from src.gmail_cli_support import default_gmail_client_factory
 from src.gmail_writer import MockGmailLabelWriter
+from src.gmail_automation import summarize_inbox_removal_candidates
 from src.live_gmail_client import GMAIL_MODIFY_SCOPE, SetupError
 
 
@@ -57,7 +58,11 @@ def main(
         )
         writer = MockGmailLabelWriter(gmail_client=gmail_client, storage_dir=storage_dir)
 
-        eligible_count, skipped_count, ineligible_count = _summarize_candidates(args.batch_id, stored_batch["items"], writer)
+        eligible_count, skipped_count, ineligible_count = summarize_inbox_removal_candidates(
+            args.batch_id,
+            stored_batch["items"],
+            writer,
+        )
         output.write("INBOX removal dry run:\n")
         output.write(f"Eligible for INBOX removal: {eligible_count}\n")
         output.write(f"Skipped until label write-back is applied: {skipped_count}\n")
@@ -82,23 +87,7 @@ def main(
 
 
 def _summarize_candidates(batch_id: str, items: list[dict], writer: MockGmailLabelWriter) -> tuple[int, int, int]:
-    eligible_count = 0
-    skipped_count = 0
-    ineligible_count = 0
-    for item in items:
-        final_labels = list(item.get("final_labels") or [])
-        if item.get("review_state") != "reviewed" or not _is_inbox_removal_label_eligible(final_labels):
-            ineligible_count += 1
-            continue
-        if writer.get_write_status(batch_id, item["message_id"]) != "applied":
-            skipped_count += 1
-            continue
-        eligible_count += 1
-    return eligible_count, skipped_count, ineligible_count
-
-
-def _is_inbox_removal_label_eligible(final_labels: list[str]) -> bool:
-    return "promotions" in final_labels or "spam-low-value" in final_labels
+    return summarize_inbox_removal_candidates(batch_id, items, writer)
 
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@ from src.cli_paths import resolve_optional_path, resolve_path
 from src.gmail_batch_review_store import GmailBatchReviewStore
 from src.gmail_cli_support import default_gmail_client_factory
 from src.gmail_writer import MockGmailLabelWriter
+from src.gmail_automation import failed_write_items, retry_failed_writes
 from src.label_taxonomy import gmail_label_name
 from src.live_gmail_client import GMAIL_MODIFY_SCOPE, SetupError
 
@@ -60,24 +61,13 @@ def main(
             label_name_resolver=gmail_label_name,
         )
 
-        retried_items: list[dict] = []
-        blocked_messages: list[str] = []
-        for item in _failed_items(stored_batch["items"], writer, args.batch_id):
-            try:
-                writer.retry_failed_write(args.batch_id, item)
-                retried_items.append(item)
-            except ValueError as exc:
-                blocked_messages.append(str(exc))
+        result = retry_failed_writes(args.batch_id, stored_batch["items"], writer)
 
-        output.write(f"Retryable failed writes: {len(retried_items)}\n")
-        output.write(
-            f"Retried successfully: {sum(1 for item in retried_items if writer.get_write_status(args.batch_id, item['message_id']) == 'applied')}\n"
-        )
-        output.write(
-            f"Still failed after retry: {sum(1 for item in retried_items if writer.get_write_status(args.batch_id, item['message_id']) == 'failed')}\n"
-        )
-        output.write(f"Blocked by changed labels: {len(blocked_messages)}\n")
-        for message in blocked_messages:
+        output.write(f"Retryable failed writes: {len(result.retried_items)}\n")
+        output.write(f"Retried successfully: {result.retried_successfully_count}\n")
+        output.write(f"Still failed after retry: {result.still_failed_count}\n")
+        output.write(f"Blocked by changed labels: {len(result.blocked_messages)}\n")
+        for message in result.blocked_messages:
             output.write(f"{message}\n")
         return 0
     except SetupError as exc:
@@ -86,12 +76,7 @@ def main(
 
 
 def _failed_items(items: list[dict], writer: MockGmailLabelWriter, batch_id: str) -> list[dict]:
-    failed_items: list[dict] = []
-    for item in items:
-        if writer.get_write_status(batch_id, item["message_id"]) != "failed":
-            continue
-        failed_items.append(item)
-    return failed_items
+    return failed_write_items(items, writer, batch_id)
 
 
 if __name__ == "__main__":
