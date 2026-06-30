@@ -674,54 +674,60 @@
 
     .caption {
       position: absolute;
-      left: 46px;
-      bottom: 38px;
-      max-width: 560px;
-      border-radius: 999px;
-      background: rgba(33,25,18,0.9);
+      max-width: 290px;
+      border-radius: 16px;
+      background: rgba(33,25,18,0.95);
       color: #fff8eb;
-      padding: 11px 16px;
+      padding: 10px 13px;
       font-family: Georgia, "Times New Roman", serif;
-      font-size: 18px;
+      font-size: 15px;
       line-height: 1.25;
       box-shadow: 0 10px 28px rgba(0,0,0,0.18);
-    }
-
-    .caption.top {
-      top: 76px;
-      bottom: auto;
-    }
-
-    .cursor {
-      position: absolute;
-      width: 38px;
-      height: 38px;
-      z-index: 50;
-      filter: drop-shadow(0 3px 4px rgba(0,0,0,0.36));
-      transform-origin: 6px 6px;
-    }
-
-    .click-ring {
-      position: absolute;
-      width: 46px;
-      height: 46px;
-      border: 3px solid rgba(200,134,22,0.82);
-      border-radius: 999px;
-      z-index: 45;
+      z-index: 55;
       opacity: 0;
-      transform: translate(-50%, -50%) scale(0.8);
+      pointer-events: none;
     }
 
-    .click-ring.visible {
-      opacity: 1;
-      transform: translate(-50%, -50%) scale(1);
+    .caption.visible { opacity: 1; }
+
+    .caption::after {
+      content: "";
+      position: absolute;
+      width: 0;
+      height: 0;
+      border: 10px solid transparent;
+    }
+
+    .caption.top::after {
+      left: 22px;
+      bottom: -18px;
+      border-top-color: rgba(33,25,18,0.95);
+    }
+
+    .caption.bottom::after {
+      left: 22px;
+      top: -18px;
+      border-bottom-color: rgba(33,25,18,0.95);
+    }
+
+    .caption.left::after {
+      right: -18px;
+      top: 18px;
+      border-left-color: rgba(33,25,18,0.95);
+    }
+
+    .caption.right::after {
+      left: -18px;
+      top: 18px;
+      border-right-color: rgba(33,25,18,0.95);
     }
 
     .highlight {
       position: absolute;
-      border: 3px solid rgba(200,134,22,0.9);
-      border-radius: 14px;
-      box-shadow: 0 0 0 4px rgba(255,244,221,0.82);
+      border: 3px solid rgba(200,134,22,0.95);
+      border-radius: 16px;
+      background: rgba(255,244,221,0.14);
+      box-shadow: 0 0 0 6px rgba(255,244,221,0.7);
       z-index: 40;
       opacity: 0;
     }
@@ -734,26 +740,22 @@
     <div id="world" class="world"></div>
     <div id="caption" class="caption"></div>
     <div id="highlight" class="highlight"></div>
-    <div id="clickRing" class="click-ring"></div>
-    <svg id="cursor" class="cursor" viewBox="0 0 40 40" aria-hidden="true">
-      <path d="M6 4 L31 24 L19 26 L14 37 L9 35 L14 25 L6 28 Z" fill="#fff" stroke="#111" stroke-width="2" stroke-linejoin="round"/>
-    </svg>
   </div>
 
   <script>
     const iconPath = "../brand/threadwise-app-icon.png";
     const clips = {
-      daily: { duration: 18 },
-      teach: { duration: 20 },
-      unsubscribe: { duration: 16 },
-      roadmap: { duration: 9 },
+      daily: { duration: 5 },
+      teach: { duration: 5 },
+      unsubscribe: { duration: 5 },
+      roadmap: { duration: 4.6 },
     };
     const rows = [
-      ["RoleScout Jobs", "Senior AI product roles this week", "New recommendations based on your profile.", "9:42 AM", "selected"],
+      ["RoleScout Jobs", "Senior AI product roles this week", "New recommendations based on your profile.", "9:42 AM", "selected", "teach-job-row"],
       ["Alex Rivera", "Quick note on the portfolio review", "I left comments on the demo flow.", "9:31 AM", ""],
       ["Cloud Billing", "Monthly invoice available", "Your account statement is ready.", "8:58 AM", "dimmed"],
       ["Northstar Weekly", "Five essays worth reading", "A concise roundup for product builders.", "8:21 AM", "dimmed"],
-      ["Daily Deals Outlet", "Final hours: 40 percent off workspace gear", "Subscriber-only code expires tonight.", "7:55 AM", "dimmed"],
+      ["Daily Deals Outlet", "Final hours: 40 percent off workspace gear", "Subscriber-only code expires tonight.", "7:55 AM", "dimmed", "unsubscribe-row"],
       ["Repo Security", "Security alert resolved", "Dependency Bot closed one vulnerability.", "7:18 AM", "dimmed"],
       ["City Rail", "Your trip receipt", "Booking confirmation and travel details.", "6:44 AM", "dimmed"],
       ["SaaS Webinar Club", "Tomorrow: automate your inbox workshop", "Reserve your place for the live session.", "Yesterday", "dimmed"],
@@ -783,7 +785,7 @@
     function rowHtml(row, i, forceSelected = false) {
       const selected = forceSelected || row[4] === "selected";
       return `
-        <div class="email-row ${selected ? "selected" : row[4]}">
+        <div class="email-row ${selected ? "selected" : row[4]}"${row[5] ? ` data-demo-target="${row[5]}"` : ""}>
           <div class="box"></div>
           <div class="star">☆</div>
           <div class="sender">${row[0]}</div>
@@ -857,13 +859,13 @@
 
     function selectedEmailCard(status = "Promotions", handling = "Kept visible") {
       return `
-        <section class="card tint">
+        <section class="card tint" data-demo-target="teach-selected-card">
           <div class="eyebrow">Selected Email</div>
           <div class="tw-subject">Senior AI product roles this week</div>
           <div class="tw-sender">RoleScout Jobs &lt;jobs@example.test&gt;</div>
           <div class="pill-row">
             <span class="pill">${status}</span>
-            <span class="pill ${handling === "Needs attention" ? "warn" : "teal"}">${handling}</span>
+            <span class="pill ${handling === "Needs attention" || handling === "Review needed" ? "warn" : "teal"}">${handling}</span>
           </div>
           <div class="note-box">
             <div class="eyebrow">Why</div>
@@ -875,20 +877,20 @@
 
     function todayCard() {
       return `
-        <section class="card">
+        <section class="card" data-demo-target="today-summary-card">
           <div class="eyebrow">Today</div>
           <div class="metric-grid">
-            <div class="metric"><strong>24</strong><span>processed</span></div>
-            <div class="metric"><strong>14</strong><span>auto-handled</span></div>
-            <div class="metric"><strong>4</strong><span>review needed</span></div>
-            <div class="metric"><strong>3</strong><span>unsubscribe</span></div>
+            <div class="metric" data-demo-target="processed-stat"><strong>24</strong><span>processed</span></div>
+            <div class="metric" data-demo-target="auto-handled-stat"><strong>14</strong><span>auto-handled</span></div>
+            <div class="metric" data-demo-target="needs-attention-stat"><strong>4</strong><span>review needed</span></div>
+            <div class="metric" data-demo-target="unsubscribe-stat"><strong>3</strong><span>unsubscribe</span></div>
           </div>
-          <div class="note-box">
+          <div class="note-box" data-demo-target="today-explainer">
             <strong>Viewing · Review needed</strong><br>
             Uncertain mail stays visible until a human decides.
           </div>
           <div class="buttons">
-            <button class="button primary">Open daily dashboard</button>
+            <button class="button primary" data-demo-target="open-dashboard-button">Open daily dashboard</button>
             <button class="button">Review unsubscribe candidates</button>
           </div>
         </section>
@@ -897,8 +899,8 @@
 
     function dailyDashboard() {
       return `
-        <div class="dashboard">
-          <div class="dash-head">
+        <div class="dashboard" data-demo-target="daily-dashboard-page">
+          <div class="dash-head" data-demo-target="daily-dashboard-header">
             <img src="${iconPath}" alt="">
             <div>
               <div class="eyebrow">Daily Dashboard</div>
@@ -936,26 +938,25 @@
 
     function teachPanel(t) {
       const text = "RoleScout job alerts should be work.";
-      const typeProgress = phase(t, 7.0, 12.0);
+      const typeProgress = phase(t, 1.0, 2.1);
       const typed = text.slice(0, Math.floor(text.length * typeProgress));
-      const caretVisible = t >= 4.5 && t < 12.2 && Math.floor(t * 2) % 2 === 0;
-      const previewVisible = t >= 12.4;
-      const successVisible = t >= 17.0;
+      const caretVisible = t >= 0.9 && t < 2.2 && Math.floor(t * 4) % 2 === 0;
+      const previewVisible = t >= 2.7;
       return `
         ${selectedEmailCard("Promotions", "Kept visible")}
-        <section class="card">
+        <section class="card" data-demo-target="teach-panel">
           <div class="eyebrow">Correct / Teach</div>
           <div class="pill-row">
             <span class="pill">Promotions</span>
             <span class="pill teal">→ EA/Work</span>
           </div>
-          <div class="field">${typed}<span class="caret ${caretVisible ? "visible" : ""}"></span></div>
+          <div class="field" data-demo-target="teach-text-field">${typed}<span class="caret ${caretVisible ? "visible" : ""}"></span></div>
           <div class="buttons">
-            <button class="button primary">Preview lesson</button>
+            <button class="button primary" data-demo-target="preview-lesson-button">Preview lesson</button>
             <button class="button">Clear</button>
           </div>
           ${previewVisible ? `
-            <div class="impact">
+            <div class="impact" data-demo-target="impact-preview">
               <div class="impact-title">I found 4 matching emails before changing anything.</div>
               <div class="pill-row">
                 <span class="pill teal">Current email → EA/Work</span>
@@ -969,7 +970,6 @@
               </div>
             </div>
           ` : ""}
-          ${successVisible ? `<div class="impact" style="background:var(--teal-soft);color:var(--teal);font-weight:700;">Saved as a future lesson. No existing mail was rewritten.</div>` : ""}
         </section>
       `;
     }
@@ -977,18 +977,18 @@
     function unsubscribePanel() {
       return `
         ${selectedEmailCard("Promotions", "Kept visible")}
-        <section class="card">
+        <section class="card" data-demo-target="unsubscribe-summary-card">
           <div class="eyebrow">Today</div>
           <div class="metric-grid">
             <div class="metric"><strong>24</strong><span>processed</span></div>
-            <div class="metric"><strong>3</strong><span>unsubscribe candidates</span></div>
+            <div class="metric" data-demo-target="unsubscribe-count-stat"><strong>3</strong><span>unsubscribe candidates</span></div>
           </div>
-          <div class="note-box">
+          <div class="note-box" data-demo-target="unsubscribe-explainer">
             <strong>Daily Deals Outlet</strong><br>
             Unsubscribe candidate found. Nothing has been executed.
           </div>
           <div class="buttons">
-            <button class="button primary">Review unsubscribe candidates</button>
+            <button class="button primary" data-demo-target="review-unsubscribe-button">Review unsubscribe candidates</button>
           </div>
         </section>
       `;
@@ -996,8 +996,8 @@
 
     function unsubscribeReview(focus = false) {
       return `
-        <div class="review-page">
-          <div class="dash-head">
+        <div class="review-page" data-demo-target="unsubscribe-review-page">
+          <div class="dash-head" data-demo-target="unsubscribe-review-header">
             <img src="${iconPath}" alt="">
             <div>
               <div class="eyebrow">Unsubscribe Review</div>
@@ -1011,7 +1011,7 @@
             <span class="pill">All candidates: 4</span>
           </div>
           <div class="review-grid">
-            <article class="review-card ${focus ? "focus" : ""}">
+            <article class="review-card ${focus ? "focus" : ""}" data-demo-target="unsubscribe-review-card">
               <div class="eyebrow">Unsubscribe</div>
               <h2 style="margin:8px 0 14px;font-size:27px;">Daily Deals Outlet</h2>
               <p><strong>Sender:</strong> deals@example.test</p>
@@ -1041,17 +1041,17 @@
     }
 
     function roadmap(t) {
-      const g = t >= 0.4;
-      const p = t >= 3.0;
-      const o = t >= 5.8;
+      const g = t >= 0.35;
+      const p = t >= 1.45;
+      const o = t >= 2.55;
       return `
         <div class="roadmap">
           <div>
             <div class="eyebrow">Roadmap / Next</div>
-            <h1>Gmail-first today. Inbox-agnostic later.</h1>
+            <h1 data-demo-target="roadmap-title">Gmail-first today. Inbox-agnostic later.</h1>
           </div>
           <div class="provider-row">
-            <div class="provider gmail ${g ? "active" : ""}">
+            <div class="provider gmail ${g ? "active" : ""}" data-demo-target="roadmap-gmail-card">
               <div class="provider-icon">M</div>
               <div>
                 <div class="eyebrow">Current Demo</div>
@@ -1059,7 +1059,7 @@
                 <p>Shipped demo surface with synthetic data.</p>
               </div>
             </div>
-            <div class="provider proton ${p ? "active" : ""}">
+            <div class="provider proton ${p ? "active" : ""}" data-demo-target="roadmap-proton-card">
               <div class="provider-icon">P</div>
               <div>
                 <div class="eyebrow">Next</div>
@@ -1067,7 +1067,7 @@
                 <p>Bring the same supervised loop to the next inbox.</p>
               </div>
             </div>
-            <div class="provider outlook ${o ? "active" : ""}">
+            <div class="provider outlook ${o ? "active" : ""}" data-demo-target="roadmap-outlook-card">
               <div class="provider-icon">O</div>
               <div>
                 <div class="eyebrow">Later</div>
@@ -1080,132 +1080,166 @@
       `;
     }
 
-    function setCursor(x, y, show = true) {
-      const cursor = document.getElementById("cursor");
-      cursor.style.display = show ? "block" : "none";
-      cursor.style.left = `${x}px`;
-      cursor.style.top = `${y}px`;
+    function clampRect(rect) {
+      const width = 290;
+      const height = 56;
+      return {
+        width,
+        height,
+        left: clamp(rect.left, 20, 1280 - width - 20),
+        top: clamp(rect.top, 20, 800 - height - 20),
+      };
     }
 
-    function setCaption(text, top = false) {
+    function getTargetRect(target) {
+      if (!target) {
+        return null;
+      }
+      const node = typeof target === "string" ? document.querySelector(`[data-demo-target="${target}"]`) : target;
+      if (!node) {
+        return null;
+      }
+      const rect = node.getBoundingClientRect();
+      return {
+        left: rect.left,
+        top: rect.top,
+        width: rect.width,
+        height: rect.height,
+        right: rect.right,
+        bottom: rect.bottom,
+      };
+    }
+
+    function setCallout(text, target, placement = "top") {
       const caption = document.getElementById("caption");
       caption.textContent = text;
-      caption.className = `caption ${top ? "top" : ""}`;
-      caption.style.display = text ? "block" : "none";
+      if (!text) {
+        caption.className = "caption";
+        caption.style.display = "none";
+        return;
+      }
+      caption.style.display = "block";
+      const rect = getTargetRect(target);
+      const boxWidth = text.length > 30 ? 290 : 250;
+      const boxHeight = text.length > 30 ? 58 : 50;
+      let left = 32;
+      let top = 32;
+      let side = placement;
+      if (rect) {
+        if (placement === "top") {
+          left = rect.left;
+          top = rect.top - boxHeight - 16;
+          side = "top";
+        } else if (placement === "bottom") {
+          left = rect.left;
+          top = rect.bottom + 16;
+          side = "bottom";
+        } else if (placement === "left") {
+          left = rect.left - boxWidth - 16;
+          top = rect.top + rect.height / 2 - boxHeight / 2;
+          side = "left";
+        } else {
+          left = rect.right + 16;
+          top = rect.top + rect.height / 2 - boxHeight / 2;
+          side = "right";
+        }
+      }
+      const bounded = clampRect({ left, top });
+      caption.className = `caption ${side} visible`;
+      caption.style.left = `${bounded.left}px`;
+      caption.style.top = `${bounded.top}px`;
+      caption.style.width = `${boxWidth}px`;
     }
 
-    function setHighlight(rect, visible = false) {
+    function setHighlight(target, visible = false) {
       const node = document.getElementById("highlight");
       if (!visible) {
         node.classList.remove("visible");
         return;
       }
+      const rect = getTargetRect(target);
+      if (!rect) {
+        node.classList.remove("visible");
+        return;
+      }
       Object.assign(node.style, {
-        left: `${rect.x}px`,
-        top: `${rect.y}px`,
-        width: `${rect.w}px`,
-        height: `${rect.h}px`,
+        left: `${rect.left - 6}px`,
+        top: `${rect.top - 6}px`,
+        width: `${rect.width + 12}px`,
+        height: `${rect.height + 12}px`,
       });
       node.classList.add("visible");
     }
 
-    function setClick(x, y, visible = false) {
-      const node = document.getElementById("clickRing");
-      Object.assign(node.style, { left: `${x}px`, top: `${y}px` });
-      node.classList.toggle("visible", visible);
+    function clearFocus() {
+      setCallout("", null);
+      setHighlight(null, false);
     }
 
     function daily(t) {
-      const zoom = t < 7.4 ? 1 + 0.18 * phase(t, 3.0, 7.0) : 1;
-      const useDashboard = t >= 8.2;
       const world = document.getElementById("world");
-      world.style.transformOrigin = "76% 54%";
-      world.style.transform = `scale(${zoom})`;
+      const useDashboard = t >= 3.6;
+      world.style.transform = "none";
       world.innerHTML = useDashboard
         ? dailyDashboard()
-        : gmailShell(`${selectedEmailCard("EA/Work", "Needs attention")}${todayCard()}`, 0);
-      if (t < 3) {
-        setCaption("Threadwise runs inside Gmail, using synthetic demo mail.");
-        setCursor(246, 236);
-      } else if (t < 7.4) {
-        setCaption("Daily briefing: categorized, handled, and review-needed mail in one view.");
-        const p = phase(t, 3, 7);
-        setCursor(lerp(246, 1038, p), lerp(236, 530, p));
-        setHighlight({ x: 908, y: 429, w: 322, h: 207 }, t > 4.2);
-      } else if (t < 11.2) {
-        setCaption("Low-risk cleanup is bounded; uncertain mail stays visible.");
-        const p = phase(t, 7.4, 10.8);
-        setCursor(lerp(1038, 594, p), lerp(530, 226, p));
-        setHighlight({ x: 196, y: 226, w: 890, h: 126 }, true);
+        : gmailShell(`${selectedEmailCard("EA/Work", "Review needed")}${todayCard()}`, 0);
+      if (t < 0.7) {
+        setCallout("Daily run completed.", "today-summary-card", "right");
+        setHighlight("today-summary-card", true);
+      } else if (t < 1.5) {
+        setCallout("Processed / auto-handled / review / unsubscribe.", "needs-attention-stat", "top");
+        setHighlight("needs-attention-stat", true);
+      } else if (t < 2.7) {
+        setCallout("Uncertain mail stays visible.", "today-explainer", "right");
+        setHighlight("today-explainer", true);
+      } else if (t < 3.6) {
+        setCallout("Open the daily dashboard.", "open-dashboard-button", "top");
+        setHighlight("open-dashboard-button", true);
       } else {
-        setCaption("Current demo scope: Gmail-first, supervised, synthetic data.");
-        setCursor(950, 242);
-        setHighlight({ x: 184, y: 392, w: 906, h: 204 }, true);
+        setCallout("Open the daily dashboard.", "daily-dashboard-header", "bottom");
+        setHighlight("daily-dashboard-header", true);
       }
-      setClick(1024, 592, t > 6.8 && t < 7.4);
     }
 
     function teach(t) {
       const world = document.getElementById("world");
-      const zoom = t < 6.8 ? 1 : t < 12.4 ? 1 + 0.12 * phase(t, 6.8, 8.0) : 1 + 0.12 * phase(t, 12.4, 13.5);
-      world.style.transformOrigin = t < 12.4 ? "84% 72%" : "84% 68%";
-      world.style.transform = `scale(${zoom})`;
+      world.style.transform = "none";
       world.innerHTML = gmailShell(teachPanel(t), 0);
-      if (t < 3) {
-        setCaption("Threadwise explains the selected email decision.");
-        const p = phase(t, 0, 2.5);
-        setCursor(lerp(160, 283, p), lerp(176, 183, p));
-        setClick(282, 184, t > 2.25 && t < 2.85);
-      } else if (t < 7) {
-        setCaption("Corrections happen in context, next to the email.");
-        const p = phase(t, 3, 6.2);
-        setCursor(lerp(282, 990, p), lerp(184, 579, p));
-        setClick(990, 579, t > 6.2 && t < 6.9);
-        setHighlight({ x: 918, y: 540, w: 294, h: 72 }, t > 5.2);
-      } else if (t < 12.2) {
-        setCaption("The user teaches the agent in plain language.");
-        setCursor(1006, 580);
-        setHighlight({ x: 918, y: 540, w: 294, h: 72 }, true);
-      } else if (t < 16.5) {
-        setCaption("Broader changes require approval before they apply.");
-        const p = phase(t, 12.2, 13.1);
-        setCursor(lerp(1006, 960, p), lerp(580, 654, p));
-        setClick(960, 654, t > 13.0 && t < 13.45);
-        setHighlight({ x: 912, y: 610, w: 304, h: 150 }, true);
+      if (t < 0.7) {
+        setCallout("A job email is selected.", "teach-job-row", "right");
+        setHighlight("teach-job-row", true);
+      } else if (t < 1.6) {
+        setCallout("Threadwise explains the decision.", "teach-selected-card", "left");
+        setHighlight("teach-selected-card", true);
+      } else if (t < 2.8) {
+        setCallout("Teach: Promotions → EA/Work.", "teach-panel", "left");
+        setHighlight("teach-panel", true);
       } else {
-        setCaption("Human choice controls whether learning stays future-only or updates matches.");
-        const p = phase(t, 16.5, 17.1);
-        setCursor(lerp(960, 954, p), lerp(654, 722, p));
-        setClick(954, 722, t > 17.05 && t < 17.5);
-        setHighlight({ x: 912, y: 696, w: 304, h: 56 }, true);
+        setCallout("Preview first. Nothing changes blindly.", "preview-lesson-button", "top");
+        setHighlight("impact-preview", true);
       }
     }
 
     function unsubscribe(t) {
       const world = document.getElementById("world");
-      const useReview = t >= 5.2;
-      world.style.transformOrigin = "84% 65%";
-      world.style.transform = useReview ? "scale(1)" : `scale(${1 + 0.12 * phase(t, 2.5, 4.8)})`;
-      world.innerHTML = useReview ? unsubscribeReview(t >= 9.5) : gmailShell(unsubscribePanel(), 4);
-      if (t < 4.8) {
-        setCaption("Unsubscribe candidates are found during the daily run.");
-        const p = phase(t, 1.6, 4.4);
-        setCursor(lerp(640, 1026, p), lerp(258, 634, p));
-        setHighlight({ x: 912, y: 511, w: 304, h: 150 }, t > 2.4);
-        setClick(1026, 634, t > 4.4 && t < 5.0);
-      } else if (t < 9.4) {
-        setCaption("Cleanup stays in a review queue.");
-        const p = phase(t, 5.2, 8.8);
-        setCursor(lerp(912, 226, p), lerp(684, 434, p));
-        setHighlight({ x: 150, y: 336, w: 980, h: 284 }, true);
-      } else if (t < 13.5) {
-        setCaption("Approval is explicit; unsupported cases remain manual.");
-        setCursor(314, 594);
-        setHighlight({ x: 109, y: 239, w: 360, h: 252 }, true);
+      const useReview = t >= 3.1;
+      world.style.transform = "none";
+      world.innerHTML = useReview ? unsubscribeReview(true) : gmailShell(unsubscribePanel(), 4);
+      if (t < 0.7) {
+        setCallout("Daily Deals Outlet.", "unsubscribe-row", "right");
+        setHighlight("unsubscribe-row", true);
+      } else if (t < 1.6) {
+        setCallout("3 unsubscribe candidates.", "unsubscribe-count-stat", "top");
+        setHighlight("unsubscribe-count-stat", true);
+      } else if (t < 2.4) {
+        setCallout("Nothing has been executed.", "unsubscribe-explainer", "right");
+        setHighlight("unsubscribe-explainer", true);
+      } else if (t < 3.1) {
+        setCallout("Review unsubscribe candidates.", "review-unsubscribe-button", "top");
+        setHighlight("review-unsubscribe-button", true);
       } else {
-        setCaption("No autonomous unsubscribe in the public demo.");
-        setCursor(318, 594);
-        setHighlight({ x: 109, y: 239, w: 360, h: 252 }, true);
+        setCallout("Approval is explicit.", "unsubscribe-review-card", "left");
+        setHighlight("unsubscribe-review-card", true);
       }
     }
 
@@ -1213,15 +1247,17 @@
       const world = document.getElementById("world");
       world.style.transform = "none";
       world.innerHTML = roadmap(t);
-      setCursor(0, 0, false);
-      setHighlight(null, false);
-      setClick(0, 0, false);
-      if (t < 3) {
-        setCaption("Roadmap: Gmail-first today.", true);
-      } else if (t < 6) {
-        setCaption("Next: extend the same supervised loop beyond Gmail.", true);
+      if (t < 1.0) {
+        setCallout("Current demo: Gmail.", "roadmap-gmail-card", "top");
+        setHighlight("roadmap-gmail-card", true);
+      } else if (t < 2.1) {
+        setCallout("Next: same supervised loop.", "roadmap-proton-card", "top");
+        setHighlight("roadmap-proton-card", true);
+      } else if (t < 3.2) {
+        setCallout("Later: inbox-agnostic.", "roadmap-outlook-card", "top");
+        setHighlight("roadmap-outlook-card", true);
       } else {
-        setCaption("Later providers are direction, not shipped scope.", true);
+        setCallout("Gmail-first today. Inbox-agnostic later.", "roadmap-title", "bottom");
       }
     }
 
@@ -1229,9 +1265,7 @@
       currentClip = clipName || "daily";
       const duration = clips[currentClip]?.duration || 18;
       t = clamp(Number(t) || 0, 0, duration);
-      setHighlight(null, false);
-      setClick(0, 0, false);
-      document.getElementById("cursor").style.display = "block";
+      clearFocus();
       if (currentClip === "daily") daily(t);
       if (currentClip === "teach") teach(t);
       if (currentClip === "unsubscribe") unsubscribe(t);

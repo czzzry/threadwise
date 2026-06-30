@@ -16,31 +16,31 @@ const includeMp4 = process.argv.includes("--include-mp4");
 const clips = [
   {
     id: "daily",
-    duration: 18,
+    duration: 5,
     gif: "threadwise-daily-briefing.gif",
     mp4: "threadwise-daily-briefing.mp4",
-    screenshot: { file: "threadwise-daily-dashboard.png", at: 13.2 },
+    screenshot: { file: "threadwise-daily-dashboard.png", at: 4.2 },
   },
   {
     id: "teach",
-    duration: 20,
+    duration: 5,
     gif: "threadwise-teach-safely.gif",
     mp4: "threadwise-teach-safely.mp4",
-    screenshot: { file: "threadwise-teach-preview.png", at: 14.2 },
+    screenshot: { file: "threadwise-teach-preview.png", at: 4.2 },
   },
   {
     id: "unsubscribe",
-    duration: 16,
+    duration: 5,
     gif: "threadwise-unsubscribe-approval.gif",
     mp4: "threadwise-unsubscribe-approval.mp4",
-    screenshot: { file: "threadwise-unsubscribe-review.png", at: 10.8 },
+    screenshot: { file: "threadwise-unsubscribe-review.png", at: 4.2 },
   },
   {
     id: "roadmap",
-    duration: 9,
+    duration: 4.6,
     gif: "threadwise-roadmap-next.gif",
     mp4: "threadwise-roadmap-next.mp4",
-    screenshot: { file: "threadwise-roadmap-next.png", at: 6.5 },
+    screenshot: { file: "threadwise-roadmap-next.png", at: 4.0 },
   },
 ];
 
@@ -216,7 +216,7 @@ async function writeCaptureNotes() {
     "",
     "Review notes:",
     "",
-    "- first pass intentionally uses a controlled Gmail-like synthetic stage so cursor movement, zooms, captions, and typing/caret visibility are deterministic",
+    "- first pass intentionally uses a controlled Gmail-like synthetic stage so highlight timing, anchored callouts, captions, and typing/caret visibility are deterministic",
     "- MP4 generation is gated behind `--include-mp4` so the founder can approve the GIF direction before long-form exports are produced",
     "- final README placement can choose GIF or MP4 depending on GitHub rendering and file size",
   );

@@ -33,6 +33,6 @@ Safety:
 
 Review notes:
 
-- first pass intentionally uses a controlled Gmail-like synthetic stage so cursor movement, zooms, captions, and typing/caret visibility are deterministic
+- first pass intentionally uses a controlled Gmail-like synthetic stage so highlight timing, anchored callouts, captions, and typing/caret visibility are deterministic
 - MP4 generation is gated behind `--include-mp4` so the founder can approve the GIF direction before long-form exports are produced
 - final README placement can choose GIF or MP4 depending on GitHub rendering and file size

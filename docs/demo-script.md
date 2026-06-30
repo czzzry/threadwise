@@ -12,10 +12,10 @@ The approved visual direction is warm ink-and-paper Threadwise inside the real G
 
 | Asset | Target file | Length | Purpose |
 | --- | --- | ---: | --- |
-| Daily briefing/report | `docs/assets/threadwise-daily-briefing.gif` | 10-20s | Show categorized Gmail and what Threadwise handled today. |
-| Teach safely | `docs/assets/threadwise-teach-safely.gif` | 10-20s | Show selected email context, correction, impact preview, and explicit human choice. |
-| Unsubscribe with approval | `docs/assets/threadwise-unsubscribe-approval.gif` | 10-20s | Show unsubscribe candidates and approval/review behavior without implying autonomy. |
-| Roadmap micro-clip | `docs/assets/threadwise-roadmap-next.gif` | 6-10s | Optional. Show future inbox expansion, labeled as roadmap/next. |
+| Daily briefing/report | `docs/assets/threadwise-daily-briefing.gif` | 4-6s | Show categorized Gmail and what Threadwise handled today. |
+| Teach safely | `docs/assets/threadwise-teach-safely.gif` | 4-6s | Show selected email context, correction, impact preview, and explicit human choice. |
+| Unsubscribe with approval | `docs/assets/threadwise-unsubscribe-approval.gif` | 4-6s | Show unsubscribe candidates and approval/review behavior without implying autonomy. |
+| Roadmap micro-clip | `docs/assets/threadwise-roadmap-next.gif` | 4-6s | Optional. Show future inbox expansion, labeled as roadmap/next. |
 
 Recommended static screenshots after GIF capture:
 
@@ -31,8 +31,8 @@ Recommended static screenshots after GIF capture:
 - Source of truth: use the approved final UI surfaces. If the stage file or capture route drifts from the live design, fix that before producing final assets.
 - Overlay style: short warm ink-and-paper captions, bottom-left or top-left, never covering selected-email text or primary actions.
 - Caption text: use the exact captions in this document unless the UI implementation makes a small wording adjustment necessary.
-- Motion: slow cursor movement, one decision per clip, no frantic scrolling.
-- Cursor visibility: keep the pointer large/visible enough for GIF playback, and move it deliberately between the email, Threadwise controls, text fields, and approval choices.
+- Motion: short highlight transitions, one decision per clip, no frantic scrolling.
+- Cursor visibility: avoid a large cursor overlay. If a click must be shown, use a small clean pointer or omit it.
 - Typing visibility: when text is entered, the insertion caret should be visible before typing begins, and typed text should appear slowly enough to follow in a silent GIF.
 - Text-entry rhythm: for teach/correction text, prefer a short scripted sentence typed at roughly 8-14 characters per second instead of pasting instantly.
 - Audio: none required; captions must stand alone.
@@ -54,7 +54,7 @@ If any clip reveals a layout mismatch, stop and fix the source surface before co
 
 ## Flow 1: Daily Briefing / Report
 
-Goal: A recruiter understands in under 20 seconds that Threadwise reads a Gmail inbox, categorizes mail, handles low-risk noise, and summarizes what happened today.
+Goal: A recruiter understands in under 6 seconds that Threadwise reads a Gmail inbox, categorizes mail, handles low-risk noise, and summarizes what happened today.
 
 Starting state:
 
@@ -66,10 +66,10 @@ Timeline:
 
 | Time | Action | Visible state | Caption |
 | --- | --- | --- | --- |
-| 0-3s | Open on Gmail inbox with Threadwise sidebar already loaded. | Synthetic inbox rows show a mix of work, receipts, newsletter, promotions, and low-value mail. | `Threadwise runs inside Gmail, using synthetic demo mail.` |
-| 3-7s | Hover or briefly point at the sidebar `Today` summary. | Counts are visible: processed, auto-handled, unresolved, unsubscribe candidates. | `Daily briefing: what arrived, what was labeled, and what still needs review.` |
-| 7-13s | Click the daily dashboard/report handoff. | Dashboard/report shows category breakdown and a short list of unresolved items. | `Low-risk categories are handled; uncertain items stay visible.` |
-| 13-18s | Pause on the report summary. | Gmail-first scope and safety language remain visible or implied by captions. | `Current demo scope: Gmail-first, supervised, synthetic data.` |
+| 0-1s | Open on Gmail inbox with Threadwise sidebar already loaded. | Synthetic inbox rows show a mix of work, receipts, newsletter, promotions, and low-value mail. | `Threadwise runs inside Gmail, using synthetic demo mail.` |
+| 1-2s | Highlight the sidebar summary. | Counts are visible: processed, auto-handled, review needed, unsubscribe candidates. | `Daily run completed.` |
+| 2-3s | Point to the uncertain-mail stat and explainer. | The review-needed count stays visible. | `Uncertain mail stays visible.` |
+| 3-5s | Highlight the dashboard button, then cut to the dashboard view. | Dashboard/report shows category breakdown and a short list of unresolved items. | `Open the daily dashboard.` |
 
 Must show:
 
@@ -98,11 +98,10 @@ Timeline:
 
 | Time | Action | Visible state | Caption |
 | --- | --- | --- | --- |
-| 0-3s | Select or start on the RoleScout Jobs email. | Sidebar shows sender, subject, current label, and short rationale. | `Threadwise explains the selected email decision.` |
-| 3-7s | Move the cursor deliberately into the `Correct / Teach` area and click the text box. | The insertion caret is visible in the teach note field before typing starts. | `Corrections happen in context, next to the email.` |
-| 7-12s | Type a short teaching note slowly enough to read. | Text appears in the box, e.g. `RoleScout job alerts should be work.` | `The user teaches the agent in plain language.` |
-| 12-16s | Click preview and show broader-impact preview. | Preview says the learned rule affects matching RoleScout job recommendation emails. | `Broader changes require approval before they apply.` |
-| 16-20s | Choose the safest visible option, preferably `Use for future only`. | Acknowledgment confirms the rule is saved for future mail without rewriting existing messages. | `Human choice controls whether learning stays future-only or updates matches.` |
+| 0-1s | Highlight the selected job email row. | The selected row is visible in the inbox list. | `A job email is selected.` |
+| 1-2s | Highlight the selected email card. | Sidebar shows sender, subject, current label, and short rationale. | `Threadwise explains the decision.` |
+| 2-3s | Highlight the `Correct / Teach` area. | The correction path is obvious next to the selected email. | `Teach: Promotions → EA/Work.` |
+| 3-5s | Highlight preview. | Preview says the learned rule affects matching RoleScout job recommendation emails. | `Preview first. Nothing changes blindly.` |
 
 Preferred visible copy:
 
@@ -141,10 +140,10 @@ Timeline:
 
 | Time | Action | Visible state | Caption |
 | --- | --- | --- | --- |
-| 0-4s | Open on the daily summary showing unsubscribe candidates. | `3 unsubscribe` or equivalent count is visible. | `Threadwise finds cleanup opportunities during the daily run.` |
-| 4-9s | Open the unsubscribe review/handoff surface. | Candidates are grouped by sender/list with category and rationale. | `Unsubscribe stays in a review queue.` |
-| 9-14s | Select one safe synthetic candidate, such as `Daily Deals Outlet`. | Approval UI shows candidate details and supported/manual status. | `The user chooses what to approve; unsupported cases stay manual.` |
-| 14-18s | Stop before final external execution, or show a clearly simulated/test-account approval state only. | Audit/review state is visible without real-world unsubscribe execution. | `No autonomous unsubscribe in the public demo.` |
+| 0-1s | Highlight `Daily Deals Outlet` in the inbox list. | The synthetic promo row is selected. | `Daily Deals Outlet.` |
+| 1-2s | Highlight the unsubscribe count. | `3 unsubscribe candidates` is visible. | `3 unsubscribe candidates.` |
+| 2-3s | Highlight the explanatory note. | Nothing has been executed yet. | `Nothing has been executed.` |
+| 3-5s | Highlight `Review unsubscribe candidates`. | The review queue is the next step. | `Review unsubscribe candidates.` |
 
 Must show:
 
@@ -171,9 +170,10 @@ Timeline:
 
 | Time | Action | Visible state | Caption |
 | --- | --- | --- | --- |
-| 0-3s | Show Gmail as the current shipped demo surface. | Gmail card or icon is marked `Current demo`. | `Roadmap: Gmail-first today.` |
-| 3-6s | Animate or reveal ProtonMail as next provider. | ProtonMail is marked `Read-only path exists / next product expansion`. | `Next: bring the same supervised loop to ProtonMail.` |
-| 6-9s | Reveal Outlook/Hotmail as later direction. | Outlook/Hotmail is marked `Later`. | `Later: inbox-agnostic, still human-approved.` |
+| 0-1s | Highlight Gmail as the current shipped demo surface. | Gmail card is active. | `Current demo: Gmail.` |
+| 1-2s | Highlight ProtonMail as next provider. | ProtonMail card is active. | `Next: same supervised loop.` |
+| 2-3s | Highlight Outlook/Hotmail as later direction. | Outlook/Hotmail card is active. | `Later: inbox-agnostic.` |
+| 3-5s | Hold on the three-card view. | All three cards remain visible. | `Gmail-first today. Inbox-agnostic later.` |
 
 Do not claim:
 
@@ -189,7 +189,7 @@ Target daily summary for capture:
 
 - `24 processed`
 - `14 auto-handled`
-- `4 need attention`
+- `4 review needed`
 - `3 unsubscribe candidates`
 - `1 unsupported/manual unsubscribe follow-up`
 
@@ -234,20 +234,20 @@ Use these as overlay captions or README captions.
 
 - Daily briefing:
   - `Threadwise runs inside Gmail, using synthetic demo mail.`
-  - `Daily briefing: categorized, handled, and unresolved mail in one view.`
-  - `Low-risk cleanup is bounded; uncertain mail stays visible.`
+- `Daily run completed.`
+- `Uncertain mail stays visible.`
 - Teach safely:
-  - `Correct the agent next to the selected email.`
-  - `Threadwise previews broader impact before changing matching mail.`
-  - `The human chooses: future-only, apply to matches, or keep discussing.`
+- `A job email is selected.`
+- `Threadwise explains the decision.`
+- `Preview first. Nothing changes blindly.`
 - Unsubscribe:
-  - `Unsubscribe candidates are found during the daily run.`
-  - `Cleanup stays in a review queue.`
-  - `Approval is explicit; unsupported cases remain manual.`
+- `Daily Deals Outlet.`
+- `Nothing has been executed.`
+- `Review unsubscribe candidates.`
 - Roadmap:
-  - `Roadmap: Gmail-first today.`
-  - `Next: extend the same supervised loop beyond Gmail.`
-  - `Later providers are direction, not shipped scope.`
+- `Current demo: Gmail.`
+- `Next: same supervised loop.`
+- `Later: inbox-agnostic.`
 
 ## Capture Safety Checklist
 
