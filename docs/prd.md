@@ -1,13 +1,23 @@
 # PRD
 
-Status: Current bounded-slice PRD
+Status: Completed bounded-slice PRD
 Current as of: 2026-06-30
 Builds on: `docs/mvp-plus-one-portfolio-demo-alignment.md`, `docs/portfolio.md`, `docs/checkpoints/current-operating-model-2026-06-22.md`
 Supersedes as current planning focus: `docs/archive/prd-gmail-inbox-companion-release-completed-2026-06-30.md`
 Release target: recruiter-ready Threadwise portfolio demo
 Product target after this: product expansion planning, including inbox-agnostic / multi-inbox direction
 
-This PRD describes the MVP+1 portfolio-demo release slice.
+This PRD describes the completed MVP+1 portfolio-demo release slice. The final closeout is recorded in `docs/issues/073-close-mvp-plus-one-public-demo-milestone.md` and `docs/handoff/2026-06-30-mvp-plus-one-public-demo-closeout.md`.
+
+## Completion Summary
+
+MVP+1 shipped the recruiter-facing public package:
+
+- README opens with the Threadwise brand, inline demo GIF, and synthetic-data disclaimer.
+- The selected public demo asset is `docs/assets/threadwise-recruiter-story.gif`.
+- `docs/portfolio.md` explains the product story and architecture in recruiter-readable language.
+- Roadmap content is labeled as future direction, not shipped multi-inbox support.
+- MP4 generation was deferred because the README uses an inline GIF and no external video surface is required yet.
 
 ## Problem Statement
 

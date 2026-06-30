@@ -1,11 +1,23 @@
 # Threadwise Portfolio Overview
 
 Status: Public portfolio framing
-Current as of: 2026-06-29
+Current as of: 2026-06-30
 
 ## One-Line Summary
 
 Threadwise is a local-first AI inbox triage prototype that combines rules, model-assisted classification, inbox-native correction, and explicit human approval before broader provider-side action.
+
+## Recruiter Demo
+
+![Threadwise recruiter demo](assets/threadwise-recruiter-story.gif)
+
+The public demo uses synthetic Gmail-style data. It shows the core product loop without requiring setup:
+
+- Threadwise classifies and explains a selected Gmail message.
+- The user teaches a correction in plain English.
+- The agent previews broader impact before changing matching emails.
+- Unsubscribe cleanup waits for explicit confirmation.
+- The final roadmap frame shows inbox-agnostic direction as future work, not shipped scope.
 
 ## Problem
 
@@ -51,6 +63,18 @@ flowchart TD
     K --> L[Apply only after explicit approval]
 ```
 
+## Architecture In Plain English
+
+Threadwise is organized around trust boundaries:
+
+- **Fetch and normalize:** provider-specific fetchers pull mail into local stored batches. Gmail is the write-capable release target; ProtonMail is read-only.
+- **Classify with layers:** deterministic rules and accepted teaching memory run first. Optional OpenAI Chat Completions paths exist for evaluation/runtime escalation when a model is explicitly configured.
+- **Store evidence locally:** batches, review decisions, reports, write status, unsubscribe candidates, and teaching memory are local artifacts so runs can be inspected and replayed.
+- **Show decisions in context:** the Gmail companion sidebar explains the selected email and exposes correction where the user sees the mistake.
+- **Gate provider actions:** label writes, limited `INBOX` removal, broader rewrites, and unsubscribe execution are bounded by explicit rules and approvals.
+
+This is intentionally not a generic autonomous agent platform. The architecture prioritizes user control, auditability, and a credible single-user inbox workflow.
+
 ## Human Review And Safety Boundaries
 
 This project is intentionally narrower than a “fully autonomous email agent.”
@@ -83,7 +107,7 @@ The work represented here includes:
 - Local-first prototype, not hosted SaaS
 - Single-user focus, not team/shared inboxes
 - Gmail is the main release target; ProtonMail write-side behavior is not implemented
-- Public screenshots and polished demo assets are still incomplete
+- Public README demo asset exists; static screenshot packaging is still a follow-up
 - The repo still contains historical internal planning and handoff material that is useful for process evidence but not all recruiter-readable
 - Some operational tooling is intentionally rough because it exists to prove workflows, not to present a finished commercial product
 
@@ -96,24 +120,15 @@ The work represented here includes:
 - not proof of enterprise deployment or large-scale ML operations
 - not an attempt to present the author as a pure professional SWE or ML engineer
 
-## Recommended Demo Artifacts
+## Public Demo Assets
 
-If publishing this repo publicly, add a small `/demo` or screenshot section with:
+- Primary README GIF: `docs/assets/threadwise-recruiter-story.gif`
+- Selected slower/prominent variant: `docs/assets/threadwise-recruiter-story-v2-slower-prominent.gif`
+- Saved baseline variant: `docs/assets/threadwise-recruiter-story-v1-liked-baseline.gif`
+- Capture stage: `docs/assets/demo-stage/threadwise-recruiter-story-stage.html`
+- Capture script: `scripts/capture_threadwise_recruiter_story_asset.mjs`
 
-1. Sidebar open on one selected message
-2. `Correct / Teach` flow with a short explanation entered
-3. Impact preview showing “this would change X other emails”
-4. Confirmation options:
-   `Apply only here`, `Apply to matching emails too`, `Use for future emails only`, `Refine this`
-5. Compact daily summary view
-6. Unsubscribe inventory / follow-up view
-
-Recommended file naming:
-
-- `docs/assets/threadwise-sidebar-selected-email.png`
-- `docs/assets/threadwise-teach-preview.png`
-- `docs/assets/threadwise-daily-summary.png`
-- `docs/assets/threadwise-unsubscribe-flow.png`
+Static screenshots can still be added after the GIF direction is fully accepted in README context.
 
 ## Best Public Reading Order
 

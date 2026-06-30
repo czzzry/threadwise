@@ -12,7 +12,7 @@ Before doing substantial work, read these in order:
 1. `AGENTS.md`
 2. `CONTEXT.md`
 3. `docs/v2-alignment.md`
-4. `docs/prd.md` for the current MVP+1 portfolio demo release slice
+4. `docs/prd.md` for the completed MVP+1 portfolio demo release slice
 5. `docs/checkpoints/current-operating-model-2026-06-22.md`
 6. `docs/v2-issue-map.md`
 7. then only the specific current issue, handoff, or code relevant to the task
@@ -36,15 +36,15 @@ The repo is no longer blocked on basic implementation.
 
 ## Current Stage
 
-This is a post-MVP, post-proof repo that has completed the Gmail release state and is entering MVP+1 portfolio packaging.
+This is a post-MVP, post-proof repo that has completed the Gmail release state and the MVP+1 recruiter-facing portfolio packaging pass.
 
-The main uncertainty is no longer "can this be built?" and no longer "can the classifier get under the current unresolved threshold?"
+The main uncertainty is no longer "can this be built?", no longer "can the classifier get under the current unresolved threshold?", and no longer "can a recruiter understand the product without setup?"
 
-The main uncertainty is now:
+The main uncertainty is now what MVP+2 should be:
 
-- how to make the Gmail-first product visually strong enough for recruiter-facing demo assets
-- how to package the README, portfolio docs, screenshots, and GIF/video assets so the project is understandable without setup
-- how to show the future inbox-agnostic direction as roadmap without implying it is already shipped
+- product expansion planning after the Gmail-first portfolio demo
+- likely inbox-agnostic / multi-inbox direction, starting from the same supervised loop
+- preserving the existing safety boundaries before any new provider-side action is approved
 
 ## Current Working Rule
 
@@ -58,9 +58,11 @@ The current product direction for Threadwise is:
 - primary surface: browser-based inbox companion sidebar
 - core interaction: in-inbox `Correct / Teach` loop with short agent acknowledgments
 - secondary surface: dashboard/workbench for summary, unsubscribe, review, and debugging
-- MVP+1 target: recruiter-ready portfolio demo using real Gmail UI with synthetic email data
+- MVP+1 target: completed recruiter-ready portfolio README demo using synthetic Gmail-style data
 
-The current bounded PRD exists in `docs/prd.md` and covers the MVP+1 recruiter-ready portfolio demo release. The first current slice is `docs/issues/068-mvp-plus-one-design-review-and-aesthetic-direction.md`.
+The completed bounded PRD exists in `docs/prd.md` and covers the MVP+1 recruiter-ready portfolio demo release. The closeout slice is `docs/issues/073-close-mvp-plus-one-public-demo-milestone.md`.
+
+The next product step should start with alignment for MVP+2. Do not infer the next approved build from the roadmap GIF, archived docs, or old issue maps.
 
 ## Trust Order When Docs Differ
 
@@ -70,7 +72,7 @@ Use this order:
 2. `AGENTS.md` for workflow and guardrails
 3. `CONTEXT.md` for current stage and read order
 4. `docs/v2-alignment.md` for current product direction
-5. `docs/prd.md` for the current MVP+1 portfolio demo release slice
+5. `docs/prd.md` for the completed MVP+1 portfolio demo release slice
 6. `docs/checkpoints/current-operating-model-2026-06-22.md` for what the repo currently proves
 7. `docs/v2-issue-map.md` for candidate next-slice themes only
 8. `docs/archive/`, `docs/handoff/`, and `docs/deep-research/` as historical context only
@@ -87,6 +89,8 @@ Use this order:
 
 If a task is implementation work on an already-triaged bounded slice, proceed.
 
-If a task is about the Gmail inbox companion release, in-inbox teaching loop, sidebar UX, daily dashboard, unsubscribe review handoff, or the recruiter-ready portfolio demo, treat that as current product-definition work and keep the docs aligned as decisions are made.
+If a task is about the Gmail inbox companion release, in-inbox teaching loop, sidebar UX, daily dashboard, unsubscribe review handoff, or the recruiter-ready portfolio demo, treat the completed MVP+1 docs and handoff as the source of truth.
+
+If the task is about MVP+2, start with alignment/grill before writing a PRD or implementation issues.
 
 If a task changes product scope, chooses the next major slice, or pushes beyond the current trust boundary, stop and align first.
