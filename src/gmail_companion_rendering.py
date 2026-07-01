@@ -94,6 +94,7 @@ def render_dashboard_attention_cards(items: list[dict], empty_label: str) -> str
             f'{attention_feedback_form(item, "good_catch", "Good catch")}'
             f'{attention_feedback_form(item, "not_attention", "Not attention")}'
             f'{attention_feedback_form(item, "wrong_reason", "Wrong reason")}'
+            f'{attention_rule_proposal_form(item)}'
             '</div>'
             '</article>'
         )
@@ -126,6 +127,14 @@ def attention_feedback_hidden_fields(item: dict) -> str:
     return "".join(
         f'<input type="hidden" name="{escape_html(key)}" value="{escape_html(value)}">'
         for key, value in fields.items()
+    )
+
+def attention_rule_proposal_form(item: dict) -> str:
+    return (
+        '<form method="post" action="/api/attention-rule-proposal/preview">'
+        f'{attention_feedback_hidden_fields(item)}'
+        '<button class="action" type="submit">Preview attention rule</button>'
+        '</form>'
     )
 
 def render_dashboard_changed_cards(items: list[dict]) -> str:

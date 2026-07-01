@@ -8,6 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from src.attention_feedback import load_attention_feedback
+from src.attention_rules import attention_rules_path
 from src.gmail_run_control import load_gmail_dashboard_run_status, write_gmail_dashboard_run_status
 from src.gmail_companion_rendering import (
     escape_html,
@@ -655,6 +656,85 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertEqual(payload["status"], "succeeded")
             self.assertEqual(sidebar["run_status"]["status"], "succeeded")
             self.assertEqual(sidebar["run_status"]["dashboard_path"], "/daily-dashboard#run-gmail-check")
+
+    def test_attention_rule_proposal_endpoints_preview_and_approve_without_gmail_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_attention_fixture(storage_dir)
+            app = GmailCompanionApp(storage_dir)
+            app.attention_feedback(
+                {
+                    "action": "mark_needs_attention",
+                    "message_id": "gmail-live-002",
+                    "thread_id": "thread-002",
+                    "batch_id": "founder-test-batch-1",
+                    "subject": "Choose an interview slot",
+                    "sender": "Recruiter <recruiter@example.com>",
+                    "note": "Recruiter scheduling emails should stay visible.",
+                    "corrected_category": "job_opportunity",
+                }
+            )
+            preview_handler = _FakeRequestHandler(
+                "/api/attention-rule-proposal/preview",
+                method="POST",
+                json_body={"message_id": "gmail-live-002"},
+            )
+
+            app.handle_request(preview_handler)
+            preview = json.loads(preview_handler.wfile.value.decode("utf-8"))
+            proposal_id = preview["proposal"]["id"]
+            review_handler = _FakeRequestHandler(
+                "/api/attention-rule-proposal/review",
+                method="POST",
+                json_body={
+                    "decision": "approve",
+                    "proposal_id": proposal_id,
+                    "application_mode": "future_only",
+                },
+            )
+            app.handle_request(review_handler)
+            reviewed = json.loads(review_handler.wfile.value.decode("utf-8"))
+
+            self.assertEqual(preview_handler.code, 200)
+            self.assertEqual(preview["gmail_mutation"], "none")
+            self.assertEqual(preview["proposal"]["rule_type"], "attention_promotion")
+            self.assertNotIn("label", preview["proposal"])
+            self.assertEqual(review_handler.code, 200)
+            self.assertEqual(reviewed["proposal"]["status"], "approved")
+            self.assertEqual(reviewed["gmail_mutation"], "none")
+            self.assertTrue(attention_rules_path(storage_dir).exists())
+
+    def test_attention_rule_proposal_endpoint_can_reject(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_attention_fixture(storage_dir)
+            app = GmailCompanionApp(storage_dir)
+            app.attention_feedback(
+                {
+                    "action": "mark_needs_attention",
+                    "message_id": "gmail-live-002",
+                    "thread_id": "thread-002",
+                    "batch_id": "founder-test-batch-1",
+                    "subject": "Choose an interview slot",
+                    "sender": "Recruiter <recruiter@example.com>",
+                    "note": "Recruiter scheduling emails should stay visible.",
+                    "corrected_category": "job_opportunity",
+                }
+            )
+            proposal = app.preview_attention_rule_proposal({"message_id": "gmail-live-002"})["proposal"]
+            handler = _FakeRequestHandler(
+                "/api/attention-rule-proposal/review",
+                method="POST",
+                json_body={"decision": "reject", "proposal_id": proposal["id"], "notes": "Too broad."},
+            )
+
+            app.handle_request(handler)
+            reviewed = json.loads(handler.wfile.value.decode("utf-8"))
+
+            self.assertEqual(handler.code, 200)
+            self.assertEqual(reviewed["proposal"]["status"], "rejected")
+            self.assertEqual(reviewed["proposal"]["review_notes"], "Too broad.")
+            self.assertFalse(attention_rules_path(storage_dir).exists())
 
     def test_attention_feedback_good_catch_persists_and_reflects_in_dashboard(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

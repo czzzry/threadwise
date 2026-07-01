@@ -12,6 +12,11 @@ from src.attention_feedback import record_attention_feedback
 from src.gmail_automation import run_daily_gmail_automation
 from src.gmail_cli_support import default_gmail_client_factory
 from src.gmail_run_control import load_gmail_dashboard_run_status, trigger_dashboard_gmail_check
+from src.attention_rules import (
+    approve_attention_rule_proposal,
+    build_attention_rule_proposal,
+    reject_attention_rule_proposal,
+)
 from src.gmail_writer import MockGmailLabelWriter
 from src.label_taxonomy import CANONICAL_LABEL_ORDER, gmail_label_name
 from src.live_gmail_client import GMAIL_MODIFY_SCOPE
@@ -294,6 +299,22 @@ class GmailCompanionApp:
             except Exception as exc:
                 return self._write_json(handler, HTTPStatus.INTERNAL_SERVER_ERROR, {"error": str(exc)})
 
+        if handler.command == "POST" and parsed.path == "/api/attention-rule-proposal/preview":
+            try:
+                payload = self._read_request_payload(handler)
+                response = self.preview_attention_rule_proposal(payload)
+                return self._write_json(handler, HTTPStatus.OK, response)
+            except (KeyError, ValueError, HTTPException, json.JSONDecodeError) as exc:
+                return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+
+        if handler.command == "POST" and parsed.path == "/api/attention-rule-proposal/review":
+            try:
+                payload = self._read_request_payload(handler)
+                response = self.review_attention_rule_proposal(payload)
+                return self._write_json(handler, HTTPStatus.OK, response)
+            except (KeyError, ValueError, HTTPException, json.JSONDecodeError) as exc:
+                return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+
         self._write_json(handler, HTTPStatus.NOT_FOUND, {"error": "Not found"})
 
     def _read_json_body(self, handler: BaseHTTPRequestHandler) -> dict:
@@ -469,6 +490,37 @@ class GmailCompanionApp:
         payload.setdefault("account_id", infer_gmail_account_id(self._storage_dir))
         runner = self._gmail_run_runner or self._run_daily_gmail_check
         return trigger_dashboard_gmail_check(self._storage_dir, payload, runner)
+
+    def preview_attention_rule_proposal(self, payload: dict) -> dict:
+        message_id = payload.get("message_id") or ""
+        proposal = build_attention_rule_proposal(self._storage_dir, message_id)
+        return {
+            "proposal": proposal,
+            "gmail_mutation": "none",
+            "acknowledgment": "Prepared attention rule proposal for review. No broader rule was applied.",
+        }
+
+    def review_attention_rule_proposal(self, payload: dict) -> dict:
+        proposal_id = payload.get("proposal_id") or ""
+        decision = payload.get("decision") or ""
+        if decision == "approve":
+            proposal = approve_attention_rule_proposal(
+                self._storage_dir,
+                proposal_id,
+                application_mode=payload.get("application_mode") or "future_only",
+            )
+        elif decision == "reject":
+            proposal = reject_attention_rule_proposal(
+                self._storage_dir,
+                proposal_id,
+                notes=payload.get("notes") or "",
+            )
+        else:
+            raise ValueError("Attention rule proposal review requires approve or reject.")
+        return {
+            "proposal": proposal,
+            "gmail_mutation": "none",
+        }
 
     def _run_daily_gmail_check(self, payload: dict):
         account_id = payload.get("account_id") or ""
