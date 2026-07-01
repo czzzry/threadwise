@@ -9,7 +9,9 @@ import sys
 from urllib.parse import parse_qs, urlparse
 
 from src.attention_feedback import record_attention_feedback
+from src.gmail_automation import run_daily_gmail_automation
 from src.gmail_cli_support import default_gmail_client_factory
+from src.gmail_run_control import load_gmail_dashboard_run_status, trigger_dashboard_gmail_check
 from src.gmail_writer import MockGmailLabelWriter
 from src.label_taxonomy import CANONICAL_LABEL_ORDER, gmail_label_name
 from src.live_gmail_client import GMAIL_MODIFY_SCOPE
@@ -36,6 +38,8 @@ from src.gmail_companion_state import (
     find_matching_item,
     find_unsubscribe_candidate,
     first_query_value,
+    load_latest_batch,
+    load_latest_report,
     selected_context_from_query,
     selected_email_contract,
 )
@@ -49,6 +53,16 @@ from src.teaching_loop import (
 DEFAULT_STORAGE_DIR = Path("data/gmail_fetch")
 DEFAULT_CREDENTIALS_DIR = Path("data/gmail_credentials")
 THREADWISE_APP_ICON_PATH = Path("docs/assets/brand/threadwise-app-icon.png")
+
+
+def infer_gmail_account_id(storage_dir: Path) -> str:
+    latest_report = load_latest_report(storage_dir)
+    if latest_report and latest_report.get("account_id"):
+        return latest_report["account_id"]
+    latest_batch = load_latest_batch(storage_dir)
+    if latest_batch and latest_batch.get("account_id"):
+        return latest_batch["account_id"]
+    return ""
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -125,12 +139,16 @@ class GmailCompanionApp:
         client_secret_path: Path | None = None,
         gmail_client_factory=None,
         gmail_write_through_enabled: bool = True,
+        gmail_run_runner=None,
+        attention_model_client: object | None = None,
     ) -> None:
         self._storage_dir = storage_dir
         self._credentials_dir = credentials_dir
         self._client_secret_path = client_secret_path
         self._gmail_client_factory = gmail_client_factory or default_gmail_client_factory
         self._gmail_write_through_enabled = gmail_write_through_enabled
+        self._gmail_run_runner = gmail_run_runner
+        self._attention_model_client = attention_model_client
         self._unsubscribe_store = UnsubscribeInventoryStore(storage_dir)
 
     def handle_request(self, handler: BaseHTTPRequestHandler) -> None:
@@ -266,6 +284,16 @@ class GmailCompanionApp:
             except (KeyError, ValueError, HTTPException, json.JSONDecodeError) as exc:
                 return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
 
+        if handler.command == "POST" and parsed.path == "/api/gmail-check-run":
+            try:
+                payload = self._read_request_payload(handler)
+                response = self.trigger_gmail_check(payload)
+                return self._write_json(handler, HTTPStatus.OK, response)
+            except (KeyError, ValueError, HTTPException, json.JSONDecodeError) as exc:
+                return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+            except Exception as exc:
+                return self._write_json(handler, HTTPStatus.INTERNAL_SERVER_ERROR, {"error": str(exc)})
+
         self._write_json(handler, HTTPStatus.NOT_FOUND, {"error": "Not found"})
 
     def _read_json_body(self, handler: BaseHTTPRequestHandler) -> dict:
@@ -322,6 +350,7 @@ class GmailCompanionApp:
             "selected_context": selected_context or {},
             "selected_email": selected_email,
             "daily_summary": summary,
+            "run_status": load_gmail_dashboard_run_status(self._storage_dir),
             "ui_state": {
                 "default_mode": "expanded",
                 "can_minimize": True,
@@ -434,6 +463,30 @@ class GmailCompanionApp:
             "creates_broader_rule": False,
             "attention_summary": build_daily_attention_summary(self._storage_dir),
         }
+
+    def trigger_gmail_check(self, payload: dict) -> dict:
+        payload = dict(payload)
+        payload.setdefault("account_id", infer_gmail_account_id(self._storage_dir))
+        runner = self._gmail_run_runner or self._run_daily_gmail_check
+        return trigger_dashboard_gmail_check(self._storage_dir, payload, runner)
+
+    def _run_daily_gmail_check(self, payload: dict):
+        account_id = payload.get("account_id") or ""
+        if not account_id:
+            raise ValueError("No Gmail account id is available for the dashboard run.")
+        gmail_client = self._gmail_client_factory(
+            account_id,
+            self._credentials_dir,
+            self._client_secret_path,
+            GMAIL_MODIFY_SCOPE,
+        )
+        return run_daily_gmail_automation(
+            account_id=account_id,
+            batch_size=payload.get("batch_size") or 50,
+            storage_dir=self._storage_dir,
+            gmail_client=gmail_client,
+            attention_model_client=self._attention_model_client,
+        )
 
     def _write_teach_result_to_gmail(
         self,
@@ -1436,6 +1489,9 @@ class GmailCompanionApp:
         payload = build_companion_runtime_payload(self._storage_dir)
         summary = payload.get("daily_summary", {})
         attention_summary = build_daily_attention_summary(self._storage_dir)
+        run_status = load_gmail_dashboard_run_status(self._storage_dir)
+        run_status_label = run_status.get("status", "idle")
+        inferred_account_id = infer_gmail_account_id(self._storage_dir)
         changed_today = summary.get("changed_today", {})
         selected_unsubscribe_examples = changed_today.get("selected_unsubscribe_examples", [])
         sections = [
@@ -1510,6 +1566,22 @@ class GmailCompanionApp:
                 f'<span class="pill">Possible: {len(attention_summary.get("possible_items", []))}</span>',
             ]
         )
+        run_result = run_status.get("result") or {}
+        run_status_pills = "".join(
+            [
+                f'<span class="pill">Run status: {escape_html(run_status_label)}</span>',
+                (
+                    f'<span class="pill">Last batch: {escape_html(run_result.get("batch_id", ""))}</span>'
+                    if run_result.get("batch_id")
+                    else ""
+                ),
+                (
+                    f'<span class="pill">Error: {escape_html(run_status.get("error", ""))}</span>'
+                    if run_status.get("error")
+                    else ""
+                ),
+            ]
+        )
         return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -1567,6 +1639,21 @@ class GmailCompanionApp:
         <span class="pill">Unsubscribe candidates: {summary.get("unsubscribe_candidate_count", 0)}</span>
       </div>
       {f'<div class="pill-row">{top_labels_html}</div>' if top_labels_html else ""}
+    </section>
+    <section class="card">
+      <div class="eyebrow" id="run-gmail-check">Run Gmail Check</div>
+      <h2>Run Gmail check</h2>
+      <p>This confirmed run may apply existing safe EA/ labels, remove INBOX only for approved low-value categories, and may call the LLM for attention detection. Attention detection itself does not mutate Gmail.</p>
+      <div class="pill-row">{run_status_pills}</div>
+      <form method="post" action="/api/gmail-check-run">
+        <input type="hidden" name="account_id" value="{escape_html(inferred_account_id)}">
+        <input type="hidden" name="batch_size" value="50">
+        <label class="copy" style="display:block;">
+          <input id="confirm-run-gmail-check" type="checkbox" name="confirmed" value="true" required>
+          Confirm this Gmail check may use the existing safe mutation boundaries and small LLM cost.
+        </label>
+        <button class="action" type="submit" {'disabled' if run_status_label == 'running' else ''}>Run Gmail check</button>
+      </form>
     </section>
     <section class="card">
       <div class="eyebrow">Needs Attention</div>
@@ -2050,6 +2137,7 @@ class GmailCompanionApp:
 
     function renderDailySummary(summary) {
       const changedToday = summary.changed_today || {};
+      const runStatus = (((harnessState || {}).sidebar_state || {}).run_status) || {};
       const selectedUnsubscribeExamples = changedToday.selected_unsubscribe_examples || [];
       const bucketLabel = {
         needs_attention_items: "Needs attention",
@@ -2092,6 +2180,7 @@ class GmailCompanionApp:
         </div>
         <div class="label-row">
           <span class="label-chip">Unsubscribe candidates · ${summary.unsubscribe_candidate_count || 0}</span>
+          <span class="label-chip">Run status · ${escapeHtml(runStatus.status || "idle")}</span>
           ${summary.report_date ? `<span class="label-chip">Latest report · ${escapeHtml(summary.report_date)}</span>` : ""}
         </div>
         <div class="reason-wrap" style="margin-top:12px;background:#eef7f5;">
@@ -2111,7 +2200,7 @@ class GmailCompanionApp:
           <div class="detail-list">${changedItemsHtml}</div>
         </div>
         <div class="button-row" style="margin-top:12px;">
-          <a class="action-button primary" style="text-decoration:none;display:inline-flex;align-items:center;" href="/daily-dashboard" target="_blank" rel="noreferrer">Open daily dashboard</a>
+          <a class="action-button primary" style="text-decoration:none;display:inline-flex;align-items:center;" href="${escapeHtml(runStatus.dashboard_path || "/daily-dashboard#run-gmail-check")}" target="_blank" rel="noreferrer">Open daily dashboard</a>
           <a class="action-button secondary" style="text-decoration:none;display:inline-flex;align-items:center;" href="/unsubscribe-review" target="_blank" rel="noreferrer">Review unsubscribe candidates</a>
         </div>
         ${(summary.top_labels || []).length ? `<div class="label-row">${topLabels}</div>` : '<p class="empty">No stored label mix yet.</p>'}

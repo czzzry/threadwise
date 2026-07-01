@@ -5,8 +5,10 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 from src.attention_feedback import load_attention_feedback
+from src.gmail_run_control import load_gmail_dashboard_run_status, write_gmail_dashboard_run_status
 from src.gmail_companion_rendering import (
     escape_html,
     render_dashboard_email_cards,
@@ -550,6 +552,109 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertIn("Possible Attention", page)
             self.assertIn("No possible-attention items in the latest Gmail daily report.", page)
             self.assertIn("Latest attention report: 2026-07-01", page)
+
+    def test_daily_dashboard_exposes_confirmed_run_gmail_check_flow(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_attention_fixture(storage_dir)
+
+            page = GmailCompanionApp(storage_dir).render_daily_dashboard_page()
+
+            self.assertIn("Run Gmail check", page)
+            self.assertIn("confirm-run-gmail-check", page)
+            self.assertIn("may apply existing safe EA/ labels", page)
+            self.assertIn("remove INBOX only for approved low-value categories", page)
+            self.assertIn("may call the LLM for attention detection", page)
+
+    def test_dashboard_gmail_check_requires_confirmation(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_attention_fixture(storage_dir)
+            app = GmailCompanionApp(storage_dir, gmail_run_runner=lambda _payload: None)
+
+            with self.assertRaises(ValueError):
+                app.trigger_gmail_check({"account_id": "founder-test"})
+
+    def test_dashboard_gmail_check_blocks_duplicate_active_run(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_attention_fixture(storage_dir)
+            write_gmail_dashboard_run_status(
+                storage_dir,
+                {"status": "running", "run_id": "existing-run", "started_at": "2026-07-01T10:00:00Z"},
+            )
+            app = GmailCompanionApp(storage_dir, gmail_run_runner=lambda _payload: None)
+
+            with self.assertRaises(ValueError):
+                app.trigger_gmail_check({"confirmed": "true", "account_id": "founder-test"})
+
+            self.assertEqual(load_gmail_dashboard_run_status(storage_dir)["run_id"], "existing-run")
+
+    def test_dashboard_gmail_check_persists_success_status_with_safe_boundaries(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_attention_fixture(storage_dir)
+            calls = []
+
+            def runner(payload: dict):
+                calls.append(payload)
+                return SimpleNamespace(
+                    batch_id="founder-test-batch-2",
+                    fetched_count=3,
+                    label_write_count=2,
+                    inbox_removal_count=1,
+                    unlabeled_exceptions=[],
+                )
+
+            result = GmailCompanionApp(storage_dir, gmail_run_runner=runner).trigger_gmail_check(
+                {"confirmed": "true", "account_id": "founder-test", "batch_size": "7"}
+            )
+            saved = load_gmail_dashboard_run_status(storage_dir)
+
+            self.assertEqual(calls[0]["account_id"], "founder-test")
+            self.assertEqual(calls[0]["batch_size"], 7)
+            self.assertEqual(calls[0]["safety_boundaries"]["label_writes"], "existing_safe_ea_labels_only")
+            self.assertEqual(calls[0]["safety_boundaries"]["attention_gmail_mutation"], "none")
+            self.assertEqual(result["status"], "succeeded")
+            self.assertEqual(saved["status"], "succeeded")
+            self.assertEqual(saved["result"]["batch_id"], "founder-test-batch-2")
+
+    def test_dashboard_gmail_check_persists_failure_status(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_attention_fixture(storage_dir)
+
+            def runner(_payload: dict):
+                raise RuntimeError("gmail unavailable")
+
+            with self.assertRaises(RuntimeError):
+                GmailCompanionApp(storage_dir, gmail_run_runner=runner).trigger_gmail_check(
+                    {"confirmed": "true", "account_id": "founder-test"}
+                )
+            saved = load_gmail_dashboard_run_status(storage_dir)
+
+            self.assertEqual(saved["status"], "failed")
+            self.assertIn("gmail unavailable", saved["error"])
+
+    def test_gmail_check_endpoint_and_sidebar_expose_run_status(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_attention_fixture(storage_dir)
+            app = GmailCompanionApp(storage_dir, gmail_run_runner=lambda _payload: None)
+            handler = _FakeRequestHandler(
+                "/api/gmail-check-run",
+                method="POST",
+                json_body={"confirmed": "true", "account_id": "founder-test"},
+            )
+
+            app.handle_request(handler)
+            payload = json.loads(handler.wfile.value.decode("utf-8"))
+            sidebar = app.sidebar_state({})
+
+            self.assertEqual(handler.code, 200)
+            self.assertEqual(payload["status"], "succeeded")
+            self.assertEqual(sidebar["run_status"]["status"], "succeeded")
+            self.assertEqual(sidebar["run_status"]["dashboard_path"], "/daily-dashboard#run-gmail-check")
 
     def test_attention_feedback_good_catch_persists_and_reflects_in_dashboard(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
