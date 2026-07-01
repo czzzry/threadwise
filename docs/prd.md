@@ -9,7 +9,7 @@ GitHub issue: `#7`
 
 This PRD describes MVP+2 for Threadwise: make the Gmail-first product useful in daily life before expanding to ProtonMail.
 
-Implementation status: completed in GitHub issues `#8` through `#14`. Follow-up review candidates remain in `#15` and `#16`.
+Implementation status: completed in GitHub issues `#8` through `#14`. Follow-up review candidate `#15` is complete; follow-up review candidate `#16` remains open.
 
 ## Problem Statement
 
@@ -252,8 +252,8 @@ The milestone should include simple attention feedback first, then broader atten
   - Batch 3 after `#10`: `#11` can run.
   - Batch 4 after `#9` and `#10`: `#12` can run.
   - Batch 5 after `#11`: `#14` can run.
-  - `#15` and `#16` are follow-up HITL review candidates, not part of the AFK implementation parallelization path.
-- Follow-up issue candidate: **Local Data Retention and Inbox Freshness Review**.
+- `#15` is the completed local data retention and inbox freshness HITL review; `#16` remains the startup/packaging HITL review candidate.
+- Completed follow-up review: **Local Data Retention and Inbox Freshness Review**.
 - Follow-up issue candidate: **Threadwise Startup and Packaging Model Review**.
 - Published MVP+2 issue briefs:
   - `#8` Add Gmail attention contract to daily report
@@ -265,4 +265,4 @@ The milestone should include simple attention feedback first, then broader atten
   - `#14` Propose attention rules from feedback
   - `#15` Local data retention and inbox freshness review
   - `#16` Threadwise startup and packaging model review
-- The next workflow step is to choose whether to run the follow-up HITL reviews in `#15` and `#16`, or to open the next product alignment cycle.
+- The next workflow step is to choose whether to run the remaining startup/packaging HITL review in `#16`, triage one of the retention/freshness follow-ups from `#17` through `#21`, or open the next product alignment cycle.

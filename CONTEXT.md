@@ -64,9 +64,9 @@ The current product direction for Threadwise is:
 
 The completed bounded PRD exists in `docs/prd.md` and GitHub issue `#7`. It covers MVP+2 Gmail daily usefulness. The completed MVP+1 PRD is archived at `docs/archive/prd-mvp-plus-one-portfolio-demo-completed-2026-06-30.md`, with closeout recorded in `docs/issues/073-close-mvp-plus-one-public-demo-milestone.md`.
 
-The MVP+2 implementation briefs in `docs/issues/083` through `docs/issues/089`, mirrored to GitHub issues `#8` through `#14`, are complete. The next product step should choose whether to run the follow-up HITL review candidates in `docs/issues/090` and `docs/issues/091` / GitHub `#15` and `#16`, or to begin the next alignment cycle.
+The MVP+2 implementation briefs in `docs/issues/083` through `docs/issues/089`, mirrored to GitHub issues `#8` through `#14`, are complete. The local data retention and inbox freshness HITL review in `docs/issues/090` / GitHub `#15` is complete, with output in `docs/local-data-retention-and-inbox-freshness-review-2026-07-01.md` and follow-up candidates in GitHub issues `#17` through `#21` / `docs/issues/092` through `docs/issues/096`. The next product step should choose whether to run the remaining startup/packaging HITL review candidate in `docs/issues/091` / GitHub `#16`, triage one of the new retention/freshness follow-ups, or begin the next alignment cycle.
 
-MVP+2 implementation progress is `issues 7/7 => MVP+2 = 7/7 done`. Treat `#15` and `#16` as follow-up HITL review candidates unless the founder explicitly pulls them into a new active milestone count.
+MVP+2 implementation progress is `issues 7/7 => MVP+2 = 7/7 done`. Treat `#16` and the new `#15` follow-ups as follow-up candidates unless the founder explicitly pulls them into a new active milestone count.
 
 ## Trust Order When Docs Differ
 
