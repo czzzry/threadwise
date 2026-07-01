@@ -1,10 +1,11 @@
 # Ultra-minimal connected/disconnected Gmail extension state
 
-Status: Follow-up candidate
+Status: Completed
 Type: Implementation
 GitHub issue: `#23`
 Parent: GitHub issue `#16`; `docs/threadwise-startup-and-packaging-model-review-2026-07-01.md`
 Depends on: `#24`
+Completed by: `extensions/gmail_companion/background.js`, `extensions/gmail_companion/content.js`
 
 ## What to build
 
@@ -14,12 +15,12 @@ The founder should not see a large persistent error panel when the helper is dow
 
 ## Acceptance criteria
 
-- [ ] Connected Gmail panel defaults to minimized.
-- [ ] Disconnected state defaults to an ultra-minimal badge/presence.
-- [ ] Expanded disconnected state shows failure reason and remediation steps.
-- [ ] Needs-attention state uses a badge/count/indicator, not auto-expand.
-- [ ] Copy distinguishes helper unreachable, health check failed, and wrong service on port when the health contract allows it.
-- [ ] Tests cover connected, disconnected, and needs-attention visual state contracts.
+- [x] Connected Gmail panel defaults to minimized.
+- [x] Disconnected state defaults to an ultra-minimal badge/presence.
+- [x] Expanded disconnected state shows failure reason and remediation steps.
+- [x] Needs-attention state uses a badge/count/indicator, not auto-expand.
+- [x] Copy distinguishes helper unreachable, health check failed, and wrong service on port when the health contract allows it.
+- [x] Tests cover connected, disconnected, and needs-attention visual state contracts.
 
 ## Safety boundaries
 

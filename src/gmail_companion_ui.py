@@ -1,5 +1,7 @@
 import argparse
 import json
+import threading
+import time
 from datetime import UTC, datetime
 from http.client import HTTPException
 from http import HTTPStatus
@@ -12,6 +14,7 @@ from src.attention_feedback import record_attention_feedback
 from src.gmail_automation import run_daily_gmail_automation
 from src.gmail_cli_support import default_gmail_client_factory
 from src.gmail_run_control import load_gmail_dashboard_run_status, trigger_dashboard_gmail_check
+from src.founder_feedback import record_founder_feedback
 from src.attention_rules import (
     approve_attention_rule_proposal,
     build_attention_rule_proposal,
@@ -58,6 +61,13 @@ from src.teaching_loop import (
 DEFAULT_STORAGE_DIR = Path("data/gmail_fetch")
 DEFAULT_CREDENTIALS_DIR = Path("data/gmail_credentials")
 THREADWISE_APP_ICON_PATH = Path("docs/assets/brand/threadwise-app-icon.png")
+HEALTH_STATUS_SCHEMA_VERSION = 1
+HEALTH_STATUS_PATH = "/api/health"
+HEALTH_STATUS_SERVICE_ID = "threadwise-gmail-companion"
+HEALTH_STATUS_SERVICE_NAME = "Threadwise Gmail Companion"
+HARNESS_STATE_CACHE_SECONDS = 120.0
+HEALTH_STATUS_CACHE_SECONDS = 5.0
+COMPANION_DATA_CACHE_SECONDS = 120.0
 
 
 def infer_gmail_account_id(storage_dir: Path) -> str:
@@ -155,6 +165,14 @@ class GmailCompanionApp:
         self._gmail_run_runner = gmail_run_runner
         self._attention_model_client = attention_model_client
         self._unsubscribe_store = UnsubscribeInventoryStore(storage_dir)
+        self._harness_state_cache: dict[str, tuple[float, dict]] = {}
+        self._harness_state_lock = threading.Lock()
+        self._health_storage_cache: tuple[float, dict] | None = None
+        self._health_storage_lock = threading.Lock()
+        self._runtime_payload_cache: tuple[float, dict] | None = None
+        self._daily_summary_cache: tuple[float, dict] | None = None
+        self._unsubscribe_candidates_cache: tuple[float, list[dict]] | None = None
+        self._companion_data_lock = threading.Lock()
 
     def handle_request(self, handler: BaseHTTPRequestHandler) -> None:
         parsed = urlparse(handler.path)
@@ -235,6 +253,16 @@ class GmailCompanionApp:
             handler.wfile.write(encoded)
             return
 
+        if handler.command == "GET" and parsed.path == HEALTH_STATUS_PATH:
+            encoded = json.dumps(self.health_status(handler)).encode("utf-8")
+            handler.send_response(HTTPStatus.OK)
+            handler.send_header("Content-Type", "application/json")
+            handler.send_header("Content-Length", str(len(encoded)))
+            self._write_cors_headers(handler)
+            handler.end_headers()
+            handler.wfile.write(encoded)
+            return
+
         if handler.command == "GET" and parsed.path == "/api/sidebar-state":
             selected_context = selected_context_from_query(parse_qs(parsed.query))
             encoded = json.dumps(self.sidebar_state(selected_context)).encode("utf-8")
@@ -285,6 +313,14 @@ class GmailCompanionApp:
             try:
                 payload = self._read_request_payload(handler)
                 response = self.attention_feedback(payload)
+                return self._write_json(handler, HTTPStatus.OK, response)
+            except (KeyError, ValueError, HTTPException, json.JSONDecodeError) as exc:
+                return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+
+        if handler.command == "POST" and parsed.path == "/api/founder-feedback":
+            try:
+                payload = self._read_request_payload(handler)
+                response = self.founder_feedback(payload)
                 return self._write_json(handler, HTTPStatus.OK, response)
             except (KeyError, ValueError, HTTPException, json.JSONDecodeError) as exc:
                 return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
@@ -358,11 +394,101 @@ class GmailCompanionApp:
         handler.send_header("Content-Length", "0")
         handler.end_headers()
 
+    def health_status(self, handler: BaseHTTPRequestHandler | None = None) -> dict:
+        return {
+            "schema_version": HEALTH_STATUS_SCHEMA_VERSION,
+            "service_id": HEALTH_STATUS_SERVICE_ID,
+            "service_name": HEALTH_STATUS_SERVICE_NAME,
+            "status": "ready",
+            "bound_origin": self._bound_origin(handler),
+            "dashboard_path": "/daily-dashboard#run-gmail-check",
+            "health_path": HEALTH_STATUS_PATH,
+            "storage_summary": self._cached_storage_summary(),
+            "capabilities": [
+                "sidebar-state",
+                "daily-dashboard",
+                "gmail-check",
+                "attention-feedback",
+                "unsubscribe-review",
+            ],
+        }
+
+    def _bound_origin(self, handler: BaseHTTPRequestHandler | None = None) -> str:
+        if handler is not None:
+            host_header = handler.headers.get("Host", "")
+            if host_header:
+                return server_origin(host_header)
+            server_address = getattr(handler.server, "server_address", None)
+            if isinstance(server_address, tuple) and len(server_address) >= 2:
+                host, port = server_address[0], server_address[1]
+                host = host or "127.0.0.1"
+                return server_origin(f"{host}:{port}")
+        return server_origin("127.0.0.1:8021")
+
+    def _cached_storage_summary(self) -> dict:
+        now = time.monotonic()
+        with self._health_storage_lock:
+            if self._health_storage_cache is not None:
+                created_at, payload = self._health_storage_cache
+                if now - created_at <= HEALTH_STATUS_CACHE_SECONDS:
+                    return payload
+            payload = self._storage_summary()
+            self._health_storage_cache = (time.monotonic(), payload)
+            return payload
+
+    def _storage_summary(self) -> dict:
+        batches_dir = self._storage_dir / "batches"
+        reports_dir = self._storage_dir / "reports"
+        fetch_failures_dir = self._storage_dir / "fetch_failures"
+        return {
+            "storage_dir_name": self._storage_dir.name,
+            "storage_dir_exists": self._storage_dir.exists(),
+            "batches_dir_exists": batches_dir.exists(),
+            "batch_count": len(list(batches_dir.glob("*.json"))) if batches_dir.exists() else 0,
+            "reports_dir_exists": reports_dir.exists(),
+            "report_count": len(list(reports_dir.glob("*_daily_report.json"))) if reports_dir.exists() else 0,
+            "fetch_failures_dir_exists": fetch_failures_dir.exists(),
+            "fetch_failure_count": len(list(fetch_failures_dir.glob("*.json"))) if fetch_failures_dir.exists() else 0,
+        }
+
+    def _cached_runtime_payload(self) -> dict:
+        now = time.monotonic()
+        with self._companion_data_lock:
+            if self._runtime_payload_cache is not None:
+                created_at, payload = self._runtime_payload_cache
+                if now - created_at <= COMPANION_DATA_CACHE_SECONDS:
+                    return payload
+            payload = build_companion_runtime_payload(self._storage_dir)
+            self._runtime_payload_cache = (time.monotonic(), payload)
+            return payload
+
+    def _cached_daily_summary(self) -> dict:
+        now = time.monotonic()
+        with self._companion_data_lock:
+            if self._daily_summary_cache is not None:
+                created_at, payload = self._daily_summary_cache
+                if now - created_at <= COMPANION_DATA_CACHE_SECONDS:
+                    return payload
+            payload = build_daily_summary(self._storage_dir)
+            self._daily_summary_cache = (time.monotonic(), payload)
+            return payload
+
+    def _cached_unsubscribe_candidates(self) -> list[dict]:
+        now = time.monotonic()
+        with self._companion_data_lock:
+            if self._unsubscribe_candidates_cache is not None:
+                created_at, payload = self._unsubscribe_candidates_cache
+                if now - created_at <= COMPANION_DATA_CACHE_SECONDS:
+                    return payload
+            payload = self._unsubscribe_store.list_candidates()
+            self._unsubscribe_candidates_cache = (time.monotonic(), payload)
+            return payload
+
     def sidebar_state(self, selected_context: dict | None) -> dict:
-        summary = build_daily_summary(self._storage_dir)
+        summary = self._cached_daily_summary()
         selected_email = build_selected_email_state(
             self._storage_dir,
-            self._unsubscribe_store.list_candidates(),
+            self._cached_unsubscribe_candidates(),
             selected_context or {},
         )
         return {
@@ -384,7 +510,21 @@ class GmailCompanionApp:
         }
 
     def harness_state(self, selected_context: dict | None) -> dict:
-        runtime = build_companion_runtime_payload(self._storage_dir)
+        cache_key = json.dumps(selected_context or {}, sort_keys=True)
+        now = time.monotonic()
+        with self._harness_state_lock:
+            cached = self._harness_state_cache.get(cache_key)
+            if cached is not None:
+                created_at, payload = cached
+                if now - created_at <= HARNESS_STATE_CACHE_SECONDS:
+                    return payload
+
+            payload = self._build_harness_state(selected_context)
+            self._harness_state_cache[cache_key] = (time.monotonic(), payload)
+            return payload
+
+    def _build_harness_state(self, selected_context: dict | None) -> dict:
+        runtime = self._cached_runtime_payload()
         items = runtime.get("items", [])
         selected_context = selected_context or {}
         if not (selected_context.get("message_id") or selected_context.get("subject") or selected_context.get("sender")):
@@ -485,6 +625,15 @@ class GmailCompanionApp:
             "attention_summary": build_daily_attention_summary(self._storage_dir),
         }
 
+    def founder_feedback(self, payload: dict) -> dict:
+        feedback = record_founder_feedback(self._storage_dir, payload)
+        return {
+            "acknowledgment": "Saved feedback locally for later product review.",
+            "feedback": feedback,
+            "gmail_mutation": "none",
+            "external_sync": "none",
+        }
+
     def trigger_gmail_check(self, payload: dict) -> dict:
         payload = dict(payload)
         payload.setdefault("account_id", infer_gmail_account_id(self._storage_dir))
@@ -547,6 +696,12 @@ class GmailCompanionApp:
         mode: str,
         preview_matches: list[dict],
     ) -> dict:
+        if mode == "save-future-rule":
+            return {
+                "messages_written": 0,
+                "inbox_removed": 0,
+                "mode": "no-gmail-write-future-rule-only",
+            }
         if not self._gmail_write_through_enabled:
             return {
                 "messages_written": 0,
@@ -994,7 +1149,7 @@ class GmailCompanionApp:
           <div class="button-row" style="margin-top:12px;">
             <button type="button" class="action-button primary" data-apply-mode="current-only">Apply only here</button>
             <button type="button" class="action-button info" data-apply-mode="matching-existing">Apply to matching emails too</button>
-            <button type="button" class="action-button future" data-apply-mode="future-only">Use for future emails only</button>
+            <button type="button" class="action-button future" data-apply-mode="save-future-rule">Save future rule only</button>
             <button type="button" class="action-button secondary" data-action="refine-teach">Refine this</button>
           </div>
         </div>
@@ -1033,6 +1188,10 @@ class GmailCompanionApp:
       }).join("");
       const unsubscribe = selected.unsubscribe || null;
       const unsubscribePreview = (unsubscribe && unsubscribe.preview) || null;
+      const canOpenUnsubscribeUrl = unsubscribePreview
+        && unsubscribePreview.url
+        && unsubscribePreview.status !== "ready"
+        && unsubscribePreview.url.startsWith("mailto:");
       const details = selected.details || {};
       const matchedRuleList = (details.matched_rule_ids || []).length
         ? `<div class="empty">Matched rules: ${escapeHtml((details.matched_rule_ids || []).join(', '))}</div>`
@@ -1044,7 +1203,7 @@ class GmailCompanionApp:
         ? `
           <div class="button-row" style="margin-top:10px;">
             ${unsubscribePreview.status === "ready" ? '<button type="button" class="action-button info" data-action="select-unsubscribe">Queue unsubscribe</button>' : ''}
-            ${unsubscribePreview.url ? `<a class="action-button secondary" style="text-decoration:none;display:inline-flex;align-items:center;" href="${escapeHtml(unsubscribePreview.url)}"${unsubscribePreview.url.startsWith('http') ? ' target="_blank" rel="noreferrer"' : ''}>${unsubscribePreview.url.startsWith('http') ? 'Open unsubscribe' : 'Open mail unsubscribe'}</a>` : ''}
+            ${canOpenUnsubscribeUrl ? `<a class="action-button secondary" style="text-decoration:none;display:inline-flex;align-items:center;" href="${escapeHtml(unsubscribePreview.url)}">Open mail unsubscribe</a>` : ''}
             ${unsubscribe ? `<a class="action-button secondary" style="text-decoration:none;display:inline-flex;align-items:center;" href="${escapeHtml(unsubscribe.handoff_path || '/unsubscribe-review')}" target="_blank" rel="noreferrer">Review all subscriptions</a>` : ''}
           </div>
         `
@@ -2064,11 +2223,15 @@ class GmailCompanionApp:
       const reviewLinkLabel = unsubscribe && unsubscribe.decision_state === "selected"
         ? "Open queued review"
         : "Review all subscriptions";
+      const canOpenUnsubscribeUrl = preview
+        && preview.url
+        && preview.status !== "ready"
+        && preview.url.startsWith("mailto:");
       const actions = preview
               ? `
                 <div class="button-row" style="margin-top:10px;">
                   ${preview.status === "ready" ? '<button type="button" class="action-button info" data-action="select-unsubscribe">Queue unsubscribe</button>' : ''}
-                  ${preview.url ? `<a class="action-button secondary" style="text-decoration:none;display:inline-flex;align-items:center;" href="${escapeHtml(preview.url)}"${preview.url.startsWith('http') ? ' target="_blank" rel="noreferrer"' : ''}>${preview.url.startsWith('http') ? 'Open unsubscribe' : 'Open mail unsubscribe'}</a>` : ''}
+                  ${canOpenUnsubscribeUrl ? `<a class="action-button secondary" style="text-decoration:none;display:inline-flex;align-items:center;" href="${escapeHtml(preview.url)}">Open mail unsubscribe</a>` : ''}
                   ${unsubscribe ? `<a class="action-button secondary" style="text-decoration:none;display:inline-flex;align-items:center;" href="${escapeHtml(unsubscribe.handoff_path || '/unsubscribe-review')}" target="_blank" rel="noreferrer">${escapeHtml(reviewLinkLabel)}</a>` : ''}
                 </div>
               `
@@ -2180,7 +2343,7 @@ class GmailCompanionApp:
           <div class="button-row">
             <button type="button" class="action-button primary" data-apply-mode="current-only">Apply only here</button>
             <button type="button" class="action-button info" data-apply-mode="matching-existing">Apply to matching emails too</button>
-            <button type="button" class="action-button future" data-apply-mode="future-only">Use for future emails only</button>
+            <button type="button" class="action-button future" data-apply-mode="save-future-rule">Save future rule only</button>
             <button type="button" class="action-button secondary" data-action="refine-teach">Refine this</button>
           </div>
         </div>

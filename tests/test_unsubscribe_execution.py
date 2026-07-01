@@ -92,6 +92,40 @@ class UnsubscribeExecutorTests(unittest.TestCase):
             self.assertEqual(latest_attempt["status"], "unsupported")
             self.assertIn("mailto", latest_attempt["notes"])
 
+    def test_linkedin_http_unsubscribe_preview_warns_about_provider_error_page(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            (storage_dir / "unsubscribe_selections.json").write_text(
+                json.dumps(
+                    {
+                        "candidates": {
+                            "gmail:founder-test:jobalerts-noreply@linkedin.com": {
+                                "provider": "gmail",
+                                "account_id": "founder-test",
+                                "list_key": "gmail:founder-test:jobalerts-noreply@linkedin.com",
+                                "display_name": "LinkedIn Job Alerts",
+                                "sender": "LinkedIn Job Alerts <jobalerts-noreply@linkedin.com>",
+                                "sender_address": "jobalerts-noreply@linkedin.com",
+                                "decision_state": "selected",
+                                "evidence_count": 1,
+                                "latest_message_date": "2024-06-20T08:00:00Z",
+                                "qualification_reasons": ["List-Unsubscribe header"],
+                                "list_unsubscribe": "<https://www.linkedin.com/comm/psettings/email-unsubscribe>",
+                                "list_unsubscribe_post": "",
+                            }
+                        }
+                    },
+                    indent=2,
+                )
+            )
+
+            preview = UnsubscribeExecutor(storage_dir=storage_dir).preview_selected_candidates()
+
+            self.assertEqual(preview["ready_count"], 0)
+            self.assertEqual(preview["unsupported_count"], 1)
+            self.assertEqual(preview["candidates"][0]["status"], "unsupported")
+            self.assertIn("signed-in error page", preview["candidates"][0]["notes"])
+
 
 if __name__ == "__main__":
     unittest.main()

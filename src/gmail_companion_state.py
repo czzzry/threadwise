@@ -455,13 +455,18 @@ def build_changed_today_summary(storage_dir: Path, batch_id: str) -> dict:
         change_summary = ""
         if inbox_status == "applied":
             inbox_removed_count += 1
+            change_group = "Removed from inbox"
             change_summary = "Removed from inbox as low-value mail."
         elif write_status == "applied":
             label_writes_count += 1
+            change_group = "Labels written"
             change_summary = f"Applied {gmail_label_name((item.get('final_labels') or item.get('applied_labels') or [''])[0])} in Gmail."
         elif review_action.startswith("sidebar-"):
             taught_count += 1
+            change_group = "Teaching changes"
             change_summary = "Changed from inbox teaching feedback."
+        else:
+            change_group = ""
         if not change_summary:
             continue
         changed_items.append(
@@ -469,6 +474,7 @@ def build_changed_today_summary(storage_dir: Path, batch_id: str) -> dict:
                 "message_id": message_id,
                 "subject": item.get("subject", ""),
                 "sender": item.get("sender", ""),
+                "change_group": change_group,
                 "change_summary": change_summary,
             }
         )
@@ -492,8 +498,22 @@ def build_changed_today_summary(storage_dir: Path, batch_id: str) -> dict:
         "taught_count": taught_count,
         "selected_unsubscribe_count": selected_unsubscribe_count,
         "items": changed_items[:6],
+        "groups": group_changed_today_items(changed_items),
         "selected_unsubscribe_examples": selected_unsubscribe_examples,
     }
+
+def group_changed_today_items(items: list[dict]) -> list[dict]:
+    ordered_groups = ["Teaching changes", "Labels written", "Removed from inbox"]
+    groups = []
+    for group_name in ordered_groups:
+        group_items = [item for item in items if item.get("change_group") == group_name]
+        if not group_items:
+            continue
+        groups.append({"label": group_name, "items": group_items[:6]})
+    other_items = [item for item in items if item.get("change_group") not in ordered_groups]
+    if other_items:
+        groups.append({"label": "Other changes", "items": other_items[:6]})
+    return groups
 
 def build_companion_runtime_payload(storage_dir: Path) -> dict:
     items = []

@@ -24,6 +24,16 @@
       "run_at": "document_idle"
     }
   ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "assets/brand/threadwise-app-icon.png"
+      ],
+      "matches": [
+        "https://mail.google.com/*"
+      ]
+    }
+  ],
   "action": {
     "default_title": "Email Agent Gmail Companion"
   }

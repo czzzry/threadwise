@@ -1,10 +1,11 @@
 # Threadwise Personal Startup LaunchAgent setup/status
 
-Status: Follow-up candidate
+Status: Completed
 Type: Implementation
 GitHub issue: `#22`
 Parent: GitHub issue `#16`; `docs/threadwise-startup-and-packaging-model-review-2026-07-01.md`
 Depends on: `#24`
+Completed by: `src/threadwise_startup.py`
 
 ## What to build
 
@@ -14,14 +15,14 @@ The command should install a user-level LaunchAgent that starts the existing Thr
 
 ## Acceptance criteria
 
-- [ ] Provides an install command for `~/Library/LaunchAgents/com.threadwise.companion.plist`.
-- [ ] Provides status and uninstall commands.
-- [ ] LaunchAgent starts `scripts/run_gmail_companion.py` at login.
-- [ ] Companion binds only to `127.0.0.1:8021`.
-- [ ] Logs go to `~/Library/Logs/Threadwise/`.
-- [ ] Setup/status detects whether the helper is reachable and whether the service on `8021` is Threadwise.
-- [ ] Does not inspect credentials or live email.
-- [ ] Has tests that render/validate plist content and command behavior without installing a real LaunchAgent by default.
+- [x] Provides an install command for `~/Library/LaunchAgents/com.threadwise.companion.plist`.
+- [x] Provides status and uninstall commands.
+- [x] LaunchAgent starts `scripts/run_gmail_companion.py` at login.
+- [x] Companion binds only to `127.0.0.1:8021`.
+- [x] Logs go to `~/Library/Logs/Threadwise/`.
+- [x] Setup/status detects whether the helper is reachable and whether the service on `8021` is Threadwise.
+- [x] Does not inspect credentials or live email.
+- [x] Has tests that render/validate plist content and command behavior without installing a real LaunchAgent by default.
 
 ## Safety boundaries
 

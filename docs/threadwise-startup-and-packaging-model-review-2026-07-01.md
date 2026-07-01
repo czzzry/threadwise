@@ -187,10 +187,12 @@ Create these as bounded slices:
 - `#25` / `100`: Future full installer and menubar app packaging review
 - `#26` / `101`: Future AI OS local-control API review
 
+Status note: `#22`, `#23`, and `#24` are now complete in the repo; the next packaging review candidates are `#25` and `#26`.
+
 Suggested sequencing:
 
-- `#24` / `099` should land before or alongside `#22` / `097` and `#23` / `098`.
-- `#22` / `097` and `#23` / `098` can run in parallel after the health contract is clear.
+- `#24` / `099` landed before the startup slices.
+- `#22` / `097` and `#23` / `098` are now complete alongside it.
 - `#25` / `100` waits until the personal startup loop has been used.
 - `#26` / `101` waits until the local API shape is stable enough to expose deliberately.
 

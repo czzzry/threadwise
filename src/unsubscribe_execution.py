@@ -3,6 +3,7 @@ import urllib.error
 import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import urlparse
 
 from src.local_artifacts import (
     load_json_or_default,
@@ -129,7 +130,13 @@ class UnsubscribeExecutor:
             return item
 
         if http_url:
-            item["notes"] = "Unsupported: HTTP unsubscribe link is missing one-click confirmation metadata."
+            if _is_provider_error_prone_url(http_url):
+                item["notes"] = (
+                    "Unsupported: provider-hosted unsubscribe link may open a signed-in error page. "
+                    "Review manually instead of treating the raw link as a Threadwise action."
+                )
+            else:
+                item["notes"] = "Unsupported: HTTP unsubscribe link is missing one-click confirmation metadata."
             return item
 
         return item
@@ -162,6 +169,11 @@ def _first_mailto_url(value: str) -> str | None:
 
 def _split_list_unsubscribe(value: str) -> list[str]:
     return [token for token in value.split(",") if token.strip()]
+
+
+def _is_provider_error_prone_url(value: str) -> bool:
+    hostname = (urlparse(value).hostname or "").lower()
+    return hostname == "linkedin.com" or hostname.endswith(".linkedin.com")
 
 
 def _default_transport(method: str, url: str, body: str | None = None) -> dict:

@@ -69,7 +69,186 @@ class TeachingLoopTests(unittest.TestCase):
             self.assertEqual(preview["impact"]["matching_existing_examples"][0]["message_id"], "gmail-live-002")
             self.assertEqual(preview["impact"]["matching_existing_examples"][0]["labels_after"], ["personal"])
 
-    def test_apply_matching_existing_relabels_current_and_matches_and_saves_rule(self) -> None:
+    def test_preview_can_infer_target_label_from_note_when_dropdown_is_blank(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                [
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": "Komoot <notification@komoot.de>",
+                        "subject": "Week 3: Discover local landmarks this week",
+                        "snippet": "New routes nearby",
+                        "interpretation": "Newsletter content.",
+                        "review_state": "reviewed",
+                        "final_labels": ["newsletter"],
+                        "applied_labels": ["newsletter"],
+                    }
+                ],
+            )
+
+            preview = build_sidebar_teach_preview(
+                storage_dir,
+                selected_context={
+                    "provider": "gmail",
+                    "message_id": "gmail-live-001",
+                    "sender": "notification@komoot.de",
+                    "subject": "Week 3: Discover local landmarks this week",
+                },
+                target_label="",
+                note="this is spam!!!",
+                scope="sender",
+            )
+
+            self.assertEqual(preview["selected_label_after"], ["spam-low-value"])
+            self.assertEqual(preview["target_label_name"], "EA/LowValue")
+
+    def test_preview_can_infer_low_value_from_phishing_note_when_dropdown_is_blank(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                [
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-phish-001",
+                        "sender": '"Przelewy24.pl" <no-reply@przelewy24.pl>',
+                        "subject": "Nowa transakcja płatnicza (P24-Y6A-Y4M-T1W)",
+                        "snippet": "Informacja o transakcji",
+                        "interpretation": "No confident category.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                ],
+            )
+
+            preview = build_sidebar_teach_preview(
+                storage_dir,
+                selected_context={
+                    "provider": "gmail",
+                    "message_id": "gmail-live-phish-001",
+                    "sender": "no-reply@przelewy24.pl",
+                    "subject": "Nowa transakcja płatnicza (P24-Y6A-Y4M-T1W)",
+                },
+                target_label="",
+                note="this is phishing. I never want emails like this again",
+                scope="sender",
+            )
+
+            self.assertEqual(preview["selected_label_after"], ["spam-low-value"])
+            self.assertEqual(preview["target_label_name"], "EA/LowValue")
+            self.assertIn("EA/LowValue", preview["acknowledgment"])
+
+    def test_preview_surfaces_broader_similar_candidates_separately_from_exact_sender_matches(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                [
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-phish-001",
+                        "sender": '"Przelewy24.pl" <no-reply@przelewy24.pl>',
+                        "subject": "Nowa transakcja płatnicza (P24-Y6A-Y4M-T1W)",
+                        "snippet": "Informacja o transakcji",
+                        "interpretation": "No confident category.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    },
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-phish-002",
+                        "sender": '"Przelewy24.pl" <info@przelewy24.pl>',
+                        "subject": "Nowa transakcja płatnicza (P24-G1M-B3Y-D5T)",
+                        "snippet": "Informacja o transakcji",
+                        "interpretation": "No confident category.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    },
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-unrelated",
+                        "sender": "Store <news@example.com>",
+                        "subject": "Weekly sale",
+                        "snippet": "Discounts",
+                        "interpretation": "Promotion.",
+                        "review_state": "reviewed",
+                        "final_labels": ["promotions"],
+                        "applied_labels": ["promotions"],
+                    },
+                ],
+            )
+
+            preview = build_sidebar_teach_preview(
+                storage_dir,
+                selected_context={
+                    "provider": "gmail",
+                    "message_id": "gmail-live-phish-001",
+                    "sender": "no-reply@przelewy24.pl",
+                    "subject": "Nowa transakcja płatnicza (P24-Y6A-Y4M-T1W)",
+                },
+                target_label="",
+                note="this is phishing. I never want emails like this again",
+                scope="sender",
+            )
+
+            self.assertEqual(preview["impact"]["matching_existing_count"], 0)
+            self.assertEqual(preview["impact"]["similar_candidate_count"], 1)
+            self.assertEqual(preview["impact"]["similar_candidate_examples"][0]["message_id"], "gmail-live-phish-002")
+            self.assertEqual(preview["impact"]["similar_candidate_examples"][0]["labels_after"], ["spam-low-value"])
+            group_ids = {group["id"] for group in preview["impact"]["similar_candidate_groups"]}
+            self.assertIn("same-domain", group_ids)
+            self.assertIn("subject-pattern", group_ids)
+            self.assertIn("przelewy24.pl", preview["impact"]["broader_rule_candidates"][0]["plain_english_rule"])
+
+    def test_preview_requires_clearer_note_when_label_is_blank_and_intent_is_ambiguous(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                [
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": "Person <person@example.com>",
+                        "subject": "Question",
+                        "snippet": "What should this be?",
+                        "interpretation": "No confident category.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                ],
+            )
+
+            with self.assertRaisesRegex(ValueError, "Choose a label"):
+                build_sidebar_teach_preview(
+                    storage_dir,
+                    selected_context={
+                        "provider": "gmail",
+                        "message_id": "gmail-live-001",
+                    },
+                    target_label="",
+                    note="this is wrong",
+                    scope="sender",
+                )
+
+    def test_apply_matching_existing_relabels_current_and_matches_without_saving_rule(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
             self._write_batch(
@@ -125,17 +304,142 @@ class TeachingLoopTests(unittest.TestCase):
 
             batch_one = json.loads((storage_dir / "batches" / "founder-test-batch-1.json").read_text())
             batch_two = json.loads((storage_dir / "batches" / "founder-test-batch-2.json").read_text())
-            rules = json.loads((storage_dir / "teachable_classification_rules.json").read_text())
 
             self.assertIn("rewrote 1 matching stored emails", result["acknowledgment"])
+            self.assertIn("did not save a future rule", result["acknowledgment"])
             self.assertEqual(result["matched_existing_count"], 1)
             self.assertEqual(batch_one["items"][0]["final_labels"], ["job-related"])
             self.assertEqual(batch_two["items"][0]["final_labels"], ["job-related"])
-            self.assertEqual(rules["rules"][0]["label"], "job-related")
+            self.assertFalse((storage_dir / "teachable_classification_rules.json").exists())
             self.assertEqual(result["current"]["message_id"], "gmail-live-001")
             self.assertEqual([match["message_id"] for match in result["preview_matches"]], ["gmail-live-001", "gmail-live-002"])
 
-    def test_write_through_selection_keeps_future_only_to_current_message(self) -> None:
+    def test_apply_matching_existing_does_not_relabel_broader_similar_candidates(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                [
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-phish-001",
+                        "sender": '"Przelewy24.pl" <no-reply@przelewy24.pl>',
+                        "subject": "Nowa transakcja płatnicza (P24-Y6A-Y4M-T1W)",
+                        "snippet": "Informacja o transakcji",
+                        "interpretation": "No confident category.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    },
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-phish-002",
+                        "sender": '"Przelewy24.pl" <info@przelewy24.pl>',
+                        "subject": "Nowa transakcja płatnicza (P24-G1M-B3Y-D5T)",
+                        "snippet": "Informacja o transakcji",
+                        "interpretation": "No confident category.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    },
+                ],
+            )
+
+            preview = build_sidebar_teach_preview(
+                storage_dir,
+                selected_context={
+                    "provider": "gmail",
+                    "message_id": "gmail-live-phish-001",
+                    "sender": "no-reply@przelewy24.pl",
+                    "subject": "Nowa transakcja płatnicza (P24-Y6A-Y4M-T1W)",
+                },
+                target_label="",
+                note="this is phishing. I never want emails like this again",
+                scope="sender",
+            )
+            result = apply_sidebar_teaching(
+                storage_dir,
+                selected_context={
+                    "provider": "gmail",
+                    "message_id": "gmail-live-phish-001",
+                    "sender": "no-reply@przelewy24.pl",
+                    "subject": "Nowa transakcja płatnicza (P24-Y6A-Y4M-T1W)",
+                },
+                target_label="",
+                note="this is phishing. I never want emails like this again",
+                scope="sender",
+                mode="matching-existing",
+            )
+            batch = json.loads((storage_dir / "batches" / "founder-test-batch-1.json").read_text())
+
+            self.assertEqual(preview["impact"]["matching_existing_count"], 0)
+            self.assertEqual(preview["impact"]["similar_candidate_count"], 1)
+            self.assertEqual(result["matched_existing_count"], 0)
+            self.assertEqual(batch["items"][0]["final_labels"], ["spam-low-value"])
+            self.assertEqual(batch["items"][1]["final_labels"], [])
+
+    def test_save_future_rule_only_saves_rule_without_relabeling_existing_messages(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                [
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": "Ashby <notifications@ashbyhq.com>",
+                        "subject": "Interview update",
+                        "snippet": "Status changed",
+                        "interpretation": "No confident category.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    },
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-002",
+                        "sender": "Ashby <notifications@ashbyhq.com>",
+                        "subject": "Application portal reminder",
+                        "snippet": "Reminder",
+                        "interpretation": "No confident category.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    },
+                ],
+            )
+
+            result = apply_sidebar_teaching(
+                storage_dir,
+                selected_context={
+                    "provider": "gmail",
+                    "message_id": "gmail-live-001",
+                    "sender": "notifications@ashbyhq.com",
+                    "subject": "Interview update",
+                },
+                target_label="job-related",
+                note="Ashby interview workflow messages should be job-related and kept visible.",
+                scope="sender",
+                mode="save-future-rule",
+            )
+
+            batch_one = json.loads((storage_dir / "batches" / "founder-test-batch-1.json").read_text())
+            rules = json.loads((storage_dir / "teachable_classification_rules.json").read_text())
+
+            self.assertIn("saved a sender-level lesson for future mail", result["acknowledgment"])
+            self.assertFalse(result["current_changed"])
+            self.assertEqual(result["matched_existing_count"], 0)
+            self.assertEqual(batch_one["items"][0]["final_labels"], [])
+            self.assertEqual(batch_one["items"][1]["final_labels"], [])
+            self.assertEqual(rules["rules"][0]["label"], "job-related")
+
+    def test_write_through_selection_skips_future_rule_only_mode(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
             self._write_batch(
@@ -150,11 +454,11 @@ class TeachingLoopTests(unittest.TestCase):
             selected = load_items_for_gmail_write_through(
                 storage_dir,
                 selected_message_id="gmail-live-001",
-                mode="future-only",
+                mode="save-future-rule",
                 preview_matches=[{"message_id": "gmail-live-002"}],
             )
 
-            self.assertEqual([item["message_id"] for item in selected["founder-test-batch-1"]], ["gmail-live-001"])
+            self.assertEqual(selected, {})
 
     def _write_batch(self, storage_dir: Path, batch_id: str, items: list[dict]) -> None:
         batch_dir = storage_dir / "batches"

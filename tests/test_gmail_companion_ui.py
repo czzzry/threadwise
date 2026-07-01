@@ -6,9 +6,11 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from src.attention_feedback import load_attention_feedback
 from src.attention_rules import attention_rules_path
+from src.founder_feedback import load_founder_feedback
 from src.gmail_run_control import load_gmail_dashboard_run_status, write_gmail_dashboard_run_status
 from src.gmail_companion_rendering import (
     escape_html,
@@ -84,6 +86,19 @@ class GmailCompanionUiTests(unittest.TestCase):
             "No recent mail",
             render_dashboard_email_cards([], empty_label="No recent mail"),
         )
+        rendered_card = render_dashboard_email_cards(
+            [
+                {
+                    "subject": "Google Account Closure Notice",
+                    "sender": "Google <accounts@example.com>",
+                    "classification": "EA/LowValue",
+                    "status_label": "Kept visible",
+                }
+            ],
+            empty_label="No recent mail",
+        )
+        self.assertIn("Open in Gmail", rendered_card)
+        self.assertIn("https://mail.google.com/mail/u/0/#search/", rendered_card)
 
     def test_extension_assets_have_valid_javascript_and_manifest(self) -> None:
         repo_root = Path(__file__).resolve().parent.parent
@@ -120,7 +135,49 @@ class GmailCompanionUiTests(unittest.TestCase):
         content_js = (repo_root / "extensions" / "gmail_companion" / "content.js").read_text()
 
         self.assertIn("/api/harness-state", background_js)
+        self.assertIn("/api/health", background_js)
+        self.assertIn("Helper unreachable", background_js)
+        self.assertIn("Wrong service on port", background_js)
+        self.assertIn("HARNESS_STATE_TIMEOUT_MS", background_js)
         self.assertIn("data-ea-summary-filter", content_js)
+        self.assertIn('previousPayload = "";', content_js)
+        self.assertIn("refreshInFlight", content_js)
+        self.assertIn("REFRESH_INTERVAL_MS = 5000", content_js)
+        self.assertIn("Threadwise is connected but the inbox state is still loading.", content_js)
+        self.assertIn("/api/founder-feedback", content_js)
+        self.assertIn("data-ea-action=\"open-feedback\"", content_js)
+        self.assertIn("overflow-y:auto", content_js)
+        self.assertIn("flex:0 0 auto", content_js)
+        self.assertIn("What should Threadwise do better here?", content_js)
+        self.assertIn("ea-selected-email-secondary", content_js)
+        self.assertIn("Open an email to inspect or teach Threadwise.", content_js)
+        self.assertIn("Gmail label", content_js)
+        self.assertIn("Human meaning", content_js)
+        self.assertIn("Likely why", content_js)
+        self.assertIn("likelyReasonForSelected", content_js)
+        self.assertIn("humanMeaningForSelected", content_js)
+        self.assertIn("renderChangedTodayGroups", content_js)
+        self.assertIn("Proposed future rule", content_js)
+        self.assertIn("Structured rule", content_js)
+        self.assertIn("Similar emails found", content_js)
+        self.assertIn("Similar candidates:", content_js)
+        self.assertIn("Exact sender matches:", content_js)
+        self.assertIn("Broader rule candidate:", content_js)
+        self.assertIn("Saved locally for review.", content_js)
+        self.assertIn('let minimized = true;', content_js)
+        self.assertIn('PANEL_WIDTH_MINIMIZED = "70px"', content_js)
+        self.assertIn('id="ea-brand-toggle"', content_js)
+        self.assertIn("data-ea-brand-img", content_js)
+        self.assertIn('chrome.runtime.getURL("assets/brand/threadwise-app-icon.png")', content_js)
+        self.assertIn("open Threadwise", content_js)
+        self.assertIn("Check again", content_js)
+        self.assertIn("data-ea-action=\"force-refresh\"", content_js)
+        self.assertIn("friendlyErrorMessage", content_js)
+        self.assertIn('id="ea-status"', content_js)
+        self.assertIn("Needs attention", content_js)
+        self.assertIn("Health check failed", content_js)
+        self.assertIn("Wrong service on port", content_js)
+        self.assertIn("Reconnect Threadwise before teaching corrections.", content_js)
         self.assertIn("Current Queue", content_js)
         self.assertIn("Previous interpretation", content_js)
         self.assertIn("data-ea-previous-preview", content_js)
@@ -128,10 +185,31 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("select-unsubscribe", content_js)
         self.assertIn("What Changed Today", content_js)
         self.assertIn("Decision source", content_js)
-        self.assertIn("Live Gmail sidebar mode is using the same stored inbox snapshot and queue buckets as the local harness.", content_js)
+        self.assertNotIn("Live Gmail sidebar mode is using the same stored inbox snapshot and queue buckets as the local harness.", content_js)
         self.assertIn("data-ea-summary-item", content_js)
+        self.assertIn("data-ea-action=\"open-selected-gmail\"", content_js)
+        self.assertIn("Open this email in Gmail", content_js)
+        self.assertIn("data-ea-open-changed-gmail", content_js)
+        self.assertIn("Preview in Threadwise", content_js)
+        self.assertIn("findChangedTodayItem", content_js)
+        self.assertIn("openSelectedEmailInGmail", content_js)
+        self.assertIn("window.location.href = gmailSearchUrl(item)", content_js)
+        self.assertIn("const messageNode = subject ? selectedMessageNode() : null;", content_js)
+        self.assertIn("box-sizing:border-box;width:100%", content_js)
+        self.assertIn("teachErrorResult", content_js)
+        self.assertIn("renderTeachResultHtml", content_js)
+        self.assertIn("Preview failed", content_js)
+        self.assertIn("Lesson not applied", content_js)
+        self.assertIn("Nothing was changed. Check the local companion connection and try Preview lesson again.", content_js)
+        self.assertIn("response.payload?.error", background_js)
+        self.assertIn("status: response.status", background_js)
         self.assertIn("Queue preview", content_js)
-        self.assertIn("Back to inbox email", content_js)
+        self.assertNotIn("Back to inbox email", content_js)
+        self.assertIn("Close preview", content_js)
+        self.assertIn("Select label (optional)", content_js)
+        self.assertIn("Pick a label when you know it. Otherwise just describe what should change.", content_js)
+        self.assertIn("gmailSearchUrl", content_js)
+        self.assertIn("data-ea-open-gmail", content_js)
         self.assertIn("What to do now", content_js)
         self.assertIn("Viewing", content_js)
         self.assertIn("Closest synced emails", content_js)
@@ -143,6 +221,12 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("changes the current message only", content_js)
         self.assertIn("Queue unsubscribe review", content_js)
         self.assertIn("Open queued review", content_js)
+        self.assertIn('data-ea-unsubscribe-card="true"', content_js)
+        self.assertIn('data-ea-unsubscribe-action="queue"', content_js)
+        self.assertIn('data-ea-unsubscribe-action="review"', content_js)
+        self.assertIn("const canOpenUnsubscribeUrl = unsubscribePreview", content_js)
+        self.assertIn('unsubscribePreview.status !== "ready"', content_js)
+        self.assertIn('unsubscribePreview.url.startsWith("mailto:")', content_js)
         self.assertIn("data-ea-changed-item", content_js)
         self.assertIn("Queued subscriptions", content_js)
         self.assertIn("Preview closest synced match", content_js)
@@ -151,9 +235,13 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("selectSummaryFilter", content_js)
         self.assertIn("setDraft", content_js)
         self.assertIn("forceRefresh", content_js)
-        self.assertIn("Show details", content_js)
+        self.assertIn("Show technical details", content_js)
+        self.assertIn("Technical details", content_js)
         self.assertIn("toggle-details", content_js)
         self.assertIn("Open daily dashboard", content_js)
+        manifest = json.loads((repo_root / "extensions" / "gmail_companion" / "manifest.json").read_text())
+        self.assertIn("web_accessible_resources", manifest)
+        self.assertIn("assets/brand/threadwise-app-icon.png", manifest["web_accessible_resources"][0]["resources"])
 
     def test_companion_script_runs_from_repo_root_without_pythonpath(self) -> None:
         repo_root = Path(__file__).resolve().parent.parent
@@ -885,6 +973,53 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertEqual(payload["feedback"]["latest_action"], "wrong_reason")
             self.assertEqual(payload["feedback"]["corrected_reason"], "The concrete deadline is the important part.")
 
+    def test_founder_feedback_endpoint_persists_note_with_minimal_context(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            app = GmailCompanionApp(storage_dir)
+            handler = _FakeRequestHandler(
+                "/api/founder-feedback",
+                method="POST",
+                json_body={
+                    "source": "gmail_companion_extension",
+                    "note": "The attention badge should be more visible here.",
+                    "context": {
+                        "surface": "gmail_companion_extension",
+                        "page_url": "https://mail.google.com/mail/u/0/#inbox",
+                        "connection_kind": "ready",
+                        "active_summary_filter": "needs_attention_items",
+                        "selected_context": {
+                            "provider": "gmail",
+                            "message_id": "msg-urgent-1",
+                            "thread_id": "thread-urgent-1",
+                            "subject": "Flight tomorrow",
+                            "sender": "Airline <alerts@example.com>",
+                        },
+                        "selected_email": {
+                            "found": True,
+                            "status": "needs-attention",
+                            "status_label": "Needs attention",
+                            "classification": "EA/Travel",
+                            "unsubscribe_available": False,
+                            "body": "Do not persist full email body.",
+                        },
+                    },
+                },
+            )
+
+            app.handle_request(handler)
+            payload = json.loads(handler.wfile.value.decode("utf-8"))
+            saved = load_founder_feedback(storage_dir)
+
+            self.assertEqual(handler.code, 200)
+            self.assertEqual(payload["acknowledgment"], "Saved feedback locally for later product review.")
+            self.assertEqual(len(saved), 1)
+            self.assertEqual(saved[0]["note"], "The attention badge should be more visible here.")
+            self.assertEqual(saved[0]["surface"], "gmail_companion_extension")
+            self.assertEqual(saved[0]["selected_context"]["message_id"], "msg-urgent-1")
+            self.assertEqual(saved[0]["selected_email"]["status"], "needs-attention")
+            self.assertNotIn("body", saved[0]["selected_email"])
+
     def test_unsubscribe_review_page_can_focus_candidate_opened_from_inbox(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
@@ -1214,6 +1349,11 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertIn("I can relabel this email to EA/Personal.", preview["acknowledgment"])
             self.assertEqual(preview["impact"]["matching_existing_count"], 1)
             self.assertEqual(preview["selected_label_after"], ["personal"])
+            self.assertEqual(preview["current_label_name"], "Uncategorized")
+            self.assertEqual(preview["target_label_name"], "EA/Personal")
+            self.assertIn("Treat similar emails from messages-noreply@linkedin.com as EA/Personal.", preview["plain_english_rule"])
+            self.assertEqual(preview["structured_rule"]["to_label"], "EA/Personal")
+            self.assertEqual(preview["structured_rule"]["applies_to_existing_count"], 1)
             self.assertEqual(preview["impact"]["matching_existing_examples"][0]["labels_after"], ["personal"])
 
     def test_unsubscribe_select_current_queues_candidate(self) -> None:
@@ -1329,10 +1469,14 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertEqual(summary["inbox_removed_count"], 1)
             self.assertEqual(summary["selected_unsubscribe_count"], 1)
             self.assertEqual(len(summary["items"]), 2)
+            self.assertEqual(summary["items"][0]["change_group"], "Labels written")
+            self.assertEqual(summary["items"][1]["change_group"], "Removed from inbox")
+            self.assertEqual(summary["groups"][0]["label"], "Labels written")
+            self.assertEqual(summary["groups"][1]["label"], "Removed from inbox")
             self.assertEqual(summary["selected_unsubscribe_examples"][0]["display_name"], "Store")
             self.assertIn("list_key=gmail%3Afounder-test%3Anews%40example.com", summary["selected_unsubscribe_examples"][0]["handoff_path"])
 
-    def test_teach_apply_matching_existing_relabels_current_and_saves_rule(self) -> None:
+    def test_teach_apply_matching_existing_relabels_current_without_saving_rule(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
             gmail_client = MockGmailLabelClient()
@@ -1390,19 +1534,68 @@ class GmailCompanionUiTests(unittest.TestCase):
                 }
             )
 
-            rule_payload = json.loads((storage_dir / "teachable_classification_rules.json").read_text())
             batch_one = json.loads((storage_dir / "batches" / "founder-test-batch-1.json").read_text())
             batch_two = json.loads((storage_dir / "batches" / "founder-test-batch-2.json").read_text())
 
             self.assertIn("rewrote 1 matching stored emails", result["acknowledgment"])
-            self.assertIn("saved the sender-level lesson for future mail", result["acknowledgment"])
+            self.assertIn("did not save a future rule", result["acknowledgment"])
             self.assertEqual(result["matched_existing_count"], 1)
             self.assertEqual(batch_one["items"][0]["final_labels"], ["job-related"])
             self.assertEqual(batch_two["items"][0]["final_labels"], ["job-related"])
-            self.assertEqual(rule_payload["rules"][0]["label"], "job-related")
+            self.assertFalse((storage_dir / "teachable_classification_rules.json").exists())
             self.assertIn(("apply_labels", "gmail-live-001", [gmail_client.labels["EA/Work"]]), gmail_client.calls)
             self.assertIn(("apply_labels", "gmail-live-002", [gmail_client.labels["EA/Work"]]), gmail_client.calls)
             self.assertEqual(result["gmail_write_through"]["messages_written"], 2)
+
+    def test_teach_apply_save_future_rule_only_does_not_write_gmail_or_relabel_existing(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            gmail_client = MockGmailLabelClient()
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": "Ashby <notifications@ashbyhq.com>",
+                        "subject": "Interview update",
+                        "snippet": "Status changed",
+                        "interpretation": "Informational message with no confident category.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                ],
+            )
+
+            result = GmailCompanionApp(
+                storage_dir,
+                gmail_client_factory=lambda account_id, credentials_dir, client_secret_path, required_scope: gmail_client,
+            ).teach_apply(
+                {
+                    "selected_context": {
+                        "provider": "gmail",
+                        "message_id": "gmail-live-001",
+                        "subject": "Interview update",
+                        "sender": "notifications@ashbyhq.com",
+                    },
+                    "target_label": "job-related",
+                    "note": "Ashby interview workflow messages should be job-related and kept visible.",
+                    "mode": "save-future-rule",
+                }
+            )
+
+            rule_payload = json.loads((storage_dir / "teachable_classification_rules.json").read_text())
+            batch_one = json.loads((storage_dir / "batches" / "founder-test-batch-1.json").read_text())
+
+            self.assertIn("saved a sender-level lesson for future mail", result["acknowledgment"])
+            self.assertEqual(rule_payload["rules"][0]["label"], "job-related")
+            self.assertEqual(batch_one["items"][0]["final_labels"], [])
+            self.assertEqual(gmail_client.calls, [])
+            self.assertEqual(result["gmail_write_through"]["messages_written"], 0)
+            self.assertEqual(result["gmail_write_through"]["mode"], "no-gmail-write-future-rule-only")
 
     def test_teach_apply_current_only_writes_current_message_to_gmail(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1555,6 +1748,74 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertEqual(payload["contract_version"], "gmail-companion-selected-email-v1")
         self.assertIn("message_id", payload["selected_context_fields"])
         self.assertIn("selected_email", payload["sidebar_state_fields"])
+
+    def test_health_endpoint_reports_service_identity_and_stays_read_only(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": "Airline <alerts@airline.example>",
+                        "subject": "Flight check-in closes tonight",
+                        "snippet": "Check in before 21:00.",
+                        "interpretation": "Travel reminder.",
+                        "review_state": "reviewed",
+                        "final_labels": ["travel"],
+                        "applied_labels": ["travel"],
+                    }
+                ],
+                raw_messages=[
+                    {
+                        "id": "gmail-live-001",
+                        "payload": {
+                            "headers": [
+                                {"name": "From", "value": "Airline <alerts@airline.example>"},
+                            ]
+                        },
+                        "labelIds": ["INBOX"],
+                    }
+                ],
+            )
+            app = GmailCompanionApp(storage_dir)
+            handler = _FakeRequestHandler("/api/health", method="GET")
+
+            app.handle_request(handler)
+            payload = json.loads(handler.wfile.value.decode("utf-8"))
+
+            self.assertEqual(handler.code, 200)
+            self.assertEqual(payload["schema_version"], 1)
+            self.assertEqual(payload["service_id"], "threadwise-gmail-companion")
+            self.assertEqual(payload["service_name"], "Threadwise Gmail Companion")
+            self.assertEqual(payload["status"], "ready")
+            self.assertEqual(payload["bound_origin"], "http://127.0.0.1:8021")
+            self.assertEqual(payload["dashboard_path"], "/daily-dashboard#run-gmail-check")
+            self.assertEqual(payload["health_path"], "/api/health")
+            self.assertEqual(payload["storage_summary"]["storage_dir_name"], storage_dir.name)
+            self.assertEqual(payload["storage_summary"]["batch_count"], 1)
+            self.assertEqual(payload["storage_summary"]["report_count"], 0)
+            self.assertNotIn("items", payload)
+            self.assertNotIn("body", payload)
+            self.assertNotIn("raw_messages", payload)
+            self.assertNotIn("credentials", payload)
+            self.assertNotIn("oauth", payload)
+            self.assertNotIn("token", payload)
+
+    def test_harness_state_reuses_short_lived_cache_for_same_context(self) -> None:
+        app = GmailCompanionApp(Path("/tmp/example"))
+        context = {"provider": "gmail", "message_id": "cached-msg"}
+
+        with patch("src.gmail_companion_ui.build_companion_runtime_payload") as runtime_mock:
+            runtime_mock.return_value = {"items": []}
+            first = app.harness_state(context)
+            second = app.harness_state(context)
+
+        self.assertEqual(first, second)
+        self.assertEqual(runtime_mock.call_count, 1)
 
     def test_harness_state_endpoint_includes_cors_headers(self) -> None:
         app = GmailCompanionApp(Path("/tmp/example"))
@@ -1752,6 +2013,7 @@ class _FakeRequestHandler:
             body = json.dumps(json_body).encode("utf-8") if json_body is not None else b""
             content_type = "application/json" if json_body is not None else ""
         self.headers = {"Content-Length": str(len(body)), "Content-Type": content_type} if body else {}
+        self.server = SimpleNamespace(server_address=("127.0.0.1", 8021), server_port=8021)
         self.sent_headers: dict[str, str] = {}
         self.code = None
         self.rfile = io.BytesIO(body)

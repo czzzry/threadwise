@@ -1,5 +1,8 @@
 
 
+from urllib.parse import quote
+
+
 def unsubscribe_section_key(detail: dict, preview: dict) -> str:
     if detail.get("decision_state") == "selected":
         return "selected"
@@ -51,6 +54,7 @@ def render_dashboard_email_cards(items: list[dict], empty_label: str, *, allow_a
             f'<span class="pill">{escape_html(item.get("classification") or "Uncategorized")}</span>'
             f'<span class="pill">{escape_html(item.get("status_label") or item.get("status") or "")}</span>'
             '</div>'
+            f'<a class="action" href="{escape_html(gmail_search_url(item))}" target="_blank" rel="noreferrer">Open in Gmail</a>'
             f'{attention_action}'
             '</article>'
         )
@@ -146,7 +150,9 @@ def render_dashboard_changed_cards(items: list[dict]) -> str:
             '<article class="email-card">'
             f'<h3>{escape_html(item.get("subject") or "(no subject)")}</h3>'
             f'<div class="meta">{escape_html(item.get("sender") or "(unknown sender)")}</div>'
+            f'<div class="pill-row"><span class="pill">{escape_html(item.get("change_group") or "Change")}</span></div>'
             f'<div class="copy">{escape_html(item.get("change_summary") or "")}</div>'
+            f'<a class="action" href="{escape_html(gmail_search_url(item))}" target="_blank" rel="noreferrer">Open in Gmail</a>'
             '</article>'
         )
     return "".join(cards)
@@ -175,6 +181,20 @@ def escape_html(value: str) -> str:
         .replace('"', "&quot;")
         .replace("'", "&#39;")
     )
+
+def gmail_search_url(item: dict) -> str:
+    subject = " ".join(str(item.get("subject") or "").split())
+    sender = str(item.get("sender") or "").strip()
+    sender_query = sender
+    if "<" in sender and ">" in sender:
+        sender_query = sender.split("<", 1)[1].split(">", 1)[0].strip()
+    query_parts = []
+    if sender_query:
+        query_parts.append(f"from:{sender_query}")
+    if subject:
+        query_parts.append(f'"{subject[:80]}"')
+    query = " ".join(query_parts) or str(item.get("message_id") or "")
+    return f"https://mail.google.com/mail/u/0/#search/{quote(query)}"
 
 def server_origin(host_header: str) -> str:
     host = host_header.strip() or "127.0.0.1:8021"
