@@ -1,9 +1,10 @@
 # Propose attention rules from feedback
 
-Status: Ready for agent
+Status: Completed
 Type: AFK
 GitHub issue: `#14`
 Parent: GitHub issue `#7`; `docs/prd.md`
+Completed in: `800084b`
 
 ## What to build
 
@@ -13,15 +14,15 @@ This completes MVP+2's teachable attention loop. Threadwise may infer a broader 
 
 ## Acceptance criteria
 
-- [ ] Feedback can produce a proposed broader attention rule.
-- [ ] Proposed rules distinguish attention priority from classification labels.
-- [ ] Proposed rules preview matching existing stored emails before approval.
-- [ ] The founder can apply only to this email, future emails, or matching existing stored emails where supported.
-- [ ] No broader rule is created or applied silently from a single feedback action.
-- [ ] Learned rules may auto-promote into attention because promotion is non-mutating.
-- [ ] Learned rules promote to Needs attention now only with concrete time or consequence evidence.
-- [ ] Learned rules otherwise promote to Possible attention.
-- [ ] Tests cover proposal generation, preview, approval, rejection, and application boundaries.
+- [x] Feedback can produce a proposed broader attention rule.
+- [x] Proposed rules distinguish attention priority from classification labels.
+- [x] Proposed rules preview matching existing stored emails before approval.
+- [x] The founder can apply only to this email, future emails, or matching existing stored emails where supported.
+- [x] No broader rule is created or applied silently from a single feedback action.
+- [x] Learned rules may auto-promote into attention because promotion is non-mutating.
+- [x] Learned rules promote to Needs attention now only with concrete time or consequence evidence.
+- [x] Learned rules otherwise promote to Possible attention.
+- [x] Tests cover proposal generation, preview, approval, rejection, and application boundaries.
 
 ## Blocked by
 
