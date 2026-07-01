@@ -386,6 +386,170 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertIn("Queued unsubscribe review", page)
             self.assertIn("Open unsubscribe review", page)
 
+    def test_daily_dashboard_page_renders_attention_now_and_possible_from_daily_report(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "thread_id": "thread-001",
+                        "sender": "Airline <alerts@airline.example>",
+                        "subject": "Flight check-in closes tonight",
+                        "snippet": "Check in before 21:00.",
+                        "interpretation": "Travel reminder.",
+                        "review_state": "reviewed",
+                        "final_labels": ["travel"],
+                        "applied_labels": ["travel"],
+                    },
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-002",
+                        "thread_id": "thread-002",
+                        "sender": "Recruiter <recruiter@example.com>",
+                        "subject": "Choose an interview slot",
+                        "snippet": "Please book a time next week.",
+                        "interpretation": "Hiring workflow.",
+                        "review_state": "reviewed",
+                        "final_labels": ["job-related"],
+                        "applied_labels": ["job-related"],
+                    },
+                ],
+            )
+            self._write_daily_report(
+                storage_dir,
+                "founder-test-batch-1",
+                attention_items=[
+                    {
+                        "message_id": "gmail-live-001",
+                        "thread_id": "thread-001",
+                        "level": "needs_attention_now",
+                        "category": "travel",
+                        "reason": "Check-in closes tonight.",
+                        "evidence": "Email says check-in closes at 21:00.",
+                        "source": "compact_payload",
+                        "handled_state": "appears_unhandled",
+                        "feedback_state": "unset",
+                        "gmail_mutation": "none",
+                    },
+                    {
+                        "message_id": "gmail-live-002",
+                        "thread_id": "thread-002",
+                        "level": "possible_attention",
+                        "category": "job_opportunity",
+                        "reason": "Recruiter scheduling link may need action.",
+                        "evidence": "Message asks the founder to book an interview slot.",
+                        "source": "compact_payload",
+                        "handled_state": "unknown",
+                        "feedback_state": "unset",
+                        "gmail_mutation": "none",
+                    },
+                ],
+            )
+
+            page = GmailCompanionApp(storage_dir).render_daily_dashboard_page()
+
+            self.assertIn("Needs Attention Now", page)
+            self.assertIn("Possible Attention", page)
+            self.assertIn("Flight check-in closes tonight", page)
+            self.assertIn("Airline &lt;alerts@airline.example&gt;", page)
+            self.assertIn("travel", page)
+            self.assertIn("Check-in closes tonight.", page)
+            self.assertIn("Email says check-in closes at 21:00.", page)
+            self.assertIn("compact_payload | Gmail message gmail-live-001 | thread thread-001 | batch founder-test-batch-1", page)
+            self.assertIn("Attention pass: no Gmail changes", page)
+            self.assertIn("Choose an interview slot", page)
+            self.assertIn("job_opportunity", page)
+
+    def test_daily_dashboard_page_surfaces_only_high_consequence_insufficient_context(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "thread_id": "thread-001",
+                        "sender": "Bank <security@bank.example>",
+                        "subject": "Confirm account activity",
+                        "snippet": "We noticed a sign-in.",
+                        "interpretation": "Account security notice.",
+                        "review_state": "reviewed",
+                        "final_labels": ["account-security"],
+                        "applied_labels": ["account-security"],
+                    },
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-002",
+                        "thread_id": "thread-002",
+                        "sender": "News <news@example.com>",
+                        "subject": "Weekly reading list",
+                        "snippet": "Links for later.",
+                        "interpretation": "Newsletter.",
+                        "review_state": "reviewed",
+                        "final_labels": ["newsletter"],
+                        "applied_labels": ["newsletter"],
+                    },
+                ],
+            )
+            self._write_daily_report(
+                storage_dir,
+                "founder-test-batch-1",
+                attention_items=[
+                    {
+                        "message_id": "gmail-live-001",
+                        "thread_id": "thread-001",
+                        "level": "insufficient_context",
+                        "category": "security",
+                        "reason": "Could be account-risk mail, but compact context is not enough.",
+                        "evidence": "Mentions new sign-in and account activity.",
+                        "source": "compact_payload",
+                        "gmail_mutation": "none",
+                    },
+                    {
+                        "message_id": "gmail-live-002",
+                        "thread_id": "thread-002",
+                        "level": "insufficient_context",
+                        "category": "",
+                        "reason": "Not enough context to classify the reading list.",
+                        "evidence": "Newsletter snippet is vague.",
+                        "source": "compact_payload",
+                        "gmail_mutation": "none",
+                    },
+                ],
+            )
+
+            page = GmailCompanionApp(storage_dir).render_daily_dashboard_page()
+            attention_section = page.split('<div class="eyebrow">What Changed Today</div>', 1)[0]
+
+            self.assertIn("Confirm account activity", attention_section)
+            self.assertIn("Insufficient context, high-consequence cue", attention_section)
+            self.assertIn("Could be account-risk mail, but compact context is not enough.", attention_section)
+            self.assertIn("1 lower-risk insufficient-context item kept out of this daily attention view.", attention_section)
+            self.assertNotIn("Weekly reading list", attention_section)
+
+    def test_daily_dashboard_page_has_useful_empty_attention_state(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_daily_report(storage_dir, "founder-test-batch-1", attention_items=[])
+
+            page = GmailCompanionApp(storage_dir).render_daily_dashboard_page()
+
+            self.assertIn("Needs Attention Now", page)
+            self.assertIn("No attention-now items in the latest Gmail daily report.", page)
+            self.assertIn("Possible Attention", page)
+            self.assertIn("No possible-attention items in the latest Gmail daily report.", page)
+            self.assertIn("Latest attention report: 2026-07-01", page)
+
     def test_unsubscribe_review_page_can_focus_candidate_opened_from_inbox(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
@@ -1119,6 +1283,48 @@ class GmailCompanionUiTests(unittest.TestCase):
                     "provider": "gmail",
                     "items": items,
                     "raw_messages": raw_messages or [],
+                },
+                indent=2,
+            )
+        )
+
+    def _write_daily_report(self, storage_dir: Path, batch_id: str, attention_items: list[dict]) -> None:
+        reports_dir = storage_dir / "reports"
+        reports_dir.mkdir(parents=True, exist_ok=True)
+        grouped_counts = {
+            "needs_attention_now": 0,
+            "possible_attention": 0,
+            "not_attention": 0,
+            "insufficient_context": 0,
+        }
+        for item in attention_items:
+            level = item.get("level")
+            if level in grouped_counts:
+                grouped_counts[level] += 1
+        (reports_dir / f"{batch_id}_daily_report.json").write_text(
+            json.dumps(
+                {
+                    "provider": "gmail",
+                    "account_id": "founder-test",
+                    "batch_id": batch_id,
+                    "report_date": "2026-07-01",
+                    "processed_count": 2,
+                    "inbox_removed_count": 0,
+                    "unlabeled_count": 0,
+                    "label_counts": {},
+                    "attention": {
+                        "schema_version": 1,
+                        "evaluated_message_count": 2,
+                        "lookback_window": {
+                            "latest_batch_id": batch_id,
+                            "stored_lookback_batch_ids": [],
+                            "max_evaluated_messages": 50,
+                        },
+                        "model": {"provider": "fake", "name": "fixture-attention-model"},
+                        "usage": {"input_tokens": 100, "output_tokens": 20, "estimated_cost_usd": 0.001},
+                        "grouped_counts": grouped_counts,
+                        "items": attention_items,
+                    },
                 },
                 indent=2,
             )

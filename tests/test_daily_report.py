@@ -65,6 +65,32 @@ class DailyReportTests(unittest.TestCase):
         self.assertEqual(attention["items"][1]["handled_state"], "unknown")
         self.assertNotIn("body", attention["items"][0])
 
+    def test_build_attention_section_preserves_usage_estimate_metadata(self) -> None:
+        attention = build_attention_section(
+            evaluated_message_count=1,
+            usage={
+                "input_tokens": 10,
+                "output_tokens": 5,
+                "estimated_cost_usd": 0.001,
+                "event_count": 1,
+                "cost_is_estimate": True,
+                "cost_basis": "estimated_cost_usd_not_billing_truth",
+            },
+            items=[],
+        )
+
+        self.assertEqual(
+            attention["usage"],
+            {
+                "input_tokens": 10,
+                "output_tokens": 5,
+                "estimated_cost_usd": 0.001,
+                "event_count": 1,
+                "cost_is_estimate": True,
+                "cost_basis": "estimated_cost_usd_not_billing_truth",
+            },
+        )
+
     def test_gmail_daily_report_includes_empty_attention_contract_without_changing_unlabeled_count(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)

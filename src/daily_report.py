@@ -92,16 +92,21 @@ def build_attention_section(
     items: list[dict] | None = None,
 ) -> dict:
     normalized_items = [attention_item_summary(item) for item in items or []]
+    normalized_usage = {
+        "input_tokens": int((usage or {}).get("input_tokens", 0)),
+        "output_tokens": int((usage or {}).get("output_tokens", 0)),
+        "estimated_cost_usd": float((usage or {}).get("estimated_cost_usd", 0.0)),
+    }
+    for optional_field in ("event_count", "cost_is_estimate", "cost_basis"):
+        if usage and optional_field in usage:
+            normalized_usage[optional_field] = usage[optional_field]
     return {
         "schema_version": ATTENTION_SCHEMA_VERSION,
         "evaluated_message_count": evaluated_message_count,
         "lookback_window": dict(lookback_window or {}),
         "model": dict(model or {}),
-        "usage": {
-            "input_tokens": int((usage or {}).get("input_tokens", 0)),
-            "output_tokens": int((usage or {}).get("output_tokens", 0)),
-            "estimated_cost_usd": float((usage or {}).get("estimated_cost_usd", 0.0)),
-        },
+        "usage": normalized_usage,
+        "gmail_mutation": "none",
         "grouped_counts": attention_grouped_counts(normalized_items),
         "items": normalized_items,
     }
@@ -127,6 +132,7 @@ def attention_item_summary(item: dict) -> dict:
         "source": item.get("source", ""),
         "handled_state": item.get("handled_state", "unknown"),
         "feedback_state": item.get("feedback_state", "unset"),
+        "full_body_used": bool(item.get("full_body_used", False)),
         "gmail_mutation": "none",
     }
 

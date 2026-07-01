@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from src.daily_report import build_gmail_daily_report, write_daily_report
+from src.gmail_attention import DEFAULT_MAX_EVALUATED_MESSAGES, evaluate_gmail_attention
 from src.gmail_batch_review_store import GmailBatchReviewStore
 from src.gmail_fetcher import GmailBatchFetcher
 from src.gmail_writer import MockGmailLabelWriter
@@ -172,6 +173,8 @@ def run_daily_gmail_automation(
     batch_size: int,
     storage_dir: Path,
     gmail_client,
+    attention_model_client: object | None = None,
+    attention_max_evaluated_messages: int = DEFAULT_MAX_EVALUATED_MESSAGES,
 ) -> DailyGmailRunResult | None:
     fetcher = GmailBatchFetcher(gmail_client=gmail_client, storage_dir=storage_dir)
     review_queue = fetcher.fetch_gmail_batch(account_id, batch_size)
@@ -190,6 +193,14 @@ def run_daily_gmail_automation(
     unlabeled_exceptions = [
         item for item in stored_batch["items"] if item.get("review_state") != "reviewed"
     ]
+    attention = None
+    if attention_model_client is not None:
+        attention = evaluate_gmail_attention(
+            storage_dir=storage_dir,
+            latest_batch_id=review_queue["batch_id"],
+            model_client=attention_model_client,
+            max_evaluated_messages=attention_max_evaluated_messages,
+        )
     report = build_gmail_daily_report(
         storage_dir,
         review_queue["batch_id"],
@@ -198,6 +209,7 @@ def run_daily_gmail_automation(
         write_summary["applied_count"],
         inbox_summary["applied_count"],
         unlabeled_exceptions,
+        attention=attention,
     )
     write_daily_report(storage_dir, review_queue["batch_id"], report)
     return DailyGmailRunResult(

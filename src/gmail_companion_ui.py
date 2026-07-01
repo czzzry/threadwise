@@ -17,6 +17,7 @@ from src.unsubscribe_execution import UnsubscribeExecutor
 
 from src.gmail_companion_rendering import (
     escape_html,
+    render_dashboard_attention_cards,
     render_dashboard_changed_cards,
     render_dashboard_email_cards,
     render_dashboard_section,
@@ -27,6 +28,7 @@ from src.gmail_companion_rendering import (
 )
 from src.gmail_companion_state import (
     build_companion_runtime_payload,
+    build_daily_attention_summary,
     build_daily_summary,
     build_selected_email_state,
     build_unsubscribe_detail,
@@ -1401,7 +1403,8 @@ class GmailCompanionApp:
 
     def render_daily_dashboard_page(self) -> str:
         payload = build_companion_runtime_payload(self._storage_dir)
-        summary = payload.get("sidebar_state", {}).get("daily_summary", {})
+        summary = payload.get("daily_summary", {})
+        attention_summary = build_daily_attention_summary(self._storage_dir)
         changed_today = summary.get("changed_today", {})
         selected_unsubscribe_examples = changed_today.get("selected_unsubscribe_examples", [])
         sections = [
@@ -1436,6 +1439,38 @@ class GmailCompanionApp:
             render_dashboard_section(title, description, cards)
             for title, description, cards in sections
         )
+        attention_now_html = render_dashboard_attention_cards(
+            attention_summary.get("now_items", []),
+            empty_label="No attention-now items in the latest Gmail daily report.",
+        )
+        possible_attention_html = render_dashboard_attention_cards(
+            attention_summary.get("possible_items", []),
+            empty_label="No possible-attention items in the latest Gmail daily report.",
+        )
+        hidden_insufficient_context_count = attention_summary.get("hidden_insufficient_context_count", 0)
+        hidden_insufficient_context_html = (
+            f'<div class="copy">{hidden_insufficient_context_count} lower-risk insufficient-context '
+            "item kept out of this daily attention view.</div>"
+            if hidden_insufficient_context_count == 1
+            else (
+                f'<div class="copy">{hidden_insufficient_context_count} lower-risk insufficient-context '
+                "items kept out of this daily attention view.</div>"
+                if hidden_insufficient_context_count
+                else ""
+            )
+        )
+        attention_report_pills = "".join(
+            [
+                (
+                    f'<span class="pill">Latest attention report: {escape_html(attention_summary.get("report_date", ""))}</span>'
+                    if attention_summary.get("report_date")
+                    else ""
+                ),
+                f'<span class="pill">Evaluated: {attention_summary.get("evaluated_message_count", 0)}</span>',
+                f'<span class="pill">Now: {len(attention_summary.get("now_items", []))}</span>',
+                f'<span class="pill">Possible: {len(attention_summary.get("possible_items", []))}</span>',
+            ]
+        )
         return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -1462,6 +1497,7 @@ class GmailCompanionApp:
     .metric strong {{ display:block; font-size:1.15rem; }}
     .stack {{ display:grid; gap:10px; }}
     .email-card {{ border:2px solid #241812; border-radius:11px; background:#fffdf7; padding:12px; box-shadow:2px 2px 0 rgba(36,24,18,.18); }}
+    .attention-card {{ background:#fffaf0; }}
     .email-card h3 {{ margin:0; font-size:0.98rem; line-height:1.3; }}
     .meta {{ margin-top:6px; color:#6b6255; font-size:0.84rem; overflow-wrap:anywhere; }}
     .copy {{ margin-top:8px; color:#1f1a14; line-height:1.45; }}
@@ -1492,6 +1528,26 @@ class GmailCompanionApp:
         <span class="pill">Unsubscribe candidates: {summary.get("unsubscribe_candidate_count", 0)}</span>
       </div>
       {f'<div class="pill-row">{top_labels_html}</div>' if top_labels_html else ""}
+    </section>
+    <section class="card">
+      <div class="eyebrow">Needs Attention</div>
+      <h2>Needs attention from latest Gmail report</h2>
+      <p>Attention detection is separate from classification and does not mutate Gmail. Strong signals and lower-confidence candidates are split so uncertainty does not swamp the daily view.</p>
+      <div class="pill-row">{attention_report_pills}</div>
+      {f'<div class="copy">{escape_html(attention_summary.get("empty_reason", ""))}</div>' if attention_summary.get("empty_reason") else ""}
+      <div class="grid" style="margin-top:12px;">
+        <article class="email-card">
+          <div class="eyebrow">Strong Signals</div>
+          <h2>Needs Attention Now</h2>
+          <div class="stack">{attention_now_html}</div>
+        </article>
+        <article class="email-card">
+          <div class="eyebrow">Lower Confidence</div>
+          <h2>Possible Attention</h2>
+          <div class="stack">{possible_attention_html}</div>
+          {hidden_insufficient_context_html}
+        </article>
+      </div>
     </section>
     <section class="grid">
       <article class="card">

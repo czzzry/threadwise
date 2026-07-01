@@ -7,9 +7,53 @@ from src.gmail_automation import (
     auto_approve_items,
     build_gmail_label_writer,
     retry_failed_writes,
+    run_daily_gmail_automation,
     summarize_inbox_removal_candidates,
 )
 from src.gmail_writer import MockGmailLabelClient
+
+
+class FakeDailyRunGmailClient(MockGmailLabelClient):
+    def __init__(self, messages: list[dict]) -> None:
+        super().__init__()
+        self._messages = {message["id"]: message for message in messages}
+
+    def list_messages(self, label_ids: tuple[str, ...], max_results: int) -> list[str]:
+        self.calls.append(("list_messages", label_ids, max_results))
+        return list(self._messages)[:max_results]
+
+    def get_message(self, message_id: str) -> dict:
+        self.calls.append(("get_message", message_id))
+        return self._messages[message_id]
+
+
+class FakeAttentionModelClient:
+    def __init__(self) -> None:
+        self.compact_payloads: list[list[dict]] = []
+        self.model_metadata = {"provider": "fake", "name": "fake-attention-model"}
+
+    def evaluate_gmail_attention_batch(self, payloads: list[dict]) -> dict:
+        self.compact_payloads.append(payloads)
+        return {
+            "model": self.model_metadata,
+            "usage": {"input_tokens": 0, "output_tokens": 0, "estimated_cost_usd": 0.0},
+            "items": [
+                {
+                    "message_id": payloads[0]["message_id"],
+                    "level": "needs_attention_now",
+                    "category": "travel",
+                    "reason": "Flight departs tomorrow.",
+                    "evidence": "The message includes a concrete departure time.",
+                },
+                {
+                    "message_id": payloads[1]["message_id"],
+                    "level": "possible_attention",
+                    "category": "bill_due",
+                    "reason": "Stored bill may still need payment.",
+                    "evidence": "The lookback message contains payment language.",
+                },
+            ],
+        }
 
 
 class GmailAutomationTests(unittest.TestCase):
@@ -97,7 +141,86 @@ class GmailAutomationTests(unittest.TestCase):
             self.assertEqual(result.still_failed_count, 0)
             self.assertEqual(result.blocked_messages, ["Message gmail-live-002 requires re-review before retry"])
 
+    def test_daily_run_writes_attention_from_latest_batch_and_stored_lookback_without_extra_gmail_mutations(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_json(
+                storage_dir / "batches" / "founder-test-batch-1.json",
+                {
+                    "batch_id": "founder-test-batch-1",
+                    "account_id": "founder-test",
+                    "provider": "gmail",
+                    "items": [
+                        {
+                            "source": "gmail",
+                            "account_id": "founder-test",
+                            "message_id": "lookback-bill",
+                            "thread_id": "thread-lookback-bill",
+                            "sender": "Utility <billing@example.com>",
+                            "subject": "Payment due",
+                            "date": "2026-06-30T09:00:00Z",
+                            "snippet": "Your payment is due soon.",
+                            "body": "Your payment is due soon.",
+                            "applied_labels": ["finance"],
+                            "final_labels": ["finance"],
+                            "review_state": "reviewed",
+                        }
+                    ],
+                },
+            )
+            gmail_client = FakeDailyRunGmailClient(
+                [
+                    {
+                        "id": "latest-order",
+                        "threadId": "thread-latest-order",
+                        "internalDate": "1782883200000",
+                        "snippet": "Your package has shipped.",
+                        "labelIds": ["INBOX", "CATEGORY_UPDATES"],
+                        "payload": {
+                            "headers": [
+                                {"name": "From", "value": "\"Amazon.de\" <versandbestaetigung@amazon.de>"},
+                                {"name": "Subject", "value": "Dispatched: 'GEWAGE CO2 Bicycle Pump -...'"},
+                                {"name": "Date", "value": "Wed, 01 Jul 2026 08:00:00 +0000"},
+                            ]
+                        },
+                    }
+                ]
+            )
+            attention_model = FakeAttentionModelClient()
+
+            result = run_daily_gmail_automation(
+                account_id="founder-test",
+                batch_size=1,
+                storage_dir=storage_dir,
+                gmail_client=gmail_client,
+                attention_model_client=attention_model,
+                attention_max_evaluated_messages=2,
+            )
+
+            self.assertIsNotNone(result)
+            self.assertEqual(result.report["batch_id"], "founder-test-batch-2")
+            self.assertEqual(
+                [payload["message_id"] for payload in attention_model.compact_payloads[0]],
+                ["latest-order", "lookback-bill"],
+            )
+            self.assertEqual(result.report["attention"]["evaluated_message_count"], 2)
+            self.assertEqual(result.report["attention"]["grouped_counts"]["needs_attention_now"], 1)
+            self.assertEqual(result.report["attention"]["grouped_counts"]["possible_attention"], 1)
+            self.assertEqual(
+                result.report["attention"]["lookback_window"]["stored_lookback_batch_ids"],
+                ["founder-test-batch-1"],
+            )
+            self.assertEqual(
+                [call[0] for call in gmail_client.calls],
+                ["list_messages", "get_message", "get_or_create_label", "apply_labels"],
+            )
+            saved_report = json.loads(
+                (storage_dir / "reports" / "founder-test-batch-2_daily_report.json").read_text()
+            )
+            self.assertEqual(saved_report["attention"], result.report["attention"])
+
     def _write_json(self, path: Path, payload: dict) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(payload, indent=2))
 
 

@@ -46,6 +46,28 @@ def render_dashboard_email_cards(items: list[dict], empty_label: str) -> str:
         )
     return "".join(cards)
 
+def render_dashboard_attention_cards(items: list[dict], empty_label: str) -> str:
+    if not items:
+        return f'<div class="email-card"><div class="copy">{escape_html(empty_label)}</div></div>'
+    cards = []
+    for item in items[:10]:
+        mutation_label = "Attention pass: no Gmail changes" if item.get("gmail_mutation") == "none" else f'Gmail mutation: {item.get("gmail_mutation")}'
+        cards.append(
+            '<article class="email-card attention-card">'
+            f'<h3>{escape_html(item.get("subject") or "(no subject)")}</h3>'
+            f'<div class="meta">{escape_html(item.get("sender") or "(unknown sender)")}</div>'
+            '<div class="pill-row">'
+            f'<span class="pill">{escape_html(item.get("category") or "uncategorized")}</span>'
+            f'<span class="pill">{escape_html(item.get("surface_note") or item.get("level") or "")}</span>'
+            f'<span class="pill">{escape_html(mutation_label)}</span>'
+            '</div>'
+            f'<div class="copy"><strong>Reason:</strong> {escape_html(item.get("reason") or "No reason recorded.")}</div>'
+            f'<div class="copy"><strong>Evidence:</strong> {escape_html(item.get("evidence") or "No evidence summary recorded.")}</div>'
+            f'<div class="meta">{escape_html(item.get("source_context") or "Source message context unavailable")}</div>'
+            '</article>'
+        )
+    return "".join(cards)
+
 def render_dashboard_changed_cards(items: list[dict]) -> str:
     if not items:
         return '<div class="email-card"><div class="copy">No tracked agent changes in this stored batch yet.</div></div>'

@@ -16,6 +16,17 @@ from src.unsubscribe_execution import UnsubscribeExecutor
 from src.unsubscribe_inventory_store import UnsubscribeInventoryStore
 
 
+HIGH_CONSEQUENCE_ATTENTION_CATEGORIES = {
+    "travel",
+    "bill_due",
+    "account_risk",
+    "security",
+    "reply_deadline",
+    "appointment",
+    "job_opportunity",
+}
+
+
 def selected_context_from_query(query: dict[str, list[str]]) -> dict:
     return {
         "provider": first_query_value(query, "provider"),
@@ -223,6 +234,152 @@ def build_daily_summary(storage_dir: Path) -> dict:
         "changed_today": build_changed_today_summary(storage_dir, latest_batch.get("batch_id") or ""),
     }
 
+def build_daily_attention_summary(storage_dir: Path) -> dict:
+    recent_reports = load_recent_reports(storage_dir, limit=1, provider="gmail")
+    if not recent_reports:
+        return empty_daily_attention_summary("No Gmail daily report with attention data yet.")
+
+    report = recent_reports[-1]
+    attention = report.get("attention") or {}
+    item_index = build_attention_context_index(storage_dir)
+    now_items = []
+    possible_items = []
+    hidden_insufficient_context_count = 0
+    for item in attention.get("items") or []:
+        level = item.get("level") or ""
+        if level == "needs_attention_now":
+            now_items.append(enrich_attention_item(item, report, item_index))
+            continue
+        if level == "possible_attention":
+            possible_items.append(enrich_attention_item(item, report, item_index))
+            continue
+        if level == "insufficient_context":
+            if is_high_consequence_attention_item(item):
+                possible_items.append(enrich_attention_item(item, report, item_index))
+            else:
+                hidden_insufficient_context_count += 1
+
+    return {
+        "source_label": "latest Gmail daily report",
+        "batch_id": report.get("batch_id", ""),
+        "report_date": report.get("report_date", ""),
+        "schema_version": attention.get("schema_version"),
+        "evaluated_message_count": attention.get("evaluated_message_count", 0),
+        "grouped_counts": attention.get("grouped_counts") or {},
+        "now_items": now_items,
+        "possible_items": possible_items,
+        "hidden_insufficient_context_count": hidden_insufficient_context_count,
+        "has_attention_contract": "attention" in report,
+        "empty_reason": "" if "attention" in report else "The latest Gmail daily report does not include an attention section yet.",
+    }
+
+def empty_daily_attention_summary(reason: str) -> dict:
+    return {
+        "source_label": "no attention report",
+        "batch_id": "",
+        "report_date": "",
+        "schema_version": None,
+        "evaluated_message_count": 0,
+        "grouped_counts": {},
+        "now_items": [],
+        "possible_items": [],
+        "hidden_insufficient_context_count": 0,
+        "has_attention_contract": False,
+        "empty_reason": reason,
+    }
+
+def build_attention_context_index(storage_dir: Path) -> dict[str, dict[str, dict]]:
+    by_message_id: dict[str, dict] = {}
+    by_thread_id: dict[str, dict] = {}
+    batches_dir = storage_dir / "batches"
+    if not batches_dir.exists():
+        return {"message_id": by_message_id, "thread_id": by_thread_id}
+
+    for batch_path in sorted(batches_dir.glob("*.json"), reverse=True):
+        batch = load_json(batch_path)
+        batch_id = batch.get("batch_id", "")
+        for item in batch.get("items", []):
+            context = {
+                "batch_id": batch_id,
+                "subject": item.get("subject", ""),
+                "sender": item.get("sender", ""),
+                "message_id": item.get("message_id", ""),
+                "thread_id": item.get("thread_id", ""),
+            }
+            message_id = context["message_id"]
+            thread_id = context["thread_id"]
+            if message_id and message_id not in by_message_id:
+                by_message_id[message_id] = context
+            if thread_id and thread_id not in by_thread_id:
+                by_thread_id[thread_id] = context
+    return {"message_id": by_message_id, "thread_id": by_thread_id}
+
+def enrich_attention_item(item: dict, report: dict, item_index: dict[str, dict[str, dict]]) -> dict:
+    message_id = item.get("message_id", "")
+    thread_id = item.get("thread_id", "")
+    context = item_index["message_id"].get(message_id) or item_index["thread_id"].get(thread_id) or {}
+    batch_id = context.get("batch_id") or report.get("batch_id", "")
+    source_context = attention_source_context(
+        source=item.get("source", ""),
+        message_id=message_id,
+        thread_id=thread_id,
+        batch_id=batch_id,
+    )
+    return {
+        "message_id": message_id,
+        "thread_id": thread_id,
+        "level": item.get("level", ""),
+        "category": item.get("category", ""),
+        "reason": item.get("reason", ""),
+        "evidence": item.get("evidence", ""),
+        "source": item.get("source", ""),
+        "source_context": source_context,
+        "handled_state": item.get("handled_state", "unknown"),
+        "feedback_state": item.get("feedback_state", "unset"),
+        "gmail_mutation": item.get("gmail_mutation") or "none",
+        "subject": context.get("subject") or "(subject unavailable)",
+        "sender": context.get("sender") or "(sender unavailable)",
+        "surface_note": attention_surface_note(item),
+    }
+
+def attention_source_context(*, source: str, message_id: str, thread_id: str, batch_id: str) -> str:
+    parts = []
+    if source:
+        parts.append(source)
+    if message_id:
+        parts.append(f"Gmail message {message_id}")
+    if thread_id:
+        parts.append(f"thread {thread_id}")
+    if batch_id:
+        parts.append(f"batch {batch_id}")
+    return " | ".join(parts) if parts else "Source message context unavailable"
+
+def attention_surface_note(item: dict) -> str:
+    if item.get("level") == "insufficient_context":
+        return "Insufficient context, high-consequence cue"
+    return item.get("handled_state") or "unknown"
+
+def is_high_consequence_attention_item(item: dict) -> bool:
+    category = (item.get("category") or "").strip()
+    if category in HIGH_CONSEQUENCE_ATTENTION_CATEGORIES:
+        return True
+    text = " ".join(
+        str(item.get(key) or "").lower()
+        for key in ("reason", "evidence")
+    )
+    high_consequence_terms = (
+        "account closure",
+        "suspension",
+        "service interruption",
+        "security",
+        "payment deadline",
+        "bill",
+        "flight",
+        "interview",
+        "reply deadline",
+    )
+    return any(term in text for term in high_consequence_terms)
+
 def build_changed_today_summary(storage_dir: Path, batch_id: str) -> dict:
     if not batch_id:
         return {
@@ -339,6 +496,10 @@ def build_companion_runtime_payload(storage_dir: Path) -> dict:
         "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "daily_summary": build_daily_summary(storage_dir),
         "items": items[:80],
+        "recent_items": items[:24],
+        "needs_attention_items": [item for item in items if item.get("status") == "needs-attention"][:12],
+        "auto_handled_items": [item for item in items if item.get("status") == "auto-handled"][:12],
+        "kept_visible_items": [item for item in items if item.get("status") in {"kept-visible", "auto-labeled"}][:12],
     }
 
 def load_latest_report(storage_dir: Path) -> dict | None:
