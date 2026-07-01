@@ -1,8 +1,9 @@
 # Status
 
-Current
+Completed
 Current as of: 2026-06-28
-Triage state: `ready-for-agent`
+Triage state: `completed`
+GitHub issue: `#5`
 Builds on: `docs/prd.md`, `docs/issues/060-build-memory-first-runtime-cascade-prototype-on-stored-corpora.md`
 
 # Title
@@ -33,7 +34,14 @@ This slice should stay bounded:
 
 ## Acceptance criteria
 
-- [ ] A stored-corpus path can mark messages as security-sensitive or suspicious separately from ordinary inbox taxonomy labels.
-- [ ] The resulting artifacts make it obvious which messages require caution rather than normal categorization.
-- [ ] The slice does not broaden live inbox mutation scope.
+- [x] A stored-corpus path can mark messages as security-sensitive or suspicious separately from ordinary inbox taxonomy labels.
+- [x] The resulting artifacts make it obvious which messages require caution rather than normal categorization.
+- [x] The slice does not broaden live inbox mutation scope.
 
+## Implemented
+
+- Runtime cascade outcomes include `risk_state`, `safety_lane`, and `requires_caution`.
+- Provider reports include `safety_reviews`, `safety_review_count`, and security/suspicious counts.
+- Safety disposition artifacts remain local review memory and do not mutate live providers.
+
+Completed in repo before GitHub issue closeout sync on 2026-07-01.

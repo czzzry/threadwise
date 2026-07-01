@@ -1,8 +1,9 @@
 # Status
 
-Current
+Completed
 Current as of: 2026-06-28
-Triage state: `ready-for-agent`
+Triage state: `completed`
+GitHub issue: `#3`
 Builds on: `docs/prd.md`, `docs/issues/057-freeze-multi-inbox-eval-contract-and-contamination-rules.md`
 
 # Title
@@ -35,7 +36,15 @@ The slice should formalize:
 
 ## Acceptance criteria
 
-- [ ] Accepted and rejected candidates survive future suggestion-memory refreshes.
-- [ ] Exported accepted rules remain provider-scoped unless explicitly widened later.
-- [ ] Projection over stored corpora reports before/after deltas and does not silently regress Gmail benchmark behavior.
+- [x] Accepted and rejected candidates survive future suggestion-memory refreshes.
+- [x] Exported accepted rules remain provider-scoped unless explicitly widened later.
+- [x] Projection over stored corpora reports before/after deltas and does not silently regress Gmail benchmark behavior.
 
+## Implemented
+
+- `ShadowSuggestionMemory.merge_candidates` preserves accepted/rejected review state across refreshes.
+- Accepted shadow exports write provider-scoped `TeachableRule` entries.
+- Classifier corpus eval reports accepted-rule projection deltas and matched shadow-rule counts.
+- Focused coverage lives in `tests/test_shadow_suggestion_memory.py`, `tests/test_classifier_corpus_eval.py`, and `tests/test_classifier_corpus_eval_cli.py`.
+
+Completed in repo before GitHub issue closeout sync on 2026-07-01.

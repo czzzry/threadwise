@@ -1,8 +1,9 @@
 # Status
 
-Current
+Completed
 Current as of: 2026-06-28
-Triage state: `ready-for-agent`
+Triage state: `completed`
+GitHub issue: `#4`
 Builds on: `docs/prd.md`, `docs/issues/059-harden-shadow-suggestion-memory-and-review-loop.md`
 
 # Title
@@ -34,7 +35,14 @@ This slice should prove the control flow and measurement seams over stored artif
 
 ## Acceptance criteria
 
-- [ ] A stored-corpus run can report how many messages were resolved at each cascade stage.
-- [ ] The cascade distinguishes deterministic matches, memory matches, LLM escalations, and unresolved leftovers.
-- [ ] The prototype can be compared against baseline corpus metrics without live provider calls.
+- [x] A stored-corpus run can report how many messages were resolved at each cascade stage.
+- [x] The cascade distinguishes deterministic matches, memory matches, LLM escalations, and unresolved leftovers.
+- [x] The prototype can be compared against baseline corpus metrics without live provider calls.
 
+## Implemented
+
+- Added `src/runtime_cascade.py` and runtime cascade CLI/report artifacts.
+- The report summary tracks deterministic, accepted-memory, LLM-escalation, and unresolved counts.
+- Tests use stored fixture batches and fake LLM clients only.
+
+Completed in repo before GitHub issue closeout sync on 2026-07-01.
