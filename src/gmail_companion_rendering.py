@@ -29,11 +29,20 @@ def render_dashboard_section(title: str, description: str, cards_html: str) -> s
         '</section>'
     )
 
-def render_dashboard_email_cards(items: list[dict], empty_label: str) -> str:
+def render_dashboard_email_cards(items: list[dict], empty_label: str, *, allow_attention_feedback: bool = False) -> str:
     if not items:
         return f'<div class="email-card"><div class="copy">{escape_html(empty_label)}</div></div>'
     cards = []
     for item in items[:10]:
+        attention_action = ""
+        if allow_attention_feedback:
+            attention_action = (
+                '<form method="post" action="/api/attention-feedback">'
+                f'{attention_feedback_hidden_fields(item)}'
+                '<input type="hidden" name="action" value="mark_needs_attention">'
+                '<button class="action" type="submit">Mark needs attention</button>'
+                '</form>'
+            )
         cards.append(
             '<article class="email-card">'
             f'<h3>{escape_html(item.get("subject") or "(no subject)")}</h3>'
@@ -42,6 +51,7 @@ def render_dashboard_email_cards(items: list[dict], empty_label: str) -> str:
             f'<span class="pill">{escape_html(item.get("classification") or "Uncategorized")}</span>'
             f'<span class="pill">{escape_html(item.get("status_label") or item.get("status") or "")}</span>'
             '</div>'
+            f'{attention_action}'
             '</article>'
         )
     return "".join(cards)
@@ -52,6 +62,19 @@ def render_dashboard_attention_cards(items: list[dict], empty_label: str) -> str
     cards = []
     for item in items[:10]:
         mutation_label = "Attention pass: no Gmail changes" if item.get("gmail_mutation") == "none" else f'Gmail mutation: {item.get("gmail_mutation")}'
+        feedback_state = item.get("feedback_state") or "unset"
+        feedback_note = item.get("feedback_note") or ""
+        corrected = ""
+        if item.get("corrected_reason") or item.get("corrected_category"):
+            corrected = (
+                f'<div class="copy"><strong>Corrected:</strong> {escape_html(item.get("corrected_category") or "uncategorized")}'
+                f' - {escape_html(item.get("corrected_reason") or "No corrected reason recorded.")}</div>'
+            )
+        feedback_note_html = (
+            f'<div class="copy"><strong>Feedback note:</strong> {escape_html(feedback_note)}</div>'
+            if feedback_note
+            else ""
+        )
         cards.append(
             '<article class="email-card attention-card">'
             f'<h3>{escape_html(item.get("subject") or "(no subject)")}</h3>'
@@ -60,13 +83,50 @@ def render_dashboard_attention_cards(items: list[dict], empty_label: str) -> str
             f'<span class="pill">{escape_html(item.get("category") or "uncategorized")}</span>'
             f'<span class="pill">{escape_html(item.get("surface_note") or item.get("level") or "")}</span>'
             f'<span class="pill">{escape_html(mutation_label)}</span>'
+            f'<span class="pill">Feedback: {escape_html(feedback_state)}</span>'
             '</div>'
             f'<div class="copy"><strong>Reason:</strong> {escape_html(item.get("reason") or "No reason recorded.")}</div>'
             f'<div class="copy"><strong>Evidence:</strong> {escape_html(item.get("evidence") or "No evidence summary recorded.")}</div>'
+            f'{feedback_note_html}'
+            f'{corrected}'
             f'<div class="meta">{escape_html(item.get("source_context") or "Source message context unavailable")}</div>'
+            '<div class="pill-row">'
+            f'{attention_feedback_form(item, "good_catch", "Good catch")}'
+            f'{attention_feedback_form(item, "not_attention", "Not attention")}'
+            f'{attention_feedback_form(item, "wrong_reason", "Wrong reason")}'
+            '</div>'
             '</article>'
         )
     return "".join(cards)
+
+def attention_feedback_form(item: dict, action: str, label: str) -> str:
+    corrected_reason_input = (
+        '<input class="feedback-input" name="corrected_reason" placeholder="Correct reason">'
+        if action == "wrong_reason"
+        else ""
+    )
+    return (
+        '<form method="post" action="/api/attention-feedback">'
+        f'{attention_feedback_hidden_fields(item)}'
+        f'<input type="hidden" name="action" value="{escape_html(action)}">'
+        f'{corrected_reason_input}'
+        f'<button class="action" type="submit">{escape_html(label)}</button>'
+        '</form>'
+    )
+
+def attention_feedback_hidden_fields(item: dict) -> str:
+    fields = {
+        "message_id": item.get("message_id", ""),
+        "thread_id": item.get("thread_id", ""),
+        "batch_id": item.get("batch_id", ""),
+        "subject": item.get("subject", ""),
+        "sender": item.get("sender", ""),
+        "corrected_category": item.get("category", ""),
+    }
+    return "".join(
+        f'<input type="hidden" name="{escape_html(key)}" value="{escape_html(value)}">'
+        for key, value in fields.items()
+    )
 
 def render_dashboard_changed_cards(items: list[dict]) -> str:
     if not items:

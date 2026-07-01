@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlencode
 
+from src.attention_feedback import load_attention_feedback
 from src.label_taxonomy import CANONICAL_LABEL_ORDER, gmail_label_name
 from src.local_artifacts import (
     inbox_removal_status_path,
@@ -242,22 +243,36 @@ def build_daily_attention_summary(storage_dir: Path) -> dict:
     report = recent_reports[-1]
     attention = report.get("attention") or {}
     item_index = build_attention_context_index(storage_dir)
+    feedback_entries = load_attention_feedback(storage_dir).get("entries", {})
     now_items = []
     possible_items = []
     hidden_insufficient_context_count = 0
+    seen_feedback_keys = set()
     for item in attention.get("items") or []:
+        feedback = find_attention_feedback(feedback_entries, item.get("message_id", ""), item.get("thread_id", ""))
+        if feedback:
+            seen_feedback_keys.add(attention_feedback_key(feedback.get("message_id", ""), feedback.get("thread_id", "")))
+        if feedback.get("dismissed"):
+            continue
         level = item.get("level") or ""
         if level == "needs_attention_now":
-            now_items.append(enrich_attention_item(item, report, item_index))
+            now_items.append(enrich_attention_item(item, report, item_index, feedback))
             continue
         if level == "possible_attention":
-            possible_items.append(enrich_attention_item(item, report, item_index))
+            possible_items.append(enrich_attention_item(item, report, item_index, feedback))
             continue
         if level == "insufficient_context":
             if is_high_consequence_attention_item(item):
-                possible_items.append(enrich_attention_item(item, report, item_index))
+                possible_items.append(enrich_attention_item(item, report, item_index, feedback))
             else:
                 hidden_insufficient_context_count += 1
+    for feedback in feedback_entries.values():
+        if not feedback.get("manual_attention") or feedback.get("dismissed"):
+            continue
+        key = attention_feedback_key(feedback.get("message_id", ""), feedback.get("thread_id", ""))
+        if key in seen_feedback_keys:
+            continue
+        now_items.append(enrich_attention_item(manual_attention_item_from_feedback(feedback), report, item_index, feedback))
 
     return {
         "source_label": "latest Gmail daily report",
@@ -314,11 +329,40 @@ def build_attention_context_index(storage_dir: Path) -> dict[str, dict[str, dict
                 by_thread_id[thread_id] = context
     return {"message_id": by_message_id, "thread_id": by_thread_id}
 
-def enrich_attention_item(item: dict, report: dict, item_index: dict[str, dict[str, dict]]) -> dict:
+def find_attention_feedback(entries: dict, message_id: str, thread_id: str) -> dict:
+    if message_id and message_id in entries:
+        return entries[message_id]
+    thread_key = f"thread:{thread_id}" if thread_id else ""
+    if thread_key and thread_key in entries:
+        return entries[thread_key]
+    for entry in entries.values():
+        if thread_id and entry.get("thread_id") == thread_id:
+            return entry
+    return {}
+
+def attention_feedback_key(message_id: str, thread_id: str) -> str:
+    return message_id or (f"thread:{thread_id}" if thread_id else "")
+
+def manual_attention_item_from_feedback(feedback: dict) -> dict:
+    return {
+        "message_id": feedback.get("message_id", ""),
+        "thread_id": feedback.get("thread_id", ""),
+        "level": "needs_attention_now",
+        "category": feedback.get("corrected_category") or "founder_marked",
+        "reason": feedback.get("note") or feedback.get("corrected_reason") or "Founder marked this email as needing attention.",
+        "evidence": "Founder feedback marked this stored email as needs attention.",
+        "source": "founder_marked",
+        "handled_state": "founder_marked",
+        "feedback_state": "mark_needs_attention",
+        "gmail_mutation": "none",
+    }
+
+def enrich_attention_item(item: dict, report: dict, item_index: dict[str, dict[str, dict]], feedback: dict | None = None) -> dict:
     message_id = item.get("message_id", "")
     thread_id = item.get("thread_id", "")
     context = item_index["message_id"].get(message_id) or item_index["thread_id"].get(thread_id) or {}
     batch_id = context.get("batch_id") or report.get("batch_id", "")
+    feedback = feedback or {}
     source_context = attention_source_context(
         source=item.get("source", ""),
         message_id=message_id,
@@ -328,6 +372,7 @@ def enrich_attention_item(item: dict, report: dict, item_index: dict[str, dict[s
     return {
         "message_id": message_id,
         "thread_id": thread_id,
+        "batch_id": batch_id,
         "level": item.get("level", ""),
         "category": item.get("category", ""),
         "reason": item.get("reason", ""),
@@ -335,10 +380,14 @@ def enrich_attention_item(item: dict, report: dict, item_index: dict[str, dict[s
         "source": item.get("source", ""),
         "source_context": source_context,
         "handled_state": item.get("handled_state", "unknown"),
-        "feedback_state": item.get("feedback_state", "unset"),
+        "feedback_state": feedback.get("feedback_state") or item.get("feedback_state", "unset"),
+        "feedback_note": feedback.get("note", ""),
+        "corrected_reason": feedback.get("corrected_reason", ""),
+        "corrected_category": feedback.get("corrected_category", ""),
+        "creates_broader_rule": bool(feedback.get("creates_broader_rule", False)),
         "gmail_mutation": item.get("gmail_mutation") or "none",
-        "subject": context.get("subject") or "(subject unavailable)",
-        "sender": context.get("sender") or "(sender unavailable)",
+        "subject": context.get("subject") or feedback.get("subject") or "(subject unavailable)",
+        "sender": context.get("sender") or feedback.get("sender") or "(sender unavailable)",
         "surface_note": attention_surface_note(item),
     }
 

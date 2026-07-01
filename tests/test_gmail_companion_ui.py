@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from src.attention_feedback import load_attention_feedback
 from src.gmail_companion_rendering import (
     escape_html,
     render_dashboard_email_cards,
@@ -549,6 +550,155 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertIn("Possible Attention", page)
             self.assertIn("No possible-attention items in the latest Gmail daily report.", page)
             self.assertIn("Latest attention report: 2026-07-01", page)
+
+    def test_attention_feedback_good_catch_persists_and_reflects_in_dashboard(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_attention_fixture(storage_dir)
+
+            result = GmailCompanionApp(storage_dir).attention_feedback(
+                {
+                    "action": "good_catch",
+                    "message_id": "gmail-live-001",
+                    "thread_id": "thread-001",
+                    "batch_id": "founder-test-batch-1",
+                    "subject": "Flight check-in closes tonight",
+                    "sender": "Airline <alerts@airline.example>",
+                    "note": "Good catch for a same-day travel reminder.",
+                }
+            )
+            saved = load_attention_feedback(storage_dir)
+            page = GmailCompanionApp(storage_dir).render_daily_dashboard_page()
+
+            self.assertIn("Recorded attention feedback.", result["acknowledgment"])
+            self.assertEqual(saved["entries"]["gmail-live-001"]["latest_action"], "good_catch")
+            self.assertFalse(saved["entries"]["gmail-live-001"]["creates_broader_rule"])
+            self.assertIn("Feedback: good_catch", page)
+            self.assertIn("Good catch for a same-day travel reminder.", page)
+
+    def test_attention_feedback_not_attention_hides_item_from_attention_panel(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_attention_fixture(storage_dir)
+
+            GmailCompanionApp(storage_dir).attention_feedback(
+                {
+                    "action": "not_attention",
+                    "message_id": "gmail-live-001",
+                    "thread_id": "thread-001",
+                    "batch_id": "founder-test-batch-1",
+                    "subject": "Flight check-in closes tonight",
+                    "sender": "Airline <alerts@airline.example>",
+                    "note": "This was already handled elsewhere.",
+                }
+            )
+            page = GmailCompanionApp(storage_dir).render_daily_dashboard_page()
+            attention_section = page.split('<div class="eyebrow">What Changed Today</div>', 1)[0]
+
+            self.assertNotIn("Flight check-in closes tonight", attention_section)
+            self.assertIn("No attention-now items in the latest Gmail daily report.", attention_section)
+
+    def test_attention_feedback_wrong_reason_captures_correction_without_gmail_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_attention_fixture(storage_dir)
+
+            result = GmailCompanionApp(storage_dir).attention_feedback(
+                {
+                    "action": "wrong_reason",
+                    "message_id": "gmail-live-001",
+                    "thread_id": "thread-001",
+                    "batch_id": "founder-test-batch-1",
+                    "subject": "Flight check-in closes tonight",
+                    "sender": "Airline <alerts@airline.example>",
+                    "corrected_reason": "This matters because check-in closes today, not because of general travel.",
+                    "corrected_category": "travel",
+                }
+            )
+            saved = load_attention_feedback(storage_dir)
+            page = GmailCompanionApp(storage_dir).render_daily_dashboard_page()
+
+            self.assertEqual(result["gmail_mutation"], "none")
+            self.assertEqual(saved["entries"]["gmail-live-001"]["corrected_reason"], "This matters because check-in closes today, not because of general travel.")
+            self.assertIn("Feedback: wrong_reason", page)
+            self.assertIn("<strong>Corrected:</strong> travel", page)
+            self.assertIn("This matters because check-in closes today, not because of general travel.", page)
+
+    def test_attention_feedback_can_mark_non_surfaced_email_as_needs_attention(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_attention_fixture(storage_dir)
+
+            result = GmailCompanionApp(storage_dir).attention_feedback(
+                {
+                    "action": "mark_needs_attention",
+                    "message_id": "gmail-live-002",
+                    "thread_id": "thread-002",
+                    "batch_id": "founder-test-batch-1",
+                    "subject": "Choose an interview slot",
+                    "sender": "Recruiter <recruiter@example.com>",
+                    "note": "Recruiter scheduling emails should be visible until I book.",
+                    "corrected_category": "job_opportunity",
+                }
+            )
+            page = GmailCompanionApp(storage_dir).render_daily_dashboard_page()
+
+            self.assertEqual(result["feedback"]["latest_action"], "mark_needs_attention")
+            self.assertIn("Choose an interview slot", page)
+            self.assertIn("founder_marked", page)
+            self.assertIn("Recruiter scheduling emails should be visible until I book.", page)
+
+    def test_attention_feedback_endpoint_accepts_json_post(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_attention_fixture(storage_dir)
+            app = GmailCompanionApp(storage_dir)
+            handler = _FakeRequestHandler(
+                "/api/attention-feedback",
+                method="POST",
+                json_body={
+                    "action": "good_catch",
+                    "message_id": "gmail-live-001",
+                    "thread_id": "thread-001",
+                    "batch_id": "founder-test-batch-1",
+                    "subject": "Flight check-in closes tonight",
+                    "sender": "Airline <alerts@airline.example>",
+                },
+            )
+
+            app.handle_request(handler)
+            payload = json.loads(handler.wfile.value.decode("utf-8"))
+
+            self.assertEqual(handler.code, 200)
+            self.assertEqual(payload["feedback"]["latest_action"], "good_catch")
+            self.assertEqual(payload["gmail_mutation"], "none")
+
+    def test_attention_feedback_endpoint_accepts_dashboard_form_post(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_attention_fixture(storage_dir)
+            app = GmailCompanionApp(storage_dir)
+            handler = _FakeRequestHandler(
+                "/api/attention-feedback",
+                method="POST",
+                form_body={
+                    "action": "wrong_reason",
+                    "message_id": "gmail-live-001",
+                    "thread_id": "thread-001",
+                    "batch_id": "founder-test-batch-1",
+                    "subject": "Flight check-in closes tonight",
+                    "sender": "Airline <alerts@airline.example>",
+                    "corrected_reason": "The concrete deadline is the important part.",
+                    "corrected_category": "travel",
+                },
+            )
+
+            app.handle_request(handler)
+            payload = json.loads(handler.wfile.value.decode("utf-8"))
+
+            self.assertEqual(handler.code, 200)
+            self.assertEqual(payload["feedback"]["latest_action"], "wrong_reason")
+            self.assertEqual(payload["feedback"]["corrected_reason"], "The concrete deadline is the important part.")
 
     def test_unsubscribe_review_page_can_focus_candidate_opened_from_inbox(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1330,6 +1480,58 @@ class GmailCompanionUiTests(unittest.TestCase):
             )
         )
 
+    def _write_attention_fixture(self, storage_dir: Path) -> None:
+        self._write_batch(
+            storage_dir,
+            "founder-test-batch-1",
+            items=[
+                {
+                    "source": "gmail",
+                    "account_id": "founder-test",
+                    "message_id": "gmail-live-001",
+                    "thread_id": "thread-001",
+                    "sender": "Airline <alerts@airline.example>",
+                    "subject": "Flight check-in closes tonight",
+                    "snippet": "Check in before 21:00.",
+                    "interpretation": "Travel reminder.",
+                    "review_state": "reviewed",
+                    "final_labels": ["travel"],
+                    "applied_labels": ["travel"],
+                },
+                {
+                    "source": "gmail",
+                    "account_id": "founder-test",
+                    "message_id": "gmail-live-002",
+                    "thread_id": "thread-002",
+                    "sender": "Recruiter <recruiter@example.com>",
+                    "subject": "Choose an interview slot",
+                    "snippet": "Please book a time next week.",
+                    "interpretation": "Hiring workflow.",
+                    "review_state": "reviewed",
+                    "final_labels": ["job-related"],
+                    "applied_labels": ["job-related"],
+                },
+            ],
+        )
+        self._write_daily_report(
+            storage_dir,
+            "founder-test-batch-1",
+            attention_items=[
+                {
+                    "message_id": "gmail-live-001",
+                    "thread_id": "thread-001",
+                    "level": "needs_attention_now",
+                    "category": "travel",
+                    "reason": "Check-in closes tonight.",
+                    "evidence": "Email says check-in closes at 21:00.",
+                    "source": "compact_payload",
+                    "handled_state": "appears_unhandled",
+                    "feedback_state": "unset",
+                    "gmail_mutation": "none",
+                }
+            ],
+        )
+
 
 class _FakeServer:
     def __init__(self, server_port: int) -> None:
@@ -1346,12 +1548,28 @@ class _FakeServer:
 
 
 class _FakeRequestHandler:
-    def __init__(self, path: str, *, method: str) -> None:
+    def __init__(
+        self,
+        path: str,
+        *,
+        method: str,
+        json_body: dict | None = None,
+        form_body: dict | None = None,
+    ) -> None:
         self.path = path
         self.command = method
-        self.headers = {}
+        if form_body is not None:
+            from urllib.parse import urlencode
+
+            body = urlencode(form_body).encode("utf-8")
+            content_type = "application/x-www-form-urlencoded"
+        else:
+            body = json.dumps(json_body).encode("utf-8") if json_body is not None else b""
+            content_type = "application/json" if json_body is not None else ""
+        self.headers = {"Content-Length": str(len(body)), "Content-Type": content_type} if body else {}
         self.sent_headers: dict[str, str] = {}
         self.code = None
+        self.rfile = io.BytesIO(body)
         self.wfile = self._Writer()
 
     def send_response(self, code):

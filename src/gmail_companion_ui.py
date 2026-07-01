@@ -8,6 +8,7 @@ from pathlib import Path
 import sys
 from urllib.parse import parse_qs, urlparse
 
+from src.attention_feedback import record_attention_feedback
 from src.gmail_cli_support import default_gmail_client_factory
 from src.gmail_writer import MockGmailLabelWriter
 from src.label_taxonomy import CANONICAL_LABEL_ORDER, gmail_label_name
@@ -257,6 +258,14 @@ class GmailCompanionApp:
             except (KeyError, ValueError, HTTPException) as exc:
                 return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
 
+        if handler.command == "POST" and parsed.path == "/api/attention-feedback":
+            try:
+                payload = self._read_request_payload(handler)
+                response = self.attention_feedback(payload)
+                return self._write_json(handler, HTTPStatus.OK, response)
+            except (KeyError, ValueError, HTTPException, json.JSONDecodeError) as exc:
+                return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+
         self._write_json(handler, HTTPStatus.NOT_FOUND, {"error": "Not found"})
 
     def _read_json_body(self, handler: BaseHTTPRequestHandler) -> dict:
@@ -265,6 +274,18 @@ class GmailCompanionApp:
         payload = json.loads(raw.decode("utf-8"))
         if not isinstance(payload, dict):
             raise ValueError("JSON body must be an object.")
+        return payload
+
+    def _read_request_payload(self, handler: BaseHTTPRequestHandler) -> dict:
+        content_length = int(handler.headers.get("Content-Length", "0") or "0")
+        raw = handler.rfile.read(content_length) if content_length else b"{}"
+        content_type = handler.headers.get("Content-Type", "")
+        if "application/x-www-form-urlencoded" in content_type:
+            parsed = parse_qs(raw.decode("utf-8"), keep_blank_values=True)
+            return {key: values[-1] if values else "" for key, values in parsed.items()}
+        payload = json.loads(raw.decode("utf-8") or "{}")
+        if not isinstance(payload, dict):
+            raise ValueError("Request body must be an object.")
         return payload
 
     def _write_json(self, handler: BaseHTTPRequestHandler, status: HTTPStatus, payload: dict) -> None:
@@ -402,6 +423,16 @@ class GmailCompanionApp:
             ),
             "candidate": build_unsubscribe_detail(candidate, self._storage_dir),
             "sidebar_state": refreshed,
+        }
+
+    def attention_feedback(self, payload: dict) -> dict:
+        feedback = record_attention_feedback(self._storage_dir, payload)
+        return {
+            "acknowledgment": "Recorded attention feedback. No broader rule was created.",
+            "feedback": feedback,
+            "gmail_mutation": "none",
+            "creates_broader_rule": False,
+            "attention_summary": build_daily_attention_summary(self._storage_dir),
         }
 
     def _write_teach_result_to_gmail(
@@ -1416,7 +1447,11 @@ class GmailCompanionApp:
             (
                 "Kept Visible",
                 "Emails the agent understood but intentionally left easy to find in the inbox.",
-                render_dashboard_email_cards(payload.get("kept_visible_items", []), empty_label="No kept-visible emails in the current snapshot."),
+                render_dashboard_email_cards(
+                    payload.get("kept_visible_items", []),
+                    empty_label="No kept-visible emails in the current snapshot.",
+                    allow_attention_feedback=True,
+                ),
             ),
             (
                 "Auto-Handled",
@@ -1426,7 +1461,11 @@ class GmailCompanionApp:
             (
                 "Recent Queue",
                 "The freshest synced emails across the current local snapshot.",
-                render_dashboard_email_cards(payload.get("recent_items", []), empty_label="No recent synced emails in the current snapshot."),
+                render_dashboard_email_cards(
+                    payload.get("recent_items", []),
+                    empty_label="No recent synced emails in the current snapshot.",
+                    allow_attention_feedback=True,
+                ),
             ),
         ]
         top_labels_html = "".join(
