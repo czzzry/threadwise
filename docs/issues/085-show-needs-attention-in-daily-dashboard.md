@@ -1,9 +1,10 @@
 # Show Needs attention in daily dashboard
 
-Status: Ready for agent
+Status: Completed
 Type: AFK
 GitHub issue: `#10`
 Parent: GitHub issue `#7`; `docs/prd.md`
+Completed in: `c820b8d`
 
 ## What to build
 
@@ -13,14 +14,14 @@ After a Gmail daily run with attention data, the dashboard should open with a cl
 
 ## Acceptance criteria
 
-- [ ] The daily dashboard reads attention data from the daily report.
-- [ ] Needs attention now and Possible attention render as separate sections.
-- [ ] Each item shows subject, sender, category, reason, evidence or evidence summary, and source message context.
-- [ ] Each item clearly indicates that attention detection itself made no Gmail mutation.
-- [ ] `insufficient_context` items appear only when high-consequence cues justify surfacing them.
-- [ ] Empty states are useful when there are no attention candidates.
-- [ ] Existing dashboard sections for handled mail, kept-visible/unlabeled mail, audit changes, and unsubscribe candidates continue to work.
-- [ ] Tests cover dashboard rendering with attention items, possible attention items, high-consequence insufficient-context items, and no attention items.
+- [x] The daily dashboard reads attention data from the daily report.
+- [x] Needs attention now and Possible attention render as separate sections.
+- [x] Each item shows subject, sender, category, reason, evidence or evidence summary, and source message context.
+- [x] Each item clearly indicates that attention detection itself made no Gmail mutation.
+- [x] `insufficient_context` items appear only when high-consequence cues justify surfacing them.
+- [x] Empty states are useful when there are no attention candidates.
+- [x] Existing dashboard sections for handled mail, kept-visible/unlabeled mail, audit changes, and unsubscribe candidates continue to work.
+- [x] Tests cover dashboard rendering with attention items, possible attention items, high-consequence insufficient-context items, and no attention items.
 
 ## Blocked by
 
