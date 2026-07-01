@@ -1,8 +1,9 @@
 # Status
 
-Current
+Completed
 Current as of: 2026-06-28
-Triage state: `ready-for-agent`
+Triage state: `completed`
+GitHub issue: `#6`
 Builds on: `docs/prd.md`, `docs/issues/057-freeze-multi-inbox-eval-contract-and-contamination-rules.md`
 
 # Title
@@ -42,3 +43,5 @@ This slice should not introduce new product behavior. It should reduce coordinat
 ## Output
 
 - Current coordination note: `docs/current-multi-agent-boundaries-2026-06-28.md`
+
+Completed in repo before GitHub issue closeout sync on 2026-07-01.

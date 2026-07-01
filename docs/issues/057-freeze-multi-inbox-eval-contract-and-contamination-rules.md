@@ -1,8 +1,9 @@
 # Status
 
-Current
+Completed
 Current as of: 2026-06-28
-Triage state: `ready-for-agent`
+Triage state: `completed`
+GitHub issue: `#1`
 Builds on: `docs/prd.md`, `docs/issues/056-read-only-two-inbox-shadow-classifier-evaluation.md`
 
 # Title
@@ -51,3 +52,5 @@ The output should be a durable current doc and any bounded code/test changes nee
   - per-provider `evidence_bucket_counts`
 - Updated the corpus-eval CLI to print the active eval-contract doc path.
 - Added test coverage for the new report and CLI contract fields.
+
+Completed in repo before GitHub issue closeout sync on 2026-07-01.
