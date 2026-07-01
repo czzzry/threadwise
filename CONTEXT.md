@@ -12,7 +12,7 @@ Before doing substantial work, read these in order:
 1. `AGENTS.md`
 2. `CONTEXT.md`
 3. `docs/v2-alignment.md`
-4. `docs/prd.md` for the current MVP+2 Gmail daily usefulness slice
+4. `docs/prd.md` for the completed MVP+2 Gmail daily usefulness slice
 5. `docs/checkpoints/current-operating-model-2026-06-22.md`
 6. `docs/v2-issue-map.md`
 7. then only the specific current issue, handoff, or code relevant to the task
@@ -40,7 +40,7 @@ This is a post-MVP, post-proof repo that has completed the Gmail release state a
 
 The main uncertainty is no longer "can this be built?", no longer "can the classifier get under the current unresolved threshold?", and no longer "can a recruiter understand the product without setup?"
 
-MVP+2 alignment is now approved and captured in `docs/prd.md`. The active MVP+2 thesis is:
+MVP+2 alignment is captured in `docs/prd.md`, and implementation issues `#8` through `#14` are complete. The completed MVP+2 thesis is:
 
 - Gmail daily usefulness before ProtonMail expansion
 - a teachable LLM-backed Needs attention lane across newly processed Gmail plus bounded stored lookback
@@ -62,11 +62,11 @@ The current product direction for Threadwise is:
 - secondary surface: dashboard/workbench for summary, unsubscribe, review, and debugging
 - MVP+1 target: completed recruiter-ready portfolio README demo using synthetic Gmail-style data
 
-The current bounded PRD exists in `docs/prd.md` and GitHub issue `#7`. It covers MVP+2 Gmail daily usefulness. The completed MVP+1 PRD is archived at `docs/archive/prd-mvp-plus-one-portfolio-demo-completed-2026-06-30.md`, with closeout recorded in `docs/issues/073-close-mvp-plus-one-public-demo-milestone.md`.
+The completed bounded PRD exists in `docs/prd.md` and GitHub issue `#7`. It covers MVP+2 Gmail daily usefulness. The completed MVP+1 PRD is archived at `docs/archive/prd-mvp-plus-one-portfolio-demo-completed-2026-06-30.md`, with closeout recorded in `docs/issues/073-close-mvp-plus-one-public-demo-milestone.md`.
 
-The next product step should use the MVP+2 PRD and the bounded issue briefs in `docs/issues/083` through `docs/issues/091`, mirrored to GitHub issues `#8` through `#16`. Before implementation, run `/triage` or equivalent issue triage for the chosen slice unless the issue has already been explicitly marked ready.
+The MVP+2 implementation briefs in `docs/issues/083` through `docs/issues/089`, mirrored to GitHub issues `#8` through `#14`, are complete. The next product step should choose whether to run the follow-up HITL review candidates in `docs/issues/090` and `docs/issues/091` / GitHub `#15` and `#16`, or to begin the next alignment cycle.
 
-During MVP+2 work, status updates should surface progress as `issues x/y => MVP+2 = x/y done`. Use implementation issues `#8` through `#14` for the default count. Treat `#15` and `#16` as follow-up HITL review candidates unless the founder explicitly pulls them into the active milestone count.
+MVP+2 implementation progress is `issues 7/7 => MVP+2 = 7/7 done`. Treat `#15` and `#16` as follow-up HITL review candidates unless the founder explicitly pulls them into a new active milestone count.
 
 ## Trust Order When Docs Differ
 

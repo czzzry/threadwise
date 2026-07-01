@@ -1,6 +1,6 @@
 # PRD
 
-Status: Current bounded-slice PRD
+Status: Completed bounded-slice PRD
 Current as of: 2026-07-01
 Builds on: `docs/v2-alignment.md`, `docs/checkpoints/current-operating-model-2026-06-22.md`, and `docs/handoff/2026-06-30-mvp-plus-one-public-demo-closeout.md`
 Supersedes as current planning focus: `docs/archive/prd-mvp-plus-one-portfolio-demo-completed-2026-06-30.md`
@@ -8,6 +8,8 @@ Release target: MVP+2 Gmail daily usefulness
 GitHub issue: `#7`
 
 This PRD describes MVP+2 for Threadwise: make the Gmail-first product useful in daily life before expanding to ProtonMail.
+
+Implementation status: completed in GitHub issues `#8` through `#14`. Follow-up review candidates remain in `#15` and `#16`.
 
 ## Problem Statement
 
@@ -243,7 +245,7 @@ The milestone should include simple attention feedback first, then broader atten
 - ProtonMail remains part of the mature direction, but it should wait until the Gmail daily loop is more useful.
 - The current extension + local companion remains the assumed delivery model for MVP+2. It is not considered a dead end, but startup/packaging deserves a later review.
 - The local artifact architecture remains accepted for MVP+2, with the explicit guardrail that attention does not worsen local email-body retention.
-- MVP+2 progress should be surfaced in status updates as `issues x/y => MVP+2 = x/y done`, using implementation issues `#8` through `#14` as the numerator/denominator unless the founder explicitly includes follow-up review candidates.
+- MVP+2 implementation progress reached `issues 7/7 => MVP+2 = 7/7 done`, using implementation issues `#8` through `#14` as the numerator/denominator.
 - Multi-agent parallelization plan:
   - Batch 1: `#8` alone, because it defines the shared attention report contract.
   - Batch 2 after `#8`: `#9`, `#10`, and `#13` can run in parallel if agents coordinate through the `attention` report contract. `#13` can build the generic usage ledger while final attention integration waits for `#9`.
@@ -263,4 +265,4 @@ The milestone should include simple attention feedback first, then broader atten
   - `#14` Propose attention rules from feedback
   - `#15` Local data retention and inbox freshness review
   - `#16` Threadwise startup and packaging model review
-- The next workflow step after this PRD is bounded issue implementation. Before implementing any issue, run `/triage` or perform equivalent issue triage unless the issue is already explicitly marked ready.
+- The next workflow step is to choose whether to run the follow-up HITL reviews in `#15` and `#16`, or to open the next product alignment cycle.
