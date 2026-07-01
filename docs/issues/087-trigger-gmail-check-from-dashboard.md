@@ -1,9 +1,10 @@
 # Trigger Gmail check from dashboard
 
-Status: Ready for agent
+Status: Completed
 Type: AFK
 GitHub issue: `#12`
 Parent: GitHub issue `#7`; `docs/prd.md`
+Completed in: `be1b3b7`
 
 ## What to build
 
@@ -13,15 +14,15 @@ The founder should not need to remember developer commands to trigger the daily 
 
 ## Acceptance criteria
 
-- [ ] The dashboard exposes a Run Gmail check action.
-- [ ] The action requires confirmation before starting.
-- [ ] Confirmation copy states that the run may apply existing safe `EA/` labels, remove `INBOX` only for low-value allowed categories, and call the LLM for attention detection.
-- [ ] While a run is active, duplicate run requests are blocked.
-- [ ] The UI shows idle, running, succeeded, and failed states.
-- [ ] The dashboard-triggered run uses the same safe Gmail mutation boundaries as the existing daily run.
-- [ ] Attention detection remains non-mutating.
-- [ ] The Gmail companion sidebar shows connection/run status and links to the dashboard run flow.
-- [ ] Tests cover confirmation, duplicate protection, success, failure, and unchanged Gmail safety boundaries.
+- [x] The dashboard exposes a Run Gmail check action.
+- [x] The action requires confirmation before starting.
+- [x] Confirmation copy states that the run may apply existing safe `EA/` labels, remove `INBOX` only for low-value allowed categories, and call the LLM for attention detection.
+- [x] While a run is active, duplicate run requests are blocked.
+- [x] The UI shows idle, running, succeeded, and failed states.
+- [x] The dashboard-triggered run uses the same safe Gmail mutation boundaries as the existing daily run.
+- [x] Attention detection remains non-mutating.
+- [x] The Gmail companion sidebar shows connection/run status and links to the dashboard run flow.
+- [x] Tests cover confirmation, duplicate protection, success, failure, and unchanged Gmail safety boundaries.
 
 ## Blocked by
 
