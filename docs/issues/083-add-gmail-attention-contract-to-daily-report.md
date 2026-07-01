@@ -1,9 +1,10 @@
 # Add Gmail attention contract to daily report
 
-Status: Ready for agent
+Status: Completed
 Type: AFK
 GitHub issue: `#8`
 Parent: GitHub issue `#7`; `docs/prd.md`
+Completed in: `3b2af36`
 
 ## What to build
 
