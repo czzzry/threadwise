@@ -1,10 +1,10 @@
 # V2 Alignment
 
 Status: Current product-direction alignment
-Current as of: 2026-06-30
+Current as of: 2026-07-01
 Builds on: `docs/archive/alignment-v1-gmail-mvp.md` and `docs/archive/prd-v1-gmail-mvp.md` as historical Gmail V1 artifacts
 Completed bounded milestone: `docs/archive/prd-memory-runtime-milestone-completed-2026-06-29.md`
-Current bounded PRD: `docs/prd.md`
+Current bounded PRD: `docs/prd.md` for MVP+2 Gmail daily usefulness
 Implementation checkpoint: `docs/checkpoints/current-operating-model-2026-06-22.md`
 
 Threadwise is the public-facing project name for this repo.
@@ -29,14 +29,14 @@ The repo already proves more than the original Gmail MVP:
 - unsubscribe inventory, supported execution, and manual follow-up paths
 - local browser review and inspection tools for exceptions and spot checks
 
-This means V2 is no longer "build daily reports, then weekly reports, then ProtonMail." Those slices already exist in the repo. The Gmail release product surface now exists; the current job is to package that release into a recruiter-ready portfolio demo before product expansion resumes.
+This means V2 is no longer "build daily reports, then weekly reports, then ProtonMail." Those slices already exist in the repo. The Gmail release product surface and recruiter-ready portfolio package now exist. The current MVP+2 job is to make the Gmail daily loop more useful before ProtonMail expansion resumes.
 
 ## Target User
 
 - one user
 - managing their own inboxes
 - first release target: one Gmail inbox
-- next product expansion target after the recruiter-ready demo: add that same person's ProtonMail inbox
+- later product expansion target after the Gmail daily-use loop is stronger: add that same person's ProtonMail inbox
 - not a team product
 - not a shared-inbox workflow
 
@@ -184,7 +184,8 @@ Near-term product work now looks more like:
 3. keep the daily dashboard and unsubscribe flows aligned with that inbox-native surface
 4. use the current workbench/review infrastructure as supporting product plumbing, not the destination UX
 5. package the Gmail release as a recruiter-ready portfolio demo
-6. add the founder's ProtonMail inbox after the Gmail release flow and public demo story are solid
+6. make the Gmail daily loop genuinely useful with a teachable Needs attention lane and product-triggered Gmail check flow
+7. add the founder's ProtonMail inbox after the Gmail daily-use loop and public demo story are solid
 
 ## Non-goals for now
 
