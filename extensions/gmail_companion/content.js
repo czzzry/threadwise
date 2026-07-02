@@ -907,14 +907,16 @@
       `);
       setHtml(teachPanelNode, `
         <div style="display:grid;gap:8px;">
-          <select id="ea-target-label" style="box-sizing:border-box;width:100%;padding:10px 12px;border-radius:11px;border:2px solid #241812;background:#fffdf7;color:#1f1a14;font:inherit;box-shadow:2px 2px 0 rgba(36,24,18,.18);">
-            <option value="">Select label (optional)</option>
-            ${labelOptions}
-          </select>
-          <div style="color:#6b6255;line-height:1.35;font-size:0.82rem;">Pick a label when you know it. Otherwise just describe what should change.</div>
-          <textarea id="ea-teach-note" rows="3" placeholder="Tell the agent what it got wrong or what it should learn." style="box-sizing:border-box;width:100%;padding:10px 12px;border-radius:11px;border:2px solid #241812;background:#fffdf7;color:#1f1a14;font:inherit;resize:vertical;box-shadow:2px 2px 0 rgba(36,24,18,.18);">${escapeHtml(teachDraft.note)}</textarea>
+          <textarea id="ea-teach-note" rows="3" placeholder="What should Threadwise understand?" style="box-sizing:border-box;width:100%;padding:10px 12px;border-radius:11px;border:2px solid #241812;background:#fffdf7;color:#1f1a14;font:inherit;resize:vertical;box-shadow:2px 2px 0 rgba(36,24,18,.18);">${escapeHtml(teachDraft.note)}</textarea>
+          <details style="color:#6b6255;line-height:1.35;font-size:0.82rem;">
+            <summary style="cursor:pointer;font-weight:800;color:#241812;">Choose label manually</summary>
+            <select id="ea-target-label" style="box-sizing:border-box;width:100%;margin-top:8px;padding:10px 12px;border-radius:11px;border:2px solid #241812;background:#fffdf7;color:#1f1a14;font:inherit;box-shadow:2px 2px 0 rgba(36,24,18,.18);">
+              <option value="">Infer from note</option>
+              ${labelOptions}
+            </select>
+          </details>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <button type="button" data-ea-action="preview-teach" style="border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Preview lesson</button>
+            <button type="button" data-ea-action="preview-teach" style="border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Preview</button>
             <button type="button" data-ea-action="clear-teach" style="border:0;background:transparent;color:#5d5342;border-radius:0;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;box-shadow:none;">Clear draft</button>
           </div>
         </div>
@@ -1282,7 +1284,7 @@
   function teachErrorResult(operation, rawMessage) {
     const operationLabel = operation === "preview" ? "preview" : "apply";
     const retryCopy = operation === "preview"
-      ? "Nothing was changed. Check the local companion connection and try Preview lesson again."
+      ? "Nothing was changed. Check the local companion connection and try Preview again."
       : "Nothing was stored or changed. The preview is still here so you can check the connection and retry without rewriting your note.";
     return {
       kind: `${operation}-error`,
@@ -1371,14 +1373,14 @@
       : "";
     return `
       <div style="box-sizing:border-box;width:100%;min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word;margin-top:12px;border:2px solid #241812;border-radius:14px;background:#fffdf7;padding:12px;color:#241812;line-height:1.45;">
-        <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">Fix this email first</div>
+        <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">This email</div>
         <div style="margin-top:6px;font-weight:700;">${escapeHtml(preview.acknowledgment || "Preview ready.")}</div>
-        <div style="margin-top:8px;color:#6b6255;line-height:1.45;">Fix this email fixes the current message first. Threadwise can separately suggest a broader rule for matching emails.</div>
+        <div style="margin-top:8px;color:#6b6255;line-height:1.45;">Fix this email only updates the message you are reviewing.</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
           <button type="button" data-ea-apply="current-only" style="border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Fix this email</button>
         </div>
         <div style="margin-top:10px;border:2px solid #241812;border-radius:11px;background:#fffdf7;padding:10px 12px;color:#1f1a14;line-height:1.45;">
-          <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">Proposed future rule</div>
+          <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">Future rule</div>
           <div style="margin-top:6px;font-weight:700;">${escapeHtml(preview.plain_english_rule || "No future rule proposal was generated.")}</div>
           <details style="margin-top:8px;color:#6b6255;">
             <summary style="cursor:pointer;font-weight:700;color:#241812;">Structured rule</summary>
@@ -1393,7 +1395,7 @@
         </div>
         <div style="margin-top:10px;color:#6b6255;line-height:1.45;">${escapeHtml(previewChoiceExplainer(matchingCount, similarCount))}</div>
         <div style="margin-top:10px;border:2px solid #241812;border-radius:11px;background:#fffdf7;padding:10px 12px;color:#6b6255;line-height:1.45;">
-          <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">Also apply broader rule</div>
+          <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">Affected existing emails</div>
           <div style="margin-top:6px;">Would affect <strong style="color:#1f1a14;">${matchingCount}</strong> matching emails Threadwise has seen.</div>
           <details style="margin-top:8px;">
             <summary style="cursor:pointer;font-weight:800;color:#241812;">Show affected emails</summary>
@@ -1409,7 +1411,7 @@
         </div>
         ${similarGroupsHtml}
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
-          <button type="button" data-ea-apply="save-future-rule" style="border:2px solid #241812;background:#ffc64a;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Use for future emails only</button>
+          <button type="button" data-ea-apply="save-future-rule" style="border:2px solid #241812;background:#ffc64a;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Teach future rule</button>
           <button type="button" data-ea-action="refine-teach" style="border:2px solid #241812;background:#fffdf7;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Keep discussing</button>
         </div>
       </div>

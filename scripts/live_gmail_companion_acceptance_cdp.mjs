@@ -112,7 +112,7 @@ function buildChecks(result) {
     draftPersistsAcrossRefresh: Boolean(result.draftPersistence?.attempted && result.draftPersistence?.ok),
     teachPreviewReached: Boolean(result.teachPreview?.attempted && result.teachPreview?.hasPreview),
     impactWarningVisible: teachText.includes("Would affect"),
-    explicitChoiceCopyVisible: teachText.includes("Fix this email") && teachText.includes("Also apply broader rule"),
+    explicitChoiceCopyVisible: teachText.includes("Fix this email") && teachText.includes("Affected existing emails"),
     keepDiscussingVisible: teachText.includes("Keep discussing"),
     dailySummaryVisible: summaryText.includes("WHAT CHANGED TODAY") || summaryText.includes("What Changed Today"),
   };

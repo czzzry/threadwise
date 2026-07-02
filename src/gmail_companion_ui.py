@@ -1146,14 +1146,22 @@ class GmailCompanionApp:
       ).join("");
       return `
         <div class="preview-card">
-          <div class="reason-label">Fix this email first</div>
+          <div class="reason-label">This email</div>
           <div style="font-weight:700;margin-top:6px;">${escapeHtml(preview.acknowledgment || "Preview ready.")}</div>
-          <div class="empty" style="margin-top:8px;">Fix this email fixes the current message first. Threadwise can separately suggest a broader rule.</div>
+          <div class="empty" style="margin-top:8px;">Fix this email only updates the message you are reviewing.</div>
           <div class="button-row" style="margin-top:12px;">
             <button type="button" class="action-button primary" data-apply-mode="current-only">Fix this email</button>
           </div>
           <div style="margin-top:12px;border:2px solid #241812;border-radius:11px;background:#fffdf7;padding:10px 12px;">
-            <div class="reason-label">Also apply broader rule</div>
+            <div class="reason-label">Future rule</div>
+            <div style="font-weight:700;margin-top:6px;">${escapeHtml(preview.plain_english_rule || "No future rule proposal was generated.")}</div>
+            <details class="empty" style="margin-top:8px;">
+              <summary style="cursor:pointer;font-weight:800;color:#241812;">Structured rule</summary>
+              <div style="margin-top:8px;">Hidden until needed.</div>
+            </details>
+          </div>
+          <div style="margin-top:12px;border:2px solid #241812;border-radius:11px;background:#fffdf7;padding:10px 12px;">
+            <div class="reason-label">Affected existing emails</div>
             <div class="empty" style="margin-top:6px;">Would affect ${matchingCount} matching emails Threadwise has seen.</div>
             ${examples ? `<details style="margin-top:8px;"><summary style="cursor:pointer;font-weight:800;">Show affected emails</summary><ol style="margin:8px 0 0;padding-left:18px;color:#6b6255;">${examples}</ol></details>` : ""}
             <div class="button-row" style="margin-top:10px;">
@@ -1161,7 +1169,7 @@ class GmailCompanionApp:
             </div>
           </div>
           <div class="button-row" style="margin-top:10px;">
-            <button type="button" class="action-button future" data-apply-mode="save-future-rule">Use for future emails only</button>
+            <button type="button" class="action-button future" data-apply-mode="save-future-rule">Teach future rule</button>
             <button type="button" class="action-button secondary" data-action="refine-teach">Keep discussing</button>
           </div>
         </div>
@@ -1259,10 +1267,13 @@ class GmailCompanionApp:
       `;
       teachPanelNode.innerHTML = `
         <div class="field-stack">
-          <select id="sim-target-label" class="select">${labelOptions}</select>
-          <textarea id="sim-teach-note" class="textarea" placeholder="Tell the agent what it got wrong or what it should learn.">${escapeHtml(draftNote)}</textarea>
+          <textarea id="sim-teach-note" class="textarea" placeholder="What should Threadwise understand?">${escapeHtml(draftNote)}</textarea>
+          <details class="empty" style="margin-top:0;">
+            <summary style="cursor:pointer;font-weight:800;color:#241812;">Choose label manually</summary>
+            <select id="sim-target-label" class="select" style="margin-top:8px;">${labelOptions}</select>
+          </details>
           <div class="button-row">
-            <button type="button" class="action-button primary" data-action="preview-teach">Preview lesson</button>
+            <button type="button" class="action-button primary" data-action="preview-teach">Preview</button>
             <button type="button" class="action-button quiet" data-action="clear-teach">Clear draft</button>
           </div>
         </div>
@@ -2325,10 +2336,13 @@ class GmailCompanionApp:
       `;
       teachPanelNode.innerHTML = `
         <div class="field-stack">
-          <select id="teach-target-label" class="select">${labelOptions}</select>
-          <textarea id="teach-note" class="textarea" placeholder="Tell the agent what it got wrong or what it should learn.">${escapeHtml(draftNote)}</textarea>
+          <textarea id="teach-note" class="textarea" placeholder="What should Threadwise understand?">${escapeHtml(draftNote)}</textarea>
+          <details class="empty" style="margin-top:0;">
+            <summary style="cursor:pointer;font-weight:800;color:#241812;">Choose label manually</summary>
+            <select id="teach-target-label" class="select" style="margin-top:8px;">${labelOptions}</select>
+          </details>
           <div class="button-row">
-            <button type="button" class="action-button primary" data-action="preview-teach">Preview lesson</button>
+            <button type="button" class="action-button primary" data-action="preview-teach">Preview</button>
             <button type="button" class="action-button quiet" data-action="clear-teach">Clear draft</button>
           </div>
         </div>
@@ -2370,14 +2384,22 @@ class GmailCompanionApp:
       ).join("");
       return `
         <div class="preview-card">
-          <div class="reason-label">Fix this email first</div>
+          <div class="reason-label">This email</div>
           <div style="font-weight:700;margin-top:6px;">${escapeHtml(preview.acknowledgment || "Preview ready.")}</div>
-          <div class="empty" style="margin-top:8px;">Fix this email fixes the current message first. Threadwise can separately suggest a broader rule.</div>
+          <div class="empty" style="margin-top:8px;">Fix this email only updates the message you are reviewing.</div>
           <div class="button-row">
             <button type="button" class="action-button primary" data-apply-mode="current-only">Fix this email</button>
           </div>
           <div style="margin-top:12px;border:2px solid #241812;border-radius:11px;background:#fffdf7;padding:10px 12px;">
-            <div class="reason-label">Also apply broader rule</div>
+            <div class="reason-label">Future rule</div>
+            <div style="font-weight:700;margin-top:6px;">${escapeHtml(preview.plain_english_rule || "No future rule proposal was generated.")}</div>
+            <details class="empty" style="margin-top:8px;">
+              <summary style="cursor:pointer;font-weight:800;color:#241812;">Structured rule</summary>
+              <div style="margin-top:8px;">Hidden until needed.</div>
+            </details>
+          </div>
+          <div style="margin-top:12px;border:2px solid #241812;border-radius:11px;background:#fffdf7;padding:10px 12px;">
+            <div class="reason-label">Affected existing emails</div>
             <div class="empty" style="margin-top:6px;">Would affect ${matchingCount} matching emails Threadwise has seen.</div>
             ${examples ? `<details style="margin-top:8px;"><summary style="cursor:pointer;font-weight:800;">Show affected emails</summary><ol class="checklist">${examples}</ol></details>` : ""}
             <div class="button-row">
@@ -2385,7 +2407,7 @@ class GmailCompanionApp:
             </div>
           </div>
           <div class="button-row">
-            <button type="button" class="action-button future" data-apply-mode="save-future-rule">Use for future emails only</button>
+            <button type="button" class="action-button future" data-apply-mode="save-future-rule">Teach future rule</button>
             <button type="button" class="action-button secondary" data-action="refine-teach">Keep discussing</button>
           </div>
         </div>

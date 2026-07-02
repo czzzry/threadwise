@@ -51,7 +51,7 @@ try {
   await pumpUntil(async () => {
     const text = await selectedText();
     const teachText = await teachPanelText();
-    return text.includes("Nowa transakcja płatnicza (P24-Y6A-Y4M-T1W)") && teachText.includes("Preview lesson");
+    return text.includes("Nowa transakcja płatnicza (P24-Y6A-Y4M-T1W)") && teachText.includes("Preview");
   }, 15000);
 
   await evaluate(`document.getElementById("ea-brand-toggle")?.click()`);
