@@ -79,11 +79,13 @@ try {
     const quick = document.querySelector('[data-action="select-unsubscribe"]');
     const handoff = document.querySelector('#sim-selected-email a[href^="/unsubscribe-review"]');
     const external = Array.from(document.querySelectorAll('#sim-selected-email a')).find((node) => node.getAttribute('href') !== '/unsubscribe-review');
+    const rawHttpExternal = Array.from(document.querySelectorAll('#sim-selected-email a[href^="http"]')).find((node) => !node.getAttribute('href').includes('/unsubscribe-review'));
     return {
       title: document.querySelector('#sim-selected-email .reason-wrap .reason')?.innerText || '',
       quickActionVisible: !!quick,
       handoffVisible: !!handoff,
-      externalLabel: external?.innerText || ''
+      externalLabel: external?.innerText || '',
+      rawHttpExternalVisible: !!rawHttpExternal
     };
   })()`);
   if (await evaluate("document.querySelector('[data-action=\"select-unsubscribe\"]') !== null")) {
@@ -370,6 +372,7 @@ try {
     initialState.minimizeLabel !== "Minimize" ||
     keptVisibleCount < 1 ||
     !unsubscribeState.handoffVisible ||
+    unsubscribeState.rawHttpExternalVisible ||
     (unsubscribeState.quickActionVisible === false && unsubscribeState.externalLabel === "") ||
     !unsubscribeAfterQueue.reviewLinkPresent ||
     !selectedBefore.selectedSubject ||

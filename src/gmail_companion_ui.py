@@ -1918,10 +1918,22 @@ class GmailCompanionApp:
             latest_execution = detail.get("latest_execution") or {}
             is_focused = bool(focus_list_key and detail.get("list_key") == focus_list_key)
             action_html = ""
-            if candidate_preview.get("url"):
-                target = ' target="_blank" rel="noreferrer"' if candidate_preview["url"].startswith("http") else ""
-                label = "Open unsubscribe link" if candidate_preview["url"].startswith("http") else "Open mail unsubscribe"
-                action_html = f'<a class="action" href="{escape_html(candidate_preview["url"])}"{target}>{label}</a>'
+            preview_url = candidate_preview.get("url") or ""
+            if preview_url.startswith("mailto:"):
+                action_html = f'<a class="action" href="{escape_html(preview_url)}">Open mail unsubscribe</a>'
+            elif preview_url.startswith("http") and candidate_preview.get("status") == "ready":
+                action_html = (
+                    '<p class="safety-note"><strong>Audited action only:</strong> '
+                    'Threadwise will not open this one-click HTTPS unsubscribe as a raw browser link. '
+                    'Queue it for review and execute supported unsubscribes only after explicit confirmation.</p>'
+                )
+            elif preview_url.startswith("http"):
+                action_html = (
+                    f'<p class="safety-note"><strong>Manual provider page:</strong> '
+                    'This link may require a signed-in provider session or may show a provider error page. '
+                    'Opening it does not execute a Threadwise unsubscribe.</p>'
+                    f'<a class="action secondary" href="{escape_html(preview_url)}" target="_blank" rel="noreferrer">Open provider page manually</a>'
+                )
             focus_html = '<div class="focus-note">Opened from inbox</div>' if is_focused else ""
             latest_execution_html = (
                 f'<p><strong>Latest attempt:</strong> {escape_html(latest_execution.get("status") or "none")} - {escape_html(latest_execution.get("notes") or "No recorded execution yet.")}</p>'
@@ -1977,6 +1989,8 @@ class GmailCompanionApp:
     h1 {{ font-size:2rem; line-height:1.05; }}
     p {{ line-height:1.45; }}
     .action {{ display:inline-block; margin-top:10px; border:2px solid #241812; border-radius:11px; background:#2eb67d; color:#241812; padding:9px 12px; text-decoration:none; font-weight:800; box-shadow:3px 3px 0 #241812; }}
+    .action.secondary {{ background:#fffdf7; color:#5d5342; }}
+    .safety-note {{ border:2px solid #241812; border-radius:12px; background:#fff7e8; padding:10px 12px; color:#4d4134; }}
     .pill-row {{ display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }}
     .pill {{ border:2px solid #241812; border-radius:999px; padding:6px 10px; background:#f1eadf; color:#241812; font-size:0.8rem; font-weight:760; box-shadow:2px 2px 0 rgba(36,24,18,.28); }}
     .focused {{ border-color:#2eb67d; background:#f5fbfa; }}

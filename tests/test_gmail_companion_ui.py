@@ -458,9 +458,57 @@ class GmailCompanionUiTests(unittest.TestCase):
 
             self.assertIn("Subscription cleanup", page)
             self.assertIn("Store", page)
-            self.assertIn("Open unsubscribe link", page)
+            self.assertIn("Manual provider page", page)
+            self.assertIn("Open provider page manually", page)
+            self.assertIn("Opening it does not execute a Threadwise unsubscribe.", page)
+            self.assertNotIn("Open unsubscribe link", page)
             self.assertIn("Manual Follow-Up", page)
             self.assertIn("All candidates: 2", page)
+
+    def test_unsubscribe_review_page_does_not_open_one_click_https_directly(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": "Store <news@example.com>",
+                        "subject": "Big sale this week",
+                        "snippet": "Save 20% today",
+                        "interpretation": "Promotional mail from a recurring sender.",
+                        "review_state": "reviewed",
+                        "review_action": "auto-approve",
+                        "final_labels": ["promotions"],
+                        "applied_labels": ["promotions"],
+                        "list_unsubscribe": "<https://example.com/unsub>",
+                    }
+                ],
+                raw_messages=[
+                    {
+                        "id": "gmail-live-001",
+                        "payload": {
+                            "headers": [
+                                {"name": "From", "value": "Store <news@example.com>"},
+                                {"name": "List-Unsubscribe", "value": "<https://example.com/unsub>"},
+                                {"name": "List-Unsubscribe-Post", "value": "List-Unsubscribe=One-Click"},
+                            ]
+                        },
+                        "labelIds": ["CATEGORY_PROMOTIONS"],
+                    }
+                ],
+            )
+
+            page = GmailCompanionApp(storage_dir).render_unsubscribe_review_page()
+
+            self.assertIn("Ready Now", page)
+            self.assertIn("Audited action only", page)
+            self.assertIn("explicit confirmation", page)
+            self.assertNotIn("Open provider page manually", page)
+            self.assertNotIn("Open unsubscribe link", page)
 
     def test_daily_dashboard_page_lists_operational_sections(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
