@@ -268,6 +268,15 @@ try {
     })()
   })`);
 
+  if (applyMode === "apply-included") {
+    await evaluate(`(() => {
+      const button = document.querySelector('[data-action="open-affected-review"]');
+      if (button) button.click();
+      return true;
+    })()`);
+    await waitFor(() => evaluate("document.querySelector('.affected-review') !== null && document.querySelector('[data-apply-mode=\"apply-included\"]') !== null"));
+  }
+
   await evaluate(`(() => {
     document.querySelector('[data-apply-mode="${applyMode}"]').click();
     return true;
@@ -379,6 +388,7 @@ try {
     !affectedReviewState.excludeActions.includes("Exclude") ||
     !affectedExcludeState.confirmationVisible ||
     !affectedExcludeState.previewText.includes("Would affect 0") ||
+    !affectedExcludeState.previewText.includes("Apply to included") ||
     affectedExcludeState.remainingOpenActions !== 0 ||
     !affectedExcludeState.reviewStillExpanded ||
     affectedReviewCollapseState.reviewVisible ||
@@ -401,6 +411,11 @@ try {
     !(["future-only", "save-future-rule"].includes(applyMode)
       ? afterApply.successText.includes("future rule")
       : afterApply.successText.includes("rewrote")) ||
+    (applyMode === "apply-included" && (
+      !afterApply.successText.includes("included stored emails")
+      || !afterApply.successText.includes("saved exceptions")
+      || !afterApply.successText.includes("saved a future rule")
+    )) ||
     afterApply.draftNote !== "" ||
     afterApply.previousVisible ||
     !unsyncedState.panelNoticePresent ||

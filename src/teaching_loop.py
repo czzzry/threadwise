@@ -7,11 +7,15 @@ from src.label_taxonomy import gmail_label_name
 from src.local_artifacts import load_json, memory_proposals_path, teachable_rules_path
 from src.memory_proposal_store import MemoryProposalStore, build_memory_proposal, load_storage_items
 from src.sender_utils import normalized_sender_email
-from src.teaching_exclusions import filter_excluded_preview_matches, save_teaching_exclusion
+from src.teaching_exclusions import (
+    count_teaching_exclusions_for_proposal,
+    filter_excluded_preview_matches,
+    save_teaching_exclusion,
+)
 from src.teachable_rule_memory import TeachableRuleMemory
 
 
-VALID_TEACHING_APPLY_MODES = {"current-only", "matching-existing", "save-future-rule", "future-only"}
+VALID_TEACHING_APPLY_MODES = {"current-only", "matching-existing", "save-future-rule", "future-only", "apply-included"}
 
 
 def build_sidebar_teach_preview(
@@ -133,7 +137,7 @@ def apply_sidebar_teaching(
     preview_matches = filter_excluded_preview_matches(storage_dir, proposal.to_dict(), proposal.preview.get("matches", []))
 
     current_changed = False
-    if mode in {"current-only", "matching-existing", "future-only"}:
+    if mode in {"current-only", "matching-existing", "future-only", "apply-included"}:
         current_changed = apply_label_to_message(
             storage_dir,
             batch_id=current["batch_id"],
@@ -145,19 +149,23 @@ def apply_sidebar_teaching(
 
     matched_existing_count = 0
     proposal_record = None
-    if mode in {"save-future-rule", "future-only"}:
+    future_rule_saved = False
+    if mode in {"save-future-rule", "future-only", "apply-included"}:
         store = MemoryProposalStore(memory_proposals_path(storage_dir))
         store.save_proposal(proposal)
         memory = TeachableRuleMemory(teachable_rules_path(storage_dir))
         proposal_record = store.review_proposal(proposal.id, "approved", rules_memory=memory)
-    if mode == "matching-existing":
+        future_rule_saved = True
+    if mode in {"matching-existing", "apply-included"}:
         matched_existing_count = apply_label_to_preview_matches(
             storage_dir,
             preview_matches,
             selected_message_id=current["message_id"],
             label=target_label,
             note=note,
+            review_action="sidebar-matching-existing" if mode == "matching-existing" else "sidebar-apply-included",
         )
+    exceptions_saved_count = count_teaching_exclusions_for_proposal(storage_dir, proposal.to_dict())
 
     return {
         "acknowledgment": build_apply_acknowledgment(
@@ -165,10 +173,14 @@ def apply_sidebar_teaching(
             target_label=target_label,
             mode=mode,
             matched_existing_count=matched_existing_count,
+            exceptions_saved_count=exceptions_saved_count,
+            future_rule_saved=future_rule_saved,
         ),
         "mode": mode,
         "current_changed": current_changed,
         "matched_existing_count": matched_existing_count,
+        "exceptions_saved_count": exceptions_saved_count,
+        "future_rule_saved": future_rule_saved,
         "proposal": proposal_record.to_dict() if proposal_record else None,
         "current": current,
         "preview_matches": preview_matches,
@@ -617,6 +629,7 @@ def apply_label_to_preview_matches(
     selected_message_id: str,
     label: str,
     note: str,
+    review_action: str = "sidebar-matching-existing",
 ) -> int:
     count = 0
     batches_dir = storage_dir / "batches"
@@ -631,7 +644,7 @@ def apply_label_to_preview_matches(
             if not any(match.get("message_id") == item.get("message_id") for match in matches):
                 continue
             item["review_state"] = "reviewed"
-            item["review_action"] = "sidebar-matching-existing"
+            item["review_action"] = review_action
             item["final_labels"] = [label]
             item["applied_labels"] = [label]
             if note:
@@ -670,7 +683,7 @@ def load_items_for_gmail_write_through(
             if message_id == selected_message_id:
                 matched_items.append(item)
                 continue
-            if mode == "matching-existing" and message_id in preview_message_ids:
+            if mode in {"matching-existing", "apply-included"} and message_id in preview_message_ids:
                 matched_items.append(item)
         if matched_items:
             batches[batch_id] = matched_items
@@ -702,12 +715,20 @@ def build_apply_acknowledgment(
     target_label: str,
     mode: str,
     matched_existing_count: int,
+    exceptions_saved_count: int = 0,
+    future_rule_saved: bool = False,
 ) -> str:
     label_name = gmail_label_name(target_label)
     if mode == "current-only":
         return f"I relabeled only this email to {label_name}. I did not change other stored emails or save a broader future rule."
     if mode == "matching-existing":
         return f"I relabeled this email to {label_name} and rewrote {matched_existing_count} matching stored emails. I did not save a future rule."
+    if mode == "apply-included":
+        future_copy = "saved a future rule" if future_rule_saved else "did not save a future rule"
+        return (
+            f"I relabeled this email to {label_name}, rewrote {matched_existing_count} included stored emails, "
+            f"kept {exceptions_saved_count} saved exceptions, and {future_copy}."
+        )
     if mode == "save-future-rule":
         return f"I saved a future rule. I did not relabel this email or rewrite other existing emails."
     if mode == "future-only":

@@ -1222,7 +1222,7 @@ class GmailCompanionApp:
             ${examples ? `<details style="margin-top:8px;"><summary style="cursor:pointer;font-weight:800;">Show affected emails</summary><ol style="margin:8px 0 0;padding-left:18px;color:#6b6255;">${examples}</ol></details>` : ""}
             <div class="button-row" style="margin-top:10px;">
               <button type="button" class="action-button future" data-action="open-affected-review">Review ${matchingCount}</button>
-              <button type="button" class="action-button info" data-apply-mode="matching-existing">Apply to matching emails too</button>
+              ${affectedReviewOpen ? '<button type="button" class="action-button info" data-apply-mode="apply-included">Apply to included</button>' : ""}
             </div>
           </div>
           ${affectedReviewHtml}
@@ -2601,7 +2601,7 @@ class GmailCompanionApp:
             ${examples ? `<details style="margin-top:8px;"><summary style="cursor:pointer;font-weight:800;">Show affected emails</summary><ol class="checklist">${examples}</ol></details>` : ""}
             <div class="button-row">
               <button type="button" class="action-button secondary" data-action="open-affected-review" ${matchingCount ? "" : "disabled"}>Review ${matchingCount}</button>
-              <button type="button" class="action-button info" data-apply-mode="matching-existing">Apply to matching emails too</button>
+              ${affectedReviewOpen ? '<button type="button" class="action-button info" data-apply-mode="apply-included">Apply to included</button>' : ""}
             </div>
           </div>
           ${affectedReviewHtml}

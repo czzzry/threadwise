@@ -61,6 +61,19 @@ def filter_excluded_preview_matches(storage_dir: Path, proposal: dict, matches: 
     ]
 
 
+def count_teaching_exclusions_for_proposal(storage_dir: Path, proposal: dict) -> int:
+    proposal_id = str(proposal.get("id") or "").strip()
+    signature = rule_signature_from_proposal(proposal)
+    count = 0
+    for entry in _load_payload(storage_dir).get("exclusions", []):
+        if proposal_id and entry.get("proposal_id") == proposal_id:
+            count += 1
+            continue
+        if signature and entry.get("rule_signature") == signature:
+            count += 1
+    return count
+
+
 def is_teaching_match_excluded(storage_dir: Path, *, proposal: dict, message_id: str) -> bool:
     proposal_id = str(proposal.get("id") or "").strip()
     signature = rule_signature_from_proposal(proposal)

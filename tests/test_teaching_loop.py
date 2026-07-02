@@ -506,6 +506,86 @@ class TeachingLoopTests(unittest.TestCase):
             )
             self.assertEqual(batch_two["items"][0]["final_labels"], [])
 
+    def test_apply_included_relabels_only_included_matches_and_saves_future_rule(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                [
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": "Ashby <notifications@ashbyhq.com>",
+                        "subject": "Interview update",
+                        "snippet": "Status changed",
+                        "interpretation": "No confident category.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    },
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-002",
+                        "sender": "Ashby <notifications@ashbyhq.com>",
+                        "subject": "Application portal reminder",
+                        "snippet": "Reminder",
+                        "interpretation": "No confident category.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    },
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-003",
+                        "sender": "Ashby <notifications@ashbyhq.com>",
+                        "subject": "Interview scheduling link",
+                        "snippet": "Choose a calendar slot",
+                        "interpretation": "No confident category.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    },
+                ],
+            )
+            selected_context = {
+                "provider": "gmail",
+                "message_id": "gmail-live-001",
+                "sender": "notifications@ashbyhq.com",
+                "subject": "Interview update",
+            }
+
+            exclude_sidebar_teaching_match(
+                storage_dir,
+                selected_context=selected_context,
+                target_label="job-related",
+                note="Ashby interview workflow messages should be job-related and kept visible.",
+                scope="sender",
+                excluded_message_id="gmail-live-002",
+            )
+            result = apply_sidebar_teaching(
+                storage_dir,
+                selected_context=selected_context,
+                target_label="job-related",
+                note="Ashby interview workflow messages should be job-related and kept visible.",
+                scope="sender",
+                mode="apply-included",
+            )
+            batch = json.loads((storage_dir / "batches" / "founder-test-batch-1.json").read_text())
+            rules = TeachableRuleMemory(storage_dir / "teachable_classification_rules.json").list_rules()
+
+            self.assertIn("saved a future rule", result["acknowledgment"])
+            self.assertEqual(result["matched_existing_count"], 1)
+            self.assertEqual(result["exceptions_saved_count"], 1)
+            self.assertEqual(result["future_rule_saved"], True)
+            self.assertEqual(batch["items"][0]["final_labels"], ["job-related"])
+            self.assertEqual(batch["items"][1]["final_labels"], [])
+            self.assertEqual(batch["items"][2]["final_labels"], ["job-related"])
+            self.assertEqual(len(rules), 1)
+
     def test_apply_matching_existing_does_not_relabel_broader_similar_candidates(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
