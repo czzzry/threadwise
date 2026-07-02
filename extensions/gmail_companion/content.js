@@ -794,10 +794,11 @@
             }>${escapeHtml(option.name)}</option>`,
         )
         .join("");
+      const resultHtml = teachResult ? renderTeachResultHtml(teachResult) : "";
       const previewHtml = teachPreview
-        ? `${renderPreviousTeachPreviewHtml(previousTeachPreview)}${renderTeachPreviewHtml(teachPreview)}`
+        ? `${resultHtml}${renderPreviousTeachPreviewHtml(previousTeachPreview)}${renderTeachPreviewHtml(teachPreview)}`
         : teachResult
-          ? renderTeachResultHtml(teachResult)
+          ? resultHtml
           : renderPreviousTeachPreviewHtml(previousTeachPreview);
       const details = selected.details || {};
       const decisionSource = humanDecisionSource(details.review_action || "");
@@ -1282,7 +1283,7 @@
     const operationLabel = operation === "preview" ? "preview" : "apply";
     const retryCopy = operation === "preview"
       ? "Nothing was changed. Check the local companion connection and try Preview lesson again."
-      : "No confirmed lesson was applied from this failed request. Click Check again before retrying so we do not duplicate work.";
+      : "Nothing was stored or changed. The preview is still here so you can check the connection and retry without rewriting your note.";
     return {
       kind: `${operation}-error`,
       title: operation === "preview" ? "Preview failed" : "Lesson not applied",
@@ -1295,10 +1296,23 @@
     const tone = isError
       ? { background: "#fff4dd", color: "#8a4b00" }
       : { background: "#d8f3ef", color: "#0f766e" };
+    const recoveryActions = isError
+      ? `
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
+          <button type="button" data-ea-action="force-refresh" style="border:2px solid #241812;background:#ffc64a;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Check again</button>
+          ${
+            result.kind === "apply-error"
+              ? '<button type="button" data-ea-action="retry-apply-teach" data-ea-apply="current-only" style="border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Try fix again</button>'
+              : '<button type="button" data-ea-action="retry-preview-teach" style="border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Try preview again</button>'
+          }
+        </div>
+      `
+      : "";
     return `
-      <div style="margin-top:12px;border-radius:14px;background:${tone.background};padding:12px;color:${tone.color};line-height:1.45;">
+      <div style="box-sizing:border-box;width:100%;min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word;margin-top:12px;border-radius:14px;background:${tone.background};padding:12px;color:${tone.color};line-height:1.45;">
         <div style="font-weight:700;">${escapeHtml(result.title || (isError ? "Lesson failed" : "Lesson applied"))}</div>
         <div style="margin-top:8px;">${escapeHtml(result.message || "")}</div>
+        ${recoveryActions}
       </div>
     `;
   }
@@ -1356,7 +1370,7 @@
       `
       : "";
     return `
-      <div style="margin:12px;border:2px solid #241812;border-radius:14px;background:#fffdf7;padding:12px;color:#241812;line-height:1.45;">
+      <div style="box-sizing:border-box;width:100%;min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word;margin-top:12px;border:2px solid #241812;border-radius:14px;background:#fffdf7;padding:12px;color:#241812;line-height:1.45;">
         <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">Fix this email first</div>
         <div style="margin-top:6px;font-weight:700;">${escapeHtml(preview.acknowledgment || "Preview ready.")}</div>
         <div style="margin-top:8px;color:#6b6255;line-height:1.45;">Fix this email fixes the current message first. Threadwise can separately suggest a broader rule for matching emails.</div>
@@ -1409,7 +1423,7 @@
     const impact = previousPreview.impact || {};
     const targetLabelName = humanLabelNameFromId((previousPreview.selected_label_after || [])[0] || "");
     return `
-      <div data-ea-previous-preview="true" style="margin:12px;border:2px solid #241812;border-radius:14px;background:#fffdf7;padding:12px;color:#241812;line-height:1.45;">
+      <div data-ea-previous-preview="true" style="box-sizing:border-box;width:100%;min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word;margin-top:12px;border:2px solid #241812;border-radius:14px;background:#fffdf7;padding:12px;color:#241812;line-height:1.45;">
         <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">Previous interpretation</div>
         <div style="margin-top:8px;font-weight:700;">${escapeHtml(previousPreview.acknowledgment || "Previous preview")}</div>
         <div style="margin-top:6px;color:#6b6255;">Would relabel to ${escapeHtml(targetLabelName)} and change ${impact.matching_existing_count || 0} existing emails.</div>
@@ -1518,6 +1532,11 @@
     }
     const previewButton = event.target.closest("[data-ea-action='preview-teach']");
     if (previewButton) {
+      event.preventDefault();
+      return previewTeach();
+    }
+    const retryPreviewButton = event.target.closest("[data-ea-action='retry-preview-teach']");
+    if (retryPreviewButton) {
       event.preventDefault();
       return previewTeach();
     }
@@ -1666,13 +1685,11 @@
     }, (response) => {
       if (chrome.runtime.lastError) {
         teachResult = teachErrorResult("apply", chrome.runtime.lastError.message || "Could not apply the lesson.");
-        teachPreview = null;
         renderState(lastSidebarState);
         return;
       }
       if (!response || !response.ok) {
         teachResult = teachErrorResult("apply", (response && (response.payload?.error || response.error)) || "Could not apply the lesson.");
-        teachPreview = null;
         renderState(lastSidebarState);
         return;
       }

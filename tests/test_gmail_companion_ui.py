@@ -205,7 +205,12 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("renderTeachResultHtml", content_js)
         self.assertIn("Preview failed", content_js)
         self.assertIn("Lesson not applied", content_js)
+        self.assertIn("Nothing was stored or changed. The preview is still here", content_js)
+        self.assertIn("Try fix again", content_js)
+        self.assertIn("data-ea-action=\"retry-preview-teach\"", content_js)
+        self.assertIn("max-width:100%;overflow-wrap:anywhere;word-break:break-word", content_js)
         self.assertIn("Nothing was changed. Check the local companion connection and try Preview lesson again.", content_js)
+        self.assertNotIn("No confirmed lesson was applied from this failed request", content_js)
         self.assertIn("response.payload?.error", background_js)
         self.assertIn("status: response.status", background_js)
         self.assertIn("Queue preview", content_js)
@@ -321,6 +326,10 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("Preview closest synced match", page)
         self.assertIn("Show details", page)
         self.assertIn("Open daily dashboard", page)
+        self.assertIn("Nothing was stored or changed. The preview is still here", page)
+        self.assertIn("Try fix again", page)
+        self.assertIn("data-action=\"refresh-state\"", page)
+        self.assertIn("overflow-wrap: anywhere", page)
 
     def test_simulator_page_contains_inbox_and_safe_local_only_language(self) -> None:
         app = GmailCompanionApp(Path("/tmp/example"), gmail_write_through_enabled=False)
@@ -346,6 +355,10 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("Current Queue", page)
         self.assertIn("What to do now", page)
         self.assertIn("Viewing", page)
+        self.assertIn("Nothing was stored or changed. The preview is still here", page)
+        self.assertIn("Try fix again", page)
+        self.assertIn("data-action=\"refresh-state\"", page)
+        self.assertIn("overflow-wrap:anywhere", page)
 
     def test_unsubscribe_review_page_lists_candidates(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

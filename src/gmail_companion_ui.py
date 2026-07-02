@@ -855,6 +855,7 @@ class GmailCompanionApp:
     .action-button.info { background:#3d6df2;color:#fff; }
     .action-button.future { background:#ffc64a;color:#241812; }
     .action-button.quiet { border:0;background:transparent;color:#5d5342;border-radius:0;padding:7px 2px;box-shadow:none;text-decoration:underline;text-underline-offset:3px;font-weight:760; }
+    .preview-card, .success-card, .error-card, .note { box-sizing:border-box;width:100%;min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word; }
     .preview-card { margin-top:12px;border:2px solid #241812;border-radius:14px;background:#fffdf7;padding:12px;color:var(--ink);line-height:1.45; }
     .success-card { margin-top:12px;border-radius:14px;background:var(--accent-soft);padding:12px;color:var(--accent);line-height:1.45; }
     .error-card { margin-top:12px;border-radius:14px;background:var(--warn-soft);padding:12px;color:var(--warn-ink);line-height:1.45; }
@@ -1167,6 +1168,19 @@ class GmailCompanionApp:
       `;
     }
 
+    function renderTeachError(message) {
+      return `
+        <div class="error-card">
+          <div style="font-weight:800;">Lesson not applied</div>
+          <div style="margin-top:8px;">${escapeHtml(message || "Nothing was stored or changed. The preview is still here so you can check the connection and retry without rewriting your note.")}</div>
+          <div class="button-row" style="margin-top:12px;">
+            <button type="button" class="action-button future" data-action="refresh-state">Check again</button>
+            <button type="button" class="action-button primary" data-apply-mode="current-only">Try fix again</button>
+          </div>
+        </div>
+      `;
+    }
+
     function renderSelectedPanel() {
       const selected = selectedEmail();
       const stepCopy = nextStepCopy(selected);
@@ -1225,10 +1239,11 @@ class GmailCompanionApp:
           </div>
         `
         : "";
-      const feedbackHtml = teachError
-        ? `<div class="error-card">${escapeHtml(teachError)}</div>`
-        : teachPreview
-          ? `${renderPreviousTeachPreview(previousTeachPreview)}${renderTeachPreview(teachPreview)}`
+      const errorHtml = teachError ? renderTeachError(teachError) : "";
+      const feedbackHtml = teachPreview
+        ? `${errorHtml}${renderPreviousTeachPreview(previousTeachPreview)}${renderTeachPreview(teachPreview)}`
+        : teachError
+          ? errorHtml
           : teachResult
             ? `<div class="success-card">${escapeHtml(teachResult)}</div>`
             : renderPreviousTeachPreview(previousTeachPreview);
@@ -1380,7 +1395,6 @@ class GmailCompanionApp:
       });
       if (payload.error) {
         teachError = payload.error;
-        teachPreview = null;
         teachResult = "";
       } else {
         teachError = "";
@@ -1408,8 +1422,9 @@ class GmailCompanionApp:
       });
       if (payload.error) {
         teachError = payload.error;
-        teachPreview = null;
         teachResult = "";
+        renderSelectedPanel();
+        return;
       } else {
         teachPreview = null;
         previousTeachPreview = null;
@@ -1446,6 +1461,11 @@ class GmailCompanionApp:
       const previewButton = event.target.closest("[data-action='preview-teach']");
       if (previewButton) {
         previewTeach();
+        return;
+      }
+      const refreshButton = event.target.closest("[data-action='refresh-state']");
+      if (refreshButton) {
+        refreshState();
         return;
       }
       const clearButton = event.target.closest("[data-action='clear-teach']");
@@ -2015,6 +2035,7 @@ class GmailCompanionApp:
     .action-button.info { background: #1f6f8b; color: #fff; }
     .action-button.future { background: #7b5d2a; color: #fff; }
     .action-button.quiet { border: 0; background: transparent; color: #5d5342; border-radius: 0; padding: 7px 2px; box-shadow: none; text-decoration: underline; text-underline-offset: 3px; font-weight: 760; }
+    .preview-card, .success-card, .error-card, .note { box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; overflow-wrap: anywhere; word-break: break-word; }
     .preview-card { margin-top: 12px; border-radius: 14px; background: #fff8eb; padding: 12px; color: var(--ink); line-height: 1.45; }
     .success-card { margin-top: 12px; border-radius: 14px; background: var(--accent-soft); padding: 12px; color: var(--accent); line-height: 1.45; }
     .error-card { margin-top: 12px; border-radius: 14px; background: var(--warn-soft); padding: 12px; color: var(--warn-ink); line-height: 1.45; }
@@ -2257,10 +2278,11 @@ class GmailCompanionApp:
             `;
           })()
         : "";
-      const feedbackHtml = teachError
-        ? `<div class="error-card">${escapeHtml(teachError)}</div>`
-        : teachPreview
-          ? `${renderPreviousTeachPreview(previousTeachPreview)}${renderTeachPreview(teachPreview)}`
+      const errorHtml = teachError ? renderTeachError(teachError) : "";
+      const feedbackHtml = teachPreview
+        ? `${errorHtml}${renderPreviousTeachPreview(previousTeachPreview)}${renderTeachPreview(teachPreview)}`
+        : teachError
+          ? errorHtml
           : teachResult
             ? `<div class="success-card">${escapeHtml(teachResult)}</div>`
             : renderPreviousTeachPreview(previousTeachPreview);
@@ -2365,6 +2387,19 @@ class GmailCompanionApp:
           <div class="button-row">
             <button type="button" class="action-button future" data-apply-mode="save-future-rule">Use for future emails only</button>
             <button type="button" class="action-button secondary" data-action="refine-teach">Keep discussing</button>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderTeachError(message) {
+      return `
+        <div class="error-card">
+          <div style="font-weight:800;">Lesson not applied</div>
+          <div style="margin-top:8px;">${escapeHtml(message || "Nothing was stored or changed. The preview is still here so you can check the connection and retry without rewriting your note.")}</div>
+          <div class="button-row" style="margin-top:12px;">
+            <button type="button" class="action-button future" data-action="refresh-state">Check again</button>
+            <button type="button" class="action-button primary" data-apply-mode="current-only">Try fix again</button>
           </div>
         </div>
       `;
@@ -2647,7 +2682,6 @@ class GmailCompanionApp:
         });
         if (payload.error) {
           teachError = payload.error;
-          teachPreview = null;
           teachResult = "";
           renderSelectedEmail(harnessState.sidebar_state.selected_email);
           return;
@@ -2665,7 +2699,6 @@ class GmailCompanionApp:
         await refreshState();
       } catch (_error) {
         teachError = "Could not apply the lesson.";
-        teachPreview = null;
         teachResult = "";
         renderSelectedEmail(harnessState.sidebar_state.selected_email);
       }
@@ -2681,6 +2714,12 @@ class GmailCompanionApp:
       if (previewButton) {
         event.preventDefault();
         previewTeach();
+        return;
+      }
+      const refreshButton = event.target.closest("[data-action='refresh-state']");
+      if (refreshButton) {
+        event.preventDefault();
+        refreshState();
         return;
       }
       const clearButton = event.target.closest("[data-action='clear-teach']");

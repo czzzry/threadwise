@@ -197,6 +197,36 @@ try {
   await waitFor(() => evaluate("document.querySelector('.preview-card') !== null"));
 
   await evaluate(`(() => {
+    const originalFetch = window.fetch.bind(window);
+    let failedOnce = false;
+    window.fetch = (input, init) => {
+      const url = String(input || "");
+      if (!failedOnce && url.includes('/api/teach-apply')) {
+        failedOnce = true;
+        return Promise.resolve(new Response(JSON.stringify({
+          error: 'Simulated companion disconnect. Nothing was stored or changed. The preview is still here so you can check the connection and retry without rewriting your note.'
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+      }
+      return originalFetch(input, init);
+    };
+    document.querySelector('[data-apply-mode="current-only"]').click();
+    return true;
+  })()`);
+  await waitFor(() => evaluate("document.querySelector('.error-card') !== null && document.querySelector('.preview-card') !== null"));
+
+  const failedApplyState = await evaluate(`({
+    errorText: document.querySelector('.error-card')?.innerText || '',
+    previewStillVisible: !!document.querySelector('.preview-card'),
+    recoveryActions: Array.from(document.querySelectorAll('.error-card button')).map((node) => node.innerText),
+    panelOverflow: (() => {
+      const panel = document.querySelector('.panel');
+      const error = document.querySelector('.error-card');
+      if (!panel || !error) return null;
+      return error.getBoundingClientRect().right - panel.getBoundingClientRect().right;
+    })()
+  })`);
+
+  await evaluate(`(() => {
     document.querySelector('[data-apply-mode="${applyMode}"]').click();
     return true;
   })()`);
@@ -269,6 +299,7 @@ try {
     refineState,
     compareState,
     clearState,
+    failedApplyState,
     afterApply,
     unsyncedState,
     queueRecoveryState,
@@ -303,6 +334,11 @@ try {
     clearState.draftNote !== "" ||
     clearState.previousVisible ||
     clearState.previewVisible ||
+    !failedApplyState.errorText.includes("Nothing was stored or changed") ||
+    !failedApplyState.previewStillVisible ||
+    !failedApplyState.recoveryActions.includes("Check again") ||
+    !failedApplyState.recoveryActions.includes("Try fix again") ||
+    failedApplyState.panelOverflow > 1 ||
     !(["future-only", "save-future-rule"].includes(applyMode)
       ? afterApply.successText.includes("future mail")
       : afterApply.successText.includes("rewrote")) ||
