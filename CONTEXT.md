@@ -103,7 +103,7 @@ The next product step should be a fresh alignment cycle or a new bounded slice c
 Live testing tranche follow-up:
 
 - `#41` Live testing tranche: sidebar context and teach fixes - complete
-- `#42` Redesign Correct / Teach UX from live testing - open HITL follow-up
+- `#42` Redesign Correct / Teach UX from live testing - implementation complete across child issues `#44`-`#50`; pending founder review/closure
 - `#43` Review unsubscribe link behavior for provider error pages - open HITL follow-up
 
 ## Trust Order When Docs Differ

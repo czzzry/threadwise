@@ -115,12 +115,15 @@ Published as GitHub child issues `#44`-`#50`.
    - Goal: Validate the full inspect/correct/teach/review/apply loop across simulator and extension harness before closing #42.
    - Includes: browser acceptance coverage, overflow checks, pinned-mode regression checks, final docs/update of #42.
 
-## Next open workflow step
+## Current status
 
-Implement the child issues in dependency order.
+Implementation complete across child issues `#44` through `#50` as of 2026-07-02.
 
-Current recommendation: publish seven child issues. Slices 1 and 2 are the fastest day-to-day UX wins; slices 3-6 are the more ambitious exact affected-review loop; slice 7 is the release-hardening closeout.
+The redesign is ready for founder review before closing parent GitHub issue `#42`.
 
-## Blocked by
+## Validation summary
 
-Needs founder/product alignment before implementation.
+- Current-email fix and future-rule save are covered by unit tests and simulator acceptance.
+- Expanded affected review, row exclusions, `Apply to included`, and amendment proposal visibility are covered by `scripts/validate_gmail_companion_simulator_cdp.mjs`.
+- Durable exact exclusions are covered by teaching-loop tests and local artifact registry coverage.
+- Full regression suite passed after the final implementation slice.
