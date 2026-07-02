@@ -770,7 +770,8 @@ class GmailCompanionApp:
     .button { border: 2px solid #241812; border-radius: 11px; padding: 10px 14px; cursor: pointer; font: inherit; font-weight: 760; box-shadow: 2px 2px 0 #241812; }
     .button.primary { background: #2eb67d; color: #241812; }
     .button.secondary { background: #e9efe2; color: var(--ink); }
-    .layout { width: min(1180px, 100%); min-height: 690px; display: grid; grid-template-columns: 1fr 420px; gap: 28px; align-items: stretch; }
+    .layout { width: min(1180px, 100%); min-height: 690px; display: grid; grid-template-columns: 1fr 420px; gap: 28px; align-items: stretch; transition: grid-template-columns .16s ease; }
+    .layout.expanded-review { width: min(1320px, 100%); grid-template-columns: minmax(220px, .42fr) minmax(720px, 1fr); }
     .layout > .card:nth-of-type(2) { display: none; }
     .card { border: 1px solid rgba(60,64,67,.22); border-radius: 18px; background: #fff; padding: 0; overflow: hidden; box-shadow: 0 24px 70px rgba(36,24,18,.08); display:grid; grid-template-columns:178px minmax(0,1fr); grid-template-rows:64px 46px 1fr; }
     .card::before { content: "☰  Gmail        Search mail                                      ?   ⚙   Demo account"; grid-column:1 / 3; grid-row:1; height:64px; display:flex; align-items:center; gap:14px; padding:0 18px; border-bottom:1px solid #e8eaed; color:#3c4043; font-size:20px; font-weight:650; white-space:pre; }
@@ -859,6 +860,12 @@ class GmailCompanionApp:
     .preview-card { margin-top:12px;border:2px solid #241812;border-radius:14px;background:#fffdf7;padding:12px;color:var(--ink);line-height:1.45; }
     .success-card { margin-top:12px;border-radius:14px;background:var(--accent-soft);padding:12px;color:var(--accent);line-height:1.45; }
     .error-card { margin-top:12px;border-radius:14px;background:var(--warn-soft);padding:12px;color:var(--warn-ink);line-height:1.45; }
+    .affected-review { margin-top:12px;border:3px solid #241812;border-radius:14px;background:#fffdf7;overflow:hidden;box-shadow:3px 3px 0 rgba(36,24,18,.22); }
+    .affected-review-header { display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-bottom:3px solid #241812;background:#fff4d7; }
+    .affected-review-table-wrap { overflow:auto;max-height:360px; }
+    .affected-review table { width:100%;border-collapse:collapse;font-size:.86rem;line-height:1.35; }
+    .affected-review th { padding:8px;text-align:left;background:#f5efe2;color:var(--muted); }
+    .affected-review td { padding:9px 8px;vertical-align:top;border-top:1px solid #e2d8c6;overflow-wrap:anywhere; }
     @media (max-width: 1200px) { .layout { grid-template-columns: 1fr; } }
   </style>
 </head>
@@ -925,6 +932,7 @@ class GmailCompanionApp:
     const dailySummaryNode = document.getElementById("sim-daily-summary");
     const refreshButton = document.getElementById("sim-refresh");
     const unsyncedButton = document.getElementById("sim-unsynced");
+    const layoutNode = document.querySelector(".layout");
     const panelNode = document.querySelector('.panel');
     const minimizeButton = document.getElementById('sim-minimize');
     let harnessState = null;
@@ -937,6 +945,7 @@ class GmailCompanionApp:
     let teachError = "";
     let unsubscribeResult = "";
     let detailsExpanded = false;
+    let affectedReviewOpen = false;
     let draftLabel = "";
     let draftNote = "";
     const unsyncedContext = {
@@ -1151,6 +1160,7 @@ class GmailCompanionApp:
         </div>
         ${preview.clarifying_question ? `<div class="empty">${escapeHtml(preview.clarifying_question)}</div>` : ""}
       `;
+      const affectedReviewHtml = renderAffectedReview(preview);
       return `
         <div class="preview-card">
           <div class="reason-label">This email</div>
@@ -1173,15 +1183,61 @@ class GmailCompanionApp:
             <div class="empty" style="margin-top:6px;">Would affect ${matchingCount} matching emails Threadwise has seen.</div>
             ${examples ? `<details style="margin-top:8px;"><summary style="cursor:pointer;font-weight:800;">Show affected emails</summary><ol style="margin:8px 0 0;padding-left:18px;color:#6b6255;">${examples}</ol></details>` : ""}
             <div class="button-row" style="margin-top:10px;">
+              <button type="button" class="action-button future" data-action="open-affected-review">Review ${matchingCount}</button>
               <button type="button" class="action-button info" data-apply-mode="matching-existing">Apply to matching emails too</button>
             </div>
           </div>
+          ${affectedReviewHtml}
           <div class="button-row" style="margin-top:10px;">
             <button type="button" class="action-button future" data-apply-mode="save-future-rule">Teach future rule</button>
             <button type="button" class="action-button secondary" data-action="refine-teach">Keep discussing</button>
           </div>
         </div>
       `;
+    }
+
+    function affectedReviewItems(preview) {
+      const impact = ((preview || {}).impact) || {};
+      return impact.matching_existing_items || impact.matching_existing_examples || [];
+    }
+
+    function renderAffectedReview(preview) {
+      if (!affectedReviewOpen || !preview) {
+        return "";
+      }
+      const rows = affectedReviewItems(preview).map((item) => `
+        <tr>
+          <td><strong>${escapeHtml(item.sender || "(unknown sender)")}</strong></td>
+          <td>${escapeHtml(item.subject || "(no subject)")}</td>
+          <td style="color:var(--muted);">${escapeHtml((item.labels_before || []).join(", ") || "Uncategorized")}</td>
+          <td style="color:var(--accent);font-weight:800;">${escapeHtml((item.labels_after || []).join(", ") || "Uncategorized")}</td>
+          <td><button type="button" class="action-button quiet" data-affected-open-gmail="${escapeHtml(item.message_id || "")}">Open in Gmail</button></td>
+        </tr>
+      `).join("") || '<tr><td colspan="5" style="color:var(--muted);">No exact affected emails are available in this preview.</td></tr>';
+      return `
+        <div class="affected-review">
+          <div class="affected-review-header">
+            <div>
+              <div class="reason-label">Reviewing affected emails</div>
+              <div style="font-weight:850;margin-top:4px;">${escapeHtml(preview.plain_english_rule || "Pending future rule")}</div>
+            </div>
+            <button type="button" class="action-button secondary" data-action="collapse-affected-review">Collapse</button>
+          </div>
+          <div class="empty" style="padding:12px 14px;">Exact affected list from Threadwise's preview. Open rows in Gmail for deep inspection; apply/exclude controls come next.</div>
+          <div class="affected-review-table-wrap">
+            <table>
+              <thead><tr><th>Sender</th><th>Subject</th><th>Current</th><th>Proposed</th><th>Inspect</th></tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    function syncAffectedReviewLayout() {
+      if (layoutNode) {
+        layoutNode.classList.toggle("expanded-review", affectedReviewOpen);
+      }
     }
 
     function renderTeachError(message) {
@@ -1201,6 +1257,8 @@ class GmailCompanionApp:
       const selected = selectedEmail();
       const stepCopy = nextStepCopy(selected);
       if (!selected || !selected.found) {
+        affectedReviewOpen = false;
+        syncAffectedReviewLayout();
         const queueItems = (((harnessState || {}).needs_attention_items) || []).slice(0, 4);
         selectedEmailNode.innerHTML = `
           <div class="empty">Threadwise has not synced this email yet.</div>
@@ -1299,6 +1357,7 @@ class GmailCompanionApp:
           draftNote = noteNode.value;
         });
       }
+      syncAffectedReviewLayout();
     }
 
     function renderSummary() {
@@ -1392,6 +1451,8 @@ class GmailCompanionApp:
       teachResult = "";
       teachError = "";
       unsubscribeResult = "";
+      affectedReviewOpen = false;
+      syncAffectedReviewLayout();
       if (clearDraft) {
         draftLabel = "";
         draftNote = "";
@@ -1450,6 +1511,7 @@ class GmailCompanionApp:
         teachError = "";
         teachResult = payload.acknowledgment || "Lesson applied.";
         unsubscribeResult = "";
+        affectedReviewOpen = false;
         draftLabel = "";
         draftNote = "";
       }
@@ -1485,6 +1547,27 @@ class GmailCompanionApp:
       const refreshButton = event.target.closest("[data-action='refresh-state']");
       if (refreshButton) {
         refreshState();
+        return;
+      }
+      const openAffectedReviewButton = event.target.closest("[data-action='open-affected-review']");
+      if (openAffectedReviewButton) {
+        affectedReviewOpen = true;
+        renderSelectedPanel();
+        return;
+      }
+      const collapseAffectedReviewButton = event.target.closest("[data-action='collapse-affected-review']");
+      if (collapseAffectedReviewButton) {
+        affectedReviewOpen = false;
+        renderSelectedPanel();
+        return;
+      }
+      const affectedOpenGmailButton = event.target.closest("[data-affected-open-gmail]");
+      if (affectedOpenGmailButton) {
+        const messageId = affectedOpenGmailButton.getAttribute("data-affected-open-gmail") || "";
+        const item = affectedReviewItems(teachPreview).find((candidate) => candidate.message_id === messageId);
+        if (item) {
+          setContextFromItem(item);
+        }
         return;
       }
       const clearButton = event.target.closest("[data-action='clear-teach']");
@@ -2029,7 +2112,8 @@ class GmailCompanionApp:
     .label-chip { border-radius: 999px; padding: 6px 10px; background: #f1eadb; color: #5d5342; font-size: 0.8rem; }
     .footer { padding: 0 14px 14px; }
     .footer-card { border: 1px dashed var(--line); border-radius: 10px; padding: 10px 12px; background: rgba(255,255,255,0.55); color: var(--muted); font-size: 0.84rem; line-height: 1.4; }
-    .harness { display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 14px; align-items: start; }
+    .harness { display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 14px; align-items: start; transition: grid-template-columns 160ms ease; }
+    .harness.expanded-review { grid-template-columns: minmax(220px,.42fr) minmax(720px,1fr); }
     .list-card { border: 1px solid var(--line); border-radius: 18px; padding: 14px; background: rgba(255,255,255,0.72); }
     .list-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
     .list-stack { display: grid; gap: 8px; margin-top: 12px; max-height: 68vh; overflow: auto; }
@@ -2058,12 +2142,20 @@ class GmailCompanionApp:
     .preview-card { margin-top: 12px; border-radius: 14px; background: #fff8eb; padding: 12px; color: var(--ink); line-height: 1.45; }
     .success-card { margin-top: 12px; border-radius: 14px; background: var(--accent-soft); padding: 12px; color: var(--accent); line-height: 1.45; }
     .error-card { margin-top: 12px; border-radius: 14px; background: var(--warn-soft); padding: 12px; color: var(--warn-ink); line-height: 1.45; }
+    .affected-review { margin-top: 12px; border: 3px solid #241812; border-radius: 14px; background: #fffdf7; overflow: hidden; }
+    .affected-review-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-bottom: 2px solid #241812; background: #fff4d7; }
+    .affected-review-table-wrap { max-height: 52vh; overflow: auto; }
+    .affected-review table { width: 100%; border-collapse: collapse; font-size: .84rem; }
+    .affected-review th, .affected-review td { padding: 8px 10px; border-bottom: 1px solid rgba(84,68,45,0.18); text-align: left; vertical-align: top; }
+    .affected-review th { color: var(--muted); font-size: .68rem; text-transform: uppercase; letter-spacing: .08em; background: #fff8eb; position: sticky; top: 0; z-index: 1; }
+    .affected-review td { line-height: 1.3; }
+    .affected-review .subject-cell { font-weight: 760; }
     @media (max-width: 980px) { .harness { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
   <div class="shell">
-    <div class="harness">
+    <div class="harness" id="harness-shell">
       <section class="list-card">
         <div class="list-header">
           <div>
@@ -2111,6 +2203,7 @@ class GmailCompanionApp:
   <script>
     const panelNode = document.getElementById("panel");
     const selectedEmailNode = document.getElementById("selected-email");
+    const harnessShellNode = document.getElementById("harness-shell");
     const teachPanelNode = document.getElementById("teach-panel");
     const dailySummaryNode = document.getElementById("daily-summary");
     const minimizeButton = document.getElementById("minimize");
@@ -2127,6 +2220,7 @@ class GmailCompanionApp:
     let unsubscribeResult = "";
     let draftLabel = "";
     let draftNote = "";
+    let affectedReviewOpen = false;
 
     function escapeHtml(value) {
       return String(value || "")
@@ -2188,6 +2282,8 @@ class GmailCompanionApp:
     function renderSelectedEmail(selectedEmail) {
       const stepCopy = nextStepCopy(selectedEmail);
       if (!selectedEmail || !selectedEmail.found) {
+        affectedReviewOpen = false;
+        syncAffectedReviewLayout();
         const hasSnapshotMiss = selectedEmail && selectedEmail.status === "not-in-snapshot";
         const title = hasSnapshotMiss
           ? "Threadwise has not synced this email yet."
@@ -2387,6 +2483,7 @@ class GmailCompanionApp:
     function renderTeachPreview(preview) {
       const impact = preview.impact || {};
       const matchingCount = impact.matching_existing_count || 0;
+      const affectedReviewHtml = renderAffectedReview(preview);
       const examples = (impact.matching_existing_examples || []).map((item) =>
         `<li>${escapeHtml(item.subject || "(no subject)")} · ${escapeHtml(item.sender || "(unknown sender)")}</li>`
       ).join("");
@@ -2419,15 +2516,67 @@ class GmailCompanionApp:
             <div class="empty" style="margin-top:6px;">Would affect ${matchingCount} matching emails Threadwise has seen.</div>
             ${examples ? `<details style="margin-top:8px;"><summary style="cursor:pointer;font-weight:800;">Show affected emails</summary><ol class="checklist">${examples}</ol></details>` : ""}
             <div class="button-row">
+              <button type="button" class="action-button secondary" data-action="open-affected-review" ${matchingCount ? "" : "disabled"}>Review ${matchingCount}</button>
               <button type="button" class="action-button info" data-apply-mode="matching-existing">Apply to matching emails too</button>
             </div>
           </div>
+          ${affectedReviewHtml}
           <div class="button-row">
             <button type="button" class="action-button future" data-apply-mode="save-future-rule">Teach future rule</button>
             <button type="button" class="action-button secondary" data-action="refine-teach">Keep discussing</button>
           </div>
         </div>
       `;
+    }
+
+    function affectedReviewItems(preview) {
+      const impact = (preview && preview.impact) || {};
+      return impact.matching_existing_items || impact.matching_existing_examples || [];
+    }
+
+    function renderAffectedReview(preview) {
+      if (!affectedReviewOpen) {
+        return "";
+      }
+      const items = affectedReviewItems(preview);
+      const targetLabel = preview && (preview.target_label || preview.proposed_label || draftLabel || "");
+      const rows = items.length
+        ? items.map((item, index) => `
+          <tr>
+            <td>${escapeHtml(item.sender || "(unknown sender)")}</td>
+            <td class="subject-cell">${escapeHtml(item.subject || "(no subject)")}</td>
+            <td>${escapeHtml(item.current_label || item.classification || "Unknown")}</td>
+            <td>${escapeHtml(item.proposed_label || targetLabel || "Proposed rule")}</td>
+            <td><button type="button" class="action-button quiet" data-affected-open-gmail="${index}">Open in Gmail</button></td>
+          </tr>
+        `).join("")
+        : '<tr><td colspan="5">No exact affected-email examples are available for this preview.</td></tr>';
+      return `
+        <div class="affected-review" data-affected-review="true">
+          <div class="affected-review-header">
+            <div>
+              <div class="reason-label">Reviewing affected emails</div>
+              <div class="empty" style="margin-top:3px;">Read-only preview. Excluding emails comes in the next slice.</div>
+            </div>
+            <button type="button" class="action-button secondary" data-action="collapse-affected-review">Collapse</button>
+          </div>
+          <div class="affected-review-table-wrap">
+            <table>
+              <thead>
+                <tr><th>Sender</th><th>Subject</th><th>Current</th><th>Proposed</th><th>Inspect</th></tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    function syncAffectedReviewLayout() {
+      if (!harnessShellNode) {
+        return;
+      }
+      harnessShellNode.classList.toggle("expanded-review", affectedReviewOpen);
     }
 
     function renderTeachError(message) {
@@ -2650,6 +2799,8 @@ class GmailCompanionApp:
       teachResult = "";
       teachError = "";
       unsubscribeResult = "";
+      affectedReviewOpen = false;
+      syncAffectedReviewLayout();
       if (clearDraft) {
         draftLabel = "";
         draftNote = "";
@@ -2692,6 +2843,7 @@ class GmailCompanionApp:
           teachError = "";
           teachResult = "";
           teachPreview = payload;
+          affectedReviewOpen = false;
           unsubscribeResult = "";
         }
       } catch (_error) {
@@ -2726,6 +2878,8 @@ class GmailCompanionApp:
         }
         teachPreview = null;
         previousTeachPreview = null;
+        affectedReviewOpen = false;
+        syncAffectedReviewLayout();
         teachError = "";
         teachResult = payload.acknowledgment || "Lesson applied.";
         unsubscribeResult = "";
@@ -2772,9 +2926,36 @@ class GmailCompanionApp:
         event.preventDefault();
         previousTeachPreview = teachPreview;
         teachPreview = null;
+        affectedReviewOpen = false;
+        syncAffectedReviewLayout();
         teachError = "";
         teachResult = "";
         renderSelectedEmail((harnessState || {}).sidebar_state ? harnessState.sidebar_state.selected_email : null);
+        return;
+      }
+      const openAffectedReviewButton = event.target.closest("[data-action='open-affected-review']");
+      if (openAffectedReviewButton) {
+        event.preventDefault();
+        affectedReviewOpen = true;
+        renderSelectedEmail((harnessState || {}).sidebar_state ? harnessState.sidebar_state.selected_email : null);
+        return;
+      }
+      const collapseAffectedReviewButton = event.target.closest("[data-action='collapse-affected-review']");
+      if (collapseAffectedReviewButton) {
+        event.preventDefault();
+        affectedReviewOpen = false;
+        renderSelectedEmail((harnessState || {}).sidebar_state ? harnessState.sidebar_state.selected_email : null);
+        return;
+      }
+      const openAffectedGmailButton = event.target.closest("[data-affected-open-gmail]");
+      if (openAffectedGmailButton) {
+        event.preventDefault();
+        const index = Number(openAffectedGmailButton.getAttribute("data-affected-open-gmail"));
+        const item = affectedReviewItems(teachPreview)[index];
+        if (item) {
+          currentContext = contextFromItem(item);
+          refreshState();
+        }
         return;
       }
       const applyButton = event.target.closest("[data-apply-mode]");

@@ -9,6 +9,7 @@
   const HEALTH_SERVICE_ID = "threadwise-gmail-companion";
   const BRAND_ICON_URL = chrome.runtime.getURL("assets/brand/threadwise-app-icon.png");
   const PANEL_WIDTH = "420px";
+  const PANEL_WIDTH_EXPANDED = "min(920px, calc(100vw - 84px))";
   const PANEL_WIDTH_MINIMIZED = "70px";
   const REFRESH_INTERVAL_MS = 5000;
   let minimized = true;
@@ -29,6 +30,7 @@
   let feedbackResult = "";
   let activeSummaryFilter = "recent_items";
   let detailsExpanded = false;
+  let affectedReviewOpen = false;
   let teachDraft = {
     targetLabel: "",
     note: "",
@@ -167,7 +169,7 @@
     if (feedbackShell) {
       feedbackShell.style.display = minimized ? "none" : "block";
     }
-    root.style.width = minimized ? PANEL_WIDTH_MINIMIZED : PANEL_WIDTH;
+    root.style.width = minimized ? PANEL_WIDTH_MINIMIZED : (affectedReviewOpen ? PANEL_WIDTH_EXPANDED : PANEL_WIDTH);
     header.style.gridTemplateColumns = minimized ? "1fr" : "52px 1fr auto";
     header.style.padding = minimized ? "10px" : "17px 18px";
     header.style.borderBottom = minimized ? "0" : "3px solid #241812";
@@ -268,6 +270,7 @@
     previousTeachPreview = null;
     teachResult = null;
     unsubscribeResult = "";
+    affectedReviewOpen = false;
     if (options.clearDraft !== false) {
       teachDraft = { targetLabel: "", note: "" };
     }
@@ -397,7 +400,7 @@
 
   function shouldHoldSelectedContext() {
     const selectedContext = (lastSidebarState && lastSidebarState.selected_context) || {};
-    if (!hasTeachDraftChanges() || !isMeaningfulContext(selectedContext)) {
+    if ((!hasTeachDraftChanges() && !affectedReviewOpen) || !isMeaningfulContext(selectedContext)) {
       return false;
     }
     return (
@@ -1418,9 +1421,11 @@
             }
           </details>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+            <button type="button" data-ea-action="open-affected-review" style="border:2px solid #241812;background:#ffc64a;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Review ${matchingCount}</button>
             <button type="button" data-ea-apply="matching-existing" style="border:2px solid #241812;background:#3d6df2;color:#fff;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Apply to matching emails too</button>
           </div>
         </div>
+        ${renderAffectedReviewHtml(preview)}
         ${similarGroupsHtml}
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
           <button type="button" data-ea-apply="save-future-rule" style="border:2px solid #241812;background:#ffc64a;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Teach future rule</button>
@@ -1544,6 +1549,31 @@
       openFirstSummaryItemIfHelpful(activeSummaryFilter);
       return;
     }
+    const openAffectedReviewButton = event.target.closest("[data-ea-action='open-affected-review']");
+    if (openAffectedReviewButton) {
+      event.preventDefault();
+      affectedReviewOpen = true;
+      if (lastSidebarState) {
+        renderState(lastSidebarState);
+      }
+      return;
+    }
+    const collapseAffectedReviewButton = event.target.closest("[data-ea-action='collapse-affected-review']");
+    if (collapseAffectedReviewButton) {
+      event.preventDefault();
+      affectedReviewOpen = false;
+      if (lastSidebarState) {
+        renderState(lastSidebarState);
+      }
+      return;
+    }
+    const openAffectedGmailButton = event.target.closest("[data-ea-open-affected-gmail]");
+    if (openAffectedGmailButton) {
+      event.preventDefault();
+      const messageId = openAffectedGmailButton.getAttribute("data-ea-open-affected-gmail") || "";
+      const item = affectedReviewItemsFromPreview(teachPreview).find((candidate) => candidate.message_id === messageId);
+      return openGmailItem(item);
+    }
     const previewButton = event.target.closest("[data-ea-action='preview-teach']");
     if (previewButton) {
       event.preventDefault();
@@ -1561,6 +1591,7 @@
       previousTeachPreview = null;
       teachResult = null;
       unsubscribeResult = "";
+      affectedReviewOpen = false;
       teachDraft = { targetLabel: "", note: "" };
       if (lastSidebarState) {
         renderState(lastSidebarState);
@@ -1573,6 +1604,7 @@
       previousTeachPreview = teachPreview;
       teachPreview = null;
       teachResult = null;
+      affectedReviewOpen = false;
       if (lastSidebarState) {
         renderState(lastSidebarState);
       }
@@ -1605,6 +1637,7 @@
       previousTeachPreview = null;
       teachResult = null;
       unsubscribeResult = "";
+      affectedReviewOpen = false;
       previousPayload = "";
       if (lastHarnessState) {
         lastSidebarState = lastHarnessState.sidebar_state || lastSidebarState;
@@ -1666,12 +1699,15 @@
       if (chrome.runtime.lastError) {
         teachResult = teachErrorResult("preview", chrome.runtime.lastError.message || "Could not preview the lesson.");
         teachPreview = null;
+        affectedReviewOpen = false;
       } else if (!response || !response.ok) {
         teachResult = teachErrorResult("preview", (response && (response.payload?.error || response.error)) || "Could not preview the lesson.");
         teachPreview = null;
+        affectedReviewOpen = false;
       } else {
         teachResult = null;
         teachPreview = response.payload;
+        affectedReviewOpen = false;
         unsubscribeResult = "";
       }
       renderState(lastSidebarState);
@@ -1715,6 +1751,7 @@
         title: "Lesson applied",
         message: payload.acknowledgment || "Lesson applied.",
       };
+      affectedReviewOpen = false;
       unsubscribeResult = "";
       teachDraft = { targetLabel: "", note: "" };
       renderState(payload.sidebar_state || lastSidebarState);
@@ -1761,6 +1798,61 @@
       targetLabel: selectNode?.value || teachDraft.targetLabel || "",
       note: noteNode?.value || "",
     };
+  }
+
+  function affectedReviewItemsFromPreview(preview) {
+    const impact = (preview || {}).impact || {};
+    return impact.matching_existing_items || impact.matching_existing_examples || [];
+  }
+
+  function renderAffectedReviewHtml(preview) {
+    if (!affectedReviewOpen || !preview) {
+      return "";
+    }
+    const items = affectedReviewItemsFromPreview(preview);
+    const rows = items.length
+      ? items.map((item) => `
+        <tr style="border-top:1px solid #e2d8c6;">
+          <td style="padding:9px 8px;vertical-align:top;font-weight:760;overflow-wrap:anywhere;">${escapeHtml(item.sender || "(unknown sender)")}</td>
+          <td style="padding:9px 8px;vertical-align:top;overflow-wrap:anywhere;">${escapeHtml(item.subject || "(no subject)")}</td>
+          <td style="padding:9px 8px;vertical-align:top;color:#6b6255;">${escapeHtml((item.labels_before || []).join(", ") || "Uncategorized")}</td>
+          <td style="padding:9px 8px;vertical-align:top;color:#0f766e;font-weight:800;">${escapeHtml((item.labels_after || []).map(humanLabelNameFromId).join(", ") || "Uncategorized")}</td>
+          <td style="padding:9px 8px;vertical-align:top;">
+            <button type="button" data-ea-open-affected-gmail="${escapeHtml(item.message_id || "")}" style="border:0;background:transparent;color:#5d5342;border-radius:0;padding:0;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;box-shadow:none;">Open in Gmail</button>
+          </td>
+        </tr>
+      `).join("")
+      : `
+        <tr>
+          <td colspan="5" style="padding:12px 8px;color:#6b6255;">No exact affected emails are available in the current stored preview.</td>
+        </tr>
+      `;
+    return `
+      <div data-ea-affected-review="true" style="box-sizing:border-box;width:100%;min-width:0;margin-top:12px;border:3px solid #241812;border-radius:14px;background:#fffdf7;overflow:hidden;box-shadow:3px 3px 0 rgba(36,24,18,.22);">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-bottom:3px solid #241812;background:#fff4d7;">
+          <div>
+            <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">Reviewing affected emails</div>
+            <div style="margin-top:4px;font-weight:850;">${escapeHtml(preview.plain_english_rule || "Pending future rule")}</div>
+          </div>
+          <button type="button" data-ea-action="collapse-affected-review" style="border:2px solid #241812;background:#e9efe2;color:#241812;border-radius:11px;padding:8px 11px;cursor:pointer;font:inherit;font-weight:800;box-shadow:2px 2px 0 #241812;">Collapse</button>
+        </div>
+        <div style="padding:12px 14px;color:#6b6255;line-height:1.45;">Exact affected list from Threadwise's preview. Open rows in Gmail for deep inspection; apply/exclude controls come next.</div>
+        <div style="overflow:auto;max-height:360px;">
+          <table style="width:100%;border-collapse:collapse;font-size:0.86rem;line-height:1.35;">
+            <thead>
+              <tr style="text-align:left;background:#f5efe2;color:#6b6255;">
+                <th style="padding:8px;">Sender</th>
+                <th style="padding:8px;">Subject</th>
+                <th style="padding:8px;">Current</th>
+                <th style="padding:8px;">Proposed</th>
+                <th style="padding:8px;">Inspect</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </div>
+    `;
   }
 
   function humanDecisionSource(reviewAction) {

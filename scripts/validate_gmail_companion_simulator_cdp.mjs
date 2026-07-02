@@ -144,6 +144,33 @@ try {
   })`);
 
   await evaluate(`(() => {
+    const button = document.querySelector('[data-action="open-affected-review"]');
+    if (button) button.click();
+    return true;
+  })()`);
+  await waitFor(() => evaluate("document.querySelector('.affected-review') !== null && document.querySelector('.layout.expanded-review') !== null"));
+
+  const affectedReviewState = await evaluate(`({
+    reviewVisible: !!document.querySelector('.affected-review'),
+    expandedLayout: !!document.querySelector('.layout.expanded-review'),
+    rowCount: document.querySelectorAll('.affected-review tbody tr').length,
+    headings: Array.from(document.querySelectorAll('.affected-review th')).map((node) => node.innerText),
+    openActions: Array.from(document.querySelectorAll('[data-affected-open-gmail]')).map((node) => node.innerText)
+  })`);
+
+  await evaluate(`(() => {
+    const button = document.querySelector('[data-action="collapse-affected-review"]');
+    if (button) button.click();
+    return true;
+  })()`);
+  await waitFor(() => evaluate("document.querySelector('.affected-review') === null && document.querySelector('.layout.expanded-review') === null"));
+
+  const affectedReviewCollapseState = await evaluate(`({
+    reviewVisible: !!document.querySelector('.affected-review'),
+    expandedLayout: !!document.querySelector('.layout.expanded-review')
+  })`);
+
+  await evaluate(`(() => {
     document.querySelector('[data-action="refine-teach"]').click();
     return true;
   })()`);
@@ -296,6 +323,8 @@ try {
     unsubscribeAfterQueue,
     selectedBefore,
     previewState,
+    affectedReviewState,
+    affectedReviewCollapseState,
     refineState,
     compareState,
     clearState,
@@ -324,6 +353,15 @@ try {
     !previewState.previewText.includes("Fix this email") ||
     !previewState.previewText.includes("Show affected emails") ||
     previewState.previewExamples.some((line) => line.includes("spam-low-value")) ||
+    !affectedReviewState.reviewVisible ||
+    !affectedReviewState.expandedLayout ||
+    affectedReviewState.rowCount < 1 ||
+    !affectedReviewState.headings.includes("Sender") ||
+    !affectedReviewState.headings.includes("Subject") ||
+    !affectedReviewState.headings.includes("Inspect") ||
+    !affectedReviewState.openActions.includes("Open in Gmail") ||
+    affectedReviewCollapseState.reviewVisible ||
+    affectedReviewCollapseState.expandedLayout ||
     refineState.previewVisible ||
     !refineState.previousVisible ||
     !refineState.previousText.toLowerCase().includes("previous interpretation") ||
