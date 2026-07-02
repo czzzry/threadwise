@@ -214,11 +214,18 @@ def exclude_sidebar_teaching_match(
         reason=reason,
     )
     remaining_matches = filter_excluded_preview_matches(storage_dir, proposal.to_dict(), proposal.preview.get("matches", []))
+    amendment = build_rule_amendment_proposal(
+        current=current,
+        proposal=proposal.to_dict(),
+        excluded_message_id=excluded_message_id,
+        reason=reason,
+    )
     return {
         "acknowledgment": "Exception saved. This rule will not apply to this email/pattern later.",
         "excluded_message_id": excluded_message_id,
         "exclusion": entry,
         "proposal": proposal.to_dict(),
+        "amendment_proposal": amendment,
         "remaining_matching_count": len(
             [
                 match
@@ -226,6 +233,91 @@ def exclude_sidebar_teaching_match(
                 if match.get("message_id") != current["message_id"]
             ]
         ),
+    }
+
+
+def apply_rule_amendment_decision(
+    storage_dir: Path,
+    *,
+    selected_context: dict,
+    target_label: str,
+    note: str,
+    scope: str,
+    amendment: dict,
+    decision: str,
+) -> dict:
+    if decision not in {"accept", "reject"}:
+        raise ValueError("Rule amendment decision must be accept or reject.")
+    preview = build_sidebar_teach_preview(
+        storage_dir,
+        selected_context=selected_context,
+        target_label=target_label,
+        note=note,
+        scope=scope,
+    )
+    if decision == "reject":
+        preview["amendment_proposal"] = {
+            **dict(amendment or {}),
+            "status": "rejected",
+        }
+        return {
+            "amendment_status": "rejected",
+            "preview": preview,
+            "note": note,
+            "changed_matching_count": 0,
+        }
+
+    amended_note = (amendment or {}).get("amended_note") or note
+    amended_preview = build_sidebar_teach_preview(
+        storage_dir,
+        selected_context=selected_context,
+        target_label=target_label,
+        note=amended_note,
+        scope=scope,
+    )
+    amended_preview["plain_english_rule"] = (amendment or {}).get("plain_english_rule") or amended_preview["plain_english_rule"]
+    amended_preview["amendment_proposal"] = {
+        **dict(amendment or {}),
+        "status": "accepted",
+    }
+    return {
+        "amendment_status": "accepted",
+        "preview": amended_preview,
+        "note": amended_note,
+        "changed_matching_count": preview["impact"]["matching_existing_count"] - amended_preview["impact"]["matching_existing_count"],
+    }
+
+
+def build_rule_amendment_proposal(
+    *,
+    current: dict,
+    proposal: dict,
+    excluded_message_id: str,
+    reason: str,
+) -> dict:
+    reason_text = " ".join(str(reason or "").strip().split())
+    base_rule = proposal.get("preview", {}).get("rule", {}).get("instruction") or proposal.get("instruction", "")
+    base_rule = base_rule or "the pending rule"
+    if reason_text:
+        boundary = _boundary_from_exclusion_reason(reason_text)
+        plain_rule = f"{base_rule} except {boundary}."
+        return {
+            "status": "proposed",
+            "reason": reason_text,
+            "excluded_message_id": excluded_message_id,
+            "plain_english_rule": plain_rule,
+            "amended_note": f"{proposal.get('explanation', '').strip()} Boundary: exclude {boundary}.",
+            "clarifying_question": "",
+            "requires_confirmation": True,
+        }
+    return {
+        "status": "needs-clarification",
+        "reason": "",
+        "excluded_message_id": excluded_message_id,
+        "plain_english_rule": "",
+        "amended_note": proposal.get("explanation", ""),
+        "clarifying_question": "Should this exclusion stay exact, or should Threadwise narrow the future rule around a broader pattern?",
+        "requires_confirmation": True,
     }
 
 
@@ -560,6 +652,19 @@ def _subject_pattern(subject: str) -> str:
     value = re.sub(r"\d+", "#", value)
     value = re.sub(r"\s+", " ", value).strip()
     return value
+
+
+def _boundary_from_exclusion_reason(reason: str) -> str:
+    cleaned = " ".join(str(reason or "").strip().split())
+    if not cleaned:
+        return "emails matching the excluded pattern"
+    lowered = cleaned.lower()
+    for prefix in ("this one is ", "this is ", "it is ", "it's "):
+        if lowered.startswith(prefix):
+            cleaned = cleaned[len(prefix):]
+            break
+    cleaned = cleaned.rstrip(".")
+    return cleaned
 
 
 def resolve_target_label(target_label: str, note: str) -> str:

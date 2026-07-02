@@ -241,6 +241,9 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("Exception saved", content_js)
         self.assertIn('data-ea-apply="apply-included"', content_js)
         self.assertIn("Apply to included", content_js)
+        self.assertIn("/api/teach-amendment", content_js)
+        self.assertIn("Possible rule amendment", content_js)
+        self.assertIn("Accept amendment", content_js)
         self.assertIn("Teach future rule", content_js)
         self.assertIn("Keep discussing", content_js)
         self.assertIn("Fix this email only updates the message you are reviewing.", content_js)
@@ -336,6 +339,8 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("/api/teach-exclude", page)
         self.assertIn("data-apply-mode=\"apply-included\"", page)
         self.assertIn("Apply to included", page)
+        self.assertIn("/api/teach-amendment", page)
+        self.assertIn("Possible rule amendment", page)
         self.assertIn("Previous interpretation", page)
         self.assertIn("data-previous-preview", page)
         self.assertIn("Review unsubscribe candidates", page)
@@ -375,6 +380,8 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("/api/teach-exclude", page)
         self.assertIn("data-apply-mode=\"apply-included\"", page)
         self.assertIn("Apply to included", page)
+        self.assertIn("/api/teach-amendment", page)
+        self.assertIn("Possible rule amendment", page)
         self.assertIn("Review unsubscribe candidates", page)
         self.assertIn("Report details", page)
         self.assertIn("What Changed Today", page)
@@ -1669,6 +1676,74 @@ class GmailCompanionUiTests(unittest.TestCase):
             saved = json.loads((storage_dir / "teaching_exclusions.json").read_text())
             self.assertIn("Exception saved", result["acknowledgment"])
             self.assertEqual(saved["exclusions"][0]["message_id"], "gmail-live-002")
+            self.assertEqual(result["preview"]["impact"]["matching_existing_count"], 0)
+
+    def test_teach_amendment_accepts_proposed_boundary(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": "Ashby <notifications@ashbyhq.com>",
+                        "subject": "Interview update",
+                        "snippet": "Status changed",
+                        "interpretation": "Informational message with no confident category.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    },
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-002",
+                        "sender": "Ashby <notifications@ashbyhq.com>",
+                        "subject": "Marketing newsletter from Ashby",
+                        "snippet": "Product updates",
+                        "interpretation": "Informational message with no confident category.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    },
+                ],
+            )
+            app = GmailCompanionApp(storage_dir)
+            exclusion = app.teach_exclude(
+                {
+                    "selected_context": {
+                        "provider": "gmail",
+                        "message_id": "gmail-live-001",
+                        "subject": "Interview update",
+                        "sender": "notifications@ashbyhq.com",
+                    },
+                    "target_label": "job-related",
+                    "note": "Ashby interview workflow messages should be job-related and kept visible.",
+                    "excluded_message_id": "gmail-live-002",
+                    "reason": "This one is a marketing newsletter, not an interview or recruiter message.",
+                }
+            )
+            result = app.teach_amendment(
+                {
+                    "selected_context": {
+                        "provider": "gmail",
+                        "message_id": "gmail-live-001",
+                        "subject": "Interview update",
+                        "sender": "notifications@ashbyhq.com",
+                    },
+                    "target_label": "job-related",
+                    "note": "Ashby interview workflow messages should be job-related and kept visible.",
+                    "amendment": exclusion["amendment_proposal"],
+                    "decision": "accept",
+                }
+            )
+
+            self.assertEqual(result["amendment_status"], "accepted")
+            self.assertIn("Updated the proposed rule boundary", result["acknowledgment"])
+            self.assertIn("except", result["preview"]["plain_english_rule"])
             self.assertEqual(result["preview"]["impact"]["matching_existing_count"], 0)
 
     def test_teach_apply_save_future_rule_only_does_not_write_gmail_or_relabel_existing(self) -> None:

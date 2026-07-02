@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from src.teaching_loop import (
+    apply_rule_amendment_decision,
     apply_sidebar_teaching,
     build_sidebar_teach_preview,
     exclude_sidebar_teaching_match,
@@ -585,6 +586,80 @@ class TeachingLoopTests(unittest.TestCase):
             self.assertEqual(batch["items"][1]["final_labels"], [])
             self.assertEqual(batch["items"][2]["final_labels"], ["job-related"])
             self.assertEqual(len(rules), 1)
+
+    def test_exclusion_proposes_rule_amendment_without_applying_it_silently(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                [
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": "Ashby <notifications@ashbyhq.com>",
+                        "subject": "Interview update",
+                        "snippet": "Status changed",
+                        "interpretation": "No confident category.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    },
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-002",
+                        "sender": "Ashby <notifications@ashbyhq.com>",
+                        "subject": "Marketing newsletter from Ashby",
+                        "snippet": "Product updates",
+                        "interpretation": "No confident category.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    },
+                ],
+            )
+            selected_context = {
+                "provider": "gmail",
+                "message_id": "gmail-live-001",
+                "sender": "notifications@ashbyhq.com",
+                "subject": "Interview update",
+            }
+
+            exclusion = exclude_sidebar_teaching_match(
+                storage_dir,
+                selected_context=selected_context,
+                target_label="job-related",
+                note="Ashby interview workflow messages should be job-related and kept visible.",
+                scope="sender",
+                excluded_message_id="gmail-live-002",
+                reason="This one is a marketing newsletter, not an interview or recruiter message.",
+            )
+            original_preview = build_sidebar_teach_preview(
+                storage_dir,
+                selected_context=selected_context,
+                target_label="job-related",
+                note="Ashby interview workflow messages should be job-related and kept visible.",
+                scope="sender",
+            )
+            accepted = apply_rule_amendment_decision(
+                storage_dir,
+                selected_context=selected_context,
+                target_label="job-related",
+                note="Ashby interview workflow messages should be job-related and kept visible.",
+                scope="sender",
+                amendment=exclusion["amendment_proposal"],
+                decision="accept",
+            )
+
+            self.assertEqual(exclusion["amendment_proposal"]["status"], "proposed")
+            self.assertIn("marketing newsletter", exclusion["amendment_proposal"]["plain_english_rule"])
+            self.assertIn("Treat job, recruiter, or interview emails", original_preview["plain_english_rule"])
+            self.assertNotIn("except", original_preview["plain_english_rule"])
+            self.assertEqual(accepted["amendment_status"], "accepted")
+            self.assertIn("except", accepted["preview"]["plain_english_rule"])
+            self.assertEqual(accepted["preview"]["impact"]["matching_existing_count"], 0)
 
     def test_apply_matching_existing_does_not_relabel_broader_similar_candidates(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

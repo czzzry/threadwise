@@ -52,6 +52,7 @@ from src.gmail_companion_state import (
     selected_email_contract,
 )
 from src.teaching_loop import (
+    apply_rule_amendment_decision,
     apply_sidebar_teaching,
     build_sidebar_teach_preview,
     exclude_sidebar_teaching_match,
@@ -306,6 +307,14 @@ class GmailCompanionApp:
             try:
                 payload = self._read_json_body(handler)
                 response = self.teach_exclude(payload)
+                return self._write_json(handler, HTTPStatus.OK, response)
+            except (KeyError, ValueError, HTTPException) as exc:
+                return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+
+        if handler.command == "POST" and parsed.path == "/api/teach-amendment":
+            try:
+                payload = self._read_json_body(handler)
+                response = self.teach_amendment(payload)
                 return self._write_json(handler, HTTPStatus.OK, response)
             except (KeyError, ValueError, HTTPException) as exc:
                 return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
@@ -623,7 +632,36 @@ class GmailCompanionApp:
         )
         return {
             **exclusion_result,
-            "preview": refreshed_preview,
+            "preview": {
+                **refreshed_preview,
+                "amendment_proposal": exclusion_result.get("amendment_proposal"),
+            },
+            "sidebar_state": self.sidebar_state(selected_context),
+        }
+
+    def teach_amendment(self, payload: dict) -> dict:
+        selected_context = payload.get("selected_context") or {}
+        target_label = payload["target_label"]
+        note = (payload.get("note") or "").strip()
+        scope = payload.get("scope") or "sender"
+        amendment = payload.get("amendment") or {}
+        decision = payload["decision"]
+        result = apply_rule_amendment_decision(
+            self._storage_dir,
+            selected_context=selected_context,
+            target_label=target_label,
+            note=note,
+            scope=scope,
+            amendment=amendment,
+            decision=decision,
+        )
+        return {
+            **result,
+            "acknowledgment": (
+                "Updated the proposed rule boundary and recomputed affected emails."
+                if result["amendment_status"] == "accepted"
+                else "Kept the original proposed rule. No amendment was applied."
+            ),
             "sidebar_state": self.sidebar_state(selected_context),
         }
 
@@ -1216,6 +1254,7 @@ class GmailCompanionApp:
               <div style="margin-top:8px;">Hidden until needed.</div>
             </details>
           </div>
+          ${renderRuleAmendment(preview.amendment_proposal)}
           <div style="margin-top:12px;border:2px solid #241812;border-radius:11px;background:#fffdf7;padding:10px 12px;">
             <div class="reason-label">Affected existing emails</div>
             <div class="empty" style="margin-top:6px;">Would affect ${matchingCount} matching emails Threadwise has seen.</div>
@@ -1237,6 +1276,31 @@ class GmailCompanionApp:
     function affectedReviewItems(preview) {
       const impact = ((preview || {}).impact) || {};
       return impact.matching_existing_items || impact.matching_existing_examples || [];
+    }
+
+    function renderRuleAmendment(amendment) {
+      if (!amendment || !amendment.status || amendment.status === "accepted" || amendment.status === "rejected") {
+        return "";
+      }
+      const proposedRule = amendment.plain_english_rule || amendment.clarifying_question || "Threadwise needs a clearer boundary before changing the rule.";
+      const actions = amendment.status === "proposed"
+        ? `
+          <div class="button-row" style="margin-top:10px;">
+            <button type="button" class="action-button primary" data-amendment-decision="accept">Accept amendment</button>
+            <button type="button" class="action-button secondary" data-amendment-decision="reject">Reject</button>
+            <button type="button" class="action-button quiet" data-action="refine-teach">Keep reviewing</button>
+          </div>
+        `
+        : "";
+      return `
+        <div class="reason-wrap" style="background:#eef7f5;">
+          <div class="reason-label">Possible rule amendment</div>
+          <div class="reason" style="font-weight:800;">${escapeHtml(proposedRule)}</div>
+          ${amendment.plain_english_rule && amendment.clarifying_question ? `<div class="empty">${escapeHtml(amendment.clarifying_question)}</div>` : ""}
+          <div class="empty">This is only a proposal. Threadwise will not change the rule unless you accept it.</div>
+          ${actions}
+        </div>
+      `;
     }
 
     function renderAffectedReview(preview) {
@@ -1595,6 +1659,35 @@ class GmailCompanionApp:
       renderSelectedPanel();
     }
 
+    async function decideRuleAmendment(decision) {
+      if (!selectedFound() || !teachPreview || !teachPreview.amendment_proposal || !decision) {
+        return;
+      }
+      const labelNode = document.getElementById("sim-target-label");
+      const noteNode = document.getElementById("sim-teach-note");
+      draftLabel = labelNode ? labelNode.value : draftLabel;
+      draftNote = noteNode ? noteNode.value : draftNote;
+      const payload = await postApi("/api/teach-amendment", {
+        selected_context: currentContext,
+        target_label: draftLabel,
+        note: draftNote,
+        scope: "sender",
+        amendment: teachPreview.amendment_proposal,
+        decision,
+      });
+      if (payload.error) {
+        teachError = payload.error;
+        teachResult = "";
+      } else {
+        teachError = "";
+        teachPreview = payload.preview || teachPreview;
+        draftNote = payload.note || draftNote;
+        teachResult = payload.acknowledgment || "Reviewed amendment.";
+        affectedReviewOpen = true;
+      }
+      renderSelectedPanel();
+    }
+
     document.addEventListener("click", (event) => {
       const filterButton = event.target.closest("[data-filter]");
       if (filterButton) {
@@ -1651,6 +1744,11 @@ class GmailCompanionApp:
         const messageId = affectedExcludeButton.getAttribute("data-affected-exclude") || "";
         const reasonNode = document.querySelector(`[data-affected-exclusion-reason="${CSS.escape(messageId)}"]`);
         excludeAffectedMatch(messageId, reasonNode ? reasonNode.value : "");
+        return;
+      }
+      const amendmentButton = event.target.closest("[data-amendment-decision]");
+      if (amendmentButton) {
+        decideRuleAmendment(amendmentButton.getAttribute("data-amendment-decision") || "");
         return;
       }
       const clearButton = event.target.closest("[data-action='clear-teach']");
@@ -2595,6 +2693,7 @@ class GmailCompanionApp:
               <div style="margin-top:8px;">Hidden until needed.</div>
             </details>
           </div>
+          ${renderRuleAmendment(preview.amendment_proposal)}
           <div style="margin-top:12px;border:2px solid #241812;border-radius:11px;background:#fffdf7;padding:10px 12px;">
             <div class="reason-label">Affected existing emails</div>
             <div class="empty" style="margin-top:6px;">Would affect ${matchingCount} matching emails Threadwise has seen.</div>
@@ -2616,6 +2715,31 @@ class GmailCompanionApp:
     function affectedReviewItems(preview) {
       const impact = (preview && preview.impact) || {};
       return impact.matching_existing_items || impact.matching_existing_examples || [];
+    }
+
+    function renderRuleAmendment(amendment) {
+      if (!amendment || !amendment.status || amendment.status === "accepted" || amendment.status === "rejected") {
+        return "";
+      }
+      const proposedRule = amendment.plain_english_rule || amendment.clarifying_question || "Threadwise needs a clearer boundary before changing the rule.";
+      const actions = amendment.status === "proposed"
+        ? `
+          <div class="button-row" style="margin-top:10px;">
+            <button type="button" class="action-button primary" data-amendment-decision="accept">Accept amendment</button>
+            <button type="button" class="action-button secondary" data-amendment-decision="reject">Reject</button>
+            <button type="button" class="action-button quiet" data-action="refine-teach">Keep reviewing</button>
+          </div>
+        `
+        : "";
+      return `
+        <div class="reason-wrap" style="background:#eef7f5;">
+          <div class="reason-label">Possible rule amendment</div>
+          <div class="reason" style="font-weight:800;">${escapeHtml(proposedRule)}</div>
+          ${amendment.plain_english_rule && amendment.clarifying_question ? `<div class="empty">${escapeHtml(amendment.clarifying_question)}</div>` : ""}
+          <div class="empty">This is only a proposal. Threadwise will not change the rule unless you accept it.</div>
+          ${actions}
+        </div>
+      `;
     }
 
     function renderAffectedReview(preview) {
@@ -3022,6 +3146,40 @@ class GmailCompanionApp:
       renderSelectedEmail((harnessState || {}).sidebar_state ? harnessState.sidebar_state.selected_email : null);
     }
 
+    async function decideRuleAmendment(decision) {
+      if (!selectedEmailFound() || !teachPreview || !teachPreview.amendment_proposal || !decision) {
+        return;
+      }
+      const labelNode = document.getElementById("teach-target-label");
+      const noteNode = document.getElementById("teach-note");
+      draftLabel = labelNode ? labelNode.value : draftLabel;
+      draftNote = noteNode ? noteNode.value : draftNote;
+      try {
+        const payload = await postApi("/api/teach-amendment", {
+          selected_context: currentContext,
+          target_label: draftLabel,
+          note: draftNote,
+          scope: "sender",
+          amendment: teachPreview.amendment_proposal,
+          decision,
+        });
+        if (payload.error) {
+          teachError = payload.error;
+          teachResult = "";
+        } else {
+          teachError = "";
+          teachPreview = payload.preview || teachPreview;
+          draftNote = payload.note || draftNote;
+          teachResult = payload.acknowledgment || "Reviewed amendment.";
+          affectedReviewOpen = true;
+        }
+      } catch (_error) {
+        teachError = "Could not review the amendment.";
+        teachResult = "";
+      }
+      renderSelectedEmail((harnessState || {}).sidebar_state ? harnessState.sidebar_state.selected_email : null);
+    }
+
     minimizeButton.addEventListener("click", () => {
       panelNode.classList.toggle("minimized");
       minimizeButton.textContent = panelNode.classList.contains("minimized") ? "Open" : "Minimize";
@@ -3090,6 +3248,12 @@ class GmailCompanionApp:
         const messageId = excludeAffectedButton.getAttribute("data-affected-exclude") || "";
         const reasonNode = document.querySelector(`[data-affected-exclusion-reason="${CSS.escape(messageId)}"]`);
         excludeAffectedMatch(messageId, reasonNode ? reasonNode.value : "");
+        return;
+      }
+      const amendmentButton = event.target.closest("[data-amendment-decision]");
+      if (amendmentButton) {
+        event.preventDefault();
+        decideRuleAmendment(amendmentButton.getAttribute("data-amendment-decision") || "");
         return;
       }
       const applyButton = event.target.closest("[data-apply-mode]");

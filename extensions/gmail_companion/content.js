@@ -1402,6 +1402,7 @@
             <div style="display:grid;gap:4px;margin-top:8px;">${structuredRuleRows}</div>
           </details>
         </div>
+        ${renderRuleAmendmentHtml(preview.amendment_proposal)}
         <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;">
           <span style="display:inline-flex;align-items:center;padding:7px 10px;border:2px solid #241812;border-radius:999px;background:${severityTone.bg};color:${severityTone.fg};font-size:0.78rem;font-weight:760;box-shadow:2px 2px 0 rgba(36,24,18,.28);">${escapeHtml(severityTone.label)}</span>
           <span style="display:inline-flex;align-items:center;padding:7px 10px;border:2px solid #241812;border-radius:999px;background:#f1eadf;color:#241812;font-size:0.78rem;font-weight:760;box-shadow:2px 2px 0 rgba(36,24,18,.28);">Current email -> ${escapeHtml(targetLabelName)}</span>
@@ -1447,6 +1448,31 @@
         <div style="margin-top:8px;font-weight:700;">${escapeHtml(previousPreview.acknowledgment || "Previous preview")}</div>
         <div style="margin-top:6px;color:#6b6255;">Would relabel to ${escapeHtml(targetLabelName)} and change ${impact.matching_existing_count || 0} existing emails.</div>
         <div style="margin-top:6px;color:#6b6255;">Use this to compare the old understanding against the current one before you confirm anything broader.</div>
+      </div>
+    `;
+  }
+
+  function renderRuleAmendmentHtml(amendment) {
+    if (!amendment || !amendment.status || amendment.status === "accepted" || amendment.status === "rejected") {
+      return "";
+    }
+    const proposedRule = amendment.plain_english_rule || amendment.clarifying_question || "Threadwise needs a clearer boundary before changing the rule.";
+    const actions = amendment.status === "proposed"
+      ? `
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+          <button type="button" data-ea-amendment-decision="accept" style="border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:8px 11px;cursor:pointer;font:inherit;font-weight:800;box-shadow:2px 2px 0 #241812;">Accept amendment</button>
+          <button type="button" data-ea-amendment-decision="reject" style="border:2px solid #241812;background:#ebe4d7;color:#241812;border-radius:11px;padding:8px 11px;cursor:pointer;font:inherit;font-weight:800;box-shadow:2px 2px 0 #241812;">Reject</button>
+          <button type="button" data-ea-action="refine-teach" style="border:0;background:transparent;color:#5d5342;border-radius:0;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;box-shadow:none;">Keep reviewing</button>
+        </div>
+      `
+      : "";
+    return `
+      <div style="margin-top:12px;border:2px solid #241812;border-radius:11px;background:#eef7f5;padding:10px 12px;color:#1f1a14;line-height:1.45;">
+        <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">Possible rule amendment</div>
+        <div style="margin-top:6px;font-weight:800;">${escapeHtml(proposedRule)}</div>
+        ${amendment.plain_english_rule && amendment.clarifying_question ? `<div style="margin-top:8px;color:#6b6255;">${escapeHtml(amendment.clarifying_question)}</div>` : ""}
+        <div style="margin-top:8px;color:#6b6255;">This is only a proposal. Threadwise will not change the rule unless you accept it.</div>
+        ${actions}
       </div>
     `;
   }
@@ -1580,6 +1606,11 @@
       const messageId = excludeAffectedButton.getAttribute("data-ea-exclude-affected") || "";
       const reasonNode = document.querySelector(`[data-ea-exclusion-reason="${CSS.escape(messageId)}"]`);
       return excludeAffectedMatch(messageId, reasonNode?.value || "");
+    }
+    const amendmentButton = event.target.closest("[data-ea-amendment-decision]");
+    if (amendmentButton) {
+      event.preventDefault();
+      return decideRuleAmendment(amendmentButton.getAttribute("data-ea-amendment-decision") || "");
     }
     const previewButton = event.target.closest("[data-ea-action='preview-teach']");
     if (previewButton) {
@@ -1795,6 +1826,45 @@
           kind: "exclude-success",
           title: "Exception saved",
           message: "This rule will not apply to this email/pattern later.",
+        };
+      }
+      renderState((response && response.payload && response.payload.sidebar_state) || lastSidebarState);
+    });
+  }
+
+  async function decideRuleAmendment(decision) {
+    if (!lastSidebarState || !teachPreview || !teachPreview.amendment_proposal || !decision) {
+      return;
+    }
+    syncTeachDraftFromDom();
+    chrome.runtime.sendMessage({
+      type: "email-agent:api",
+      path: "/api/teach-amendment",
+      method: "POST",
+      body: {
+        selected_context: lastSidebarState.selected_context || {},
+        target_label: teachDraft.targetLabel,
+        note: teachDraft.note,
+        scope: "sender",
+        amendment: teachPreview.amendment_proposal,
+        decision,
+      },
+    }, (response) => {
+      if (chrome.runtime.lastError) {
+        teachResult = teachErrorResult("apply", chrome.runtime.lastError.message || "Could not review the amendment.");
+      } else if (!response || !response.ok) {
+        teachResult = teachErrorResult("apply", (response && (response.payload?.error || response.error)) || "Could not review the amendment.");
+      } else {
+        const payload = response.payload || {};
+        teachPreview = payload.preview || teachPreview;
+        if (payload.note) {
+          teachDraft = { ...teachDraft, note: payload.note };
+        }
+        affectedReviewOpen = true;
+        teachResult = {
+          kind: "amendment-success",
+          title: payload.amendment_status === "accepted" ? "Amendment accepted" : "Amendment rejected",
+          message: payload.acknowledgment || "Reviewed amendment.",
         };
       }
       renderState((response && response.payload && response.payload.sidebar_state) || lastSidebarState);

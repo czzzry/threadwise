@@ -169,6 +169,8 @@ try {
   const affectedExcludeState = await evaluate(`({
     confirmationVisible: document.body.innerText.includes('Exception saved. This rule will not apply to this email/pattern later.'),
     previewText: document.querySelector('.preview-card')?.innerText || '',
+    amendmentVisible: (document.querySelector('.preview-card')?.innerText || '').toLowerCase().includes('possible rule amendment'),
+    amendmentCopy: Array.from(document.querySelectorAll('.preview-card .reason-wrap')).map((node) => node.innerText).join('\\n'),
     remainingOpenActions: document.querySelectorAll('[data-affected-open-gmail]').length,
     reviewStillExpanded: !!document.querySelector('.layout.expanded-review')
   })`);
@@ -388,6 +390,8 @@ try {
     !affectedReviewState.excludeActions.includes("Exclude") ||
     !affectedExcludeState.confirmationVisible ||
     !affectedExcludeState.previewText.includes("Would affect 0") ||
+    !affectedExcludeState.amendmentVisible ||
+    !affectedExcludeState.amendmentCopy.includes("will not change the rule unless you accept it") ||
     !affectedExcludeState.previewText.includes("Apply to included") ||
     affectedExcludeState.remainingOpenActions !== 0 ||
     !affectedExcludeState.reviewStillExpanded ||
