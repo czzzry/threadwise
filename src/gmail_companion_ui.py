@@ -54,6 +54,7 @@ from src.gmail_companion_state import (
 from src.teaching_loop import (
     apply_sidebar_teaching,
     build_sidebar_teach_preview,
+    exclude_sidebar_teaching_match,
     load_items_for_gmail_write_through,
 )
 
@@ -297,6 +298,14 @@ class GmailCompanionApp:
             try:
                 payload = self._read_json_body(handler)
                 response = self.teach_apply(payload)
+                return self._write_json(handler, HTTPStatus.OK, response)
+            except (KeyError, ValueError, HTTPException) as exc:
+                return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+
+        if handler.command == "POST" and parsed.path == "/api/teach-exclude":
+            try:
+                payload = self._read_json_body(handler)
+                response = self.teach_exclude(payload)
                 return self._write_json(handler, HTTPStatus.OK, response)
             except (KeyError, ValueError, HTTPException) as exc:
                 return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
@@ -587,6 +596,35 @@ class GmailCompanionApp:
             "proposal": teaching_result["proposal"],
             "gmail_write_through": write_through_summary,
             "sidebar_state": refreshed,
+        }
+
+    def teach_exclude(self, payload: dict) -> dict:
+        selected_context = payload.get("selected_context") or {}
+        target_label = payload["target_label"]
+        note = (payload.get("note") or "").strip()
+        scope = payload.get("scope") or "sender"
+        excluded_message_id = payload["excluded_message_id"]
+        reason = (payload.get("reason") or "").strip()
+        exclusion_result = exclude_sidebar_teaching_match(
+            self._storage_dir,
+            selected_context=selected_context,
+            target_label=target_label,
+            note=note,
+            scope=scope,
+            excluded_message_id=excluded_message_id,
+            reason=reason,
+        )
+        refreshed_preview = build_sidebar_teach_preview(
+            self._storage_dir,
+            selected_context=selected_context,
+            target_label=target_label,
+            note=note,
+            scope=scope,
+        )
+        return {
+            **exclusion_result,
+            "preview": refreshed_preview,
+            "sidebar_state": self.sidebar_state(selected_context),
         }
 
     def unsubscribe_select_current(self, payload: dict) -> dict:
@@ -1211,7 +1249,16 @@ class GmailCompanionApp:
           <td>${escapeHtml(item.subject || "(no subject)")}</td>
           <td style="color:var(--muted);">${escapeHtml((item.labels_before || []).join(", ") || "Uncategorized")}</td>
           <td style="color:var(--accent);font-weight:800;">${escapeHtml((item.labels_after || []).join(", ") || "Uncategorized")}</td>
-          <td><button type="button" class="action-button quiet" data-affected-open-gmail="${escapeHtml(item.message_id || "")}">Open in Gmail</button></td>
+          <td>
+            <div style="display:grid;gap:6px;">
+              <button type="button" class="action-button quiet" data-affected-open-gmail="${escapeHtml(item.message_id || "")}">Open in Gmail</button>
+              <button type="button" class="action-button secondary" data-affected-exclude="${escapeHtml(item.message_id || "")}">Exclude</button>
+              <details class="empty" style="margin:0;">
+                <summary style="cursor:pointer;">Why?</summary>
+                <textarea class="textarea" data-affected-exclusion-reason="${escapeHtml(item.message_id || "")}" placeholder="Optional reason" style="min-height:54px;margin-top:6px;"></textarea>
+              </details>
+            </div>
+          </td>
         </tr>
       `).join("") || '<tr><td colspan="5" style="color:var(--muted);">No exact affected emails are available in this preview.</td></tr>';
       return `
@@ -1223,7 +1270,7 @@ class GmailCompanionApp:
             </div>
             <button type="button" class="action-button secondary" data-action="collapse-affected-review">Collapse</button>
           </div>
-          <div class="empty" style="padding:12px 14px;">Exact affected list from Threadwise's preview. Open rows in Gmail for deep inspection; apply/exclude controls come next.</div>
+          <div class="empty" style="padding:12px 14px;">Exact affected list from Threadwise's preview. Excluding a row saves an exact exception for this rule/email.</div>
           <div class="affected-review-table-wrap">
             <table>
               <thead><tr><th>Sender</th><th>Subject</th><th>Current</th><th>Proposed</th><th>Inspect</th></tr></thead>
@@ -1314,8 +1361,9 @@ class GmailCompanionApp:
         `
         : "";
       const errorHtml = teachError ? renderTeachError(teachError) : "";
+      const resultHtml = teachResult ? `<div class="success-card">${escapeHtml(teachResult)}</div>` : "";
       const feedbackHtml = teachPreview
-        ? `${errorHtml}${renderPreviousTeachPreview(previousTeachPreview)}${renderTeachPreview(teachPreview)}`
+        ? `${errorHtml}${resultHtml}${renderPreviousTeachPreview(previousTeachPreview)}${renderTeachPreview(teachPreview)}`
         : teachError
           ? errorHtml
           : teachResult
@@ -1519,6 +1567,34 @@ class GmailCompanionApp:
       renderSelectedPanel();
     }
 
+    async function excludeAffectedMatch(messageId, reason) {
+      if (!selectedFound() || !teachPreview || !messageId) {
+        return;
+      }
+      const labelNode = document.getElementById("sim-target-label");
+      const noteNode = document.getElementById("sim-teach-note");
+      draftLabel = labelNode ? labelNode.value : draftLabel;
+      draftNote = noteNode ? noteNode.value : draftNote;
+      const payload = await postApi("/api/teach-exclude", {
+        selected_context: currentContext,
+        target_label: draftLabel,
+        note: draftNote,
+        scope: "sender",
+        excluded_message_id: messageId,
+        reason,
+      });
+      if (payload.error) {
+        teachError = payload.error;
+        teachResult = "";
+      } else {
+        teachError = "";
+        teachPreview = payload.preview || teachPreview;
+        teachResult = "Exception saved. This rule will not apply to this email/pattern later.";
+        affectedReviewOpen = true;
+      }
+      renderSelectedPanel();
+    }
+
     document.addEventListener("click", (event) => {
       const filterButton = event.target.closest("[data-filter]");
       if (filterButton) {
@@ -1568,6 +1644,13 @@ class GmailCompanionApp:
         if (item) {
           setContextFromItem(item);
         }
+        return;
+      }
+      const affectedExcludeButton = event.target.closest("[data-affected-exclude]");
+      if (affectedExcludeButton) {
+        const messageId = affectedExcludeButton.getAttribute("data-affected-exclude") || "";
+        const reasonNode = document.querySelector(`[data-affected-exclusion-reason="${CSS.escape(messageId)}"]`);
+        excludeAffectedMatch(messageId, reasonNode ? reasonNode.value : "");
         return;
       }
       const clearButton = event.target.closest("[data-action='clear-teach']");
@@ -2394,8 +2477,9 @@ class GmailCompanionApp:
           })()
         : "";
       const errorHtml = teachError ? renderTeachError(teachError) : "";
+      const resultHtml = teachResult ? `<div class="success-card">${escapeHtml(teachResult)}</div>` : "";
       const feedbackHtml = teachPreview
-        ? `${errorHtml}${renderPreviousTeachPreview(previousTeachPreview)}${renderTeachPreview(teachPreview)}`
+        ? `${errorHtml}${resultHtml}${renderPreviousTeachPreview(previousTeachPreview)}${renderTeachPreview(teachPreview)}`
         : teachError
           ? errorHtml
           : teachResult
@@ -2547,7 +2631,16 @@ class GmailCompanionApp:
             <td class="subject-cell">${escapeHtml(item.subject || "(no subject)")}</td>
             <td>${escapeHtml(item.current_label || item.classification || "Unknown")}</td>
             <td>${escapeHtml(item.proposed_label || targetLabel || "Proposed rule")}</td>
-            <td><button type="button" class="action-button quiet" data-affected-open-gmail="${index}">Open in Gmail</button></td>
+            <td>
+              <div style="display:grid;gap:6px;">
+                <button type="button" class="action-button quiet" data-affected-open-gmail="${index}">Open in Gmail</button>
+                <button type="button" class="action-button secondary" data-affected-exclude="${escapeHtml(item.message_id || "")}">Exclude</button>
+                <details class="empty" style="margin:0;">
+                  <summary style="cursor:pointer;">Why?</summary>
+                  <textarea class="textarea" data-affected-exclusion-reason="${escapeHtml(item.message_id || "")}" placeholder="Optional reason" style="min-height:54px;margin-top:6px;"></textarea>
+                </details>
+              </div>
+            </td>
           </tr>
         `).join("")
         : '<tr><td colspan="5">No exact affected-email examples are available for this preview.</td></tr>';
@@ -2556,7 +2649,7 @@ class GmailCompanionApp:
           <div class="affected-review-header">
             <div>
               <div class="reason-label">Reviewing affected emails</div>
-              <div class="empty" style="margin-top:3px;">Read-only preview. Excluding emails comes in the next slice.</div>
+              <div class="empty" style="margin-top:3px;">Exclude saves an exact exception for this rule/email.</div>
             </div>
             <button type="button" class="action-button secondary" data-action="collapse-affected-review">Collapse</button>
           </div>
@@ -2896,6 +2989,39 @@ class GmailCompanionApp:
       }
     }
 
+    async function excludeAffectedMatch(messageId, reason) {
+      if (!selectedEmailFound() || !teachPreview || !messageId) {
+        return;
+      }
+      const labelNode = document.getElementById("teach-target-label");
+      const noteNode = document.getElementById("teach-note");
+      draftLabel = labelNode ? labelNode.value : draftLabel;
+      draftNote = noteNode ? noteNode.value : draftNote;
+      try {
+        const payload = await postApi("/api/teach-exclude", {
+          selected_context: currentContext,
+          target_label: draftLabel,
+          note: draftNote,
+          scope: "sender",
+          excluded_message_id: messageId,
+          reason,
+        });
+        if (payload.error) {
+          teachError = payload.error;
+          teachResult = "";
+        } else {
+          teachError = "";
+          teachPreview = payload.preview || teachPreview;
+          teachResult = "Exception saved. This rule will not apply to this email/pattern later.";
+          affectedReviewOpen = true;
+        }
+      } catch (_error) {
+        teachError = "Could not save the exception.";
+        teachResult = "";
+      }
+      renderSelectedEmail((harnessState || {}).sidebar_state ? harnessState.sidebar_state.selected_email : null);
+    }
+
     minimizeButton.addEventListener("click", () => {
       panelNode.classList.toggle("minimized");
       minimizeButton.textContent = panelNode.classList.contains("minimized") ? "Open" : "Minimize";
@@ -2956,6 +3082,14 @@ class GmailCompanionApp:
           currentContext = contextFromItem(item);
           refreshState();
         }
+        return;
+      }
+      const excludeAffectedButton = event.target.closest("[data-affected-exclude]");
+      if (excludeAffectedButton) {
+        event.preventDefault();
+        const messageId = excludeAffectedButton.getAttribute("data-affected-exclude") || "";
+        const reasonNode = document.querySelector(`[data-affected-exclusion-reason="${CSS.escape(messageId)}"]`);
+        excludeAffectedMatch(messageId, reasonNode ? reasonNode.value : "");
         return;
       }
       const applyButton = event.target.closest("[data-apply-mode]");

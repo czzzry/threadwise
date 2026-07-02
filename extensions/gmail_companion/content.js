@@ -1574,6 +1574,13 @@
       const item = affectedReviewItemsFromPreview(teachPreview).find((candidate) => candidate.message_id === messageId);
       return openGmailItem(item);
     }
+    const excludeAffectedButton = event.target.closest("[data-ea-exclude-affected]");
+    if (excludeAffectedButton) {
+      event.preventDefault();
+      const messageId = excludeAffectedButton.getAttribute("data-ea-exclude-affected") || "";
+      const reasonNode = document.querySelector(`[data-ea-exclusion-reason="${CSS.escape(messageId)}"]`);
+      return excludeAffectedMatch(messageId, reasonNode?.value || "");
+    }
     const previewButton = event.target.closest("[data-ea-action='preview-teach']");
     if (previewButton) {
       event.preventDefault();
@@ -1758,6 +1765,42 @@
     });
   }
 
+  async function excludeAffectedMatch(messageId, reason) {
+    if (!lastSidebarState || !teachPreview || !messageId) {
+      return;
+    }
+    syncTeachDraftFromDom();
+    chrome.runtime.sendMessage({
+      type: "email-agent:api",
+      path: "/api/teach-exclude",
+      method: "POST",
+      body: {
+        selected_context: lastSidebarState.selected_context || {},
+        target_label: teachDraft.targetLabel,
+        note: teachDraft.note,
+        scope: "sender",
+        excluded_message_id: messageId,
+        reason,
+      },
+    }, (response) => {
+      if (chrome.runtime.lastError) {
+        teachResult = teachErrorResult("apply", chrome.runtime.lastError.message || "Could not save the exception.");
+      } else if (!response || !response.ok) {
+        teachResult = teachErrorResult("apply", (response && (response.payload?.error || response.error)) || "Could not save the exception.");
+      } else {
+        const payload = response.payload || {};
+        teachPreview = payload.preview || teachPreview;
+        affectedReviewOpen = true;
+        teachResult = {
+          kind: "exclude-success",
+          title: "Exception saved",
+          message: "This rule will not apply to this email/pattern later.",
+        };
+      }
+      renderState((response && response.payload && response.payload.sidebar_state) || lastSidebarState);
+    });
+  }
+
   async function selectUnsubscribeCurrent() {
     if (!lastSidebarState || !lastSidebarState.selected_email || !lastSidebarState.selected_email.found) {
       return;
@@ -1818,7 +1861,14 @@
           <td style="padding:9px 8px;vertical-align:top;color:#6b6255;">${escapeHtml((item.labels_before || []).join(", ") || "Uncategorized")}</td>
           <td style="padding:9px 8px;vertical-align:top;color:#0f766e;font-weight:800;">${escapeHtml((item.labels_after || []).map(humanLabelNameFromId).join(", ") || "Uncategorized")}</td>
           <td style="padding:9px 8px;vertical-align:top;">
-            <button type="button" data-ea-open-affected-gmail="${escapeHtml(item.message_id || "")}" style="border:0;background:transparent;color:#5d5342;border-radius:0;padding:0;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;box-shadow:none;">Open in Gmail</button>
+            <div style="display:grid;gap:7px;">
+              <button type="button" data-ea-open-affected-gmail="${escapeHtml(item.message_id || "")}" style="border:0;background:transparent;color:#5d5342;border-radius:0;padding:0;cursor:pointer;font:inherit;font-weight:760;text-align:left;text-decoration:underline;text-underline-offset:3px;box-shadow:none;">Open in Gmail</button>
+              <button type="button" data-ea-exclude-affected="${escapeHtml(item.message_id || "")}" style="border:2px solid #241812;background:#fff4dd;color:#241812;border-radius:9px;padding:6px 8px;cursor:pointer;font:inherit;font-weight:800;box-shadow:2px 2px 0 #241812;">Exclude</button>
+              <details style="color:#6b6255;">
+                <summary style="cursor:pointer;">Why?</summary>
+                <textarea data-ea-exclusion-reason="${escapeHtml(item.message_id || "")}" placeholder="Optional reason" style="box-sizing:border-box;width:100%;min-height:54px;margin-top:6px;border:1px solid #d8cbb7;border-radius:8px;background:#fffdf7;color:#241812;font:inherit;padding:6px;"></textarea>
+              </details>
+            </div>
           </td>
         </tr>
       `).join("")
@@ -1836,7 +1886,7 @@
           </div>
           <button type="button" data-ea-action="collapse-affected-review" style="border:2px solid #241812;background:#e9efe2;color:#241812;border-radius:11px;padding:8px 11px;cursor:pointer;font:inherit;font-weight:800;box-shadow:2px 2px 0 #241812;">Collapse</button>
         </div>
-        <div style="padding:12px 14px;color:#6b6255;line-height:1.45;">Exact affected list from Threadwise's preview. Open rows in Gmail for deep inspection; apply/exclude controls come next.</div>
+        <div style="padding:12px 14px;color:#6b6255;line-height:1.45;">Exact affected list from Threadwise's preview. Excluding a row saves an exact exception for this rule/email before any broader apply.</div>
         <div style="overflow:auto;max-height:360px;">
           <table style="width:100%;border-collapse:collapse;font-size:0.86rem;line-height:1.35;">
             <thead>

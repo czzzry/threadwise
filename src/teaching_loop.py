@@ -7,6 +7,7 @@ from src.label_taxonomy import gmail_label_name
 from src.local_artifacts import load_json, memory_proposals_path, teachable_rules_path
 from src.memory_proposal_store import MemoryProposalStore, build_memory_proposal, load_storage_items
 from src.sender_utils import normalized_sender_email
+from src.teaching_exclusions import filter_excluded_preview_matches, save_teaching_exclusion
 from src.teachable_rule_memory import TeachableRuleMemory
 
 
@@ -33,8 +34,10 @@ def build_sidebar_teach_preview(
         semantic_rule=semantic_rule,
     )
     preview = proposal.preview
+    proposal_payload = proposal.to_dict()
+    preview_matches = filter_excluded_preview_matches(storage_dir, proposal_payload, preview.get("matches", []))
     affected_existing = [
-        match for match in preview.get("matches", [])
+        match for match in preview_matches
         if match.get("message_id") != current["message_id"]
     ]
     normalized_existing = [
@@ -127,6 +130,7 @@ def apply_sidebar_teaching(
         scope=scope,
         semantic_rule=build_semantic_future_rule(current=current, target_label=target_label, note=note, scope=scope),
     )
+    preview_matches = filter_excluded_preview_matches(storage_dir, proposal.to_dict(), proposal.preview.get("matches", []))
 
     current_changed = False
     if mode in {"current-only", "matching-existing", "future-only"}:
@@ -149,7 +153,7 @@ def apply_sidebar_teaching(
     if mode == "matching-existing":
         matched_existing_count = apply_label_to_preview_matches(
             storage_dir,
-            proposal.preview.get("matches", []),
+            preview_matches,
             selected_message_id=current["message_id"],
             label=target_label,
             note=note,
@@ -167,7 +171,49 @@ def apply_sidebar_teaching(
         "matched_existing_count": matched_existing_count,
         "proposal": proposal_record.to_dict() if proposal_record else None,
         "current": current,
-        "preview_matches": proposal.preview.get("matches", []),
+        "preview_matches": preview_matches,
+    }
+
+
+def exclude_sidebar_teaching_match(
+    storage_dir: Path,
+    *,
+    selected_context: dict,
+    target_label: str,
+    note: str,
+    scope: str,
+    excluded_message_id: str,
+    reason: str = "",
+) -> dict:
+    target_label = resolve_target_label(target_label, note)
+    current = load_selected_storage_item(storage_dir, selected_context)
+    proposal = build_companion_memory_proposal(
+        storage_dir,
+        current=current,
+        target_label=target_label,
+        note=note,
+        scope=scope,
+        semantic_rule=build_semantic_future_rule(current=current, target_label=target_label, note=note, scope=scope),
+    )
+    entry = save_teaching_exclusion(
+        storage_dir,
+        proposal=proposal.to_dict(),
+        message_id=excluded_message_id,
+        reason=reason,
+    )
+    remaining_matches = filter_excluded_preview_matches(storage_dir, proposal.to_dict(), proposal.preview.get("matches", []))
+    return {
+        "acknowledgment": "Exception saved. This rule will not apply to this email/pattern later.",
+        "excluded_message_id": excluded_message_id,
+        "exclusion": entry,
+        "proposal": proposal.to_dict(),
+        "remaining_matching_count": len(
+            [
+                match
+                for match in remaining_matches
+                if match.get("message_id") != current["message_id"]
+            ]
+        ),
     }
 
 

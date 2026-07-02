@@ -57,6 +57,7 @@ def _build_registry() -> dict[str, ArtifactDescriptor]:
         "unsubscribe_selections": ArtifactDescriptor("unsubscribe_selections", lambda storage_dir: storage_dir / "unsubscribe_selections.json", required_fields=("candidates",)),
         "unsubscribe_execution_audit": ArtifactDescriptor("unsubscribe_execution_audit", lambda storage_dir: storage_dir / "unsubscribe_execution_audit.json", required_fields=("candidates",)),
         "teachable_rules": ArtifactDescriptor("teachable_rules", lambda storage_dir: storage_dir / "teachable_classification_rules.json", required_fields=("rules",)),
+        "teaching_exclusions": ArtifactDescriptor("teaching_exclusions", lambda storage_dir: storage_dir / "teaching_exclusions.json", required_fields=("exclusions",)),
         "shadow_suggestion_memory": ArtifactDescriptor("shadow_suggestion_memory", lambda storage_dir: storage_dir / "shadow_suggestion_memory.json"),
         "accepted_shadow_rules": ArtifactDescriptor("accepted_shadow_rules", lambda storage_dir: storage_dir / "accepted_shadow_teachable_rules.json"),
         "review_packs_dir": ArtifactDescriptor("review_packs_dir", lambda storage_dir: storage_dir / "review_packs", kind="directory"),
@@ -214,6 +215,10 @@ def unsubscribe_execution_audit_path(storage_dir: Path) -> Path:
 
 def teachable_rules_path(storage_dir: Path) -> Path:
     return artifact_path("teachable_rules", storage_dir)
+
+
+def teaching_exclusions_path(storage_dir: Path) -> Path:
+    return artifact_path("teaching_exclusions", storage_dir)
 
 
 def shadow_suggestion_memory_path(storage_dir: Path) -> Path:

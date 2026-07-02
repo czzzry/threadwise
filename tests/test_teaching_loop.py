@@ -6,8 +6,11 @@ from pathlib import Path
 from src.teaching_loop import (
     apply_sidebar_teaching,
     build_sidebar_teach_preview,
+    exclude_sidebar_teaching_match,
     load_items_for_gmail_write_through,
 )
+from src.teaching_exclusions import is_rule_message_excluded
+from src.teachable_rule_memory import TeachableRuleMemory
 
 
 class TeachingLoopTests(unittest.TestCase):
@@ -394,6 +397,114 @@ class TeachingLoopTests(unittest.TestCase):
             self.assertFalse((storage_dir / "teachable_classification_rules.json").exists())
             self.assertEqual(result["current"]["message_id"], "gmail-live-001")
             self.assertEqual([match["message_id"] for match in result["preview_matches"]], ["gmail-live-001", "gmail-live-002"])
+
+    def test_excluded_matching_email_is_saved_and_protected_from_same_rule(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                [
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": "Ashby <notifications@ashbyhq.com>",
+                        "subject": "Interview update",
+                        "snippet": "Status changed",
+                        "interpretation": "No confident category.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                ],
+            )
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-2",
+                [
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-002",
+                        "sender": "Ashby <notifications@ashbyhq.com>",
+                        "subject": "Application portal reminder",
+                        "snippet": "Reminder",
+                        "interpretation": "No confident category.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                ],
+            )
+
+            exclusion = exclude_sidebar_teaching_match(
+                storage_dir,
+                selected_context={
+                    "provider": "gmail",
+                    "message_id": "gmail-live-001",
+                    "sender": "notifications@ashbyhq.com",
+                    "subject": "Interview update",
+                },
+                target_label="job-related",
+                note="Ashby interview workflow messages should be job-related and kept visible.",
+                scope="sender",
+                excluded_message_id="gmail-live-002",
+            )
+            preview = build_sidebar_teach_preview(
+                storage_dir,
+                selected_context={
+                    "provider": "gmail",
+                    "message_id": "gmail-live-001",
+                    "sender": "notifications@ashbyhq.com",
+                    "subject": "Interview update",
+                },
+                target_label="job-related",
+                note="Ashby interview workflow messages should be job-related and kept visible.",
+                scope="sender",
+            )
+            result = apply_sidebar_teaching(
+                storage_dir,
+                selected_context={
+                    "provider": "gmail",
+                    "message_id": "gmail-live-001",
+                    "sender": "notifications@ashbyhq.com",
+                    "subject": "Interview update",
+                },
+                target_label="job-related",
+                note="Ashby interview workflow messages should be job-related and kept visible.",
+                scope="sender",
+                mode="matching-existing",
+            )
+            future_result = apply_sidebar_teaching(
+                storage_dir,
+                selected_context={
+                    "provider": "gmail",
+                    "message_id": "gmail-live-001",
+                    "sender": "notifications@ashbyhq.com",
+                    "subject": "Interview update",
+                },
+                target_label="job-related",
+                note="Ashby interview workflow messages should be job-related and kept visible.",
+                scope="sender",
+                mode="save-future-rule",
+            )
+            batch_two = json.loads((storage_dir / "batches" / "founder-test-batch-2.json").read_text())
+            saved_rule = TeachableRuleMemory(storage_dir / "teachable_classification_rules.json").list_rules()[0]
+
+            self.assertIn("Exception saved", exclusion["acknowledgment"])
+            self.assertEqual(exclusion["excluded_message_id"], "gmail-live-002")
+            self.assertEqual(preview["impact"]["matching_existing_count"], 0)
+            self.assertEqual(result["matched_existing_count"], 0)
+            self.assertIn("saved a future rule", future_result["acknowledgment"])
+            self.assertTrue(
+                is_rule_message_excluded(
+                    storage_dir,
+                    rule=saved_rule.to_dict(),
+                    message_id="gmail-live-002",
+                )
+            )
+            self.assertEqual(batch_two["items"][0]["final_labels"], [])
 
     def test_apply_matching_existing_does_not_relabel_broader_similar_candidates(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

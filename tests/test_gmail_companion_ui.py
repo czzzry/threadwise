@@ -236,6 +236,9 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn('data-ea-affected-review="true"', content_js)
         self.assertIn("Reviewing affected emails", content_js)
         self.assertIn("data-ea-open-affected-gmail", content_js)
+        self.assertIn("/api/teach-exclude", content_js)
+        self.assertIn("data-ea-exclude-affected", content_js)
+        self.assertIn("Exception saved", content_js)
         self.assertIn("Teach future rule", content_js)
         self.assertIn("Keep discussing", content_js)
         self.assertIn("Fix this email only updates the message you are reviewing.", content_js)
@@ -327,6 +330,8 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("open-affected-review", page)
         self.assertIn("Reviewing affected emails", page)
         self.assertIn("data-affected-open-gmail", page)
+        self.assertIn("data-affected-exclude", page)
+        self.assertIn("/api/teach-exclude", page)
         self.assertIn("Previous interpretation", page)
         self.assertIn("data-previous-preview", page)
         self.assertIn("Review unsubscribe candidates", page)
@@ -362,6 +367,8 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("expanded-review", page)
         self.assertIn("open-affected-review", page)
         self.assertIn("Reviewing affected emails", page)
+        self.assertIn("data-affected-exclude", page)
+        self.assertIn("/api/teach-exclude", page)
         self.assertIn("Review unsubscribe candidates", page)
         self.assertIn("Report details", page)
         self.assertIn("What Changed Today", page)
@@ -1597,6 +1604,66 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertIn(("apply_labels", "gmail-live-001", [gmail_client.labels["EA/Work"]]), gmail_client.calls)
             self.assertIn(("apply_labels", "gmail-live-002", [gmail_client.labels["EA/Work"]]), gmail_client.calls)
             self.assertEqual(result["gmail_write_through"]["messages_written"], 2)
+
+    def test_teach_exclude_saves_exception_and_refreshes_preview(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": "Ashby <notifications@ashbyhq.com>",
+                        "subject": "Interview update",
+                        "snippet": "Status changed",
+                        "interpretation": "Informational message with no confident category.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                ],
+            )
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-2",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-002",
+                        "sender": "Ashby <notifications@ashbyhq.com>",
+                        "subject": "Application portal reminder",
+                        "snippet": "Reminder",
+                        "interpretation": "Informational message with no confident category.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                ],
+            )
+
+            result = GmailCompanionApp(storage_dir).teach_exclude(
+                {
+                    "selected_context": {
+                        "provider": "gmail",
+                        "message_id": "gmail-live-001",
+                        "subject": "Interview update",
+                        "sender": "notifications@ashbyhq.com",
+                    },
+                    "target_label": "job-related",
+                    "note": "Ashby interview workflow messages should be job-related and kept visible.",
+                    "excluded_message_id": "gmail-live-002",
+                    "reason": "",
+                }
+            )
+
+            saved = json.loads((storage_dir / "teaching_exclusions.json").read_text())
+            self.assertIn("Exception saved", result["acknowledgment"])
+            self.assertEqual(saved["exclusions"][0]["message_id"], "gmail-live-002")
+            self.assertEqual(result["preview"]["impact"]["matching_existing_count"], 0)
 
     def test_teach_apply_save_future_rule_only_does_not_write_gmail_or_relabel_existing(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

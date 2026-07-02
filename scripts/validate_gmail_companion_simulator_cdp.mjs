@@ -155,7 +155,22 @@ try {
     expandedLayout: !!document.querySelector('.layout.expanded-review'),
     rowCount: document.querySelectorAll('.affected-review tbody tr').length,
     headings: Array.from(document.querySelectorAll('.affected-review th')).map((node) => node.innerText),
-    openActions: Array.from(document.querySelectorAll('[data-affected-open-gmail]')).map((node) => node.innerText)
+    openActions: Array.from(document.querySelectorAll('[data-affected-open-gmail]')).map((node) => node.innerText),
+    excludeActions: Array.from(document.querySelectorAll('[data-affected-exclude]')).map((node) => node.innerText)
+  })`);
+
+  await evaluate(`(() => {
+    const button = document.querySelector('[data-affected-exclude]');
+    if (button) button.click();
+    return true;
+  })()`);
+  await waitFor(() => evaluate("document.body.innerText.includes('Exception saved') && document.querySelector('.preview-card')?.innerText.includes('Would affect 0')"));
+
+  const affectedExcludeState = await evaluate(`({
+    confirmationVisible: document.body.innerText.includes('Exception saved. This rule will not apply to this email/pattern later.'),
+    previewText: document.querySelector('.preview-card')?.innerText || '',
+    remainingOpenActions: document.querySelectorAll('[data-affected-open-gmail]').length,
+    reviewStillExpanded: !!document.querySelector('.layout.expanded-review')
   })`);
 
   await evaluate(`(() => {
@@ -324,6 +339,7 @@ try {
     selectedBefore,
     previewState,
     affectedReviewState,
+    affectedExcludeState,
     affectedReviewCollapseState,
     refineState,
     compareState,
@@ -360,6 +376,11 @@ try {
     !affectedReviewState.headings.includes("Subject") ||
     !affectedReviewState.headings.includes("Inspect") ||
     !affectedReviewState.openActions.includes("Open in Gmail") ||
+    !affectedReviewState.excludeActions.includes("Exclude") ||
+    !affectedExcludeState.confirmationVisible ||
+    !affectedExcludeState.previewText.includes("Would affect 0") ||
+    affectedExcludeState.remainingOpenActions !== 0 ||
+    !affectedExcludeState.reviewStillExpanded ||
     affectedReviewCollapseState.reviewVisible ||
     affectedReviewCollapseState.expandedLayout ||
     refineState.previewVisible ||

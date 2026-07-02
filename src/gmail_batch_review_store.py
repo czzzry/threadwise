@@ -4,6 +4,7 @@ from src.fixture_classifier import FixtureBatchClassifier
 from src.gmail_message_normalizer import normalize_gmail_message
 from src.local_artifacts import teachable_rules_path
 from src.stored_batch_review_store import StoredBatchReviewStore
+from src.teaching_exclusions import is_rule_message_excluded
 from src.teachable_rule_memory import TeachableRuleMemory, apply_teachable_rules
 from src.trusted_sender_store import TrustedSenderStore
 
@@ -37,7 +38,13 @@ class GmailBatchReviewStore(StoredBatchReviewStore):
                 if existing_item and existing_item.get("review_state") == "reviewed":
                     items.append(self._merge_existing_item(item, existing_item))
                     continue
-                item = apply_teachable_rules(item, normalized_by_id[item["message_id"]], rules)
+                message_id = item["message_id"]
+                applicable_rules = [
+                    rule
+                    for rule in rules
+                    if not is_rule_message_excluded(self._storage_dir, rule=rule.to_dict(), message_id=message_id)
+                ]
+                item = apply_teachable_rules(item, normalized_by_id[message_id], applicable_rules)
                 if existing_item and "review_state" in existing_item:
                     items.append(self._merge_pending_item(item, existing_item))
                     continue
