@@ -74,7 +74,7 @@ try {
     selectedEmailVisible: result.selectedText.includes("Nowa transakcja płatnicza (P24-Y6A-Y4M-T1W)"),
     lowValueSuggestionVisible: result.teachPanelText.includes("I can relabel this email to EA/LowValue"),
     noConnectionError: !result.teachPanelText.includes("cannot reach"),
-    previewOptionsVisible: result.teachPanelText.includes("Apply only to this email"),
+    previewOptionsVisible: result.teachPanelText.includes("Fix this email"),
     exactSenderCountVisible: result.teachPanelText.includes("Exact sender matches: 0"),
     similarCandidateVisible: result.teachPanelText.includes("Similar candidates: 1"),
     broaderCandidateVisible: result.teachPanelText.includes("Broader rule candidate:"),

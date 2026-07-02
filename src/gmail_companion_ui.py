@@ -854,6 +854,7 @@ class GmailCompanionApp:
     .action-button.secondary { background:#fffdf7;color:var(--ink); }
     .action-button.info { background:#3d6df2;color:#fff; }
     .action-button.future { background:#ffc64a;color:#241812; }
+    .action-button.quiet { border:0;background:transparent;color:#5d5342;border-radius:0;padding:7px 2px;box-shadow:none;text-decoration:underline;text-underline-offset:3px;font-weight:760; }
     .preview-card { margin-top:12px;border:2px solid #241812;border-radius:14px;background:#fffdf7;padding:12px;color:var(--ink);line-height:1.45; }
     .success-card { margin-top:12px;border-radius:14px;background:var(--accent-soft);padding:12px;color:var(--accent);line-height:1.45; }
     .error-card { margin-top:12px;border-radius:14px;background:var(--warn-soft);padding:12px;color:var(--warn-ink);line-height:1.45; }
@@ -940,7 +941,7 @@ class GmailCompanionApp:
     const unsyncedContext = {
       provider: "gmail",
       message_id: "simulated-unsynced-001",
-      subject: "Fresh message not in local sync yet",
+      subject: "Threadwise has not synced this email yet",
       sender: "new.sender@example.com",
     };
 
@@ -957,7 +958,7 @@ class GmailCompanionApp:
       if (!selectedEmail || !selectedEmail.found) {
         return {
           title: "What to do now",
-          body: "Pick a synced queue item from the left if you want to review or teach the agent.",
+          body: "Preview a synced email below, or run a Gmail check from the dashboard to refresh what Threadwise knows.",
         };
       }
       if (selectedEmail.status === "needs-attention") {
@@ -1104,8 +1105,8 @@ class GmailCompanionApp:
         messageNode.innerHTML = `
           <div class="message-title">${escapeHtml(currentContext.subject || "Unsynced email")}</div>
           <div class="message-meta">${escapeHtml(currentContext.sender || "unknown sender")}</div>
-          <div class="message-body">This simulator is showing a message that is not in the current local snapshot yet.\n\nUse this state to test how the companion behaves before the next sync arrives.</div>
-          <div class="note">Expected behavior: the companion should explain that the message is not in the local sync yet while still showing the current queue from the synced snapshot.</div>
+          <div class="message-body">Threadwise has not synced this email yet.\n\nUse this state to test how the companion explains a fresh Gmail message before the next Threadwise check.</div>
+          <div class="note">Expected behavior: the companion should explain what to do next while still offering already-synced emails as a fallback.</div>
         `;
         return;
       }
@@ -1138,19 +1139,29 @@ class GmailCompanionApp:
 
     function renderTeachPreview(preview) {
       const impact = preview.impact || {};
+      const matchingCount = impact.matching_existing_count || 0;
       const examples = (impact.matching_existing_examples || []).map((item) =>
         `<li>${escapeHtml(item.subject || "(no subject)")} · ${escapeHtml(item.sender || "(unknown sender)")}</li>`
       ).join("");
       return `
         <div class="preview-card">
-          <div style="font-weight:700;">${escapeHtml(preview.acknowledgment || "Preview ready.")}</div>
-          <div class="empty">Matching existing emails: ${impact.matching_existing_count || 0}</div>
-          ${examples ? `<ol style="margin:8px 0 0;padding-left:18px;color:#6b6255;">${examples}</ol>` : ""}
+          <div class="reason-label">Fix this email first</div>
+          <div style="font-weight:700;margin-top:6px;">${escapeHtml(preview.acknowledgment || "Preview ready.")}</div>
+          <div class="empty" style="margin-top:8px;">Fix this email fixes the current message first. Threadwise can separately suggest a broader rule.</div>
           <div class="button-row" style="margin-top:12px;">
-            <button type="button" class="action-button primary" data-apply-mode="current-only">Apply only here</button>
-            <button type="button" class="action-button info" data-apply-mode="matching-existing">Apply to matching emails too</button>
-            <button type="button" class="action-button future" data-apply-mode="save-future-rule">Save future rule only</button>
-            <button type="button" class="action-button secondary" data-action="refine-teach">Refine this</button>
+            <button type="button" class="action-button primary" data-apply-mode="current-only">Fix this email</button>
+          </div>
+          <div style="margin-top:12px;border:2px solid #241812;border-radius:11px;background:#fffdf7;padding:10px 12px;">
+            <div class="reason-label">Also apply broader rule</div>
+            <div class="empty" style="margin-top:6px;">Would affect ${matchingCount} matching emails Threadwise has seen.</div>
+            ${examples ? `<details style="margin-top:8px;"><summary style="cursor:pointer;font-weight:800;">Show affected emails</summary><ol style="margin:8px 0 0;padding-left:18px;color:#6b6255;">${examples}</ol></details>` : ""}
+            <div class="button-row" style="margin-top:10px;">
+              <button type="button" class="action-button info" data-apply-mode="matching-existing">Apply to matching emails too</button>
+            </div>
+          </div>
+          <div class="button-row" style="margin-top:10px;">
+            <button type="button" class="action-button future" data-apply-mode="save-future-rule">Use for future emails only</button>
+            <button type="button" class="action-button secondary" data-action="refine-teach">Keep discussing</button>
           </div>
         </div>
       `;
@@ -1162,17 +1173,12 @@ class GmailCompanionApp:
       if (!selected || !selected.found) {
         const queueItems = (((harnessState || {}).needs_attention_items) || []).slice(0, 4);
         selectedEmailNode.innerHTML = `
-          <div class="empty">This email is not in the current local sync.</div>
-          <div class="error-card">This simulated fresh email lets you test the pre-sync state safely. The local queue below still comes from the copied snapshot.</div>
+          <div class="empty">Threadwise has not synced this email yet.</div>
+          <div class="error-card">This simulated fresh email lets you test the pre-sync state safely.</div>
           <div class="reason-wrap">
             <div class="reason-label">${escapeHtml(stepCopy.title)}</div>
             <div class="reason">${escapeHtml(stepCopy.body)}</div>
           </div>
-          <ol style="margin:10px 0 0;padding-left:18px;color:#6b6255;">
-            <li>Current category</li>
-            <li>Handling status</li>
-            <li>Short reason</li>
-          </ol>
           <div style="margin-top:14px;border-top:1px solid #e5dccb;padding-top:14px;">
             <div class="reason-label">Current Queue</div>
             <div class="field-stack">${renderQueueCards(queueItems)}</div>
@@ -1202,9 +1208,9 @@ class GmailCompanionApp:
       const unsubscribeActions = unsubscribePreview
         ? `
           <div class="button-row" style="margin-top:10px;">
-            ${unsubscribePreview.status === "ready" ? '<button type="button" class="action-button info" data-action="select-unsubscribe">Queue unsubscribe</button>' : ''}
-            ${canOpenUnsubscribeUrl ? `<a class="action-button secondary" style="text-decoration:none;display:inline-flex;align-items:center;" href="${escapeHtml(unsubscribePreview.url)}">Open mail unsubscribe</a>` : ''}
-            ${unsubscribe ? `<a class="action-button secondary" style="text-decoration:none;display:inline-flex;align-items:center;" href="${escapeHtml(unsubscribe.handoff_path || '/unsubscribe-review')}" target="_blank" rel="noreferrer">Review all subscriptions</a>` : ''}
+            ${unsubscribePreview.status === "ready" && !unsubscribeResult ? '<button type="button" class="action-button info" data-action="select-unsubscribe">Queue unsubscribe</button>' : ''}
+            ${canOpenUnsubscribeUrl ? `<a class="action-button quiet" style="display:inline-flex;align-items:center;" href="${escapeHtml(unsubscribePreview.url)}">Open mail unsubscribe</a>` : ''}
+            ${unsubscribe ? `<a class="action-button quiet" style="display:inline-flex;align-items:center;" href="${escapeHtml(unsubscribe.handoff_path || '/unsubscribe-review')}" target="_blank" rel="noreferrer">Review all subscriptions</a>` : ''}
           </div>
         `
         : "";
@@ -1242,7 +1248,7 @@ class GmailCompanionApp:
           <textarea id="sim-teach-note" class="textarea" placeholder="Tell the agent what it got wrong or what it should learn.">${escapeHtml(draftNote)}</textarea>
           <div class="button-row">
             <button type="button" class="action-button primary" data-action="preview-teach">Preview lesson</button>
-            <button type="button" class="action-button secondary" data-action="clear-teach">Clear</button>
+            <button type="button" class="action-button quiet" data-action="clear-teach">Clear draft</button>
           </div>
         </div>
         ${feedbackHtml}
@@ -1288,29 +1294,32 @@ class GmailCompanionApp:
           <span class="pill">Unsubscribe candidates · ${summary.unsubscribe_candidate_count || 0}</span>
           ${summary.report_date ? `<span class="pill">Latest report · ${escapeHtml(summary.report_date)}</span>` : ""}
         </div>
-        <div class="reason-wrap" style="margin-top:12px;background:#eef7f5;">
-          <div class="reason-label">Viewing</div>
-          <div class="reason"><strong>${escapeHtml(bucketLabel)}</strong> · ${itemsForActiveFilter().length}</div>
-          <div class="empty">${escapeHtml(bucketDescription())}</div>
-        </div>
-        <div class="reason-wrap" style="margin-top:12px;">
-          <div class="reason-label">What Changed Today</div>
-          <div class="summary-grid" style="margin-top:10px;">
-            <div class="metric-button"><strong>${changedToday.label_writes_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">labels written</span></div>
-            <div class="metric-button"><strong>${changedToday.inbox_removed_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">removed from inbox</span></div>
-            <div class="metric-button"><strong>${changedToday.taught_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">teaching changes</span></div>
-            <div class="metric-button"><strong>${changedToday.selected_unsubscribe_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">unsubscribe queued</span></div>
-          </div>
-          <div class="field-stack" style="margin-top:12px;">${changedItemsHtml}</div>
-        </div>
         <div class="button-row" style="margin-top:12px;">
-          <a class="action-button primary" style="text-decoration:none;display:inline-flex;align-items:center;" href="/daily-dashboard" target="_blank" rel="noreferrer">Open daily dashboard</a>
-          <a class="action-button secondary" style="text-decoration:none;display:inline-flex;align-items:center;" href="/unsubscribe-review" target="_blank" rel="noreferrer">Review unsubscribe candidates</a>
+          <a class="action-button quiet" style="display:inline-flex;align-items:center;" href="/daily-dashboard" target="_blank" rel="noreferrer">Open daily dashboard</a>
+          <a class="action-button quiet" style="display:inline-flex;align-items:center;" href="/unsubscribe-review" target="_blank" rel="noreferrer">Review unsubscribe candidates</a>
         </div>
-        ${topLabels ? `<div class="label-row">${topLabels}</div>` : '<p class="empty" style="margin-top:12px;">No stored label mix yet.</p>'}
-        <p class="empty" style="margin-top:12px;">Source: ${escapeHtml(summary.source_label || "stored Gmail snapshot")}${summary.batch_id ? ` · ${escapeHtml(summary.batch_id)}` : ""}</p>
-        <div class="reason-label" style="margin-top:12px;">${escapeHtml(bucketLabel)}</div>
-        <div class="field-stack" style="margin-top:12px;">${renderQueueCards(itemsForActiveFilter().slice(0, 5))}</div>
+        <details class="reason-wrap" style="margin-top:12px;">
+          <summary style="cursor:pointer;font-weight:800;color:#241812;">Report details</summary>
+          <div class="reason-wrap" style="margin-top:12px;background:#eef7f5;">
+            <div class="reason-label">Viewing</div>
+            <div class="reason"><strong>${escapeHtml(bucketLabel)}</strong> · ${itemsForActiveFilter().length}</div>
+            <div class="empty">${escapeHtml(bucketDescription())}</div>
+          </div>
+          <div class="reason-wrap" style="margin-top:12px;">
+            <div class="reason-label">What Changed Today</div>
+            <div class="summary-grid" style="margin-top:10px;">
+              <div class="metric-button"><strong>${changedToday.label_writes_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">labels written</span></div>
+              <div class="metric-button"><strong>${changedToday.inbox_removed_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">removed from inbox</span></div>
+              <div class="metric-button"><strong>${changedToday.taught_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">teaching changes</span></div>
+              <div class="metric-button"><strong>${changedToday.selected_unsubscribe_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">unsubscribe queued</span></div>
+            </div>
+            <div class="field-stack" style="margin-top:12px;">${changedItemsHtml}</div>
+          </div>
+          ${topLabels ? `<div class="label-row">${topLabels}</div>` : '<p class="empty" style="margin-top:12px;">No stored label mix yet.</p>'}
+          <p class="empty" style="margin-top:12px;">Source: ${escapeHtml(summary.source_label || "stored Gmail snapshot")}${summary.batch_id ? ` · ${escapeHtml(summary.batch_id)}` : ""}</p>
+          <div class="reason-label" style="margin-top:12px;">${escapeHtml(bucketLabel)}</div>
+          <div class="field-stack" style="margin-top:12px;">${renderQueueCards(itemsForActiveFilter().slice(0, 5))}</div>
+        </details>
       `;
     }
 
@@ -2005,6 +2014,7 @@ class GmailCompanionApp:
     .action-button.secondary { background: #ebe4d7; color: var(--ink); }
     .action-button.info { background: #1f6f8b; color: #fff; }
     .action-button.future { background: #7b5d2a; color: #fff; }
+    .action-button.quiet { border: 0; background: transparent; color: #5d5342; border-radius: 0; padding: 7px 2px; box-shadow: none; text-decoration: underline; text-underline-offset: 3px; font-weight: 760; }
     .preview-card { margin-top: 12px; border-radius: 14px; background: #fff8eb; padding: 12px; color: var(--ink); line-height: 1.45; }
     .success-card { margin-top: 12px; border-radius: 14px; background: var(--accent-soft); padding: 12px; color: var(--accent); line-height: 1.45; }
     .error-card { margin-top: 12px; border-radius: 14px; background: var(--warn-soft); padding: 12px; color: var(--warn-ink); line-height: 1.45; }
@@ -2140,7 +2150,7 @@ class GmailCompanionApp:
       if (!selectedEmail || !selectedEmail.found) {
         const hasSnapshotMiss = selectedEmail && selectedEmail.status === "not-in-snapshot";
         const title = hasSnapshotMiss
-          ? "This email is not in the current local sync."
+          ? "Threadwise has not synced this email yet."
           : "Open any email in Gmail and this panel will switch from summary mode into message mode.";
         const reason = hasSnapshotMiss && selectedEmail.reason
           ? `<div style="margin-top:12px;border-radius:14px;background:#fff4dd;padding:12px;color:#8a4b00;line-height:1.45;">${escapeHtml(selectedEmail.reason)}</div>`
@@ -2181,7 +2191,7 @@ class GmailCompanionApp:
             <div class="reason-label">${escapeHtml(stepCopy.title)}</div>
             <div class="reason">${escapeHtml(stepCopy.body)}</div>
           </div>
-          <div class="empty">The agent can only explain and teach from the latest stored sync, so use a queue item below for now or rerun the Gmail sync.</div>
+          <div class="empty">Threadwise can explain emails it has already synced. Preview a synced match below, or run a Gmail check from the dashboard to refresh what Threadwise knows.</div>
           <div class="button-row">
             ${relatedItems[0] ? '<button type="button" class="action-button primary" data-action="preview-closest-match">Preview closest synced match</button>' : ""}
             ${fallbackItems[0] ? '<button type="button" class="action-button secondary" data-action="open-needs-attention">Open needs-attention queue</button>' : ""}
@@ -2230,9 +2240,9 @@ class GmailCompanionApp:
       const actions = preview
               ? `
                 <div class="button-row" style="margin-top:10px;">
-                  ${preview.status === "ready" ? '<button type="button" class="action-button info" data-action="select-unsubscribe">Queue unsubscribe</button>' : ''}
-                  ${canOpenUnsubscribeUrl ? `<a class="action-button secondary" style="text-decoration:none;display:inline-flex;align-items:center;" href="${escapeHtml(preview.url)}">Open mail unsubscribe</a>` : ''}
-                  ${unsubscribe ? `<a class="action-button secondary" style="text-decoration:none;display:inline-flex;align-items:center;" href="${escapeHtml(unsubscribe.handoff_path || '/unsubscribe-review')}" target="_blank" rel="noreferrer">${escapeHtml(reviewLinkLabel)}</a>` : ''}
+                  ${preview.status === "ready" && !unsubscribeResult ? '<button type="button" class="action-button info" data-action="select-unsubscribe">Queue unsubscribe</button>' : ''}
+                  ${canOpenUnsubscribeUrl ? `<a class="action-button quiet" style="display:inline-flex;align-items:center;" href="${escapeHtml(preview.url)}">Open mail unsubscribe</a>` : ''}
+                  ${unsubscribe ? `<a class="action-button quiet" style="display:inline-flex;align-items:center;" href="${escapeHtml(unsubscribe.handoff_path || '/unsubscribe-review')}" target="_blank" rel="noreferrer">${escapeHtml(reviewLinkLabel)}</a>` : ''}
                 </div>
               `
               : "";
@@ -2297,7 +2307,7 @@ class GmailCompanionApp:
           <textarea id="teach-note" class="textarea" placeholder="Tell the agent what it got wrong or what it should learn.">${escapeHtml(draftNote)}</textarea>
           <div class="button-row">
             <button type="button" class="action-button primary" data-action="preview-teach">Preview lesson</button>
-            <button type="button" class="action-button secondary" data-action="clear-teach">Clear</button>
+            <button type="button" class="action-button quiet" data-action="clear-teach">Clear draft</button>
           </div>
         </div>
         ${feedbackHtml}
@@ -2332,19 +2342,29 @@ class GmailCompanionApp:
 
     function renderTeachPreview(preview) {
       const impact = preview.impact || {};
+      const matchingCount = impact.matching_existing_count || 0;
       const examples = (impact.matching_existing_examples || []).map((item) =>
         `<li>${escapeHtml(item.subject || "(no subject)")} · ${escapeHtml(item.sender || "(unknown sender)")}</li>`
       ).join("");
       return `
         <div class="preview-card">
-          <div style="font-weight:700;">${escapeHtml(preview.acknowledgment || "Preview ready.")}</div>
-          <div class="empty">Matching existing emails: ${impact.matching_existing_count || 0}</div>
-          ${examples ? `<ol class="checklist">${examples}</ol>` : ""}
+          <div class="reason-label">Fix this email first</div>
+          <div style="font-weight:700;margin-top:6px;">${escapeHtml(preview.acknowledgment || "Preview ready.")}</div>
+          <div class="empty" style="margin-top:8px;">Fix this email fixes the current message first. Threadwise can separately suggest a broader rule.</div>
           <div class="button-row">
-            <button type="button" class="action-button primary" data-apply-mode="current-only">Apply only here</button>
-            <button type="button" class="action-button info" data-apply-mode="matching-existing">Apply to matching emails too</button>
-            <button type="button" class="action-button future" data-apply-mode="save-future-rule">Save future rule only</button>
-            <button type="button" class="action-button secondary" data-action="refine-teach">Refine this</button>
+            <button type="button" class="action-button primary" data-apply-mode="current-only">Fix this email</button>
+          </div>
+          <div style="margin-top:12px;border:2px solid #241812;border-radius:11px;background:#fffdf7;padding:10px 12px;">
+            <div class="reason-label">Also apply broader rule</div>
+            <div class="empty" style="margin-top:6px;">Would affect ${matchingCount} matching emails Threadwise has seen.</div>
+            ${examples ? `<details style="margin-top:8px;"><summary style="cursor:pointer;font-weight:800;">Show affected emails</summary><ol class="checklist">${examples}</ol></details>` : ""}
+            <div class="button-row">
+              <button type="button" class="action-button info" data-apply-mode="matching-existing">Apply to matching emails too</button>
+            </div>
+          </div>
+          <div class="button-row">
+            <button type="button" class="action-button future" data-apply-mode="save-future-rule">Use for future emails only</button>
+            <button type="button" class="action-button secondary" data-action="refine-teach">Keep discussing</button>
           </div>
         </div>
       `;
@@ -2398,29 +2418,32 @@ class GmailCompanionApp:
           <span class="label-chip">Run status · ${escapeHtml(runStatus.status || "idle")}</span>
           ${summary.report_date ? `<span class="label-chip">Latest report · ${escapeHtml(summary.report_date)}</span>` : ""}
         </div>
-        <div class="reason-wrap" style="margin-top:12px;background:#eef7f5;">
-          <div class="reason-label">Viewing</div>
-          <div class="reason"><strong>${escapeHtml(bucketLabel)}</strong> · ${(harnessState && harnessState[activeHarnessFilter] ? harnessState[activeHarnessFilter].length : 0)}</div>
-          <div class="empty">${escapeHtml(activeHarnessBucketDescription())}</div>
-        </div>
-        <div class="reason-wrap" style="margin-top:12px;">
-          <div class="reason-label">What Changed Today</div>
-          <div class="summary-grid" style="margin-top:10px;">
-            <div class="metric-button"><strong>${changedToday.label_writes_count || 0}</strong><span>labels written</span></div>
-            <div class="metric-button"><strong>${changedToday.inbox_removed_count || 0}</strong><span>removed from inbox</span></div>
-            <div class="metric-button"><strong>${changedToday.taught_count || 0}</strong><span>teaching changes</span></div>
-            <div class="metric-button"><strong>${changedToday.selected_unsubscribe_count || 0}</strong><span>unsubscribe queued</span></div>
-          </div>
-          ${queuedSubscriptionsHtml}
-          <div class="detail-list">${changedItemsHtml}</div>
-        </div>
         <div class="button-row" style="margin-top:12px;">
-          <a class="action-button primary" style="text-decoration:none;display:inline-flex;align-items:center;" href="${escapeHtml(runStatus.dashboard_path || "/daily-dashboard#run-gmail-check")}" target="_blank" rel="noreferrer">Open daily dashboard</a>
-          <a class="action-button secondary" style="text-decoration:none;display:inline-flex;align-items:center;" href="/unsubscribe-review" target="_blank" rel="noreferrer">Review unsubscribe candidates</a>
+          <a class="action-button quiet" style="display:inline-flex;align-items:center;" href="${escapeHtml(runStatus.dashboard_path || "/daily-dashboard#run-gmail-check")}" target="_blank" rel="noreferrer">Open daily dashboard</a>
+          <a class="action-button quiet" style="display:inline-flex;align-items:center;" href="/unsubscribe-review" target="_blank" rel="noreferrer">Review unsubscribe candidates</a>
         </div>
-        ${(summary.top_labels || []).length ? `<div class="label-row">${topLabels}</div>` : '<p class="empty">No stored label mix yet.</p>'}
-        <p class="empty">Source: ${escapeHtml(summary.source_label)}${summary.batch_id ? ` · ${escapeHtml(summary.batch_id)}` : ""}</p>
-        <div id="detail-list" class="detail-list"></div>
+        <details class="reason-wrap" style="margin-top:12px;">
+          <summary style="cursor:pointer;font-weight:800;color:#241812;">Report details</summary>
+          <div class="reason-wrap" style="margin-top:12px;background:#eef7f5;">
+            <div class="reason-label">Viewing</div>
+            <div class="reason"><strong>${escapeHtml(bucketLabel)}</strong> · ${(harnessState && harnessState[activeHarnessFilter] ? harnessState[activeHarnessFilter].length : 0)}</div>
+            <div class="empty">${escapeHtml(activeHarnessBucketDescription())}</div>
+          </div>
+          <div class="reason-wrap" style="margin-top:12px;">
+            <div class="reason-label">What Changed Today</div>
+            <div class="summary-grid" style="margin-top:10px;">
+              <div class="metric-button"><strong>${changedToday.label_writes_count || 0}</strong><span>labels written</span></div>
+              <div class="metric-button"><strong>${changedToday.inbox_removed_count || 0}</strong><span>removed from inbox</span></div>
+              <div class="metric-button"><strong>${changedToday.taught_count || 0}</strong><span>teaching changes</span></div>
+              <div class="metric-button"><strong>${changedToday.selected_unsubscribe_count || 0}</strong><span>unsubscribe queued</span></div>
+            </div>
+            ${queuedSubscriptionsHtml}
+            <div class="detail-list">${changedItemsHtml}</div>
+          </div>
+          ${(summary.top_labels || []).length ? `<div class="label-row">${topLabels}</div>` : '<p class="empty">No stored label mix yet.</p>'}
+          <p class="empty">Source: ${escapeHtml(summary.source_label)}${summary.batch_id ? ` · ${escapeHtml(summary.batch_id)}` : ""}</p>
+          <div id="detail-list" class="detail-list"></div>
+        </details>
       `;
       renderDetailList();
       wireMetricButtons();

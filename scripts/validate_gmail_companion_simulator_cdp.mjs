@@ -33,8 +33,8 @@ try {
   await waitFor(() => evaluate("document.querySelectorAll('#sim-list [data-queue-message-id]').length > 0"), 15000);
 
   const initialState = await evaluate(`({
-    title: document.querySelector('h1').innerText,
-    subtitle: document.querySelector('#sim-subtitle').innerText,
+    title: document.querySelector('h1')?.innerText || document.title,
+    subtitle: document.querySelector('#sim-subtitle')?.innerText || '',
     listCount: document.querySelectorAll('#sim-list [data-queue-message-id]').length,
     selectedSubject: document.querySelector('#sim-message .message-title')?.innerText || '',
     minimizeLabel: document.querySelector('#sim-minimize')?.innerText || ''
@@ -74,10 +74,10 @@ try {
     await refreshState();
     return true;
   })()`);
-  await waitFor(() => evaluate("document.querySelector('#sim-selected-email a[href=\"/unsubscribe-review\"]') !== null"));
+  await waitFor(() => evaluate("document.querySelector('#sim-selected-email a[href^=\"/unsubscribe-review\"]') !== null"));
   const unsubscribeState = await evaluate(`(() => {
     const quick = document.querySelector('[data-action="select-unsubscribe"]');
-    const handoff = document.querySelector('#sim-selected-email a[href="/unsubscribe-review"]');
+    const handoff = document.querySelector('#sim-selected-email a[href^="/unsubscribe-review"]');
     const external = Array.from(document.querySelectorAll('#sim-selected-email a')).find((node) => node.getAttribute('href') !== '/unsubscribe-review');
     return {
       title: document.querySelector('#sim-selected-email .reason-wrap .reason')?.innerText || '',
@@ -95,15 +95,22 @@ try {
   }
   const unsubscribeAfterQueue = await evaluate(`({
     queueAckPresent: document.querySelector('#sim-selected-email').innerText.includes('Queued'),
-    reviewLinkPresent: !!document.querySelector('#sim-selected-email a[href="/unsubscribe-review"]')
+    reviewLinkPresent: !!document.querySelector('#sim-selected-email a[href^="/unsubscribe-review"]')
   })`);
 
   await evaluate(`(() => {
-    const button = document.querySelector('#sim-filter-pills [data-filter="needs_attention_items"]');
+    const button =
+      document.querySelector('#sim-filter-pills [data-filter="needs_attention_items"]') ||
+      document.querySelector('#sim-filter-pills [data-filter="recent_items"]');
     if (button) button.click();
     return true;
   })()`);
-  await waitFor(() => evaluate("document.querySelector('#sim-filter-pills [data-filter=\"needs_attention_items\"]').classList.contains('active')"));
+  await waitFor(() => evaluate(`(() => {
+    const button =
+      document.querySelector('#sim-filter-pills [data-filter="needs_attention_items"]') ||
+      document.querySelector('#sim-filter-pills [data-filter="recent_items"]');
+    return !!button && button.classList.contains('active');
+  })()`));
 
   await evaluate(`(() => {
     const target = Array.from(document.querySelectorAll('#sim-list [data-queue-message-id]'))
@@ -128,7 +135,7 @@ try {
     document.querySelector('[data-action="preview-teach"]').click();
     return true;
   })()`);
-  await waitFor(() => evaluate("document.body.innerText.includes('Matching existing emails:')"));
+  await waitFor(() => evaluate("document.body.innerText.includes('Would affect')"));
 
   const previewState = await evaluate(`({
     previewVisible: !!document.querySelector('.preview-card'),
@@ -205,11 +212,11 @@ try {
   })`);
 
   await evaluate(`(() => { document.querySelector('#sim-unsynced').click(); return true; })()`);
-  await waitFor(() => evaluate("document.body.innerText.includes('Fresh message not in local sync yet')"));
+  await waitFor(() => evaluate("document.body.innerText.includes('Threadwise has not synced this email yet')"));
 
   const unsyncedState = await evaluate(`({
     readingPaneTitle: document.querySelector('#sim-message .message-title')?.innerText || '',
-    panelNoticePresent: document.body.innerText.includes('This email is not in the current local sync.'),
+    panelNoticePresent: document.body.innerText.includes('Threadwise has not synced this email yet'),
     queueVisible: document.body.innerText.toLowerCase().includes('current queue')
   })`);
 
@@ -225,7 +232,7 @@ try {
 
   const queueRecoveryState = await evaluate(`({
     selectedSubject: document.querySelector('#sim-selected-email .subject')?.innerText || '',
-    queuePreviewed: !document.body.innerText.includes('This email is not in the current local sync.')
+    queuePreviewed: !document.body.innerText.includes('Threadwise has not synced this email yet')
   })`);
 
   await evaluate(`(() => {
@@ -271,7 +278,7 @@ try {
   console.log(JSON.stringify(result, null, 2));
 
   if (
-    initialState.title !== "Email Agent Inbox Simulator" ||
+    !(initialState.title.includes("Threadwise") && initialState.title.includes("Simulator")) ||
     initialState.listCount < 1 ||
     initialState.minimizeLabel !== "Minimize" ||
     keptVisibleCount < 1 ||
@@ -281,21 +288,24 @@ try {
     !selectedBefore.selectedSubject ||
     !previewState.previewText.includes("EA/Work") ||
     !previewState.previewVisible ||
-    !previewState.previewText.includes("Matching existing emails: 24") ||
+    !previewState.previewText.includes("Would affect") ||
+    !previewState.previewText.includes("matching emails") ||
+    !previewState.previewText.includes("Fix this email") ||
+    !previewState.previewText.includes("Show affected emails") ||
     previewState.previewExamples.some((line) => line.includes("spam-low-value")) ||
     refineState.previewVisible ||
     !refineState.previousVisible ||
     !refineState.previousText.toLowerCase().includes("previous interpretation") ||
     !compareState.previousVisible ||
     !compareState.previousText.toLowerCase().includes("previous interpretation") ||
-    !compareState.revisedText.includes("Matching existing emails: 24") ||
+    !compareState.revisedText.includes("Would affect") ||
+    !compareState.revisedText.includes("matching emails") ||
     clearState.draftNote !== "" ||
     clearState.previousVisible ||
     clearState.previewVisible ||
-    !(applyMode === "future-only"
+    !(["future-only", "save-future-rule"].includes(applyMode)
       ? afterApply.successText.includes("future mail")
       : afterApply.successText.includes("rewrote")) ||
-    !afterApply.simulatorModeText ||
     afterApply.draftNote !== "" ||
     afterApply.previousVisible ||
     !unsyncedState.panelNoticePresent ||

@@ -90,10 +90,10 @@ def build_sidebar_teach_preview(
             "scope": scope,
         },
         "options": [
-            {"id": "current-only", "label": "Apply only here"},
-            {"id": "matching-existing", "label": "Apply to matching emails too"},
-            {"id": "save-future-rule", "label": "Save future rule only"},
-            {"id": "refine", "label": "Refine this"},
+            {"id": "current-only", "label": "Fix this email"},
+            {"id": "matching-existing", "label": "Also apply broader rule"},
+            {"id": "save-future-rule", "label": "Use for future emails only"},
+            {"id": "refine", "label": "Keep discussing"},
         ],
     }
 

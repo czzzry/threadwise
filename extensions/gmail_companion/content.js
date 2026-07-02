@@ -531,7 +531,7 @@
   function connectionRemediationCopy(state) {
     if (state.kind === "wrong-service") {
       return [
-        "Confirm nothing else is bound to 127.0.0.1:8021.",
+        "Confirm no other app is using the Threadwise port.",
         "Start the Threadwise startup helper again.",
       ];
     }
@@ -546,7 +546,7 @@
     }
     return [
       "Open the Threadwise startup helper.",
-      "Make sure the local companion is running on 127.0.0.1:8021.",
+      "Check again after the helper says Threadwise is running.",
     ];
   }
 
@@ -587,7 +587,12 @@
       setHtml(selectedEmailSecondaryNode, "");
     }
     if (dailySummaryNode) {
-      setHtml(dailySummaryNode, `<div style="margin-top:10px;color:#6b6255;line-height:1.45;">${escapeHtml(lastConnectionState.details || "Make sure the local companion server is running on 127.0.0.1:8021.")}</div>`);
+      setHtml(dailySummaryNode, `
+        <details style="margin-top:10px;color:#6b6255;line-height:1.45;">
+          <summary style="cursor:pointer;font-weight:800;color:#241812;">Connection details</summary>
+          <div style="margin-top:8px;overflow-wrap:anywhere;">${escapeHtml(lastConnectionState.details || "Threadwise did not provide a connection detail.")}</div>
+        </details>
+      `);
     }
     renderMinimized();
   }
@@ -715,7 +720,7 @@
     if (!selected || !selected.found) {
       const hasSnapshotMiss = selected && selected.status === "not-in-snapshot";
       const title = hasSnapshotMiss
-        ? "This email is not in the current local sync."
+        ? "Threadwise has not synced this email yet."
         : "Open an email to inspect or teach Threadwise.";
       const reason = hasSnapshotMiss && selected.reason
         ? `<div style="margin-top:12px;border-radius:14px;background:#fff4dd;padding:12px;color:#8a4b00;line-height:1.45;">${escapeHtml(selected.reason)}</div>`
@@ -758,7 +763,7 @@
           <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">${escapeHtml(stepCopy.title)}</div>
           <div style="margin-top:8px;color:#1f1a14;line-height:1.45;">${escapeHtml(stepCopy.body)}</div>
         </div>
-        <div style="margin-top:12px;color:#6b6255;line-height:1.45;">The agent can only explain and teach from the latest stored sync, so use a queue item below for now or rerun the Gmail sync.</div>
+        <div style="margin-top:12px;color:#6b6255;line-height:1.45;">Threadwise can explain emails it has already synced. Preview a synced match below, or run a Gmail check from the dashboard to refresh what Threadwise knows.</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
           ${
             primaryRelatedItem
@@ -832,9 +837,9 @@
             <div style="margin-top:6px;color:#6b6255;line-height:1.45;">${escapeHtml((unsubscribePreview && unsubscribePreview.notes) || "Unsubscribe available")}</div>
             ${unsubscribeResult ? `<div style="margin-top:12px;border-radius:14px;background:#d8f3ef;padding:12px;color:#0f766e;line-height:1.45;">${escapeHtml(unsubscribeResult)}</div>` : ""}
             <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
-              ${unsubscribePreview && unsubscribePreview.status === "ready" ? '<button type="button" data-ea-action="select-unsubscribe" data-ea-unsubscribe-action="queue" style="border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Queue unsubscribe review</button>' : ""}
-              ${canOpenUnsubscribeUrl ? `<a href="${escapeHtml(unsubscribePreview.url)}" data-ea-unsubscribe-action="open-mail" style="border:2px solid #241812;background:#fffdf7;color:#241812;border-radius:11px;padding:9px 12px;display:inline-flex;align-items:center;text-decoration:none;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Open mail unsubscribe</a>` : ""}
-              <a href="${escapeHtml(`${LOCAL_ORIGIN}${unsubscribe.handoff_path || "/unsubscribe-review"}`)}" target="_blank" rel="noreferrer" data-ea-unsubscribe-action="review" style="border:2px solid #241812;background:#ffc64a;color:#241812;border-radius:11px;padding:9px 12px;display:inline-flex;align-items:center;text-decoration:none;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">${reviewLinkLabel}</a>
+              ${unsubscribePreview && unsubscribePreview.status === "ready" && !unsubscribeResult ? '<button type="button" data-ea-action="select-unsubscribe" data-ea-unsubscribe-action="queue" style="border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Queue unsubscribe review</button>' : ""}
+              ${canOpenUnsubscribeUrl ? `<a href="${escapeHtml(unsubscribePreview.url)}" data-ea-unsubscribe-action="open-mail" style="border:0;background:transparent;color:#5d5342;border-radius:0;padding:7px 2px;display:inline-flex;align-items:center;text-decoration:underline;text-underline-offset:3px;font:inherit;font-weight:760;box-shadow:none;">Open mail unsubscribe</a>` : ""}
+              <a href="${escapeHtml(`${LOCAL_ORIGIN}${unsubscribe.handoff_path || "/unsubscribe-review"}`)}" target="_blank" rel="noreferrer" data-ea-unsubscribe-action="review" style="border:0;background:transparent;color:#5d5342;border-radius:0;padding:7px 2px;display:inline-flex;align-items:center;text-decoration:underline;text-underline-offset:3px;font:inherit;font-weight:760;box-shadow:none;">${reviewLinkLabel}</a>
             </div>
           </div>
         `
@@ -909,7 +914,7 @@
           <textarea id="ea-teach-note" rows="3" placeholder="Tell the agent what it got wrong or what it should learn." style="box-sizing:border-box;width:100%;padding:10px 12px;border-radius:11px;border:2px solid #241812;background:#fffdf7;color:#1f1a14;font:inherit;resize:vertical;box-shadow:2px 2px 0 rgba(36,24,18,.18);">${escapeHtml(teachDraft.note)}</textarea>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <button type="button" data-ea-action="preview-teach" style="border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Preview lesson</button>
-            <button type="button" data-ea-action="clear-teach" style="border:2px solid #241812;background:#fffdf7;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Clear</button>
+            <button type="button" data-ea-action="clear-teach" style="border:0;background:transparent;color:#5d5342;border-radius:0;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;box-shadow:none;">Clear draft</button>
           </div>
         </div>
         ${previewHtml}
@@ -940,48 +945,51 @@
         <span style="border:2px solid #241812;border-radius:999px;padding:6px 10px;background:#f1eadf;color:#241812;font-size:0.8rem;font-weight:760;box-shadow:2px 2px 0 rgba(36,24,18,.28);">Unsubscribe candidates - ${summary.unsubscribe_candidate_count || 0}</span>
         ${summary.report_date ? `<span style="border:2px solid #241812;border-radius:999px;padding:6px 10px;background:#f1eadf;color:#241812;font-size:0.8rem;font-weight:760;box-shadow:2px 2px 0 rgba(36,24,18,.28);">Latest report - ${escapeHtml(summary.report_date)}</span>` : ""}
       </div>
-      <div style="margin-top:12px;border:2px solid #241812;border-radius:14px;background:#dff8ed;padding:12px;">
-        <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">Viewing</div>
-        <div style="margin-top:8px;font-weight:700;line-height:1.35;">${escapeHtml(focus.label)} · ${focus.count}</div>
-        <div style="margin-top:6px;color:#1f1a14;line-height:1.45;">${escapeHtml(focus.description)}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;">
+        <a href="${LOCAL_ORIGIN}/daily-dashboard" target="_blank" rel="noreferrer" style="border:0;background:transparent;color:#5d5342;border-radius:0;padding:7px 2px;display:inline-flex;align-items:center;text-decoration:underline;text-underline-offset:3px;font:inherit;font-weight:760;box-shadow:none;">Open daily dashboard</a>
+        <a href="${LOCAL_ORIGIN}/unsubscribe-review" target="_blank" rel="noreferrer" style="border:0;background:transparent;color:#5d5342;border-radius:0;padding:7px 2px;display:inline-flex;align-items:center;text-decoration:underline;text-underline-offset:3px;font:inherit;font-weight:760;box-shadow:none;">Review unsubscribe candidates</a>
       </div>
-      <div style="margin-top:12px;border:2px solid #241812;border-radius:14px;background:#fffdf7;padding:12px;">
-        <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">What Changed Today</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;">
-          <div style="border:2px solid #241812;border-radius:11px;background:#fffdf7;padding:12px;box-shadow:2px 2px 0 rgba(36,24,18,.18);"><strong style="display:block;font-size:1.15rem;">${changedToday.label_writes_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">labels written</span></div>
-          <div style="border:2px solid #241812;border-radius:11px;background:#fffdf7;padding:12px;box-shadow:2px 2px 0 rgba(36,24,18,.18);"><strong style="display:block;font-size:1.15rem;">${changedToday.inbox_removed_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">removed from inbox</span></div>
-          <div style="border:2px solid #241812;border-radius:11px;background:#fffdf7;padding:12px;box-shadow:2px 2px 0 rgba(36,24,18,.18);"><strong style="display:block;font-size:1.15rem;">${changedToday.taught_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">teaching changes</span></div>
-          <div style="border:2px solid #241812;border-radius:11px;background:#fffdf7;padding:12px;box-shadow:2px 2px 0 rgba(36,24,18,.18);"><strong style="display:block;font-size:1.15rem;">${changedToday.selected_unsubscribe_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">unsubscribe queued</span></div>
+      <details style="margin-top:12px;border:2px solid #241812;border-radius:14px;background:#fffdf7;padding:10px 12px;">
+        <summary style="cursor:pointer;font-weight:800;color:#241812;">Report details</summary>
+        <div style="margin-top:12px;border:2px solid #241812;border-radius:14px;background:#dff8ed;padding:12px;">
+          <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">Viewing</div>
+          <div style="margin-top:8px;font-weight:700;line-height:1.35;">${escapeHtml(focus.label)} · ${focus.count}</div>
+          <div style="margin-top:6px;color:#1f1a14;line-height:1.45;">${escapeHtml(focus.description)}</div>
+        </div>
+        <div style="margin-top:12px;border:2px solid #241812;border-radius:14px;background:#fffdf7;padding:12px;">
+          <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">What Changed Today</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;">
+            <div style="border:2px solid #241812;border-radius:11px;background:#fffdf7;padding:12px;box-shadow:2px 2px 0 rgba(36,24,18,.18);"><strong style="display:block;font-size:1.15rem;">${changedToday.label_writes_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">labels written</span></div>
+            <div style="border:2px solid #241812;border-radius:11px;background:#fffdf7;padding:12px;box-shadow:2px 2px 0 rgba(36,24,18,.18);"><strong style="display:block;font-size:1.15rem;">${changedToday.inbox_removed_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">removed from inbox</span></div>
+            <div style="border:2px solid #241812;border-radius:11px;background:#fffdf7;padding:12px;box-shadow:2px 2px 0 rgba(36,24,18,.18);"><strong style="display:block;font-size:1.15rem;">${changedToday.taught_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">teaching changes</span></div>
+            <div style="border:2px solid #241812;border-radius:11px;background:#fffdf7;padding:12px;box-shadow:2px 2px 0 rgba(36,24,18,.18);"><strong style="display:block;font-size:1.15rem;">${changedToday.selected_unsubscribe_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">unsubscribe queued</span></div>
+          </div>
+          ${
+            selectedUnsubscribeExamples.length
+              ? `<div style="margin-top:12px;border-radius:12px;background:#fffdfa;padding:12px;">
+                  <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">Queued subscriptions</div>
+                  <div style="display:grid;gap:8px;margin-top:10px;">
+                    ${selectedUnsubscribeExamples.map((item) => `
+                      <a href="${escapeHtml(`${LOCAL_ORIGIN}${item.handoff_path}`)}" target="_blank" rel="noreferrer" style="text-decoration:none;border:1px solid #d7cfbf;border-radius:14px;background:#fffdfa;padding:10px 12px;color:#1f1a14;">
+                        <div style="font-size:0.95rem;font-weight:700;line-height:1.25;">${escapeHtml(item.display_name || "(unknown list)")}</div>
+                        <div style="margin-top:4px;color:#6b6255;font-size:0.82rem;overflow-wrap:anywhere;">${escapeHtml(item.sender || "(unknown sender)")}</div>
+                      </a>
+                    `).join("")}
+                  </div>
+                </div>`
+              : ""
+          }
+          <div style="margin-top:12px;display:grid;gap:10px;">${renderChangedTodayGroups(changedToday)}</div>
         </div>
         ${
-          selectedUnsubscribeExamples.length
-            ? `<div style="margin-top:12px;border-radius:12px;background:#fffdfa;padding:12px;">
-                <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">Queued subscriptions</div>
-                <div style="display:grid;gap:8px;margin-top:10px;">
-                  ${selectedUnsubscribeExamples.map((item) => `
-                    <a href="${escapeHtml(`${LOCAL_ORIGIN}${item.handoff_path}`)}" target="_blank" rel="noreferrer" style="text-decoration:none;border:1px solid #d7cfbf;border-radius:14px;background:#fffdfa;padding:10px 12px;color:#1f1a14;">
-                      <div style="font-size:0.95rem;font-weight:700;line-height:1.25;">${escapeHtml(item.display_name || "(unknown list)")}</div>
-                      <div style="margin-top:4px;color:#6b6255;font-size:0.82rem;overflow-wrap:anywhere;">${escapeHtml(item.sender || "(unknown sender)")}</div>
-                    </a>
-                  `).join("")}
-                </div>
-              </div>`
-            : ""
+          (summary.top_labels || []).length
+            ? `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;">${topLabels}</div>`
+            : '<p style="margin-top:12px;color:#6b6255;line-height:1.45;">No stored label mix yet.</p>'
         }
-        <div style="margin-top:12px;display:grid;gap:10px;">${renderChangedTodayGroups(changedToday)}</div>
-      </div>
-      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;">
-        <a href="${LOCAL_ORIGIN}/daily-dashboard" target="_blank" rel="noreferrer" style="border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;display:inline-flex;align-items:center;text-decoration:none;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Open daily dashboard</a>
-        <a href="${LOCAL_ORIGIN}/unsubscribe-review" target="_blank" rel="noreferrer" style="border:2px solid #241812;background:#fffdf7;color:#241812;border-radius:11px;padding:9px 12px;display:inline-flex;align-items:center;text-decoration:none;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Review unsubscribe candidates</a>
-      </div>
-      ${
-        (summary.top_labels || []).length
-          ? `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;">${topLabels}</div>`
-          : '<p style="margin-top:12px;color:#6b6255;line-height:1.45;">No stored label mix yet.</p>'
-      }
-      <p style="color:#6b6255;font-size:0.85rem;margin-top:12px;">Source: ${escapeHtml(summary.source_label || "stored Gmail snapshot")}${summary.batch_id ? ` - ${escapeHtml(summary.batch_id)}` : ""}</p>
-      <div style="margin-top:12px;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">${escapeHtml(bucketLabelForFilter(activeSummaryFilter))}</div>
-      <div style="margin-top:10px;display:grid;gap:8px;">${renderSummaryItemCards(summaryItemsForFilter(activeSummaryFilter))}</div>
+        <p style="color:#6b6255;font-size:0.85rem;margin-top:12px;">Source: ${escapeHtml(summary.source_label || "stored Gmail snapshot")}${summary.batch_id ? ` - ${escapeHtml(summary.batch_id)}` : ""}</p>
+        <div style="margin-top:12px;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">${escapeHtml(bucketLabelForFilter(activeSummaryFilter))}</div>
+        <div style="margin-top:10px;display:grid;gap:8px;">${renderSummaryItemCards(summaryItemsForFilter(activeSummaryFilter))}</div>
+      </details>
     `);
   }
 
@@ -1349,7 +1357,12 @@
       : "";
     return `
       <div style="margin:12px;border:2px solid #241812;border-radius:14px;background:#fffdf7;padding:12px;color:#241812;line-height:1.45;">
-        <div style="font-weight:700;">${escapeHtml(preview.acknowledgment || "Preview ready.")}</div>
+        <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">Fix this email first</div>
+        <div style="margin-top:6px;font-weight:700;">${escapeHtml(preview.acknowledgment || "Preview ready.")}</div>
+        <div style="margin-top:8px;color:#6b6255;line-height:1.45;">Fix this email fixes the current message first. Threadwise can separately suggest a broader rule for matching emails.</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
+          <button type="button" data-ea-apply="current-only" style="border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Fix this email</button>
+        </div>
         <div style="margin-top:10px;border:2px solid #241812;border-radius:11px;background:#fffdf7;padding:10px 12px;color:#1f1a14;line-height:1.45;">
           <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">Proposed future rule</div>
           <div style="margin-top:6px;font-weight:700;">${escapeHtml(preview.plain_english_rule || "No future rule proposal was generated.")}</div>
@@ -1366,20 +1379,23 @@
         </div>
         <div style="margin-top:10px;color:#6b6255;line-height:1.45;">${escapeHtml(previewChoiceExplainer(matchingCount, similarCount))}</div>
         <div style="margin-top:10px;border:2px solid #241812;border-radius:11px;background:#fffdf7;padding:10px 12px;color:#6b6255;line-height:1.45;">
-          <div><strong style="color:#1f1a14;">Apply only to this email</strong> changes the current message only.</div>
-          <div style="margin-top:6px;"><strong style="color:#1f1a14;">Apply to current + ${matchingCount} matching emails</strong> rewrites those existing stored emails, but does not save a future rule.</div>
-          <div style="margin-top:6px;"><strong style="color:#1f1a14;">Save future rule only</strong> changes future runs, but does not relabel this email or other stored emails now.</div>
+          <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">Also apply broader rule</div>
+          <div style="margin-top:6px;">Would affect <strong style="color:#1f1a14;">${matchingCount}</strong> matching emails Threadwise has seen.</div>
+          <details style="margin-top:8px;">
+            <summary style="cursor:pointer;font-weight:800;color:#241812;">Show affected emails</summary>
+            ${
+              examples
+                ? `<ol style="margin:8px 0 0;padding-left:18px;color:#6b6255;">${examples}</ol>`
+                : '<div style="margin-top:8px;color:#6b6255;">No matching existing emails to show.</div>'
+            }
+          </details>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+            <button type="button" data-ea-apply="matching-existing" style="border:2px solid #241812;background:#3d6df2;color:#fff;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Apply to matching emails too</button>
+          </div>
         </div>
         ${similarGroupsHtml}
-        ${
-          examples
-            ? `<ol style="margin:8px 0 0;padding-left:18px;color:#6b6255;">${examples}</ol>`
-            : ""
-        }
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
-          <button type="button" data-ea-apply="current-only" style="border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Apply only to this email</button>
-          <button type="button" data-ea-apply="matching-existing" style="border:2px solid #241812;background:#3d6df2;color:#fff;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Apply to current + ${matchingCount} matching emails</button>
-          <button type="button" data-ea-apply="save-future-rule" style="border:2px solid #241812;background:#ffc64a;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Save future rule only</button>
+          <button type="button" data-ea-apply="save-future-rule" style="border:2px solid #241812;background:#ffc64a;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Use for future emails only</button>
           <button type="button" data-ea-action="refine-teach" style="border:2px solid #241812;background:#fffdf7;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Keep discussing</button>
         </div>
       </div>

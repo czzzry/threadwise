@@ -111,8 +111,8 @@ function buildChecks(result) {
     summaryFilterNavigation: Boolean(result.filterNavigation?.attempted && result.filterNavigation?.ok),
     draftPersistsAcrossRefresh: Boolean(result.draftPersistence?.attempted && result.draftPersistence?.ok),
     teachPreviewReached: Boolean(result.teachPreview?.attempted && result.teachPreview?.hasPreview),
-    impactWarningVisible: teachText.includes("Matching existing emails:"),
-    explicitChoiceCopyVisible: teachText.includes("Apply only to this email changes the current message only."),
+    impactWarningVisible: teachText.includes("Would affect"),
+    explicitChoiceCopyVisible: teachText.includes("Fix this email") && teachText.includes("Also apply broader rule"),
     keepDiscussingVisible: teachText.includes("Keep discussing"),
     dailySummaryVisible: summaryText.includes("WHAT CHANGED TODAY") || summaryText.includes("What Changed Today"),
   };
@@ -270,14 +270,14 @@ async function runTeachPreview() {
     return before;
   }
   const finalText = await settlePanel((text) => {
-    return text.includes('Matching existing emails:') || text.includes('Could not preview the lesson.');
+    return text.includes('Would affect') || text.includes('Could not preview the lesson.');
   }, 10000);
   return evaluate(`(() => {
     const liveText = document.getElementById('ea-selected-email')?.innerText || '';
     return {
       attempted: true,
       selected: liveText,
-      hasPreview: liveText.includes('Matching existing emails:'),
+      hasPreview: liveText.includes('Would affect'),
       hasError: liveText.includes('Could not preview the lesson.'),
       finalText: ${JSON.stringify(finalText)},
     };
