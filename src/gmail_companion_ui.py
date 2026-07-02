@@ -1144,6 +1144,13 @@ class GmailCompanionApp:
       const examples = (impact.matching_existing_examples || []).map((item) =>
         `<li>${escapeHtml(item.subject || "(no subject)")} · ${escapeHtml(item.sender || "(unknown sender)")}</li>`
       ).join("");
+      const ruleMeta = `
+        <div class="pill-row">
+          <span class="pill">${escapeHtml(preview.rule_type_label || "Future rule")}</span>
+          <span class="pill ${preview.rule_confidence === "tentative" ? "warn-pill" : "status-pill"}">${escapeHtml(preview.rule_confidence_label || "Future rule")}</span>
+        </div>
+        ${preview.clarifying_question ? `<div class="empty">${escapeHtml(preview.clarifying_question)}</div>` : ""}
+      `;
       return `
         <div class="preview-card">
           <div class="reason-label">This email</div>
@@ -1155,6 +1162,7 @@ class GmailCompanionApp:
           <div style="margin-top:12px;border:2px solid #241812;border-radius:11px;background:#fffdf7;padding:10px 12px;">
             <div class="reason-label">Future rule</div>
             <div style="font-weight:700;margin-top:6px;">${escapeHtml(preview.plain_english_rule || "No future rule proposal was generated.")}</div>
+            ${ruleMeta}
             <details class="empty" style="margin-top:8px;">
               <summary style="cursor:pointer;font-weight:800;color:#241812;">Structured rule</summary>
               <div style="margin-top:8px;">Hidden until needed.</div>
@@ -2382,6 +2390,13 @@ class GmailCompanionApp:
       const examples = (impact.matching_existing_examples || []).map((item) =>
         `<li>${escapeHtml(item.subject || "(no subject)")} · ${escapeHtml(item.sender || "(unknown sender)")}</li>`
       ).join("");
+      const ruleMeta = `
+        <div class="pill-row">
+          <span class="pill">${escapeHtml(preview.rule_type_label || "Future rule")}</span>
+          <span class="pill ${preview.rule_confidence === "tentative" ? "warn-pill" : "status-pill"}">${escapeHtml(preview.rule_confidence_label || "Future rule")}</span>
+        </div>
+        ${preview.clarifying_question ? `<div class="empty">${escapeHtml(preview.clarifying_question)}</div>` : ""}
+      `;
       return `
         <div class="preview-card">
           <div class="reason-label">This email</div>
@@ -2393,6 +2408,7 @@ class GmailCompanionApp:
           <div style="margin-top:12px;border:2px solid #241812;border-radius:11px;background:#fffdf7;padding:10px 12px;">
             <div class="reason-label">Future rule</div>
             <div style="font-weight:700;margin-top:6px;">${escapeHtml(preview.plain_english_rule || "No future rule proposal was generated.")}</div>
+            ${ruleMeta}
             <details class="empty" style="margin-top:8px;">
               <summary style="cursor:pointer;font-weight:800;color:#241812;">Structured rule</summary>
               <div style="margin-top:8px;">Hidden until needed.</div>

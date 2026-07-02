@@ -1340,6 +1340,17 @@
       )
       .join("");
     const structuredRule = preview.structured_rule || {};
+    const ruleMeta = `
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;">
+        <span style="display:inline-flex;align-items:center;padding:6px 9px;border:2px solid #241812;border-radius:999px;background:#f1eadf;color:#241812;font-size:0.76rem;font-weight:760;box-shadow:2px 2px 0 rgba(36,24,18,.22);">${escapeHtml(preview.rule_type_label || "Future rule")}</span>
+        <span style="display:inline-flex;align-items:center;padding:6px 9px;border:2px solid #241812;border-radius:999px;background:${preview.rule_confidence === "tentative" ? "#fff4dd" : "#eef7f5"};color:${preview.rule_confidence === "tentative" ? "#8a4b00" : "#0f766e"};font-size:0.76rem;font-weight:760;box-shadow:2px 2px 0 rgba(36,24,18,.22);">${escapeHtml(preview.rule_confidence_label || "Future rule")}</span>
+      </div>
+      ${
+        preview.clarifying_question
+          ? `<div style="margin-top:8px;color:#6b6255;line-height:1.45;">${escapeHtml(preview.clarifying_question)}</div>`
+          : ""
+      }
+    `;
     const structuredRuleRows = Object.keys(structuredRule).length
       ? Object.entries(structuredRule)
           .map(([key, value]) => `<div><strong>${escapeHtml(key.replaceAll("_", " "))}:</strong> ${escapeHtml(Array.isArray(value) ? value.join(", ") : String(value))}</div>`)
@@ -1382,6 +1393,7 @@
         <div style="margin-top:10px;border:2px solid #241812;border-radius:11px;background:#fffdf7;padding:10px 12px;color:#1f1a14;line-height:1.45;">
           <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">Future rule</div>
           <div style="margin-top:6px;font-weight:700;">${escapeHtml(preview.plain_english_rule || "No future rule proposal was generated.")}</div>
+          ${ruleMeta}
           <details style="margin-top:8px;color:#6b6255;">
             <summary style="cursor:pointer;font-weight:700;color:#241812;">Structured rule</summary>
             <div style="display:grid;gap:4px;margin-top:8px;">${structuredRuleRows}</div>

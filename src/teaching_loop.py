@@ -23,12 +23,14 @@ def build_sidebar_teach_preview(
 ) -> dict:
     current = load_selected_storage_item(storage_dir, selected_context)
     target_label = resolve_target_label(target_label, note)
+    semantic_rule = build_semantic_future_rule(current=current, target_label=target_label, note=note, scope=scope)
     proposal = build_companion_memory_proposal(
         storage_dir,
         current=current,
         target_label=target_label,
         note=note,
         scope=scope,
+        semantic_rule=semantic_rule,
     )
     preview = proposal.preview
     affected_existing = [
@@ -51,15 +53,15 @@ def build_sidebar_teach_preview(
     target_label_name = gmail_label_name(target_label)
     current_labels = list(current.get("final_labels") or current.get("applied_labels") or [])
     current_label_name = gmail_label_name(current_labels[0]) if current_labels else "Uncategorized"
-    sender = normalized_sender_email(current.get("sender") or "") or current.get("sender") or "this sender"
-    plain_rule = f"Treat similar emails from {sender} as {target_label_name}."
     structured_rule = {
-        "scope": scope,
-        "sender": sender,
+        "scope": semantic_rule["scope"],
+        "rule_type": semantic_rule["rule_type"],
+        "sender": semantic_rule["sender"],
+        "semantic_pattern": semantic_rule["semantic_pattern"],
         "from_label": current_label_name,
         "to_label": target_label_name,
         "target_label": target_label,
-        "matching_basis": ["sender/domain", "stored Threadwise data", "current label/category"],
+        "matching_basis": semantic_rule["matching_basis"],
         "applies_to_existing_count": len(affected_existing),
     }
     return {
@@ -76,7 +78,12 @@ def build_sidebar_teach_preview(
         "selected_label_after": [target_label],
         "current_label_name": current_label_name,
         "target_label_name": target_label_name,
-        "plain_english_rule": plain_rule,
+        "plain_english_rule": semantic_rule["plain_english_rule"],
+        "rule_type": semantic_rule["rule_type"],
+        "rule_type_label": semantic_rule["rule_type_label"],
+        "rule_confidence": semantic_rule["rule_confidence"],
+        "rule_confidence_label": semantic_rule["rule_confidence_label"],
+        "clarifying_question": semantic_rule["clarifying_question"],
         "structured_rule": structured_rule,
         "proposal": proposal.to_dict(),
         "impact": {
@@ -92,7 +99,7 @@ def build_sidebar_teach_preview(
         "options": [
             {"id": "current-only", "label": "Fix this email"},
             {"id": "matching-existing", "label": "Also apply broader rule"},
-            {"id": "save-future-rule", "label": "Use for future emails only"},
+            {"id": "save-future-rule", "label": "Teach future rule"},
             {"id": "refine", "label": "Keep discussing"},
         ],
     }
@@ -118,6 +125,7 @@ def apply_sidebar_teaching(
         target_label=target_label,
         note=note,
         scope=scope,
+        semantic_rule=build_semantic_future_rule(current=current, target_label=target_label, note=note, scope=scope),
     )
 
     current_changed = False
@@ -174,6 +182,120 @@ def load_selected_storage_item(storage_dir: Path, selected_context: dict) -> dic
     return item
 
 
+def build_semantic_future_rule(*, current: dict, target_label: str, note: str, scope: str) -> dict:
+    label_name = gmail_label_name(target_label)
+    sender = normalized_sender_email(current.get("sender") or "") or current.get("sender") or "this sender"
+    sender_name = _display_sender(current.get("sender") or "") or sender
+    semantic_pattern = infer_semantic_pattern(current, note, target_label)
+    cross_sender = semantic_pattern["cross_sender"]
+    if semantic_pattern["name"]:
+        subject = semantic_pattern["name"]
+        if cross_sender:
+            plain_rule = f"Treat {subject} as {label_name}."
+            rule_type = "cross-sender-semantic"
+            rule_type_label = "Cross-sender semantic rule"
+            matching_basis = ["message meaning", "founder note", "stored Threadwise data"]
+        else:
+            plain_rule = f"Treat {subject} from {sender_name} as {label_name}."
+            rule_type = "sender-semantic"
+            rule_type_label = "Sender + semantic rule"
+            matching_basis = ["sender", "message meaning", "founder note", "stored Threadwise data"]
+    else:
+        plain_rule = f"Treat future messages from {sender} as {label_name}."
+        rule_type = "sender"
+        rule_type_label = "Sender rule"
+        matching_basis = ["sender", "stored Threadwise data"]
+    confidence = "tentative" if not semantic_pattern["has_strong_signal"] else "medium"
+    clarifying_question = ""
+    if not semantic_pattern["has_strong_signal"] and note:
+        clarifying_question = f"Should this apply to all future messages from {sender_name}, or only a narrower kind of message?"
+    return {
+        "scope": scope,
+        "sender": sender,
+        "semantic_pattern": semantic_pattern["name"],
+        "plain_english_rule": plain_rule,
+        "rule_type": rule_type,
+        "rule_type_label": rule_type_label,
+        "rule_confidence": confidence,
+        "rule_confidence_label": "Tentative future rule" if confidence == "tentative" else "Future rule",
+        "clarifying_question": clarifying_question,
+        "matching_basis": matching_basis,
+    }
+
+
+def infer_semantic_pattern(current: dict, note: str, target_label: str) -> dict:
+    text = _semantic_text(current, note)
+    checks = [
+        {
+            "terms": ("phishing", "phish", "scam", "suspicious", "fake"),
+            "name": "payment or account notices that look suspicious",
+            "cross_sender": True,
+        },
+        {
+            "terms": ("interview", "recruiter", "hiring", "application", "job"),
+            "name": "job, recruiter, or interview emails",
+            "cross_sender": True,
+        },
+        {
+            "terms": ("flight", "travel", "hotel", "booking", "reservation"),
+            "name": "travel and booking emails",
+            "cross_sender": True,
+        },
+        {
+            "terms": ("invoice", "billing", "bill", "payment", "receipt", "charged"),
+            "name": "billing, receipt, or payment notices",
+            "cross_sender": False,
+        },
+        {
+            "terms": ("account", "login", "security", "closure", "password", "statement", "notice"),
+            "name": "account, security, or statement notices",
+            "cross_sender": False,
+        },
+        {
+            "terms": ("newsletter", "digest", "marketing", "promo", "promotion", "sale"),
+            "name": "newsletter or marketing emails",
+            "cross_sender": False,
+        },
+    ]
+    for check in checks:
+        if any(term in text for term in check["terms"]):
+            return {
+                "name": check["name"],
+                "cross_sender": check["cross_sender"],
+                "has_strong_signal": True,
+            }
+    label_patterns = {
+        "account-security": "account, security, or statement notices",
+        "financial-account": "financial account notices",
+        "receipt-billing": "billing, receipt, or payment notices",
+        "job-related": "job, recruiter, or interview emails",
+        "travel": "travel and booking emails",
+        "newsletter": "newsletter or digest emails",
+        "promotions": "marketing or promotional emails",
+        "spam-low-value": "low-value or suspicious emails",
+    }
+    if target_label in label_patterns:
+        return {
+            "name": label_patterns[target_label],
+            "cross_sender": target_label in {"job-related", "travel", "spam-low-value"},
+            "has_strong_signal": False,
+        }
+    return {"name": "", "cross_sender": False, "has_strong_signal": False}
+
+
+def _semantic_text(current: dict, note: str) -> str:
+    return " ".join(
+        str(value or "").lower()
+        for value in (
+            note,
+            current.get("subject"),
+            current.get("snippet"),
+            current.get("interpretation"),
+            current.get("body"),
+        )
+    )
+
+
 def build_companion_memory_proposal(
     storage_dir: Path,
     *,
@@ -181,9 +303,13 @@ def build_companion_memory_proposal(
     target_label: str,
     note: str,
     scope: str,
+    semantic_rule: dict | None = None,
 ):
     provider = current.get("provider", "gmail")
-    explanation = note or f"Messages from {normalized_sender_email(current.get('sender') or '') or current.get('sender') or 'this sender'} should be treated as {target_label}."
+    semantic_rule = semantic_rule or build_semantic_future_rule(current=current, target_label=target_label, note=note, scope=scope)
+    explanation = note or semantic_rule["plain_english_rule"]
+    if note and semantic_rule.get("semantic_pattern"):
+        explanation = f"{semantic_rule['plain_english_rule']} Founder note: {note}"
     return build_memory_proposal(
         provider=provider,
         account_id=current.get("account_id", ""),
@@ -513,9 +639,9 @@ def build_teach_acknowledgment(
     affected_existing_count: int,
     scope: str,
 ) -> str:
-    sender = normalized_sender_email(current.get("sender") or "") or current.get("sender") or "this sender"
     label_name = gmail_label_name(target_label)
-    lesson = f"I think messages from {sender} should usually be {label_name}."
+    semantic_rule = build_semantic_future_rule(current=current, target_label=target_label, note=note, scope=scope)
+    lesson = f"I interpreted the future rule as: {semantic_rule['plain_english_rule']}"
     if note:
         lesson = f"{lesson} I used your note to interpret the lesson."
     if affected_existing_count:
@@ -537,7 +663,7 @@ def build_apply_acknowledgment(
     if mode == "matching-existing":
         return f"I relabeled this email to {label_name} and rewrote {matched_existing_count} matching stored emails. I did not save a future rule."
     if mode == "save-future-rule":
-        return f"I saved a sender-level lesson for future mail. I did not relabel this email or rewrite other stored emails."
+        return f"I saved a future rule. I did not relabel this email or rewrite other existing emails."
     if mode == "future-only":
-        return f"I relabeled this email to {label_name} and saved a sender-level lesson for future mail. No other existing stored emails were rewritten."
+        return f"I relabeled this email to {label_name} and saved a future rule. No other existing stored emails were rewritten."
     return f"I applied the teaching action for {label_name}."

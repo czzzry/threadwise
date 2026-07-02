@@ -146,6 +146,87 @@ class TeachingLoopTests(unittest.TestCase):
             self.assertEqual(preview["target_label_name"], "EA/LowValue")
             self.assertIn("EA/LowValue", preview["acknowledgment"])
 
+    def test_preview_proposes_semantic_sender_rule_instead_of_all_sender_rule(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                [
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "wealthsimple-001",
+                        "sender": "Wealthsimple <notifications@m.wealthsimple.com>",
+                        "subject": "Your account statement is ready",
+                        "snippet": "Your monthly account statement is available.",
+                        "interpretation": "No confident category.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                ],
+            )
+
+            preview = build_sidebar_teach_preview(
+                storage_dir,
+                selected_context={
+                    "provider": "gmail",
+                    "message_id": "wealthsimple-001",
+                    "sender": "notifications@m.wealthsimple.com",
+                    "subject": "Your account statement is ready",
+                },
+                target_label="",
+                note="this is an account email that I need",
+                scope="sender",
+            )
+
+            self.assertEqual(preview["selected_label_after"], ["account-security"])
+            self.assertEqual(preview["rule_type"], "sender-semantic")
+            self.assertEqual(preview["rule_type_label"], "Sender + semantic rule")
+            self.assertIn("account, security, or statement notices", preview["plain_english_rule"])
+            self.assertIn("wealthsimple", preview["plain_english_rule"])
+            self.assertNotIn("future messages from notifications@m.wealthsimple.com", preview["plain_english_rule"])
+
+    def test_preview_proposes_cross_sender_semantic_rule_for_phishing_pattern(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                [
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-phish-001",
+                        "sender": '"Przelewy24.pl" <no-reply@przelewy24.pl>',
+                        "subject": "Nowa transakcja płatnicza (P24-Y6A-Y4M-T1W)",
+                        "snippet": "Informacja o transakcji",
+                        "interpretation": "No confident category.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                ],
+            )
+
+            preview = build_sidebar_teach_preview(
+                storage_dir,
+                selected_context={
+                    "provider": "gmail",
+                    "message_id": "gmail-live-phish-001",
+                    "sender": "no-reply@przelewy24.pl",
+                    "subject": "Nowa transakcja płatnicza (P24-Y6A-Y4M-T1W)",
+                },
+                target_label="",
+                note="this is phishing. I never want emails like this again",
+                scope="sender",
+            )
+
+            self.assertEqual(preview["rule_type"], "cross-sender-semantic")
+            self.assertEqual(preview["rule_type_label"], "Cross-sender semantic rule")
+            self.assertIn("payment or account notices that look suspicious", preview["plain_english_rule"])
+
     def test_preview_surfaces_broader_similar_candidates_separately_from_exact_sender_matches(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
@@ -432,7 +513,7 @@ class TeachingLoopTests(unittest.TestCase):
             batch_one = json.loads((storage_dir / "batches" / "founder-test-batch-1.json").read_text())
             rules = json.loads((storage_dir / "teachable_classification_rules.json").read_text())
 
-            self.assertIn("saved a sender-level lesson for future mail", result["acknowledgment"])
+            self.assertIn("saved a future rule", result["acknowledgment"])
             self.assertFalse(result["current_changed"])
             self.assertEqual(result["matched_existing_count"], 0)
             self.assertEqual(batch_one["items"][0]["final_labels"], [])

@@ -340,7 +340,7 @@ try {
     !failedApplyState.recoveryActions.includes("Try fix again") ||
     failedApplyState.panelOverflow > 1 ||
     !(["future-only", "save-future-rule"].includes(applyMode)
-      ? afterApply.successText.includes("future mail")
+      ? afterApply.successText.includes("future rule")
       : afterApply.successText.includes("rewrote")) ||
     afterApply.draftNote !== "" ||
     afterApply.previousVisible ||

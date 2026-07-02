@@ -158,6 +158,8 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("humanMeaningForSelected", content_js)
         self.assertIn("renderChangedTodayGroups", content_js)
         self.assertIn("Future rule", content_js)
+        self.assertIn("rule_type_label", content_js)
+        self.assertIn("rule_confidence_label", content_js)
         self.assertIn("Structured rule", content_js)
         self.assertIn("Similar emails found", content_js)
         self.assertIn("Similar candidates:", content_js)
@@ -1386,7 +1388,9 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertEqual(preview["selected_label_after"], ["personal"])
             self.assertEqual(preview["current_label_name"], "Uncategorized")
             self.assertEqual(preview["target_label_name"], "EA/Personal")
-            self.assertIn("Treat similar emails from messages-noreply@linkedin.com as EA/Personal.", preview["plain_english_rule"])
+            self.assertIn("Treat future messages from messages-noreply@linkedin.com as EA/Personal.", preview["plain_english_rule"])
+            self.assertEqual(preview["rule_type"], "sender")
+            self.assertEqual(preview["rule_type_label"], "Sender rule")
             self.assertEqual(preview["structured_rule"]["to_label"], "EA/Personal")
             self.assertEqual(preview["structured_rule"]["applies_to_existing_count"], 1)
             self.assertEqual(preview["impact"]["matching_existing_examples"][0]["labels_after"], ["personal"])
@@ -1625,7 +1629,7 @@ class GmailCompanionUiTests(unittest.TestCase):
             rule_payload = json.loads((storage_dir / "teachable_classification_rules.json").read_text())
             batch_one = json.loads((storage_dir / "batches" / "founder-test-batch-1.json").read_text())
 
-            self.assertIn("saved a sender-level lesson for future mail", result["acknowledgment"])
+            self.assertIn("saved a future rule", result["acknowledgment"])
             self.assertEqual(rule_payload["rules"][0]["label"], "job-related")
             self.assertEqual(batch_one["items"][0]["final_labels"], [])
             self.assertEqual(gmail_client.calls, [])
@@ -1762,7 +1766,7 @@ class GmailCompanionUiTests(unittest.TestCase):
                 }
             )
 
-            self.assertIn("saved a sender-level lesson for future mail", result["acknowledgment"])
+            self.assertIn("saved a future rule", result["acknowledgment"])
             self.assertIn("No other existing stored emails were rewritten", result["acknowledgment"])
 
     def test_install_page_is_extension_first_and_mentions_gmail_surface(self) -> None:
