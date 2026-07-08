@@ -137,110 +137,27 @@ try {
     document.querySelector('[data-action="preview-teach"]').click();
     return true;
   })()`);
-  await waitFor(() => evaluate("document.body.innerText.includes('Would affect')"));
+  await waitFor(() => evaluate("document.querySelector('.preview-card[data-teach-state=\"rule-proposed\"]') !== null"));
 
   const previewState = await evaluate(`({
     previewVisible: !!document.querySelector('.preview-card'),
     previewText: document.querySelector('.preview-card')?.innerText || '',
-    previewExamples: Array.from(document.querySelectorAll('.preview-card li')).map((node) => node.innerText)
+    looksRightVisible: !!document.querySelector('[data-action="accept-teach-rule"]'),
+    editVisible: !!document.querySelector('[data-action="refine-teach"]')
   })`);
 
   await evaluate(`(() => {
-    const button = document.querySelector('[data-action="open-affected-review"]');
+    const button = document.querySelector('[data-action="accept-teach-rule"]');
     if (button) button.click();
     return true;
   })()`);
-  await waitFor(() => evaluate("document.querySelector('.affected-review') !== null && document.querySelector('.layout.expanded-review') !== null"));
+  await waitFor(() => evaluate("document.querySelector('[data-apply-mode=\"future-only\"]') !== null"));
 
-  const affectedReviewState = await evaluate(`({
-    reviewVisible: !!document.querySelector('.affected-review'),
-    expandedLayout: !!document.querySelector('.layout.expanded-review'),
-    rowCount: document.querySelectorAll('.affected-review tbody tr').length,
-    headings: Array.from(document.querySelectorAll('.affected-review th')).map((node) => node.innerText),
-    openActions: Array.from(document.querySelectorAll('[data-affected-open-gmail]')).map((node) => node.innerText),
-    excludeActions: Array.from(document.querySelectorAll('[data-affected-exclude]')).map((node) => node.innerText)
+  const scopeState = await evaluate(`({
+    scopeVisible: !!document.querySelector('.preview-card'),
+    scopeText: document.querySelector('.preview-card')?.innerText || '',
+    applyButtons: Array.from(document.querySelectorAll('[data-apply-mode]')).map((node) => node.innerText)
   })`);
-
-  await evaluate(`(() => {
-    const button = document.querySelector('[data-affected-exclude]');
-    if (button) button.click();
-    return true;
-  })()`);
-  await waitFor(() => evaluate("document.body.innerText.includes('Exception saved') && document.querySelector('.preview-card')?.innerText.includes('Would affect 0')"));
-
-  const affectedExcludeState = await evaluate(`({
-    confirmationVisible: document.body.innerText.includes('Exception saved. This rule will not apply to this email/pattern later.'),
-    previewText: document.querySelector('.preview-card')?.innerText || '',
-    amendmentVisible: (document.querySelector('.preview-card')?.innerText || '').toLowerCase().includes('possible rule amendment'),
-    amendmentCopy: Array.from(document.querySelectorAll('.preview-card .reason-wrap')).map((node) => node.innerText).join('\\n'),
-    remainingOpenActions: document.querySelectorAll('[data-affected-open-gmail]').length,
-    reviewStillExpanded: !!document.querySelector('.layout.expanded-review')
-  })`);
-
-  await evaluate(`(() => {
-    const button = document.querySelector('[data-action="collapse-affected-review"]');
-    if (button) button.click();
-    return true;
-  })()`);
-  await waitFor(() => evaluate("document.querySelector('.affected-review') === null && document.querySelector('.layout.expanded-review') === null"));
-
-  const affectedReviewCollapseState = await evaluate(`({
-    reviewVisible: !!document.querySelector('.affected-review'),
-    expandedLayout: !!document.querySelector('.layout.expanded-review')
-  })`);
-
-  await evaluate(`(() => {
-    document.querySelector('[data-action="refine-teach"]').click();
-    return true;
-  })()`);
-  await waitFor(() => evaluate("document.querySelector('[data-previous-preview=\"true\"]') !== null"));
-
-  const refineState = await evaluate(`({
-    previewVisible: !!document.querySelector('.preview-card'),
-    previousVisible: !!document.querySelector('[data-previous-preview="true"]'),
-    previousText: document.querySelector('[data-previous-preview="true"]')?.innerText || ''
-  })`);
-
-  await evaluate(`(() => {
-    const note = document.querySelector('#sim-teach-note');
-    note.value = 'Revised simulator teaching pass: recurring LinkedIn job alerts should be EA/Work unless they are direct person-to-person messages.';
-    note.dispatchEvent(new Event('input', { bubbles: true }));
-    document.querySelector('[data-action="preview-teach"]').click();
-    return true;
-  })()`);
-  await waitFor(() => evaluate("document.querySelectorAll('[data-previous-preview=\"true\"]').length === 1 && document.querySelector('.preview-card') !== null"));
-
-  const compareState = await evaluate(`({
-    previousVisible: !!document.querySelector('[data-previous-preview="true"]'),
-    previousText: document.querySelector('[data-previous-preview="true"]')?.innerText || '',
-    revisedText: document.querySelector('.preview-card')?.innerText || ''
-  })`);
-
-  await evaluate(`(() => {
-    const note = document.querySelector('#sim-teach-note');
-    note.value = 'Temporary draft that should clear cleanly.';
-    note.dispatchEvent(new Event('input', { bubbles: true }));
-    document.querySelector('[data-action="clear-teach"]').click();
-    return true;
-  })()`);
-  await waitFor(() => evaluate("document.querySelector('#sim-teach-note') && document.querySelector('#sim-teach-note').value === ''"));
-
-  const clearState = await evaluate(`({
-    draftNote: document.querySelector('#sim-teach-note')?.value || '',
-    previousVisible: !!document.querySelector('[data-previous-preview="true"]'),
-    previewVisible: !!document.querySelector('.preview-card')
-  })`);
-
-  await evaluate(`(() => {
-    document.querySelector('#sim-target-label').value = 'job-related';
-    document.querySelector('#sim-target-label').dispatchEvent(new Event('change', { bubbles: true }));
-    const note = document.querySelector('#sim-teach-note');
-    note.value = 'Final simulator teaching pass before apply: LinkedIn job alerts should be work-related and kept visible.';
-    note.dispatchEvent(new Event('input', { bubbles: true }));
-    document.querySelector('[data-action="preview-teach"]').click();
-    return true;
-  })()`);
-  await waitFor(() => evaluate("document.querySelector('.preview-card') !== null"));
 
   await evaluate(`(() => {
     const originalFetch = window.fetch.bind(window);
@@ -351,12 +268,7 @@ try {
     unsubscribeAfterQueue,
     selectedBefore,
     previewState,
-    affectedReviewState,
-    affectedExcludeState,
-    affectedReviewCollapseState,
-    refineState,
-    compareState,
-    clearState,
+    scopeState,
     failedApplyState,
     afterApply,
     unsyncedState,
@@ -378,44 +290,22 @@ try {
     !selectedBefore.selectedSubject ||
     !previewState.previewText.includes("EA/Work") ||
     !previewState.previewVisible ||
-    !previewState.previewText.includes("Would affect") ||
-    !previewState.previewText.includes("matching emails") ||
-    !previewState.previewText.includes("Fix this email") ||
-    !previewState.previewText.includes("Show affected emails") ||
-    previewState.previewExamples.some((line) => line.includes("spam-low-value")) ||
-    !affectedReviewState.reviewVisible ||
-    !affectedReviewState.expandedLayout ||
-    affectedReviewState.rowCount < 1 ||
-    !affectedReviewState.headings.includes("Sender") ||
-    !affectedReviewState.headings.includes("Subject") ||
-    !affectedReviewState.headings.includes("Inspect") ||
-    !affectedReviewState.openActions.includes("Open in Gmail") ||
-    !affectedReviewState.excludeActions.includes("Exclude") ||
-    !affectedExcludeState.confirmationVisible ||
-    !affectedExcludeState.previewText.includes("Would affect 0") ||
-    !affectedExcludeState.amendmentVisible ||
-    !affectedExcludeState.amendmentCopy.includes("will not change the rule unless you accept it") ||
-    !affectedExcludeState.previewText.includes("Apply to included") ||
-    affectedExcludeState.remainingOpenActions !== 0 ||
-    !affectedExcludeState.reviewStillExpanded ||
-    affectedReviewCollapseState.reviewVisible ||
-    affectedReviewCollapseState.expandedLayout ||
-    refineState.previewVisible ||
-    !refineState.previousVisible ||
-    !refineState.previousText.toLowerCase().includes("previous interpretation") ||
-    !compareState.previousVisible ||
-    !compareState.previousText.toLowerCase().includes("previous interpretation") ||
-    !compareState.revisedText.includes("Would affect") ||
-    !compareState.revisedText.includes("matching emails") ||
-    clearState.draftNote !== "" ||
-    clearState.previousVisible ||
-    clearState.previewVisible ||
+    !previewState.previewText.toLowerCase().includes("proposed rule") ||
+    !previewState.looksRightVisible ||
+    !previewState.editVisible ||
+    !scopeState.scopeVisible ||
+    !scopeState.scopeText.includes("Choose how broadly to apply this rule") ||
+    !scopeState.scopeText.includes("Fix + future") ||
+    !scopeState.scopeText.includes("Fix + inbox") ||
+    !scopeState.applyButtons.includes("Fix email") ||
+    !scopeState.applyButtons.includes("Fix + future") ||
+    !scopeState.applyButtons.includes("Fix + inbox") ||
     !failedApplyState.errorText.includes("Nothing was stored or changed") ||
     !failedApplyState.previewStillVisible ||
     !failedApplyState.recoveryActions.includes("Check again") ||
     !failedApplyState.recoveryActions.includes("Try fix again") ||
     failedApplyState.panelOverflow > 1 ||
-    !(["future-only", "save-future-rule"].includes(applyMode)
+    !(applyMode === "future-only"
       ? afterApply.successText.includes("future rule")
       : afterApply.successText.includes("rewrote")) ||
     (applyMode === "apply-included" && (

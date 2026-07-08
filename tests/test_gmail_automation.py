@@ -212,7 +212,7 @@ class GmailAutomationTests(unittest.TestCase):
             )
             self.assertEqual(
                 [call[0] for call in gmail_client.calls],
-                ["list_messages", "get_message", "get_or_create_label", "apply_labels"],
+                ["list_messages", "get_message", "get_or_create_label", "replace_threadwise_labels"],
             )
             saved_report = json.loads(
                 (storage_dir / "reports" / "founder-test-batch-2_daily_report.json").read_text()
