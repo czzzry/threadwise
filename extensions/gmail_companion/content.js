@@ -24,6 +24,9 @@
   let teachPreview = null;
   let previousTeachPreview = null;
   let teachResult = null;
+  let teachFlowState = "teaching";
+  let inboxApplyConfirmOpen = false;
+  let teachOutcome = null;
   let unsubscribeResult = "";
   let feedbackOpen = false;
   let feedbackDraft = "";
@@ -195,6 +198,17 @@
   }
 
   function selectedContext() {
+    if (!gmailRouteHasOpenMessage()) {
+      return {
+        provider: "gmail",
+        message_id: "",
+        thread_id: "",
+        subject: "",
+        sender: "",
+        page_url: window.location.href,
+        selected_at: new Date().toISOString(),
+      };
+    }
     const subject = firstText(["h2[data-thread-perm-id]", "h2.hP", "h2[role='heading']"]);
     const messageNode = subject ? selectedMessageNode() : null;
     const senderNode = selectedSenderNode(messageNode);
@@ -213,6 +227,20 @@
       page_url: window.location.href,
       selected_at: new Date().toISOString(),
     };
+  }
+
+  function gmailRouteHasOpenMessage() {
+    const hash = window.location.hash || "";
+    if (!hash || hash === "#inbox") {
+      return false;
+    }
+    const route = hash.replace(/^#/, "");
+    const parts = route.split("/").filter(Boolean);
+    if (parts.length < 2) {
+      return false;
+    }
+    const lastPart = decodeURIComponent(parts[parts.length - 1] || "");
+    return Boolean(lastPart && /^(FM|msg|thread|[a-f0-9]{8,})/i.test(lastPart));
   }
 
   function selectedMessageNode() {
@@ -269,6 +297,9 @@
     teachPreview = null;
     previousTeachPreview = null;
     teachResult = null;
+    teachFlowState = "teaching";
+    inboxApplyConfirmOpen = false;
+    teachOutcome = null;
     unsubscribeResult = "";
     affectedReviewOpen = false;
     if (options.clearDraft !== false) {
@@ -378,6 +409,9 @@
   }
 
   function stabilizedLiveContext(nextContext) {
+    if (!gmailRouteHasOpenMessage()) {
+      return nextContext || {};
+    }
     const previous = lastLiveContext || {};
     if (!isMeaningfulContext(nextContext)) {
       return previous;
@@ -797,12 +831,21 @@
             }>${escapeHtml(option.name)}</option>`,
         )
         .join("");
-      const resultHtml = teachResult ? renderTeachResultHtml(teachResult) : "";
-      const previewHtml = teachPreview
-        ? `${resultHtml}${renderPreviousTeachPreviewHtml(previousTeachPreview)}${renderTeachPreviewHtml(teachPreview)}`
-        : teachResult
-          ? resultHtml
-          : renderPreviousTeachPreviewHtml(previousTeachPreview);
+      let teachPanelHtml = "";
+      if (teachFlowState === "result" && teachResult && !String(teachResult.kind || "").endsWith("-error")) {
+        teachPanelHtml = renderTeachReceiptHtml(teachResult.message || "", teachOutcome);
+      } else if (teachPreview && (teachFlowState === "scope-confirmation" || teachFlowState === "applying")) {
+        teachPanelHtml = `${renderPreviousTeachPreviewHtml(previousTeachPreview)}${renderTeachScopeHtml(teachPreview)}`;
+      } else if (teachPreview && teachFlowState === "rule-proposed") {
+        teachPanelHtml = `${renderPreviousTeachPreviewHtml(previousTeachPreview)}${renderTeachProposalHtml(teachPreview)}`;
+      } else {
+        const resultHtml = teachResult ? renderTeachResultHtml(teachResult) : "";
+        teachPanelHtml = teachPreview
+          ? `${resultHtml}${renderPreviousTeachPreviewHtml(previousTeachPreview)}${renderTeachPreviewHtml(teachPreview)}`
+          : teachResult
+            ? resultHtml
+            : renderPreviousTeachPreviewHtml(previousTeachPreview);
+      }
       const details = selected.details || {};
       const decisionSource = humanDecisionSource(details.review_action || "");
       const writeStatusLabel = humanWriteStatus(details.write_status || "");
@@ -919,11 +962,11 @@
             </select>
           </details>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <button type="button" data-ea-action="preview-teach" style="border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Preview</button>
+            <button type="button" data-ea-action="preview-teach" style="border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Propose rule</button>
             <button type="button" data-ea-action="clear-teach" style="border:0;background:transparent;color:#5d5342;border-radius:0;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;box-shadow:none;">Clear draft</button>
           </div>
         </div>
-        ${previewHtml}
+        ${teachPanelHtml}
       `);
     }
     renderMinimized();
@@ -1322,6 +1365,74 @@
     `;
   }
 
+  function renderTeachReceiptHtml(message, outcome) {
+    const rows = [
+      ["This email", outcome?.current_email_changed_locally ? "done" : "not changed"],
+      ["Gmail label", outcome?.current_email_written_to_gmail ? "done" : "not confirmed"],
+      ["Other stored emails", (outcome?.matching_existing_changed_locally || 0) > 0 ? `${outcome.matching_existing_changed_locally} changed` : "not changed"],
+      ["Future rule", outcome?.future_rule_saved ? "saved" : "not saved"],
+    ];
+    return `
+      <div data-ea-teach-state="result" style="box-sizing:border-box;width:100%;min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word;margin-top:12px;border-radius:14px;background:#d8f3ef;padding:12px;color:#0f766e;line-height:1.45;">
+        <div style="font-weight:700;">Rule applied</div>
+        <div style="margin-top:8px;">${escapeHtml(message || "Rule applied.")}</div>
+        <div style="margin-top:12px;border:2px solid #241812;border-radius:11px;background:#fffdf7;padding:10px 12px;color:#1f1a14;line-height:1.45;">
+          <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;font-weight:850;color:#0f766e;">What changed</div>
+          <div style="display:grid;gap:8px;margin-top:10px;">
+            ${rows.map(([label, value]) => `
+              <div style="border:1px solid #d7cfbf;border-radius:12px;background:#fffdfa;padding:9px 10px;">
+                <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">${escapeHtml(label)}</div>
+                <div style="margin-top:5px;font-weight:800;">${escapeHtml(value)}</div>
+              </div>
+            `).join("")}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderTeachProposalHtml(preview) {
+    return `
+      <div data-ea-teach-state="rule-proposed" style="box-sizing:border-box;width:100%;min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word;margin-top:12px;border:2px solid #241812;border-radius:14px;background:#fffdf7;padding:12px;color:#241812;line-height:1.45;">
+        <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">Proposed rule:</div>
+        <div style="margin-top:8px;font-weight:800;">${escapeHtml(preview.plain_english_rule || "No rule proposed.")}</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
+          <button type="button" data-ea-action="accept-teach-rule" style="border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Looks right</button>
+          <button type="button" data-ea-action="refine-teach" style="border:2px solid #241812;background:#fffdf7;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Edit</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderTeachScopeHtml(preview) {
+    const backfill = preview.inbox_backfill || {};
+    const pending = teachFlowState === "applying";
+    return `
+      <div data-ea-teach-state="${pending ? "applying" : "scope-confirmation"}" style="box-sizing:border-box;width:100%;min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word;margin-top:12px;border:2px solid #241812;border-radius:14px;background:#fffdf7;padding:12px;color:#241812;line-height:1.45;">
+        <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">Accepted rule</div>
+        <div style="margin-top:8px;font-weight:800;">${escapeHtml(preview.plain_english_rule || "No rule proposed.")}</div>
+        <div style="margin-top:8px;color:#6b6255;">Choose how broadly to apply this rule.</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
+          <button type="button" data-ea-apply="current-only" ${pending ? "disabled" : ""} style="border:2px solid #241812;background:${pending ? "#c7d8cc" : "#2eb67d"};color:#241812;border-radius:11px;padding:9px 12px;cursor:${pending ? "wait" : "pointer"};font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Fix email</button>
+          <button type="button" data-ea-apply="future-only" ${pending ? "disabled" : ""} style="border:2px solid #241812;background:${pending ? "#c7d8cc" : "#ebe4d7"};color:#241812;border-radius:11px;padding:9px 12px;cursor:${pending ? "wait" : "pointer"};font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Fix + future</button>
+          <button type="button" data-ea-apply="apply-included" ${pending ? "disabled" : ""} style="border:2px solid #241812;background:${pending ? "#c7d8cc" : "#3d6df2"};color:#fff;border-radius:11px;padding:9px 12px;cursor:${pending ? "wait" : "pointer"};font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Fix + inbox</button>
+        </div>
+        <div style="margin-top:8px;color:#6b6255;">Fix email applies only to this email. Fix + future also saves the rule. Fix + inbox also applies it to matching inbox emails.</div>
+        ${backfill.available ? `<div style="margin-top:8px;color:#6b6255;">Will update about ${escapeHtml(String(backfill.estimated_count || 0))} matching inbox emails.</div>` : ""}
+        ${inboxApplyConfirmOpen ? `
+          <div style="margin-top:12px;border-radius:14px;background:#fff4dd;padding:12px;color:#8a4b00;line-height:1.45;">
+            <div style="font-weight:800;">Apply to inbox?</div>
+            <div style="margin-top:8px;">Will update about ${escapeHtml(String(backfill.estimated_count || 0))} matching inbox emails.</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
+              <button type="button" data-ea-action="confirm-inbox-apply" style="border:2px solid #241812;background:#3d6df2;color:#fff;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Apply to inbox</button>
+              <button type="button" data-ea-action="cancel-inbox-apply" style="border:0;background:transparent;color:#5d5342;border-radius:0;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;box-shadow:none;">Cancel</button>
+            </div>
+          </div>
+        ` : ""}
+      </div>
+    `;
+  }
+
   function renderTeachPreviewHtml(preview) {
     const impact = preview.impact || {};
     const matchingCount = impact.matching_existing_count || 0;
@@ -1628,9 +1739,22 @@
       teachPreview = null;
       previousTeachPreview = null;
       teachResult = null;
+      teachFlowState = "teaching";
+      inboxApplyConfirmOpen = false;
+      teachOutcome = null;
       unsubscribeResult = "";
       affectedReviewOpen = false;
       teachDraft = { targetLabel: "", note: "" };
+      if (lastSidebarState) {
+        renderState(lastSidebarState);
+      }
+      return;
+    }
+    const acceptTeachRuleButton = event.target.closest("[data-ea-action='accept-teach-rule']");
+    if (acceptTeachRuleButton) {
+      event.preventDefault();
+      teachFlowState = "scope-confirmation";
+      inboxApplyConfirmOpen = false;
       if (lastSidebarState) {
         renderState(lastSidebarState);
       }
@@ -1642,7 +1766,30 @@
       previousTeachPreview = teachPreview;
       teachPreview = null;
       teachResult = null;
+      teachFlowState = "refining";
+      inboxApplyConfirmOpen = false;
+      teachOutcome = null;
       affectedReviewOpen = false;
+      if (previousTeachPreview && previousTeachPreview.plain_english_rule) {
+        teachDraft = {
+          ...teachDraft,
+          note: previousTeachPreview.plain_english_rule,
+        };
+      }
+      if (lastSidebarState) {
+        renderState(lastSidebarState);
+      }
+      return;
+    }
+    const confirmInboxApplyButton = event.target.closest("[data-ea-action='confirm-inbox-apply']");
+    if (confirmInboxApplyButton) {
+      event.preventDefault();
+      return applyTeach("apply-included");
+    }
+    const cancelInboxApplyButton = event.target.closest("[data-ea-action='cancel-inbox-apply']");
+    if (cancelInboxApplyButton) {
+      event.preventDefault();
+      inboxApplyConfirmOpen = false;
       if (lastSidebarState) {
         renderState(lastSidebarState);
       }
@@ -1651,7 +1798,19 @@
     const applyButton = event.target.closest("[data-ea-apply]");
     if (applyButton) {
       event.preventDefault();
-      return applyTeach(applyButton.getAttribute("data-ea-apply"));
+      const mode = applyButton.getAttribute("data-ea-apply");
+      if (mode === "apply-included" && teachPreview?.inbox_backfill?.requires_confirmation && !inboxApplyConfirmOpen) {
+        inboxApplyConfirmOpen = true;
+        if (lastSidebarState) {
+          renderState(lastSidebarState);
+        }
+        return;
+      }
+      teachFlowState = "applying";
+      if (lastSidebarState) {
+        renderState(lastSidebarState);
+      }
+      return applyTeach(mode);
     }
     const detailsButton = event.target.closest("[data-ea-action='toggle-details']");
     if (detailsButton) {
@@ -1745,6 +1904,9 @@
       } else {
         teachResult = null;
         teachPreview = response.payload;
+        teachFlowState = "rule-proposed";
+        inboxApplyConfirmOpen = false;
+        teachOutcome = null;
         affectedReviewOpen = false;
         unsubscribeResult = "";
       }
@@ -1778,6 +1940,7 @@
       }
       if (!response || !response.ok) {
         teachResult = teachErrorResult("apply", (response && (response.payload?.error || response.error)) || "Could not apply the lesson.");
+        teachFlowState = "scope-confirmation";
         renderState(lastSidebarState);
         return;
       }
@@ -1789,9 +1952,11 @@
         title: "Lesson applied",
         message: payload.acknowledgment || "Lesson applied.",
       };
+      teachFlowState = "result";
+      teachOutcome = payload.outcome || null;
+      inboxApplyConfirmOpen = false;
       affectedReviewOpen = false;
       unsubscribeResult = "";
-      teachDraft = { targetLabel: "", note: "" };
       renderState(payload.sidebar_state || lastSidebarState);
     });
   }
