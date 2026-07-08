@@ -111,6 +111,32 @@ class LiveGmailClient:
 
         return message_ids[:max_results]
 
+    def search_message_ids(self, query: str, max_results: int) -> list[str]:
+        message_ids: list[str] = []
+        page_token: str | None = None
+
+        while len(message_ids) < max_results:
+            remaining = max_results - len(message_ids)
+            params = {
+                "q": query,
+                "maxResults": min(remaining, 500),
+            }
+            if page_token is not None:
+                params["pageToken"] = page_token
+
+            response = self._transport(
+                "GET",
+                "https://gmail.googleapis.com/gmail/v1/users/me/messages",
+                params=params,
+                access_token=self._access_token,
+            )
+            message_ids.extend(message["id"] for message in response.get("messages", []))
+            page_token = response.get("nextPageToken")
+            if not page_token:
+                break
+
+        return message_ids[:max_results]
+
     def get_message(self, message_id: str) -> dict:
         return self._transport(
             "GET",

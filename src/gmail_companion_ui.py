@@ -70,6 +70,8 @@ HEALTH_STATUS_SERVICE_NAME = "Threadwise Gmail Companion"
 HARNESS_STATE_CACHE_SECONDS = 120.0
 HEALTH_STATUS_CACHE_SECONDS = 5.0
 COMPANION_DATA_CACHE_SECONDS = 120.0
+INBOX_BACKFILL_CONFIRM_THRESHOLD = 200
+INBOX_BACKFILL_ESTIMATE_CAP = 250
 
 
 def infer_gmail_account_id(storage_dir: Path) -> str:
@@ -569,13 +571,15 @@ class GmailCompanionApp:
         target_label = payload["target_label"]
         note = (payload.get("note") or "").strip()
         scope = payload.get("scope") or "sender"
-        return build_sidebar_teach_preview(
+        preview = build_sidebar_teach_preview(
             self._storage_dir,
             selected_context=selected_context,
             target_label=target_label,
             note=note,
             scope=scope,
         )
+        preview["inbox_backfill"] = self._build_inbox_backfill_preview(preview)
+        return preview
 
     def teach_apply(self, payload: dict) -> dict:
         selected_context = payload.get("selected_context") or {}
@@ -596,14 +600,30 @@ class GmailCompanionApp:
             teaching_result["current"]["message_id"],
             teaching_result["mode"],
             teaching_result["preview_matches"],
+            semantic_rule={
+                **(
+                    build_sidebar_teach_preview(
+                        self._storage_dir,
+                        selected_context=selected_context,
+                        target_label=target_label,
+                        note=note,
+                        scope=scope,
+                    ).get("semantic_rule")
+                    or {}
+                ),
+                "target_label": target_label,
+            },
+            current_subject=teaching_result["current"].get("subject") or "",
+            current_sender=teaching_result["current"].get("sender") or "",
         )
         refreshed = self.sidebar_state(selected_context)
         return {
-            "acknowledgment": teaching_result["acknowledgment"],
+            "acknowledgment": self._teach_apply_acknowledgment(teaching_result, write_through_summary),
             "mode": teaching_result["mode"],
             "matched_existing_count": teaching_result["matched_existing_count"],
             "proposal": teaching_result["proposal"],
             "gmail_write_through": write_through_summary,
+            "outcome": self._teach_apply_outcome(teaching_result, write_through_summary),
             "sidebar_state": refreshed,
         }
 
@@ -771,25 +791,52 @@ class GmailCompanionApp:
         selected_message_id: str,
         mode: str,
         preview_matches: list[dict],
+        *,
+        semantic_rule: dict | None = None,
+        current_subject: str = "",
+        current_sender: str = "",
     ) -> dict:
         if mode == "save-future-rule":
             return {
                 "messages_written": 0,
                 "inbox_removed": 0,
+                "label_write_failed": 0,
+                "label_write_skipped": 0,
+                "inbox_remove_failed": 0,
+                "inbox_remove_skipped": 0,
+                "inbox_remove_ineligible": 0,
                 "mode": "no-gmail-write-future-rule-only",
             }
         if not self._gmail_write_through_enabled:
             return {
                 "messages_written": 0,
                 "inbox_removed": 0,
+                "label_write_failed": 0,
+                "label_write_skipped": 0,
+                "inbox_remove_failed": 0,
+                "inbox_remove_skipped": 0,
+                "inbox_remove_ineligible": 0,
                 "mode": "disabled",
             }
-        gmail_client = self._gmail_client_factory(
-            account_id,
-            self._credentials_dir,
-            self._client_secret_path,
-            GMAIL_MODIFY_SCOPE,
-        )
+        try:
+            gmail_client = self._gmail_client_factory(
+                account_id,
+                self._credentials_dir,
+                self._client_secret_path,
+                GMAIL_MODIFY_SCOPE,
+            )
+        except Exception as exc:
+            return {
+                "messages_written": 0,
+                "inbox_removed": 0,
+                "label_write_failed": 0,
+                "label_write_skipped": 0,
+                "inbox_remove_failed": 0,
+                "inbox_remove_skipped": 0,
+                "inbox_remove_ineligible": 0,
+                "mode": "gmail-write-failed",
+                "error": str(exc),
+            }
         writer = MockGmailLabelWriter(
             gmail_client=gmail_client,
             storage_dir=self._storage_dir,
@@ -802,16 +849,259 @@ class GmailCompanionApp:
             preview_matches=preview_matches,
         )
         write_applied = 0
+        write_failed = 0
+        write_skipped = 0
         inbox_removed = 0
+        inbox_failed = 0
+        inbox_skipped = 0
+        inbox_ineligible = 0
         for batch_id, items in batch_items.items():
             write_summary = writer.write_reviewed_labels(batch_id, items)
             inbox_summary = writer.remove_inbox_for_low_value_messages(batch_id, items)
             write_applied += write_summary["applied_count"]
+            write_failed += write_summary["failed_count"]
+            write_skipped += write_summary["skipped_count"]
             inbox_removed += inbox_summary["applied_count"]
+            inbox_failed += inbox_summary["failed_count"]
+            inbox_skipped += inbox_summary["skipped_count"]
+            inbox_ineligible += inbox_summary["ineligible_count"]
+        remote_search_count = 0
+        remote_applied = 0
+        remote_failed = 0
+        remote_skipped = 0
+        if mode == "apply-included":
+            local_ids = {
+                item.get("message_id")
+                for items in batch_items.values()
+                for item in items
+                if item.get("message_id")
+            }
+            remote_summary = self._apply_rule_to_matching_inbox_messages(
+                gmail_client,
+                semantic_rule=semantic_rule or {},
+                current_subject=current_subject,
+                current_sender=current_sender,
+                excluded_message_ids=local_ids,
+            )
+            remote_search_count = remote_summary["matched_count"]
+            remote_applied = remote_summary["applied_count"]
+            remote_failed = remote_summary["failed_count"]
+            remote_skipped = remote_summary["skipped_count"]
+            write_applied += remote_applied
+            write_failed += remote_failed
+            write_skipped += remote_skipped
         return {
             "messages_written": write_applied,
             "inbox_removed": inbox_removed,
+            "label_write_failed": write_failed,
+            "label_write_skipped": write_skipped,
+            "inbox_remove_failed": inbox_failed,
+            "inbox_remove_skipped": inbox_skipped,
+            "inbox_remove_ineligible": inbox_ineligible,
+            "remote_match_count": remote_search_count,
+            "remote_applied_count": remote_applied,
+            "remote_failed_count": remote_failed,
+            "remote_skipped_count": remote_skipped,
             "mode": "applied",
+        }
+
+    def _build_inbox_backfill_preview(self, preview: dict) -> dict:
+        if not self._gmail_write_through_enabled:
+            return {
+                "available": False,
+                "estimated_count": 0,
+                "requires_confirmation": False,
+                "query": "",
+            }
+        account_id = preview.get("selected_account_id") or ""
+        query = self._build_gmail_backfill_query(
+            semantic_rule=preview.get("semantic_rule") or {},
+            current_subject=preview.get("selected_subject") or "",
+            current_sender=preview.get("selected_sender") or "",
+        )
+        if not account_id or not query:
+            return {
+                "available": False,
+                "estimated_count": 0,
+                "requires_confirmation": False,
+                "query": query,
+            }
+        try:
+            gmail_client = self._gmail_client_factory(
+                account_id,
+                self._credentials_dir,
+                self._client_secret_path,
+                GMAIL_MODIFY_SCOPE,
+            )
+            matches = gmail_client.search_message_ids(query, INBOX_BACKFILL_ESTIMATE_CAP + 1)
+        except Exception:
+            return {
+                "available": False,
+                "estimated_count": 0,
+                "requires_confirmation": False,
+                "query": query,
+            }
+        estimated_count = len(matches)
+        capped = estimated_count > INBOX_BACKFILL_ESTIMATE_CAP
+        if capped:
+            estimated_count = INBOX_BACKFILL_ESTIMATE_CAP
+        return {
+            "available": True,
+            "estimated_count": estimated_count,
+            "is_capped": capped,
+            "requires_confirmation": estimated_count > INBOX_BACKFILL_CONFIRM_THRESHOLD or capped,
+            "query": query,
+        }
+
+    def _apply_rule_to_matching_inbox_messages(
+        self,
+        gmail_client,
+        *,
+        semantic_rule: dict,
+        current_subject: str,
+        current_sender: str,
+        excluded_message_ids: set[str],
+    ) -> dict:
+        query = self._build_gmail_backfill_query(
+            semantic_rule=semantic_rule,
+            current_subject=current_subject,
+            current_sender=current_sender,
+        )
+        if not query:
+            return {"matched_count": 0, "applied_count": 0, "failed_count": 0, "skipped_count": 0}
+        message_ids = gmail_client.search_message_ids(query, 1000)
+        filtered_ids = [message_id for message_id in message_ids if message_id and message_id not in excluded_message_ids]
+        label_name = gmail_label_name((semantic_rule or {}).get("target_label") or "")
+        if not label_name:
+            return {"matched_count": len(filtered_ids), "applied_count": 0, "failed_count": 0, "skipped_count": len(filtered_ids)}
+        label_id = gmail_client.get_or_create_label(label_name)
+        applied_count = 0
+        failed_count = 0
+        for message_id in filtered_ids:
+            try:
+                gmail_client.apply_labels(message_id, [label_id])
+                if self._is_inbox_removal_label_eligible((semantic_rule or {}).get("target_label") or ""):
+                    gmail_client.remove_inbox_label(message_id)
+                applied_count += 1
+            except Exception:
+                failed_count += 1
+        return {
+            "matched_count": len(filtered_ids),
+            "applied_count": applied_count,
+            "failed_count": failed_count,
+            "skipped_count": 0,
+        }
+
+    def _build_gmail_backfill_query(self, *, semantic_rule: dict, current_subject: str, current_sender: str) -> str:
+        sender = (semantic_rule or {}).get("sender") or current_sender or ""
+        semantic_pattern = (semantic_rule or {}).get("semantic_pattern") or ""
+        rule_type = (semantic_rule or {}).get("rule_type") or ""
+        subject_keywords = self._query_keywords_for_semantic_pattern(semantic_pattern, current_subject)
+        parts: list[str] = []
+        if sender and "@" in sender:
+            parts.append(f"from:{sender}")
+        if subject_keywords:
+            if len(subject_keywords) == 1:
+                parts.append(subject_keywords[0])
+            else:
+                parts.append("{" + " ".join(subject_keywords) + "}")
+        elif rule_type == "sender":
+            return " ".join(parts)
+        return " ".join(part for part in parts if part).strip()
+
+    def _query_keywords_for_semantic_pattern(self, semantic_pattern: str, current_subject: str) -> list[str]:
+        pattern = str(semantic_pattern or "").lower()
+        mappings = {
+            "job, recruiter, or interview emails": ["job", "jobs", "recruiter", "interview", "application"],
+            "billing, receipt, or payment notices": ["receipt", "invoice", "payment", "billing"],
+            "travel and booking emails": ["travel", "flight", "hotel", "booking"],
+            "newsletter or marketing emails": ["newsletter", "promo", "sale", "digest"],
+            "account, security, or statement notices": ["security", "account", "statement", "login"],
+            "financial account notices": ["account", "statement", "payment"],
+            "low-value or suspicious emails": ["alert", "promo", "notice"],
+        }
+        if pattern in mappings:
+            return mappings[pattern]
+        words = []
+        for raw in (current_subject or "").lower().split():
+            clean = "".join(ch for ch in raw if ch.isalnum())
+            if len(clean) < 4:
+                continue
+            if clean in {"this", "that", "from", "with", "more", "your", "have"}:
+                continue
+            words.append(clean)
+            if len(words) == 3:
+                break
+        return words
+
+    def _is_inbox_removal_label_eligible(self, target_label: str) -> bool:
+        return target_label in {"promotions", "spam-low-value"}
+
+    def _teach_apply_acknowledgment(self, teaching_result: dict, write_through_summary: dict) -> str:
+        base = teaching_result["acknowledgment"]
+        mode = write_through_summary.get("mode")
+        local_changed = int(bool(teaching_result.get("current_changed"))) + int(teaching_result.get("matched_existing_count") or 0)
+        if mode == "no-gmail-write-future-rule-only":
+            return f"{base} Gmail was not changed because this action only saved future behavior."
+        if mode == "disabled":
+            return f"{base} Stored locally for {local_changed} email{'' if local_changed == 1 else 's'}. Gmail write-through is disabled here."
+        if mode == "gmail-write-failed":
+            error = write_through_summary.get("error") or "unknown Gmail write error"
+            return (
+                f"{base} Stored locally for {local_changed} email{'' if local_changed == 1 else 's'}, "
+                f"but Gmail was not updated: {error}. Retry Gmail write-through after the connection is healthy."
+            )
+        messages_written = int(write_through_summary.get("messages_written") or 0)
+        label_failed = int(write_through_summary.get("label_write_failed") or 0)
+        label_skipped = int(write_through_summary.get("label_write_skipped") or 0)
+        inbox_removed = int(write_through_summary.get("inbox_removed") or 0)
+        inbox_failed = int(write_through_summary.get("inbox_remove_failed") or 0)
+        if label_failed or inbox_failed:
+            return (
+                f"{base} Stored locally for {local_changed} email{'' if local_changed == 1 else 's'}. "
+                f"Gmail label writes: {messages_written} applied, {label_failed} failed"
+                f"{f', {label_skipped} skipped' if label_skipped else ''}. "
+                f"Inbox removal: {inbox_removed} applied, {inbox_failed} failed. Retry failed Gmail writes when ready."
+            )
+        return (
+            f"{base} Gmail label writes: {messages_written} applied"
+            f"{f', {label_skipped} skipped' if label_skipped else ''}. "
+            f"Inbox removal: {inbox_removed} applied."
+        )
+
+    def _teach_apply_outcome(self, teaching_result: dict, write_through_summary: dict) -> dict:
+        mode = teaching_result.get("mode") or ""
+        gmail_mode = write_through_summary.get("mode") or ""
+        label_failed = int(write_through_summary.get("label_write_failed") or 0)
+        messages_written = int(write_through_summary.get("messages_written") or 0)
+        current_changed = bool(teaching_result.get("current_changed"))
+        future_rule_saved = bool(teaching_result.get("future_rule_saved"))
+        current_written = current_changed and gmail_mode == "applied" and messages_written > 0 and label_failed == 0
+        scope = {
+            "current-only": "current-email",
+            "matching-existing": "matching-existing",
+            "save-future-rule": "future-rule",
+            "future-only": "current-email-and-future-rule",
+            "apply-included": "included-existing",
+        }.get(mode, mode or "unknown")
+        changed_count = int(current_changed) + int(teaching_result.get("matched_existing_count") or 0)
+        if future_rule_saved and not changed_count:
+            state = "future-rule-saved"
+        elif changed_count and label_failed:
+            state = "partially-changed"
+        elif changed_count:
+            state = "changed"
+        else:
+            state = "unchanged"
+        return {
+            "state": state,
+            "scope": scope,
+            "current_email_changed_locally": current_changed,
+            "current_email_written_to_gmail": current_written,
+            "matching_existing_changed_locally": int(teaching_result.get("matched_existing_count") or 0),
+            "future_rule_saved": future_rule_saved,
+            "gmail_write_mode": gmail_mode,
+            "gmail_label_write_failed": label_failed,
         }
 
     def render_simulator(self) -> str:

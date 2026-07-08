@@ -16,9 +16,14 @@ class MockGmailLabelClient:
         self,
         existing_labels: dict[str, str] | None = None,
         failing_message_ids: set[str] | None = None,
+        search_results_by_query: dict[str, list[str]] | None = None,
     ) -> None:
         self.labels = dict(existing_labels or {})
         self._failing_message_ids = set(failing_message_ids or set())
+        self._search_results_by_query = {
+            str(query): list(results)
+            for query, results in (search_results_by_query or {}).items()
+        }
         self.calls: list[tuple] = []
 
     def get_or_create_label(self, label_name: str) -> str:
@@ -36,6 +41,10 @@ class MockGmailLabelClient:
         self.calls.append(("remove_inbox_label", message_id))
         if message_id in self._failing_message_ids:
             raise RuntimeError(f"Failed to remove INBOX from {message_id}")
+
+    def search_message_ids(self, query: str, max_results: int) -> list[str]:
+        self.calls.append(("search_message_ids", query, max_results))
+        return list(self._search_results_by_query.get(query, []))[:max_results]
 
     def clear_failure(self, message_id: str) -> None:
         self._failing_message_ids.discard(message_id)

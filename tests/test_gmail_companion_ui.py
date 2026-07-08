@@ -1843,6 +1843,19 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertEqual(gmail_client.calls, [])
             self.assertEqual(result["gmail_write_through"]["messages_written"], 0)
             self.assertEqual(result["gmail_write_through"]["mode"], "no-gmail-write-future-rule-only")
+            self.assertEqual(
+                result["outcome"],
+                {
+                    "state": "future-rule-saved",
+                    "scope": "future-rule",
+                    "current_email_changed_locally": False,
+                    "current_email_written_to_gmail": False,
+                    "matching_existing_changed_locally": 0,
+                    "future_rule_saved": True,
+                    "gmail_write_mode": "no-gmail-write-future-rule-only",
+                    "gmail_label_write_failed": 0,
+                },
+            )
 
     def test_teach_apply_current_only_writes_current_message_to_gmail(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1887,7 +1900,129 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertIn(("apply_labels", "gmail-live-001", [gmail_client.labels["EA/ReplyNeeded"]]), gmail_client.calls)
             self.assertEqual(result["gmail_write_through"]["messages_written"], 1)
             self.assertEqual(result["gmail_write_through"]["inbox_removed"], 0)
+            self.assertEqual(
+                result["outcome"],
+                {
+                    "state": "changed",
+                    "scope": "current-email",
+                    "current_email_changed_locally": True,
+                    "current_email_written_to_gmail": True,
+                    "matching_existing_changed_locally": 0,
+                    "future_rule_saved": False,
+                    "gmail_write_mode": "applied",
+                    "gmail_label_write_failed": 0,
+                },
+            )
             self.assertIn("relabeled only this email", result["acknowledgment"])
+
+    def test_teach_preview_reports_inbox_backfill_estimate(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            gmail_client = MockGmailLabelClient(
+                search_results_by_query={
+                    "from:notifications@ashbyhq.com {job jobs recruiter interview application}": [
+                        f"remote-{index}" for index in range(205)
+                    ]
+                }
+            )
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": "Ashby <notifications@ashbyhq.com>",
+                        "subject": "Interview update",
+                        "snippet": "Status changed",
+                        "interpretation": "Informational message with no confident category.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                ],
+            )
+
+            preview = GmailCompanionApp(
+                storage_dir,
+                gmail_client_factory=lambda account_id, credentials_dir, client_secret_path, required_scope: gmail_client,
+            ).teach_preview(
+                {
+                    "selected_context": {
+                        "provider": "gmail",
+                        "message_id": "gmail-live-001",
+                        "subject": "Interview update",
+                        "sender": "notifications@ashbyhq.com",
+                    },
+                    "target_label": "job-related",
+                    "note": "Ashby interview workflow messages should be job-related and kept visible.",
+                }
+            )
+
+            self.assertEqual(
+                preview["inbox_backfill"],
+                {
+                    "available": True,
+                    "estimated_count": 205,
+                    "is_capped": False,
+                    "requires_confirmation": True,
+                    "query": "from:notifications@ashbyhq.com {job jobs recruiter interview application}",
+                },
+            )
+
+    def test_teach_apply_apply_included_backfills_matching_inbox_messages(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            gmail_client = MockGmailLabelClient(
+                search_results_by_query={
+                    "from:notifications@ashbyhq.com {job jobs recruiter interview application}": [
+                        "gmail-live-001",
+                        "gmail-remote-003",
+                    ]
+                }
+            )
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": "Ashby <notifications@ashbyhq.com>",
+                        "subject": "Interview update",
+                        "snippet": "Status changed",
+                        "interpretation": "Informational message with no confident category.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                ],
+            )
+
+            result = GmailCompanionApp(
+                storage_dir,
+                gmail_client_factory=lambda account_id, credentials_dir, client_secret_path, required_scope: gmail_client,
+            ).teach_apply(
+                {
+                    "selected_context": {
+                        "provider": "gmail",
+                        "message_id": "gmail-live-001",
+                        "subject": "Interview update",
+                        "sender": "notifications@ashbyhq.com",
+                    },
+                    "target_label": "job-related",
+                    "note": "Ashby interview workflow messages should be job-related and kept visible.",
+                    "mode": "apply-included",
+                }
+            )
+
+            self.assertIn(("search_message_ids", "from:notifications@ashbyhq.com {job jobs recruiter interview application}", 1000), gmail_client.calls)
+            self.assertIn(("apply_labels", "gmail-remote-003", [gmail_client.labels["EA/Work"]]), gmail_client.calls)
+            self.assertEqual(result["gmail_write_through"]["remote_match_count"], 1)
+            self.assertEqual(result["gmail_write_through"]["remote_applied_count"], 1)
+            self.assertEqual(result["gmail_write_through"]["messages_written"], 2)
 
     def test_teach_apply_can_disable_gmail_write_through_for_simulator(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -81,6 +81,9 @@ def build_sidebar_teach_preview(
         ),
         "selected_message_id": current["message_id"],
         "selected_batch_id": current["batch_id"],
+        "selected_account_id": current.get("account_id") or "",
+        "selected_subject": current.get("subject") or "",
+        "selected_sender": current.get("sender") or "",
         "selected_label_before": current_labels,
         "selected_label_after": [target_label],
         "current_label_name": current_label_name,
@@ -92,6 +95,7 @@ def build_sidebar_teach_preview(
         "rule_confidence_label": semantic_rule["rule_confidence_label"],
         "clarifying_question": semantic_rule["clarifying_question"],
         "structured_rule": structured_rule,
+        "semantic_rule": semantic_rule,
         "proposal": proposal.to_dict(),
         "impact": {
             "current_message_will_change": True,
