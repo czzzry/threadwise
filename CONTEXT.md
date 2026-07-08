@@ -1,7 +1,7 @@
 # CONTEXT.md
 
 Status: Current repo context
-Current as of: 2026-07-01
+Current as of: 2026-07-07
 
 This file exists to keep agents from re-litigating old project stages or mistaking historical docs for current instructions.
 
@@ -98,13 +98,23 @@ MVP+3 Slice B implementation progress is `issues 4/4 => MVP+3 Slice B = done`. G
 - `#39` Remove technical sidebar footer
 - `#40` Friendly companion error state
 
-The next product step should be a fresh alignment cycle or a new bounded slice chosen from founder testing feedback.
+The current product step is the July 7 Correct / Teach state-machine simplification cycle, tracked in GitHub `#58` and `docs/prd-correct-teach-state-machine-simplification-2026-07-07.md`.
+
+The July 2 Gmail companion UX audit cycle from founder testing feedback is complete, tracked in GitHub `#51` through `#57` and summarized in `docs/handoff/2026-07-02-afk-gmail-companion-ux-progress.md`.
 
 Live testing tranche follow-up:
 
 - `#41` Live testing tranche: sidebar context and teach fixes - complete
-- `#42` Redesign Correct / Teach UX from live testing - implementation complete across child issues `#44`-`#50`; pending founder review/closure
-- `#43` Review unsubscribe link behavior for provider error pages - open HITL follow-up
+- `#42` Redesign Correct / Teach UX from live testing - complete
+- `#43` Review unsubscribe link behavior for provider error pages - complete
+- `#51` UX flow audit for Gmail companion daily-use loops - complete / closed
+- `#52` Tighten shared text-first Correct / Teach - complete / closed
+- `#53` Build unresolved review mode with queue compression - complete / closed
+- `#54` Build Threadwise Home and two-mode companion shell - complete / closed
+- `#55` Ensure companion response panels never overflow the sidebar - complete / closed
+- `#56` Add immediate loading and exact outcome states for companion actions - complete / closed
+- `#57` Keep dashboard email launches in the active Gmail companion context - complete / closed
+- `#58` PRD: Correct / Teach state-machine simplification - current planning focus
 
 ## Trust Order When Docs Differ
 
@@ -114,10 +124,11 @@ Use this order:
 2. `AGENTS.md` for workflow and guardrails
 3. `CONTEXT.md` for current stage and read order
 4. `docs/v2-alignment.md` for current product direction
-5. `docs/prd.md` for the completed MVP+3 Slice B Gmail companion shell polish slice
-6. `docs/checkpoints/current-operating-model-2026-06-22.md` for what the repo currently proves
-7. `docs/v2-issue-map.md` for candidate next-slice themes only
-8. `docs/archive/`, `docs/handoff/`, and `docs/deep-research/` as historical context only
+5. `docs/prd-correct-teach-state-machine-simplification-2026-07-07.md` for the current Correct / Teach simplification slice
+6. `docs/prd.md` for the completed MVP+4 Gmail companion Home, modes, and unresolved review slice
+7. `docs/checkpoints/current-operating-model-2026-06-22.md` for what the repo currently proves
+8. `docs/v2-issue-map.md` for candidate next-slice themes only
+9. `docs/archive/`, `docs/handoff/`, and `docs/deep-research/` as historical context only
 
 ## Current Trust Boundaries
 

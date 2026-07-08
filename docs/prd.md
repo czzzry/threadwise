@@ -1,79 +1,110 @@
 # PRD
 
 Status: Completed bounded-slice PRD
-Current as of: 2026-07-01
-Builds on: `docs/archive/prd-mvp-plus-three-slice-a-interactive-teaching-loop-completed-2026-07-01.md`
-Release target: MVP+3 Slice B Gmail companion shell polish
-GitHub issue: `#36`
+Current as of: 2026-07-02
+Builds on: `docs/v2-alignment.md`, `docs/handoff/2026-07-02-gmail-companion-ux-feedback-triage.md`, and founder alignment from July 2 live testing
+Supersedes as current planning focus: `docs/archive/prd-mvp-plus-three-slice-b-gmail-companion-shell-polish-completed-2026-07-02.md`
+Release target: MVP+4 Gmail companion Home, modes, and unresolved review
+GitHub parent issue: `#51` (closed)
 
-This PRD describes completed MVP+3 Slice B for Threadwise: polish the Gmail companion shell after the interactive teaching loop landed.
+This PRD described the Threadwise Gmail companion slice after live testing showed that the product had working pieces but lacked a coherent daily-use flow. The `#51` through `#57` batch is now implemented and closed; see `docs/handoff/2026-07-02-afk-gmail-companion-ux-progress.md` for completion evidence.
 
 ## Problem Statement
 
-After MVP+3 Slice A, Threadwise became a more useful Gmail-side teaching companion, but several shell-level issues still made it feel rough during real use:
+Threadwise can label Gmail, show selected-email context, teach rules, route unsubscribe review, and show dashboard reports. The founder's latest testing showed the remaining problem is not more widgets. It is that the sidebar loads into stale or cluttered context, mixes several jobs at once, and does not provide a fast way to clear emails Threadwise could not label.
 
-- minimized mode still occupied too much visual space and showed text/status chrome
-- the brand/logo area could appear as an empty box if the image did not load
-- a technical implementation footer was visible in the product UI
-- disconnected/error states exposed raw plumbing more than a short useful recovery path
+The core problem is:
 
-The core problem was:
+> Can Threadwise become a simple mode-based Gmail companion: ambient when everything is fine, focused when correcting the current email, and fast when clearing unresolved mail?
 
-> Can Threadwise stay minimally present in Gmail when not needed, while still giving a clear recovery path when the companion is disconnected?
+## Target Model
 
-## Solution
+Threadwise has one simple status header and mode-based body content.
 
-Polish the Gmail companion shell without changing product scope or adding new email actions.
+### Status Header
 
-The completed slice:
+The header is omnipresent and color-coded:
 
-- makes minimized mode a compact logo-only reopen button
-- adds a text fallback if the brand icon image fails to load
-- removes the internal technical footer from the live extension UI
-- improves disconnected/error presentation with friendly copy, technical detail behind an expander, concrete remediation, and a `Check again` action
+- `Ready` / green: connected, recent enough, no blocking issue.
+- `Working` / yellow-blue: sync or user action is in progress.
+- `Needs check` / yellow: connected, but freshness or unresolved work needs attention.
+- `Disconnected` / red: local companion is unreachable.
+- `Error` / red: last action failed and needs recovery.
+
+Raw technical details stay hidden by default.
+
+### Modes
+
+Threadwise uses two widths only:
+
+- Compact panel: Home, current email, text-first teaching, status, and small contextual actions.
+- Review panel: dense row workflows such as unresolved review and affected-match review.
+
+The body should show only the current job. Dashboard lists, full "What changed today", technical details, and unrelated widgets should not stack in the sidebar.
 
 ## User Stories
 
-1. As the founder, I want minimized Threadwise to collapse into a very small logo-only control, so that it does not cover Gmail when I am not actively using it.
-2. As the founder, I want the Threadwise logo area to show a fallback mark if the image fails, so that the companion does not look broken.
-3. As the founder, I do not want internal harness/server implementation text in the Gmail sidebar, so that the product UI feels clean.
-4. As the founder, I want disconnected states to tell me what happened and what to try next, so that failures are recoverable without raw error noise.
-5. As the founder, I want a quick `Check again` action, so that I can retry after restarting or reconnecting the companion.
+1. As the founder, I want Threadwise to open to a clean Home state when no Gmail email is open, so that it never shows a stale old email by default.
+2. As the founder, I want Threadwise to automatically show the current-email view when Gmail clearly has an opened email, so that the sidebar follows normal Gmail browsing.
+3. As the founder, I want Threadwise to use a single simple status area, so that connection, freshness, and recovery state are understandable without technical clutter.
+4. As the founder, I want Home to be a launcher, not a dashboard, so that I can choose the job I want without reading unrelated details.
+5. As the founder, I want a dedicated `Review unresolved` mode, so that I can clear unlabelled, unsure, and conflicting emails quickly.
+6. As the founder, I want unresolved review rows to be dense and inbox-like, so that I can scan many emails without giant cards.
+7. As the founder, I want to inspect the full Gmail email while staying in unresolved review, so that I can make the right call without losing queue progress.
+8. As the founder, I want teaching one unresolved email to check for matching unresolved emails, so that a few rule decisions can shrink a large queue.
+9. As the founder, I want broad unresolved application to require confirmation, so that Threadwise never silently rewrites many emails.
+10. As the founder, I want applying a rule to show a compact result and then offer `Next unresolved`, so that the workflow is fast but still trustworthy.
+11. As the founder, I want Current email mode to be sparse, so that it shows only sender, subject, label/status, `Correct / Teach`, and small contextual actions.
+12. As the founder, I want label reasons hidden behind a small `?` or details affordance, so that explanations are available but not always visible.
+13. As the founder, I want Correct / Teach to replace the body with a focused teaching state, so that the sidebar does not become stacked and messy.
+14. As the founder, I want the text box to be the primary teaching interface, so that I can talk to Threadwise instead of using a manual label selector.
+15. As the founder, I want manual label selection to be optional and secondary, so that it never overrides my note unless I explicitly choose it.
+16. As the founder, I want dashboard and unsubscribe review to remain separate worlds, so that the sidebar stays clean.
+17. As the founder, I want the selected-email unsubscribe entry to be small and route to safe review, so that raw provider links do not feel like Threadwise failures.
+18. As the founder, I want all companion content to remain inside its panel width, so that responses and buttons never overflow the Gmail sidebar.
 
-## Implementation Decisions
+## Implementation Slices
 
-- Slice B keeps the current extension plus local companion delivery model.
-- Minimized mode hides content, footer, feedback capture, title, status, and minimize button.
-- The minimized logo remains clickable and reopens Threadwise.
-- The brand image keeps using the existing local companion asset endpoint.
-- A text fallback is shown if the image fails to load.
-- The internal "stored inbox snapshot / local harness" footer is removed from the extension UI.
-- Error states keep technical details available, but behind an expandable detail block.
-- The error state includes a `Check again` action that forces a fresh state request.
-- No new Gmail mutation, live Gmail fetch, delete, archive, send, reply, or unsubscribe behavior is introduced.
+1. `#54` Build Threadwise Home and two-mode companion shell.
+   - Type: AFK.
+   - Goal: clean load behavior, compact Home, status header, Current email mode, and removal of full sidebar "What changed today".
 
-## Testing Decisions
+2. `#53` Build unresolved review mode with queue compression.
+   - Type: AFK after `#54`.
+   - Goal: Review-panel queue for unlabelled, unsure, and conflicting emails; inspect in Gmail while pinned; apply confirmed lessons to matching unresolved emails.
 
-- Good tests protect the user-visible extension shell contract rather than internal CSS minutiae.
-- JavaScript syntax checks protect the content script.
-- Companion UI tests assert logo-only minimized mode markers, brand fallback markers, absence of the technical footer string, and the `Check again` recovery action.
-- Full test discovery remains the regression gate.
+3. `#52` Tighten shared text-first Correct / Teach.
+   - Type: AFK after `#54`, can overlap with `#53` after shell contracts are stable.
+   - Goal: shared teaching component for current-email and unresolved flows, hidden reasons, secondary manual label override, clearer action hierarchy.
+
+4. `#56` Add immediate loading and exact outcome states.
+   - Type: AFK.
+   - Goal: visible click registration, working state, duplicate-submit protection, exact result copy, and safe recovery.
+
+5. `#55` Enforce sidebar containment.
+   - Type: AFK.
+   - Goal: regression coverage that no companion response, button row, or panel exceeds compact or review widths.
+
+6. `#57` Keep dashboard launches in active Gmail context.
+   - Type: AFK after core mode model.
+   - Goal: dashboard email actions preserve continuity with the existing Gmail companion tab where feasible.
 
 ## Out of Scope
 
-- Full installer or menubar app.
-- Native Gmail DOM-perfect controls.
-- New delivery model exploration.
-- Dashboard visual redesign.
-- New classification, teaching, or Gmail mutation behavior.
+- Multi-label teaching semantics.
+- A separate standalone rule-management product surface.
+- Attention/important-but-labeled workflow as a top-level sidebar mode.
+- Full dashboard redesign.
+- New Gmail mutation types.
+- Delete, trash, send, reply, broad archive, or autonomous unsubscribe behavior.
+- Raw provider unsubscribe links from selected-email sidebar.
+- More than two panel widths.
 
-## Further Notes
+## Testing Decisions
 
-- MVP+3 Slice B implementation progress is `issues 4/4 => MVP+3 Slice B = done`.
-- GitHub parent issue `#36` and child issues `#37` through `#40` are closed.
-- Published MVP+3 Slice B issue briefs:
-  - `#37` Logo-only minimized Gmail companion - complete
-  - `#38` Brand icon fallback - complete
-  - `#39` Remove technical sidebar footer - complete
-  - `#40` Friendly companion error state - complete
-- Slice A is archived at `docs/archive/prd-mvp-plus-three-slice-a-interactive-teaching-loop-completed-2026-07-01.md`.
+- Unit tests should protect mode-selection behavior: Home for list/no-email, Current email for confident opened-email context, and no stale default email.
+- UI tests should prove Home is a launcher and does not render the full "What changed today" list.
+- Review-mode tests should prove dense unresolved rows, pinned review context, and explicit exit actions.
+- Teaching tests should prove text-first interpretation, optional manual label override, and separate current-email / matching-unresolved / future-rule actions.
+- Browser acceptance should include compact and review width overflow checks.
+- Failure-state tests should prove user copy says what changed, what did not change, and what to do next.
