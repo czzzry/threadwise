@@ -1315,6 +1315,8 @@ class GmailCompanionApp:
     let unsubscribeResult = "";
     let detailsExpanded = false;
     let affectedReviewOpen = false;
+    let gmailCheckPending = false;
+    let gmailCheckResult = null;
     let draftLabel = "";
     let draftNote = "";
     const unsyncedContext = {
@@ -1685,6 +1687,19 @@ class GmailCompanionApp:
       `;
     }
 
+    function renderGmailCheckResult() {
+      if (!gmailCheckResult) {
+        return "";
+      }
+      const isError = String(gmailCheckResult.kind || "").endsWith("-error");
+      return `
+        <div class="${isError ? "error-card" : "success-card"}">
+          <div style="font-weight:800;">${escapeHtml(gmailCheckResult.title || "Gmail sync")}</div>
+          <div style="margin-top:8px;">${escapeHtml(gmailCheckResult.message || "")}</div>
+        </div>
+      `;
+    }
+
     function renderTeachProposal(preview) {
       return `
         <div class="preview-card" data-teach-state="rule-proposed">
@@ -1753,6 +1768,8 @@ class GmailCompanionApp:
         affectedReviewOpen = false;
         syncAffectedReviewLayout();
         const queueItems = (((harnessState || {}).needs_attention_items) || []).slice(0, 4);
+        const syncButtonDisabled = gmailCheckPending ? "disabled" : "";
+        const syncButtonLabel = gmailCheckPending ? "Running Gmail sync..." : "Run Gmail sync now";
         selectedEmailNode.innerHTML = `
           <div class="empty">Threadwise has not synced this email yet.</div>
           <div class="error-card">This simulated fresh email lets you test the pre-sync state safely.</div>
@@ -1760,14 +1777,24 @@ class GmailCompanionApp:
             <div class="reason-label">${escapeHtml(stepCopy.title)}</div>
             <div class="reason">${escapeHtml(stepCopy.body)}</div>
           </div>
+          <div class="button-row" style="margin-top:12px;">
+            <button type="button" class="action-button future" data-action="run-gmail-sync" ${syncButtonDisabled}>${syncButtonLabel}</button>
+          </div>
           <div style="margin-top:14px;border-top:1px solid #e5dccb;padding-top:14px;">
             <div class="reason-label">Current Queue</div>
             <div class="field-stack">${renderQueueCards(queueItems)}</div>
           </div>
         `;
-        teachPanelNode.innerHTML = '<div class="empty">Select a synced email to preview or teach a correction.</div>';
+        teachPanelNode.innerHTML = teachFlowState === "result" && teachResult
+          ? renderTeachReceipt()
+          : teachError
+            ? renderTeachError(teachError)
+            : gmailCheckResult
+              ? renderGmailCheckResult()
+              : '<div class="empty">Select a synced email to preview or teach a correction.</div>';
         return;
       }
+      gmailCheckResult = null;
       const allowedLabels = ((((harnessState || {}).sidebar_state || {}).ui_state || {}).allowed_labels) || [];
       const labelOptions = allowedLabels.map((option) => {
         const selectedAttr = (draftLabel || selected.internal_label || selected.suggested_label || "") === option.id ? " selected" : "";
@@ -2006,6 +2033,32 @@ class GmailCompanionApp:
       renderSelectedPanel();
     }
 
+    async function runGmailSync() {
+      if (gmailCheckPending) {
+        return;
+      }
+      gmailCheckPending = true;
+      gmailCheckResult = null;
+      renderSelectedPanel();
+      const payload = await postApi("/api/gmail-check-run", { confirmed: "true" });
+      gmailCheckPending = false;
+      if (payload.error) {
+        gmailCheckResult = {
+          kind: "gmail-sync-error",
+          title: "Gmail sync did not start",
+          message: payload.error,
+        };
+      } else {
+        gmailCheckResult = {
+          kind: "gmail-sync-success",
+          title: "Gmail sync finished",
+          message: "Threadwise ran a Gmail sync. Checking this email again now.",
+        };
+        await refreshState();
+      }
+      renderSelectedPanel();
+    }
+
     async function excludeAffectedMatch(messageId, reason) {
       if (!selectedFound() || !teachPreview || !messageId) {
         return;
@@ -2098,6 +2151,11 @@ class GmailCompanionApp:
       const refreshButton = event.target.closest("[data-action='refresh-state']");
       if (refreshButton) {
         refreshState();
+        return;
+      }
+      const runGmailSyncButton = event.target.closest("[data-action='run-gmail-sync']");
+      if (runGmailSyncButton) {
+        runGmailSync();
         return;
       }
       const openAffectedReviewButton = event.target.closest("[data-action='open-affected-review']");

@@ -51,6 +51,20 @@ Do not create broad architecture, large frameworks, or generic plumbing before t
 
 Keep changes small, reviewable, and tied to the current approved step.
 
+## Hermes + Codex workflow
+
+This file guides Codex. `.hermes.md` guides Hermes.
+
+When Hermes delegates implementation work here:
+
+- prefer small, reviewable diffs over broad rewrites
+- preserve current product behavior unless the task explicitly changes it
+- preserve the current Threadwise aesthetic and interaction language unless the task explicitly changes design
+- do not add new dependencies, services, or frameworks without explicit approval
+- do not perform destructive email or provider actions; keep live-provider behavior bounded, auditable, and explicitly approved
+- run the relevant checks before reporting completion, usually the narrowest affected `python3 -m unittest ...` commands and the repo-wide `python3 -m unittest discover -s tests` when the change is broad enough to justify it
+- if a task touches live inbox, credentials, OAuth, unsubscribe execution, delete/trash/archive behavior, or provider write paths, stop and ask before proceeding
+
 ## Product artifacts
 
 Use docs for durable product artifacts when needed:

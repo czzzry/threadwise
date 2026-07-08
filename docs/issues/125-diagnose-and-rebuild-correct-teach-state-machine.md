@@ -1,6 +1,6 @@
 # Diagnose and Rebuild Correct / Teach as a State-Machine Loop
 
-Status: Ready for agent after founder approval of PRD direction
+Status: Complete locally
 Type: AFK
 Parent PRD: `docs/prd-correct-teach-state-machine-simplification-2026-07-07.md`
 GitHub parent issue: `#58`
@@ -23,17 +23,20 @@ Do not reintroduce future-rule saving, affected-email review, exclusions, or bro
 
 ## Acceptance criteria
 
-- [ ] Existing `Fix this email` behavior is characterized with a failing or diagnostic test that distinguishes local-state failure, Gmail write-through failure, refresh failure, and unclear result copy.
-- [ ] Correct / Teach uses explicit visible states: `Viewing email`, `Teaching`, `Rule proposed`, `Refining`, `Scope confirmation`, `Applying`, `Result`, and `Blocked` where relevant.
-- [ ] The first proposed-rule screen shows one plain-English rule and only the next decision: approve it or change it.
-- [ ] Scope choices appear only after the rule is accepted.
-- [ ] Current-email apply is the only mutation path in this slice.
-- [ ] The result state reports whether the current email changed locally, in Gmail, both, or neither.
-- [ ] Pending apply disables duplicate submission and shows a working state.
-- [ ] Advanced details, manual label override, affected examples, and debug/source wording are hidden from the default correction path.
-- [ ] Browser/simulator acceptance proves the compact sidebar does not display all correction consequences at once.
-- [ ] Broader existing-email rewrites remain unavailable or explicitly out of the primary path.
+- [x] Existing `Fix this email` behavior is characterized with a failing or diagnostic test that distinguishes local-state failure, Gmail write-through failure, refresh failure, and unclear result copy.
+- [x] Correct / Teach uses explicit visible states: `Viewing email`, `Teaching`, `Rule proposed`, `Refining`, `Scope confirmation`, `Applying`, `Result`, and `Blocked` where relevant.
+- [x] The first proposed-rule screen shows one plain-English rule and only the next decision: approve it or change it.
+- [x] Scope choices appear only after the rule is accepted.
+- [x] Current-email apply is the only mutation path in this slice.
+- [x] The result state reports whether the current email changed locally, in Gmail, both, or neither.
+- [x] Pending apply disables duplicate submission and shows a working state.
+- [x] Advanced details, manual label override, affected examples, and debug/source wording are hidden from the default correction path.
+- [x] Browser/simulator acceptance proves the compact sidebar does not display all correction consequences at once.
+- [x] Broader existing-email rewrites remain unavailable or explicitly out of the primary path.
 
-## Blocked by
+## Completion evidence
 
-None - can start immediately once the PRD direction is accepted.
+- `python3 -m unittest tests.test_gmail_companion_ui tests.test_teaching_loop`
+- `python3 -m py_compile src/live_gmail_client.py src/gmail_writer.py src/teaching_loop.py src/gmail_companion_ui.py tests/test_gmail_companion_ui.py`
+- `node --check extensions/gmail_companion/content.js`
+- Commits: `b3d5e4e`, `ff0b887`

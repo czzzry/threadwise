@@ -29,6 +29,6 @@ Use these as the current source of truth for the next slice:
 - `docs/prd-teach-apply-write-through-2026-07-07.md`
 - `docs/issues/128-teach-apply-write-through-completion.md`
 
-## Next bounded step
+## Outcome
 
-Continue implementation from clean `main` on the ready-for-agent write-through slice in `docs/issues/128-teach-apply-write-through-completion.md`.
+Implementation continued from clean `main` on the write-through slice and that slice is now complete locally. Use `docs/issues/128-teach-apply-write-through-completion.md` as the completion record rather than as a pending next step.

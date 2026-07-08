@@ -34,6 +34,8 @@
   let activeSummaryFilter = "recent_items";
   let detailsExpanded = false;
   let affectedReviewOpen = false;
+  let gmailCheckPending = false;
+  let gmailCheckResult = null;
   let teachDraft = {
     targetLabel: "",
     note: "",
@@ -802,6 +804,7 @@
         </div>
         <div style="margin-top:12px;color:#6b6255;line-height:1.45;">Threadwise can explain emails it has already synced. Preview a synced match below, or run a Gmail check from the dashboard to refresh what Threadwise knows.</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
+          <button type="button" data-ea-action="run-gmail-sync" ${gmailCheckPending ? "disabled" : ""} style="border:2px solid #241812;background:${gmailCheckPending ? "#c7d8cc" : "#ffc64a"};color:#241812;border-radius:11px;padding:9px 12px;cursor:${gmailCheckPending ? "wait" : "pointer"};font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">${gmailCheckPending ? "Running Gmail sync..." : "Run Gmail sync now"}</button>
           ${
             primaryRelatedItem
               ? `<button type="button" data-ea-related-item="${escapeHtml(primaryRelatedItem.message_id || "")}" style="border:0;background:#0f766e;color:#fff;border-radius:999px;padding:9px 12px;cursor:pointer;font:inherit;">Preview closest synced match</button>`
@@ -816,9 +819,17 @@
         ${relatedHtml}
         ${fallbackHtml}
       `);
-      setHtml(teachPanelNode, `<div style="color:#6b6255;line-height:1.45;">Select a synced email to preview or teach a correction.</div>`);
+      const teachPanelHtml = teachFlowState === "result" && teachResult && !String(teachResult.kind || "").endsWith("-error")
+        ? renderTeachReceiptHtml(teachResult.message || "", teachOutcome)
+        : teachResult
+          ? renderTeachResultHtml(teachResult)
+          : gmailCheckResult
+            ? renderGmailCheckResultHtml(gmailCheckResult)
+            : `<div style="color:#6b6255;line-height:1.45;">Select a synced email to preview or teach a correction.</div>`;
+      setHtml(teachPanelNode, teachPanelHtml);
       setHtml(selectedEmailSecondaryNode, "");
     } else {
+      gmailCheckResult = null;
       const statusStyle =
         selected.status === "needs-attention"
           ? "display:inline-flex;align-items:center;padding:5px 10px;border-radius:999px;background:#fff4dd;color:#8a4b00;font-size:0.82rem;"
@@ -1365,6 +1376,22 @@
     `;
   }
 
+  function renderGmailCheckResultHtml(result) {
+    if (!result) {
+      return "";
+    }
+    const isError = String(result.kind || "").endsWith("-error");
+    const tone = isError
+      ? { background: "#fff4dd", color: "#8a4b00" }
+      : { background: "#d8f3ef", color: "#0f766e" };
+    return `
+      <div style="box-sizing:border-box;width:100%;min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word;margin-top:12px;border-radius:14px;background:${tone.background};padding:12px;color:${tone.color};line-height:1.45;">
+        <div style="font-weight:700;">${escapeHtml(result.title || "Gmail sync")}</div>
+        <div style="margin-top:8px;">${escapeHtml(result.message || "")}</div>
+      </div>
+    `;
+  }
+
   function renderTeachReceiptHtml(message, outcome) {
     const rows = [
       ["This email", outcome?.current_email_changed_locally ? "done" : "not changed"],
@@ -1634,6 +1661,12 @@
       event.preventDefault();
       previousPayload = "";
       refreshSelection(true);
+      return;
+    }
+    const runGmailSyncButton = event.target.closest("[data-ea-action='run-gmail-sync']");
+    if (runGmailSyncButton) {
+      event.preventDefault();
+      triggerGmailSync();
       return;
     }
     const summaryFilterButton = event.target.closest("[data-ea-summary-filter]");
@@ -1958,6 +1991,56 @@
       affectedReviewOpen = false;
       unsubscribeResult = "";
       renderState(payload.sidebar_state || lastSidebarState);
+    });
+  }
+
+  function triggerGmailSync() {
+    if (gmailCheckPending) {
+      return;
+    }
+    gmailCheckPending = true;
+    gmailCheckResult = null;
+    if (lastSidebarState) {
+      renderState(lastSidebarState);
+    }
+    chrome.runtime.sendMessage({
+      type: "email-agent:api",
+      path: "/api/gmail-check-run",
+      method: "POST",
+      body: {
+        confirmed: "true",
+      },
+    }, (response) => {
+      gmailCheckPending = false;
+      if (chrome.runtime.lastError) {
+        gmailCheckResult = {
+          kind: "gmail-sync-error",
+          title: "Gmail sync did not start",
+          message: chrome.runtime.lastError.message || "Could not start a Gmail sync.",
+        };
+        if (lastSidebarState) {
+          renderState(lastSidebarState);
+        }
+        return;
+      }
+      if (!response || !response.ok) {
+        gmailCheckResult = {
+          kind: "gmail-sync-error",
+          title: "Gmail sync did not start",
+          message: (response && (response.payload?.error || response.error)) || "Could not start a Gmail sync.",
+        };
+        if (lastSidebarState) {
+          renderState(lastSidebarState);
+        }
+        return;
+      }
+      gmailCheckResult = {
+        kind: "gmail-sync-success",
+        title: "Gmail sync finished",
+        message: "Threadwise ran a Gmail sync. Checking this email again now.",
+      };
+      previousPayload = "";
+      refreshSelection(true);
     });
   }
 

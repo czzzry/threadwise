@@ -1,10 +1,12 @@
 # Teach / Apply Write-Through Completion PRD
 
-Status: Current proposed bounded-slice PRD
+Status: Completed bounded-slice PRD
 Current as of: 2026-07-07
 Builds on: `docs/prd-correct-teach-state-machine-simplification-2026-07-07.md`, `docs/checkpoints/current-operating-model-2026-06-22.md`, and founder feedback from July 7
 Supersedes as current planning focus: `docs/prd-correct-teach-state-machine-simplification-2026-07-07.md` for the next inbox-repair slice
 GitHub parent issue: `#58`
+
+This PRD is now implemented locally through the final teach/apply write-through slice. See `docs/issues/128-teach-apply-write-through-completion.md` for completion evidence.
 
 ## Problem Statement
 

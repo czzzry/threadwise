@@ -1,10 +1,12 @@
 # Correct / Teach State-Machine Simplification PRD
 
-Status: Current proposed bounded-slice PRD
+Status: Completed bounded-slice PRD
 Current as of: 2026-07-07
 Builds on: `docs/v2-alignment.md`, `docs/prd.md`, `docs/ui-ux-audit/ui-ux-audit.md`, GitHub issues `#42`, `#51`, `#52`, and founder feedback from July 7
 Supersedes as current planning focus: the completed three-consequence Correct / Teach preview model from the July 2 UX batch
 GitHub parent issue: `#58`
+
+This PRD is now implemented locally through the state-machine correction work and follow-on write-through slice. See `docs/issues/125-diagnose-and-rebuild-correct-teach-state-machine.md`, `docs/issues/126-add-future-email-scope-after-rule-acceptance.md`, `docs/issues/127-make-teach-action-results-unmistakable.md`, and `docs/issues/128-teach-apply-write-through-completion.md` for completion status.
 
 ## Problem Statement
 
