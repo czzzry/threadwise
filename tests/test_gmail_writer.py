@@ -12,9 +12,14 @@ class MockGmailLabelWriterTests(unittest.TestCase):
         self.client = MockGmailLabelClient(
             existing_labels={
                 "EA/reply-needed": "Label_1",
+                "EA/personal": "Label_personal",
+                "EA/travel": "Label_travel",
                 "Personal/Keep": "Label_keep",
             },
             failing_message_ids={"gmail-005"},
+            message_labels_by_id={
+                "gmail-001": ["Label_personal", "Label_travel", "Label_keep"],
+            },
         )
         self.writer = MockGmailLabelWriter(
             gmail_client=self.client,
@@ -74,7 +79,7 @@ class MockGmailLabelWriterTests(unittest.TestCase):
         self.writer.write_reviewed_labels("founder-test-batch-1", self.reviewed_items)
 
         self.assertIn(
-            ("apply_labels", "gmail-001", ["Label_1", self.client.labels["EA/job-related"]]),
+            ("replace_threadwise_labels", "gmail-001", ["Label_1", self.client.labels["EA/job-related"]], "EA/"),
             self.client.calls,
         )
         self.assertNotIn(("apply_labels", "gmail-002", []), self.client.calls)
@@ -106,6 +111,14 @@ class MockGmailLabelWriterTests(unittest.TestCase):
 
         self.assertEqual(self.client.labels["Personal/Keep"], "Label_keep")
         self.assertNotIn(("remove_labels", "gmail-001", ["Label_keep"]), self.client.calls)
+
+    def test_write_reviewed_labels_replaces_old_threadwise_labels_before_apply(self) -> None:
+        self.writer.write_reviewed_labels("founder-test-batch-1", [self.reviewed_items[0]])
+
+        self.assertEqual(
+            self.client._message_labels_by_id["gmail-001"],
+            ["Label_keep", "Label_1", self.client.labels["EA/job-related"]],
+        )
 
     def test_write_reviewed_labels_returns_visible_batch_write_summary(self) -> None:
         summary = self.writer.write_reviewed_labels("founder-test-batch-1", self.reviewed_items)

@@ -77,6 +77,45 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertEqual(selected["status"], "not-in-snapshot")
         self.assertEqual(selected["status_label"], "Not in local snapshot")
 
+    def test_companion_state_exposes_all_classifications_when_message_has_multiple_labels(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            batch_dir = storage_dir / "batches"
+            batch_dir.mkdir(parents=True, exist_ok=True)
+            (batch_dir / "founder-test-batch-1.json").write_text(
+                json.dumps(
+                    {
+                        "batch_id": "founder-test-batch-1",
+                        "provider": "gmail",
+                        "account_id": "founder-test",
+                        "items": [
+                            {
+                                "message_id": "gmail-live-001",
+                                "sender": "Emma from Alltricks <contact@alltricks.com>",
+                                "subject": "Welcome on Alltricks 👋",
+                                "review_state": "reviewed",
+                                "review_action": "auto-approve",
+                                "final_labels": ["newsletter", "travel", "personal"],
+                                "applied_labels": ["newsletter", "travel", "personal"],
+                            }
+                        ],
+                    }
+                )
+            )
+
+            selected = build_selected_email_state(
+                storage_dir,
+                [],
+                {
+                    "message_id": "gmail-live-001",
+                    "subject": "Welcome on Alltricks 👋",
+                    "sender": "Emma from Alltricks <contact@alltricks.com>",
+                },
+            )
+
+        self.assertEqual(selected["classification"], "EA/Newsletter")
+        self.assertEqual(selected["all_classifications"], ["EA/Newsletter", "EA/Travel", "EA/Personal"])
+
     def test_companion_rendering_module_preserves_shared_helpers(self) -> None:
         self.assertEqual(escape_html('<a href="x">Tom & Jerry</a>'), "&lt;a href=&quot;x&quot;&gt;Tom &amp; Jerry&lt;/a&gt;")
         self.assertEqual(server_origin("127.0.0.1:8021"), "http://127.0.0.1:8021")
@@ -194,6 +233,7 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("Report details", content_js)
         self.assertIn("What Changed Today", content_js)
         self.assertIn("Decision source", content_js)
+        self.assertIn("All labels:", content_js)
         self.assertNotIn("Live Gmail sidebar mode is using the same stored inbox snapshot and queue buckets as the local harness.", content_js)
         self.assertIn("data-ea-summary-item", content_js)
         self.assertIn("data-ea-action=\"open-selected-gmail\"", content_js)
@@ -1665,8 +1705,8 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertEqual(batch_one["items"][0]["final_labels"], ["job-related"])
             self.assertEqual(batch_two["items"][0]["final_labels"], ["job-related"])
             self.assertFalse((storage_dir / "teachable_classification_rules.json").exists())
-            self.assertIn(("apply_labels", "gmail-live-001", [gmail_client.labels["EA/Work"]]), gmail_client.calls)
-            self.assertIn(("apply_labels", "gmail-live-002", [gmail_client.labels["EA/Work"]]), gmail_client.calls)
+            self.assertIn(("replace_threadwise_labels", "gmail-live-001", [gmail_client.labels["EA/Work"]], "EA/"), gmail_client.calls)
+            self.assertIn(("replace_threadwise_labels", "gmail-live-002", [gmail_client.labels["EA/Work"]], "EA/"), gmail_client.calls)
             self.assertEqual(result["gmail_write_through"]["messages_written"], 2)
 
     def test_teach_exclude_saves_exception_and_refreshes_preview(self) -> None:
@@ -1900,7 +1940,7 @@ class GmailCompanionUiTests(unittest.TestCase):
                 }
             )
 
-            self.assertIn(("apply_labels", "gmail-live-001", [gmail_client.labels["EA/ReplyNeeded"]]), gmail_client.calls)
+            self.assertIn(("replace_threadwise_labels", "gmail-live-001", [gmail_client.labels["EA/ReplyNeeded"]], "EA/"), gmail_client.calls)
             self.assertEqual(result["gmail_write_through"]["messages_written"], 1)
             self.assertEqual(result["gmail_write_through"]["inbox_removed"], 0)
             self.assertEqual(
@@ -2022,7 +2062,7 @@ class GmailCompanionUiTests(unittest.TestCase):
             )
 
             self.assertIn(("search_message_ids", "from:notifications@ashbyhq.com {job jobs recruiter interview application}", 1000), gmail_client.calls)
-            self.assertIn(("apply_labels", "gmail-remote-003", [gmail_client.labels["EA/Work"]]), gmail_client.calls)
+            self.assertIn(("replace_threadwise_labels", "gmail-remote-003", [gmail_client.labels["EA/Work"]], "EA/"), gmail_client.calls)
             self.assertEqual(result["gmail_write_through"]["remote_match_count"], 1)
             self.assertEqual(result["gmail_write_through"]["remote_applied_count"], 1)
             self.assertEqual(result["gmail_write_through"]["messages_written"], 2)

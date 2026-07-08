@@ -471,6 +471,50 @@ class LiveGmailClientTests(unittest.TestCase):
             ],
         )
 
+    def test_live_client_can_replace_existing_threadwise_labels_without_touching_non_threadwise_labels(self) -> None:
+        class ReplaceTransport(LabelTransport):
+            def __call__(self, method: str, url: str, params: dict | None = None, access_token: str | None = None) -> dict:
+                payload = params or {}
+                self.calls.append((method, url, payload, access_token or ""))
+                if method == "GET" and url.endswith("/labels"):
+                    return {
+                        "labels": [
+                            {"id": "Label_news", "name": "EA/newsletter"},
+                            {"id": "Label_travel", "name": "EA/travel"},
+                            {"id": "Label_keep", "name": "Personal/Keep"},
+                            {"id": "Label_account", "name": "EA/account-security"},
+                        ]
+                    }
+                if method == "GET" and url.endswith("/messages/gmail-live-001"):
+                    return {"id": "gmail-live-001", "labelIds": ["Label_news", "Label_travel", "Label_keep"]}
+                if method == "POST" and url.endswith("/messages/gmail-live-001/modify"):
+                    return {"id": "gmail-live-001"}
+                raise AssertionError(f"Unexpected transport call: {method} {url}")
+
+        transport = ReplaceTransport()
+        client = LiveGmailClient(access_token="modify-token", transport=transport)
+
+        client.replace_threadwise_labels("gmail-live-001", ["Label_account"])
+
+        self.assertEqual(
+            transport.calls,
+            [
+                ("GET", "https://gmail.googleapis.com/gmail/v1/users/me/labels", {}, "modify-token"),
+                (
+                    "GET",
+                    "https://gmail.googleapis.com/gmail/v1/users/me/messages/gmail-live-001",
+                    {"format": "full"},
+                    "modify-token",
+                ),
+                (
+                    "POST",
+                    "https://gmail.googleapis.com/gmail/v1/users/me/messages/gmail-live-001/modify",
+                    {"addLabelIds": ["Label_account"], "removeLabelIds": ["Label_news", "Label_travel"]},
+                    "modify-token",
+                ),
+            ],
+        )
+
     def test_live_client_removes_inbox_only_without_deleting_message(self) -> None:
         transport = LabelTransport()
         client = LiveGmailClient(access_token="modify-token", transport=transport)

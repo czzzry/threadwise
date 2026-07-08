@@ -864,6 +864,10 @@
       const matchedRuleList = (details.matched_rule_ids || []).length
         ? `<div style="margin-top:6px;color:#6b6255;line-height:1.45;">Matched rules: ${escapeHtml((details.matched_rule_ids || []).join(", "))}</div>`
         : "";
+      const allClassifications = Array.isArray(selected.all_classifications) ? selected.all_classifications : [];
+      const allLabelsList = allClassifications.length > 1
+        ? `<div style="margin-top:6px;color:#6b6255;line-height:1.45;">All labels: ${escapeHtml(allClassifications.join(", "))}</div>`
+        : "";
       const unsubscribeReasonList = (details.unsubscribe_reasons || []).length
         ? `<div style="margin-top:6px;color:#6b6255;line-height:1.45;">Unsubscribe qualified because: ${escapeHtml((details.unsubscribe_reasons || []).join(", "))}</div>`
         : "";
@@ -875,6 +879,7 @@
           <div style="margin-top:6px;color:#6b6255;line-height:1.45;">Inbox handling: ${escapeHtml(inboxStatusLabel)}</div>
           <div style="margin-top:6px;color:#6b6255;line-height:1.45;">Matched saved rules: ${escapeHtml(String(details.matched_rule_count || 0))}</div>
           ${matchedRuleList}
+          ${allLabelsList}
           ${unsubscribeReasonList}
         `
         : `<div style="margin-top:8px;color:#6b6255;line-height:1.45;">Open details to inspect decision source, Gmail write status, inbox handling, and matched rules.</div>`;

@@ -192,6 +192,46 @@ class TeachingLoopTests(unittest.TestCase):
             self.assertIn("wealthsimple", preview["plain_english_rule"])
             self.assertNotIn("future messages from notifications@m.wealthsimple.com", preview["plain_english_rule"])
 
+    def test_preview_interprets_rejection_note_as_account_correction_not_wrong_existing_labels(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                [
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "alltricks-001",
+                        "sender": "Emma from Alltricks <contact@alltricks.com>",
+                        "subject": "Welcome on Alltricks 👋",
+                        "snippet": "Discover your customer area",
+                        "body": "Your account has just been created. Choose a password. In your Client Account, you can find detailed information on your orders and choose your newsletter preferences.",
+                        "interpretation": "General newsletter roundup with offers.",
+                        "review_state": "reviewed",
+                        "final_labels": ["newsletter", "travel", "personal"],
+                        "applied_labels": ["newsletter", "travel", "personal"],
+                    }
+                ],
+            )
+
+            preview = build_sidebar_teach_preview(
+                storage_dir,
+                selected_context={
+                    "provider": "gmail",
+                    "message_id": "alltricks-001",
+                    "sender": "contact@alltricks.com",
+                    "subject": "Welcome on Alltricks 👋",
+                },
+                target_label="",
+                note="why is this also labelled as personal and travel??? That should not be the case. This isn't even newsletter as you should clearly be able to tell it is regarding my ACCOUNT",
+                scope="sender",
+            )
+
+            self.assertEqual(preview["selected_label_after"], ["account-security"])
+            self.assertEqual(preview["target_label_name"], "EA/Account")
+            self.assertIn("account, security, or statement notices", preview["plain_english_rule"])
+
     def test_preview_proposes_cross_sender_semantic_rule_for_phishing_pattern(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)

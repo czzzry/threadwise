@@ -979,7 +979,10 @@ class GmailCompanionApp:
         failed_count = 0
         for message_id in filtered_ids:
             try:
-                gmail_client.apply_labels(message_id, [label_id])
+                if hasattr(gmail_client, "replace_threadwise_labels"):
+                    gmail_client.replace_threadwise_labels(message_id, [label_id], "EA/")
+                else:
+                    gmail_client.apply_labels(message_id, [label_id])
                 if self._is_inbox_removal_label_eligible((semantic_rule or {}).get("target_label") or ""):
                     gmail_client.remove_inbox_label(message_id)
                 applied_count += 1
@@ -1810,6 +1813,10 @@ class GmailCompanionApp:
       const matchedRuleList = (details.matched_rule_ids || []).length
         ? `<div class="empty">Matched rules: ${escapeHtml((details.matched_rule_ids || []).join(', '))}</div>`
         : "";
+      const allClassifications = Array.isArray(selected.all_classifications) ? selected.all_classifications : [];
+      const allLabelsList = allClassifications.length > 1
+        ? `<div class="empty">All labels: ${escapeHtml(allClassifications.join(", "))}</div>`
+        : "";
       const unsubscribeReasonList = (details.unsubscribe_reasons || []).length
         ? `<div class="empty">Unsubscribe qualified because: ${escapeHtml((details.unsubscribe_reasons || []).join(', '))}</div>`
         : "";
@@ -1851,6 +1858,7 @@ class GmailCompanionApp:
           <span class="pill classification-pill">${escapeHtml(selected.classification || "Uncategorized")}</span>
           <span class="pill ${selected.status === "needs-attention" ? "warn-pill" : "status-pill"}">${escapeHtml(selected.status_label || "")}</span>
         </div>
+        ${allLabelsList}
         ${unsubscribeLine}
       `;
       teachPanelNode.innerHTML = feedbackHtml;
@@ -3004,6 +3012,10 @@ class GmailCompanionApp:
       const matchedRuleList = (details.matched_rule_ids || []).length
         ? `<div class="empty">Matched rules: ${escapeHtml((details.matched_rule_ids || []).join(', '))}</div>`
         : "";
+      const allClassifications = Array.isArray(selectedEmail.all_classifications) ? selectedEmail.all_classifications : [];
+      const allLabelsList = allClassifications.length > 1
+        ? `<div class="empty">All labels: ${escapeHtml(allClassifications.join(", "))}</div>`
+        : "";
       const unsubscribeReasonList = (details.unsubscribe_reasons || []).length
         ? `<div class="empty">Unsubscribe qualified because: ${escapeHtml((details.unsubscribe_reasons || []).join(', '))}</div>`
         : "";
@@ -3015,6 +3027,7 @@ class GmailCompanionApp:
           <div class="empty">Inbox removal status: ${escapeHtml(details.inbox_status || "not removed")}</div>
           <div class="empty">Matched saved rules: ${escapeHtml(String(details.matched_rule_count || 0))}</div>
           ${matchedRuleList}
+          ${allLabelsList}
           ${unsubscribeReasonList}
         `
         : '<div class="empty">Open details to inspect decision source, Gmail write status, inbox handling, and matched rules.</div>';

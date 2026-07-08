@@ -68,7 +68,8 @@ def build_selected_email_state(storage_dir: Path, unsubscribe_candidates: list[d
     item = matched["item"]
     batch = matched["batch"]
     labels = list(item.get("final_labels") or item.get("applied_labels") or [])
-    classification = gmail_label_name(labels[0]) if labels else "Uncategorized"
+    label_names = [gmail_label_name(label) for label in labels]
+    classification = label_names[0] if label_names else "Uncategorized"
     write_status = load_json_or_default(write_status_path(storage_dir, batch["batch_id"]), {}).get(item["message_id"])
     inbox_status = load_json_or_default(inbox_removal_status_path(storage_dir, batch["batch_id"]), {}).get(item["message_id"])
     status, status_label = classify_handling_status(item, write_status, inbox_status)
@@ -83,6 +84,8 @@ def build_selected_email_state(storage_dir: Path, unsubscribe_candidates: list[d
         "internal_label": labels[0] if labels else None,
         "suggested_label": suggested_label_for_item(item),
         "classification": classification,
+        "all_labels": labels,
+        "all_classifications": label_names,
         "status": status,
         "status_label": status_label,
         "reason": item.get("interpretation") or item.get("snippet") or "",

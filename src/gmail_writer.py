@@ -17,12 +17,17 @@ class MockGmailLabelClient:
         existing_labels: dict[str, str] | None = None,
         failing_message_ids: set[str] | None = None,
         search_results_by_query: dict[str, list[str]] | None = None,
+        message_labels_by_id: dict[str, list[str]] | None = None,
     ) -> None:
         self.labels = dict(existing_labels or {})
         self._failing_message_ids = set(failing_message_ids or set())
         self._search_results_by_query = {
             str(query): list(results)
             for query, results in (search_results_by_query or {}).items()
+        }
+        self._message_labels_by_id = {
+            str(message_id): list(label_ids)
+            for message_id, label_ids in (message_labels_by_id or {}).items()
         }
         self.calls: list[tuple] = []
 
@@ -36,6 +41,24 @@ class MockGmailLabelClient:
         self.calls.append(("apply_labels", message_id, label_ids))
         if message_id in self._failing_message_ids:
             raise RuntimeError(f"Failed to apply labels to {message_id}")
+        current_labels = list(self._message_labels_by_id.get(message_id, []))
+        for label_id in label_ids:
+            if label_id not in current_labels:
+                current_labels.append(label_id)
+        self._message_labels_by_id[message_id] = current_labels
+
+    def replace_threadwise_labels(self, message_id: str, label_ids: list[str], namespace_prefix: str = "EA/") -> None:
+        self.calls.append(("replace_threadwise_labels", message_id, label_ids, namespace_prefix))
+        if message_id in self._failing_message_ids:
+            raise RuntimeError(f"Failed to apply labels to {message_id}")
+        id_to_name = {label_id: label_name for label_name, label_id in self.labels.items()}
+        current_labels = list(self._message_labels_by_id.get(message_id, []))
+        preserved = [
+            label_id
+            for label_id in current_labels
+            if not id_to_name.get(label_id, "").startswith(namespace_prefix)
+        ]
+        self._message_labels_by_id[message_id] = preserved + [label_id for label_id in label_ids if label_id not in preserved]
 
     def remove_inbox_label(self, message_id: str) -> None:
         self.calls.append(("remove_inbox_label", message_id))
@@ -89,7 +112,10 @@ class MockGmailLabelWriter:
             for label_name in self.map_reviewed_labels(final_labels):
                 label_ids.append(self._gmail_client.get_or_create_label(label_name))
             try:
-                self._gmail_client.apply_labels(item["message_id"], label_ids)
+                if hasattr(self._gmail_client, "replace_threadwise_labels"):
+                    self._gmail_client.replace_threadwise_labels(item["message_id"], label_ids, "EA/")
+                else:
+                    self._gmail_client.apply_labels(item["message_id"], label_ids)
                 status_map[item["message_id"]] = "applied"
                 attempts.setdefault(item["message_id"], []).append(
                     {"status": "applied", "final_labels": list(final_labels)}

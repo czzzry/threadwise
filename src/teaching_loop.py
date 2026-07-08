@@ -1,9 +1,13 @@
+import json
+import os
 import re
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 from src.gmail_batch_review_store import GmailBatchReviewStore
 from src.gmail_companion_state import find_matching_item
-from src.label_taxonomy import gmail_label_name
+from src.label_taxonomy import CANONICAL_LABEL_ORDER, gmail_label_name
 from src.local_artifacts import load_json, memory_proposals_path, teachable_rules_path
 from src.memory_proposal_store import MemoryProposalStore, build_memory_proposal, load_storage_items
 from src.sender_utils import normalized_sender_email
@@ -16,6 +20,67 @@ from src.teachable_rule_memory import TeachableRuleMemory
 
 
 VALID_TEACHING_APPLY_MODES = {"current-only", "matching-existing", "save-future-rule", "future-only", "apply-included"}
+DEFAULT_TEACHING_INTENT_MODEL = "gpt-4.1-mini"
+
+
+class OpenAITeachingIntentClient:
+    def __init__(self, api_key: str, model: str) -> None:
+        self._api_key = api_key
+        self._model = model
+
+    @classmethod
+    def from_env(cls, model: str | None = None) -> "OpenAITeachingIntentClient | None":
+        api_key = os.getenv("EMAIL_AGENT_OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            return None
+        return cls(api_key=api_key, model=model or os.getenv("THREADWISE_TEACHING_MODEL") or DEFAULT_TEACHING_INTENT_MODEL)
+
+    def interpret(self, payload: dict) -> dict:
+        prompt = (
+            "You interpret founder correction notes for an email labeling tool.\n"
+            "Return strict JSON with keys: target_label, semantic_pattern, cross_sender, confidence, rationale.\n"
+            "target_label must be one of: "
+            + ", ".join(CANONICAL_LABEL_ORDER)
+            + ".\n"
+            "Choose the label the founder wants after reading the current email context and complaint.\n"
+            "If the founder is rejecting existing wrong labels, do not echo them back as the desired target.\n"
+            "semantic_pattern should be a short plain-English message family description.\n"
+            "cross_sender must be true only if the founder intent clearly spans multiple senders.\n"
+            "If uncertain, still pick the best label and set confidence to low."
+        )
+        response_payload = {
+            "model": self._model,
+            "temperature": 0,
+            "response_format": {"type": "json_object"},
+            "messages": [
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+            ],
+        }
+        request = urllib.request.Request(
+            "https://api.openai.com/v1/chat/completions",
+            data=json.dumps(response_payload).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self._api_key}",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                body = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError:
+            return {}
+        except urllib.error.URLError:
+            return {}
+        content = (((body.get("choices") or [{}])[0].get("message") or {}).get("content") or "").strip()
+        if not content:
+            return {}
+        try:
+            parsed = json.loads(content)
+        except json.JSONDecodeError:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
 
 
 def build_sidebar_teach_preview(
@@ -27,8 +92,15 @@ def build_sidebar_teach_preview(
     scope: str,
 ) -> dict:
     current = load_selected_storage_item(storage_dir, selected_context)
-    target_label = resolve_target_label(target_label, note)
-    semantic_rule = build_semantic_future_rule(current=current, target_label=target_label, note=note, scope=scope)
+    intent = interpret_teaching_intent(current=current, target_label=target_label, note=note, scope=scope)
+    target_label = intent["target_label"]
+    semantic_rule = build_semantic_future_rule(
+        current=current,
+        target_label=target_label,
+        note=note,
+        scope=scope,
+        intent=intent,
+    )
     proposal = build_companion_memory_proposal(
         storage_dir,
         current=current,
@@ -127,7 +199,13 @@ def apply_sidebar_teaching(
 ) -> dict:
     if mode not in VALID_TEACHING_APPLY_MODES:
         raise ValueError("Unsupported apply mode.")
-    target_label = resolve_target_label(target_label, note)
+    intent = interpret_teaching_intent(
+        current=load_selected_storage_item(storage_dir, selected_context),
+        target_label=target_label,
+        note=note,
+        scope=scope,
+    )
+    target_label = intent["target_label"]
 
     current = load_selected_storage_item(storage_dir, selected_context)
     proposal = build_companion_memory_proposal(
@@ -136,7 +214,7 @@ def apply_sidebar_teaching(
         target_label=target_label,
         note=note,
         scope=scope,
-        semantic_rule=build_semantic_future_rule(current=current, target_label=target_label, note=note, scope=scope),
+        semantic_rule=build_semantic_future_rule(current=current, target_label=target_label, note=note, scope=scope, intent=intent),
     )
     preview_matches = filter_excluded_preview_matches(storage_dir, proposal.to_dict(), proposal.preview.get("matches", []))
 
@@ -201,15 +279,16 @@ def exclude_sidebar_teaching_match(
     excluded_message_id: str,
     reason: str = "",
 ) -> dict:
-    target_label = resolve_target_label(target_label, note)
     current = load_selected_storage_item(storage_dir, selected_context)
+    intent = interpret_teaching_intent(current=current, target_label=target_label, note=note, scope=scope)
+    target_label = intent["target_label"]
     proposal = build_companion_memory_proposal(
         storage_dir,
         current=current,
         target_label=target_label,
         note=note,
         scope=scope,
-        semantic_rule=build_semantic_future_rule(current=current, target_label=target_label, note=note, scope=scope),
+        semantic_rule=build_semantic_future_rule(current=current, target_label=target_label, note=note, scope=scope, intent=intent),
     )
     entry = save_teaching_exclusion(
         storage_dir,
@@ -336,11 +415,11 @@ def load_selected_storage_item(storage_dir: Path, selected_context: dict) -> dic
     return item
 
 
-def build_semantic_future_rule(*, current: dict, target_label: str, note: str, scope: str) -> dict:
+def build_semantic_future_rule(*, current: dict, target_label: str, note: str, scope: str, intent: dict | None = None) -> dict:
     label_name = gmail_label_name(target_label)
     sender = normalized_sender_email(current.get("sender") or "") or current.get("sender") or "this sender"
     sender_name = _display_sender(current.get("sender") or "") or sender
-    semantic_pattern = infer_semantic_pattern(current, note, target_label)
+    semantic_pattern = infer_semantic_pattern(current, note, target_label, intent=intent)
     cross_sender = semantic_pattern["cross_sender"]
     if semantic_pattern["name"]:
         subject = semantic_pattern["name"]
@@ -377,8 +456,36 @@ def build_semantic_future_rule(*, current: dict, target_label: str, note: str, s
     }
 
 
-def infer_semantic_pattern(current: dict, note: str, target_label: str) -> dict:
+def infer_semantic_pattern(current: dict, note: str, target_label: str, intent: dict | None = None) -> dict:
+    if intent and intent.get("semantic_pattern"):
+        return {
+            "name": str(intent.get("semantic_pattern") or "").strip(),
+            "cross_sender": bool(intent.get("cross_sender")),
+            "has_strong_signal": str(intent.get("confidence") or "").lower() in {"medium", "high"},
+        }
     text = _semantic_text(current, note)
+    if target_label == "spam-low-value" and any(term in text for term in ("phishing", "phish", "scam", "suspicious", "fake")):
+        return {
+            "name": "payment or account notices that look suspicious",
+            "cross_sender": True,
+            "has_strong_signal": True,
+        }
+    label_patterns = {
+        "account-security": "account, security, or statement notices",
+        "financial-account": "financial account notices",
+        "receipt-billing": "billing, receipt, or payment notices",
+        "job-related": "job, recruiter, or interview emails",
+        "travel": "travel and booking emails",
+        "newsletter": "newsletter or digest emails",
+        "promotions": "marketing or promotional emails",
+        "spam-low-value": "low-value or suspicious emails",
+    }
+    if target_label in label_patterns:
+        return {
+            "name": label_patterns[target_label],
+            "cross_sender": target_label in {"job-related", "travel", "spam-low-value"},
+            "has_strong_signal": False,
+        }
     checks = [
         {
             "terms": ("phishing", "phish", "scam", "suspicious", "fake"),
@@ -418,22 +525,6 @@ def infer_semantic_pattern(current: dict, note: str, target_label: str) -> dict:
                 "cross_sender": check["cross_sender"],
                 "has_strong_signal": True,
             }
-    label_patterns = {
-        "account-security": "account, security, or statement notices",
-        "financial-account": "financial account notices",
-        "receipt-billing": "billing, receipt, or payment notices",
-        "job-related": "job, recruiter, or interview emails",
-        "travel": "travel and booking emails",
-        "newsletter": "newsletter or digest emails",
-        "promotions": "marketing or promotional emails",
-        "spam-low-value": "low-value or suspicious emails",
-    }
-    if target_label in label_patterns:
-        return {
-            "name": label_patterns[target_label],
-            "cross_sender": target_label in {"job-related", "travel", "spam-low-value"},
-            "has_strong_signal": False,
-        }
     return {"name": "", "cross_sender": False, "has_strong_signal": False}
 
 
@@ -681,6 +772,62 @@ def resolve_target_label(target_label: str, note: str) -> str:
     raise ValueError("Choose a label or describe the correction more clearly, for example 'this is spam' or 'this needs a reply'.")
 
 
+def interpret_teaching_intent(*, current: dict, target_label: str, note: str, scope: str) -> dict:
+    explicit_label = (target_label or "").strip()
+    if explicit_label:
+        return {
+            "target_label": explicit_label,
+            "semantic_pattern": "",
+            "cross_sender": False,
+            "confidence": "high",
+            "source": "explicit-label",
+        }
+
+    llm_client = OpenAITeachingIntentClient.from_env()
+    if llm_client is not None:
+        llm_intent = normalize_llm_teaching_intent(
+            llm_client.interpret(
+                {
+                    "note": note,
+                    "scope": scope,
+                    "current_subject": current.get("subject") or "",
+                    "current_sender": current.get("sender") or "",
+                    "current_snippet": current.get("snippet") or "",
+                    "current_interpretation": current.get("interpretation") or "",
+                    "current_labels": list(current.get("final_labels") or current.get("applied_labels") or []),
+                }
+            )
+        )
+        if llm_intent:
+            return {**llm_intent, "source": "llm"}
+
+    inferred = infer_target_label_from_note(note)
+    if inferred:
+        return {
+            "target_label": inferred,
+            "semantic_pattern": "",
+            "cross_sender": False,
+            "confidence": "medium",
+            "source": "deterministic",
+        }
+    raise ValueError("Choose a label or describe the correction more clearly, for example 'this is spam' or 'this needs a reply'.")
+
+
+def normalize_llm_teaching_intent(payload: dict) -> dict:
+    if not isinstance(payload, dict):
+        return {}
+    target_label = str(payload.get("target_label") or "").strip()
+    if target_label not in CANONICAL_LABEL_ORDER:
+        return {}
+    return {
+        "target_label": target_label,
+        "semantic_pattern": str(payload.get("semantic_pattern") or "").strip(),
+        "cross_sender": bool(payload.get("cross_sender")),
+        "confidence": str(payload.get("confidence") or "low").lower(),
+        "rationale": str(payload.get("rationale") or "").strip(),
+    }
+
+
 def infer_target_label_from_note(note: str) -> str:
     text = f" {str(note or '').lower()} "
     checks = [
@@ -697,9 +844,30 @@ def infer_target_label_from_note(note: str) -> str:
         (("personal", "friend", "family"), "personal"),
         (("finance", "bank", "financial", "account statement"), "financial-account"),
     ]
+    negative_markers = (" not ", " isn't ", " isnt ", " wrong ", " should not ", " shouldn't ", " not be ", " not even ")
+    replacement_markers = (" should be ", " regarding ", " about ", " this is ", " it is ", " it's ", " should clearly be ")
+    scored: list[tuple[int, str]] = []
     for terms, label in checks:
-        if any(term in text for term in terms):
-            return label
+        positive = 0
+        negative = 0
+        emphasis = 0
+        for term in terms:
+            pattern = re.compile(rf"\b{re.escape(term)}\b")
+            for match in pattern.finditer(text):
+                idx = match.start()
+                window = text[max(0, idx - 36): min(len(text), match.end() + 36)]
+                if any(marker in window for marker in negative_markers):
+                    negative += 1
+                else:
+                    positive += 1
+                if any(marker in window for marker in replacement_markers):
+                    emphasis += 1
+        score = positive * 3 + emphasis * 2 - negative * 4
+        if score > 0:
+            scored.append((score, label))
+    if scored:
+        scored.sort(key=lambda item: (-item[0], item[1]))
+        return scored[0][1]
     return ""
 
 

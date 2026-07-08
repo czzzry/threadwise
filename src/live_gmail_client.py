@@ -175,6 +175,32 @@ class LiveGmailClient:
             access_token=self._access_token,
         )
 
+    def replace_threadwise_labels(self, message_id: str, label_ids: list[str], namespace_prefix: str = "EA/") -> None:
+        labels_response = self._transport(
+            "GET",
+            "https://gmail.googleapis.com/gmail/v1/users/me/labels",
+            access_token=self._access_token,
+        )
+        id_to_name = {
+            label.get("id", ""): label.get("name", "")
+            for label in labels_response.get("labels", [])
+            if label.get("id")
+        }
+        message = self.get_message(message_id)
+        current_label_ids = list(message.get("labelIds") or [])
+        remove_label_ids = [
+            current_label_id
+            for current_label_id in current_label_ids
+            if id_to_name.get(current_label_id, "").startswith(namespace_prefix) and current_label_id not in label_ids
+        ]
+        add_label_ids = [label_id for label_id in label_ids if label_id not in current_label_ids]
+        self._transport(
+            "POST",
+            f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{message_id}/modify",
+            params={"addLabelIds": add_label_ids, "removeLabelIds": remove_label_ids},
+            access_token=self._access_token,
+        )
+
     def remove_inbox_label(self, message_id: str) -> None:
         self._transport(
             "POST",
