@@ -1,0 +1,11 @@
+email_id,sender,subject,body_snippet,expected_label,expected_attention_required,notes
+eval-001,LinkedIn Jobs <jobs-noreply@linkedin.example>,Senior AI product roles this week,"A fresh set of AI product openings matched your saved job alerts.",EA/Work,true,Opportunity worth review
+eval-002,Cloud Billing <billing@cloudledger.example>,Monthly invoice available,"Your monthly invoice is ready. Payment due in 7 days.",EA/Account,true,Financial/account email
+eval-003,GitHub <noreply@github.example>,Security alert resolved,"A sign-in from Berlin was blocked and no further action is required.",EA/Account,true,Security/account event should still surface
+eval-004,Railway <receipts@railway.example>,Your trip receipt,"Thanks for riding with us. Your receipt for yesterday's train is attached.",EA/Travel,false,Informational receipt
+eval-005,Workspace Weekly <newsletter@workspaceweekly.example>,New planning templates for product teams,"This week's newsletter covers facilitation prompts and planning templates.",EA/Newsletter,false,Newsletter should not need attention
+eval-006,Founder Digest <digest@founderdigest.example>,This week's founder digest,"A roundup of startup essays and podcast links for the week.",EA/Newsletter,false,Low-priority digest
+eval-007,Northstar Store <orders@northstarstore.example>,Your order has shipped,"Your package left the warehouse and is expected Friday.",EA/Shopping,false,Useful label but not urgent
+eval-008,Maya Chen <maya@northstar.example>,Confirm Thursday review,"Can you confirm you still want to do the product review on Thursday at 3 PM?",EA/Personal,true,Direct human coordination
+eval-009,Brand Supply <hello@brandsupply.example>,Team swag sale ends Friday,"Limited-time promo on branded notebooks and hoodies.",EA/Promotions,false,Promotional mail
+eval-010,Calendar <calendar@threadwise.example>,Product sync moved to 3 PM,"The product sync was moved from 2 PM to 3 PM today.",EA/Work,true,Time-sensitive work coordination
