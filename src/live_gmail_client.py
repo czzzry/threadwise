@@ -75,6 +75,10 @@ class LiveGmailClient:
                 else:
                     authorized_token = oauth_session.authorize()
                     token = _normalize_token(authorized_token)
+            except urllib.error.HTTPError as exc:
+                if exc.code == 400:
+                    raise SetupError(_google_reconnect_error_message(account_id)) from exc
+                raise
             except Exception as exc:
                 if _is_ssl_certificate_error(exc):
                     raise SetupError(_certificate_verification_error_message()) from exc
@@ -598,6 +602,15 @@ def _certificate_verification_error_message() -> str:
         "SSL verification is still enabled and was not bypassed. "
         "This commonly happens with python.org Python on macOS before the bundled root certificates are installed."
         f"{command_hint}"
+    )
+
+
+def _google_reconnect_error_message(account_id: str) -> str:
+    account_text = f" for account '{account_id}'" if account_id else ""
+    return (
+        "Google rejected the saved Gmail authorization"
+        f"{account_text}. The refresh token may be expired, revoked, or tied to outdated OAuth consent. "
+        "Reconnect Gmail by reauthorizing the local companion, then run Gmail sync again."
     )
 
 

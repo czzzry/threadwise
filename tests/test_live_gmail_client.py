@@ -181,6 +181,44 @@ class LiveGmailClientTests(unittest.TestCase):
             self.assertEqual(oauth_session.authorize_calls, 1)
             self.assertEqual(stored_token["access_token"], "new-token")
             self.assertEqual(stored_token["refresh_token"], "new-refresh")
+
+    def test_from_local_oauth_surfaces_reconnect_message_when_google_refresh_returns_400(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            credentials_dir = Path(temp_dir)
+            self._write_client_secret(credentials_dir)
+            token_path = credentials_dir / "gmail_tokens" / "founder-test.json"
+            token_path.parent.mkdir(parents=True, exist_ok=True)
+            token_path.write_text(
+                json.dumps(
+                    {
+                        "access_token": "expired-token",
+                        "refresh_token": "stale-refresh",
+                        "expires_at": "2000-01-01T00:00:00Z",
+                        "scope": GMAIL_MODIFY_SCOPE,
+                    }
+                )
+            )
+
+            class FailingRefreshSession:
+                def refresh_access_token(self, refresh_token: str) -> dict:
+                    raise urllib.error.HTTPError(
+                        "https://oauth2.googleapis.com/token",
+                        400,
+                        "Bad Request",
+                        hdrs=None,
+                        fp=None,
+                    )
+
+            with self.assertRaises(SetupError) as exc_info:
+                LiveGmailClient.from_local_oauth(
+                    "founder-test",
+                    credentials_dir,
+                    oauth_session_factory=lambda config, client_secret_path, account_id, scope: FailingRefreshSession(),
+                    scope=GMAIL_MODIFY_SCOPE,
+                )
+
+            self.assertIn("Reconnect Gmail", str(exc_info.exception))
+            self.assertIn("founder-test", str(exc_info.exception))
             self.assertEqual(stored_token["scope"], GMAIL_READONLY_SCOPE)
 
     def test_from_local_oauth_reauthorizes_when_cached_token_lacks_required_scope(self) -> None:
