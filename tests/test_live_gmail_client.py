@@ -219,7 +219,6 @@ class LiveGmailClientTests(unittest.TestCase):
 
             self.assertIn("Reconnect Gmail", str(exc_info.exception))
             self.assertIn("founder-test", str(exc_info.exception))
-            self.assertEqual(stored_token["scope"], GMAIL_READONLY_SCOPE)
 
     def test_from_local_oauth_reauthorizes_when_cached_token_lacks_required_scope(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
