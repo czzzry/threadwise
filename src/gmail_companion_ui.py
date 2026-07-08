@@ -1307,8 +1307,11 @@ class GmailCompanionApp:
     let minimized = false;
     let teachPreview = null;
     let previousTeachPreview = null;
-    let teachResult = "";
+    let teachResult = null;
     let teachError = "";
+    let teachFlowState = "teaching";
+    let inboxApplyConfirmOpen = false;
+    let teachOutcome = null;
     let unsubscribeResult = "";
     let detailsExpanded = false;
     let affectedReviewOpen = false;
@@ -1654,6 +1657,95 @@ class GmailCompanionApp:
       `;
     }
 
+    function renderTeachReceipt() {
+      if (!teachResult) {
+        return "";
+      }
+      const outcome = teachOutcome || {};
+      const rows = [
+        ["This email", outcome.current_email_changed_locally ? "done" : "not changed"],
+        ["Gmail label", outcome.current_email_written_to_gmail ? "done" : "not confirmed"],
+        ["Other stored emails", (outcome.matching_existing_changed_locally || 0) > 0 ? `${outcome.matching_existing_changed_locally} changed` : "not changed"],
+        ["Future rule", outcome.future_rule_saved ? "saved" : "not saved"],
+      ];
+      return `
+        <div class="success-card" data-teach-state="result">
+          <div style="font-weight:800;">Rule applied</div>
+          <div style="margin-top:8px;">${escapeHtml(teachResult)}</div>
+          <div class="reason-wrap" style="margin-top:12px;background:#fffdfa;">
+            <div class="reason-label">What changed</div>
+            <div class="detail-list">${rows.map(([label, value]) => `
+              <div class="list-item" style="cursor:default;">
+                <div class="list-item-subject">${escapeHtml(label)}</div>
+                <div class="list-item-meta">${escapeHtml(value)}</div>
+              </div>
+            `).join("")}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderTeachProposal(preview) {
+      return `
+        <div class="preview-card" data-teach-state="rule-proposed">
+          <div class="reason-label">Proposed rule:</div>
+          <div class="reason" style="font-weight:800;">${escapeHtml(preview.plain_english_rule || "No rule proposed.")}</div>
+          <div class="button-row" style="margin-top:12px;">
+            <button type="button" class="action-button primary" data-action="accept-teach-rule">Looks right</button>
+            <button type="button" class="action-button secondary" data-action="refine-teach">Edit</button>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderTeachScope(preview) {
+      const backfill = preview.inbox_backfill || {};
+      return `
+        <div class="preview-card" data-teach-state="${teachFlowState}">
+          <div class="reason-label">Accepted rule</div>
+          <div class="reason" style="font-weight:800;">${escapeHtml(preview.plain_english_rule || "No rule proposed.")}</div>
+          <div class="empty">Choose how broadly to apply this rule.</div>
+          <div class="button-row" style="margin-top:12px;">
+            <button type="button" class="action-button primary" data-apply-mode="current-only">Fix email</button>
+            <button type="button" class="action-button secondary" data-apply-mode="future-only">Fix + future</button>
+            <button type="button" class="action-button info" data-apply-mode="apply-included">Fix + inbox</button>
+          </div>
+          <div class="empty">Fix email applies only to this email. Fix + future also saves the rule. Fix + inbox also applies it to matching inbox emails.</div>
+          ${backfill.available ? `<div class="empty">Will update about ${escapeHtml(String(backfill.estimated_count || 0))} matching inbox emails.</div>` : ""}
+          ${inboxApplyConfirmOpen ? `
+            <div class="error-card">
+              <div style="font-weight:800;">Apply to inbox?</div>
+              <div style="margin-top:8px;">Will update about ${escapeHtml(String(backfill.estimated_count || 0))} matching inbox emails.</div>
+              <div class="button-row" style="margin-top:12px;">
+                <button type="button" class="action-button info" data-action="confirm-inbox-apply">Apply to inbox</button>
+                <button type="button" class="action-button quiet" data-action="cancel-inbox-apply">Cancel</button>
+              </div>
+            </div>
+          ` : ""}
+        </div>
+      `;
+    }
+
+    function renderTeachComposer(labelOptions) {
+      return `
+        <div class="field-stack" data-teach-state="${teachFlowState === "refining" ? "refining" : "teaching"}">
+          ${teachFlowState === "refining" ? '<div class="empty">You are refining this lesson.</div>' : ""}
+          <textarea id="sim-teach-note" class="textarea" placeholder="What should Threadwise understand?">${escapeHtml(draftNote)}</textarea>
+          <details class="empty" style="margin-top:0;">
+            <summary style="cursor:pointer;font-weight:800;color:#241812;">Choose label manually</summary>
+            <select id="sim-target-label" class="select" style="margin-top:8px;">
+              <option value="">Infer from note</option>
+              ${labelOptions}
+            </select>
+          </details>
+          <div class="button-row">
+            <button type="button" class="action-button primary" data-action="preview-teach">Propose rule</button>
+            <button type="button" class="action-button quiet" data-action="clear-teach">Clear draft</button>
+          </div>
+        </div>
+      `;
+    }
+
     function renderSelectedPanel() {
       const selected = selectedEmail();
       const stepCopy = nextStepCopy(selected);
@@ -1715,14 +1807,15 @@ class GmailCompanionApp:
         `
         : "";
       const errorHtml = teachError ? renderTeachError(teachError) : "";
-      const resultHtml = teachResult ? `<div class="success-card">${escapeHtml(teachResult)}</div>` : "";
-      const feedbackHtml = teachPreview
-        ? `${errorHtml}${resultHtml}${renderPreviousTeachPreview(previousTeachPreview)}${renderTeachPreview(teachPreview)}`
-        : teachError
-          ? errorHtml
-          : teachResult
-            ? `<div class="success-card">${escapeHtml(teachResult)}</div>`
-            : renderPreviousTeachPreview(previousTeachPreview);
+      let flowHtml = renderTeachComposer(labelOptions);
+      if (teachFlowState === "rule-proposed" && teachPreview) {
+        flowHtml = renderTeachProposal(teachPreview);
+      } else if ((teachFlowState === "scope-confirmation" || teachFlowState === "applying") && teachPreview) {
+        flowHtml = renderTeachScope(teachPreview);
+      } else if (teachFlowState === "result") {
+        flowHtml = renderTeachReceipt();
+      }
+      const feedbackHtml = `${errorHtml}${renderPreviousTeachPreview(previousTeachPreview)}${flowHtml}`;
       selectedEmailNode.innerHTML = `
         <div class="subject">${escapeHtml(selected.subject || "(no subject)")}</div>
         <div class="sender">${escapeHtml(selected.sender || "(unknown sender)")}</div>
@@ -1733,20 +1826,7 @@ class GmailCompanionApp:
         </div>
         ${unsubscribeLine}
       `;
-      teachPanelNode.innerHTML = `
-        <div class="field-stack">
-          <textarea id="sim-teach-note" class="textarea" placeholder="What should Threadwise understand?">${escapeHtml(draftNote)}</textarea>
-          <details class="empty" style="margin-top:0;">
-            <summary style="cursor:pointer;font-weight:800;color:#241812;">Choose label manually</summary>
-            <select id="sim-target-label" class="select" style="margin-top:8px;">${labelOptions}</select>
-          </details>
-          <div class="button-row">
-            <button type="button" class="action-button primary" data-action="preview-teach">Preview</button>
-            <button type="button" class="action-button quiet" data-action="clear-teach">Clear draft</button>
-          </div>
-        </div>
-        ${feedbackHtml}
-      `;
+      teachPanelNode.innerHTML = feedbackHtml;
       const labelNode = document.getElementById("sim-target-label");
       const noteNode = document.getElementById("sim-teach-note");
       if (labelNode) {
@@ -1850,8 +1930,11 @@ class GmailCompanionApp:
     function resetTeachState(clearDraft) {
       teachPreview = null;
       previousTeachPreview = null;
-      teachResult = "";
+      teachResult = null;
       teachError = "";
+      teachFlowState = "teaching";
+      inboxApplyConfirmOpen = false;
+      teachOutcome = null;
       unsubscribeResult = "";
       affectedReviewOpen = false;
       syncAffectedReviewLayout();
@@ -1877,11 +1960,12 @@ class GmailCompanionApp:
       });
       if (payload.error) {
         teachError = payload.error;
-        teachResult = "";
+        teachResult = null;
       } else {
         teachError = "";
-        teachResult = "";
+        teachResult = null;
         teachPreview = payload;
+        teachFlowState = "rule-proposed";
         unsubscribeResult = "";
       }
       renderSelectedPanel();
@@ -1904,7 +1988,8 @@ class GmailCompanionApp:
       });
       if (payload.error) {
         teachError = payload.error;
-        teachResult = "";
+        teachResult = null;
+        teachFlowState = "scope-confirmation";
         renderSelectedPanel();
         return;
       } else {
@@ -1912,10 +1997,10 @@ class GmailCompanionApp:
         previousTeachPreview = null;
         teachError = "";
         teachResult = payload.acknowledgment || "Lesson applied.";
+        teachOutcome = payload.outcome || null;
+        teachFlowState = "result";
         unsubscribeResult = "";
         affectedReviewOpen = false;
-        draftLabel = "";
-        draftNote = "";
       }
       await refreshState();
       renderSelectedPanel();
@@ -2003,6 +2088,13 @@ class GmailCompanionApp:
         previewTeach();
         return;
       }
+      const acceptTeachRuleButton = event.target.closest("[data-action='accept-teach-rule']");
+      if (acceptTeachRuleButton) {
+        teachFlowState = "scope-confirmation";
+        inboxApplyConfirmOpen = false;
+        renderSelectedPanel();
+        return;
+      }
       const refreshButton = event.target.closest("[data-action='refresh-state']");
       if (refreshButton) {
         refreshState();
@@ -2052,13 +2144,34 @@ class GmailCompanionApp:
         previousTeachPreview = teachPreview;
         teachPreview = null;
         teachError = "";
-        teachResult = "";
+        teachResult = null;
+        draftNote = (previousTeachPreview && previousTeachPreview.plain_english_rule) || draftNote;
+        teachFlowState = "refining";
+        renderSelectedPanel();
+        return;
+      }
+      const confirmInboxApplyButton = event.target.closest("[data-action='confirm-inbox-apply']");
+      if (confirmInboxApplyButton) {
+        applyTeach("apply-included");
+        return;
+      }
+      const cancelInboxApplyButton = event.target.closest("[data-action='cancel-inbox-apply']");
+      if (cancelInboxApplyButton) {
+        inboxApplyConfirmOpen = false;
         renderSelectedPanel();
         return;
       }
       const applyButton = event.target.closest("[data-apply-mode]");
       if (applyButton) {
-        applyTeach(applyButton.getAttribute("data-apply-mode"));
+        const mode = applyButton.getAttribute("data-apply-mode") || "";
+        if (mode === "apply-included" && teachPreview && teachPreview.inbox_backfill && teachPreview.inbox_backfill.requires_confirmation && !inboxApplyConfirmOpen) {
+          inboxApplyConfirmOpen = true;
+          renderSelectedPanel();
+          return;
+        }
+        teachFlowState = "applying";
+        renderSelectedPanel();
+        applyTeach(mode);
         return;
       }
       const unsubscribeButton = event.target.closest("[data-action='select-unsubscribe']");
