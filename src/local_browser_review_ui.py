@@ -6,8 +6,15 @@ from pathlib import Path
 import sys
 from urllib.parse import parse_qs, unquote, urlparse
 
+from src.candidate_change_store import CandidateChangeStore
+from src.candidate_evaluation import evaluate_candidate_batch
 from src.label_taxonomy import allowed_gmail_labels
-from src.local_artifacts import memory_proposals_path, safety_dispositions_path, teachable_rules_path
+from src.local_artifacts import (
+    candidate_changes_path,
+    memory_proposals_path,
+    safety_dispositions_path,
+    teachable_rules_path,
+)
 from src.local_browser_review_rendering import (
     LocalBrowserReviewRenderingMixin,
     build_summary,
@@ -159,15 +166,18 @@ class LocalBrowserReviewApp(LocalBrowserReviewRenderingMixin):
         output_storage_dir: Path | None = None,
         provider_storage_dirs: list[tuple[str, Path]] | None = None,
         run_shadow_eval_fn=None,
+        run_candidate_eval_fn=None,
     ) -> None:
         self._storage_dir = storage_dir
         self._batch_id = batch_id
         self._store = GmailBatchReviewStore(storage_dir)
+        self._candidate_store = CandidateChangeStore(candidate_changes_path(storage_dir))
         self._unsubscribe_store = UnsubscribeInventoryStore(storage_dir)
         self._unsubscribe_executor = UnsubscribeExecutor(storage_dir)
         self._fetch_batch_fn = fetch_batch_fn
         self._account_id = account_id
         self._run_shadow_eval_fn = run_shadow_eval_fn
+        self._run_candidate_eval_fn = run_candidate_eval_fn
         self._batch_item_context_index: dict[tuple[str, str], dict] | None = None
         self._output_storage_dir = output_storage_dir or _infer_output_storage_dir(storage_dir)
         self._provider_storage_dirs = provider_storage_dirs or _infer_provider_storage_dirs(storage_dir)
@@ -257,6 +267,28 @@ class LocalBrowserReviewApp(LocalBrowserReviewRenderingMixin):
             except Exception as exc:
                 return HTTPStatus.INTERNAL_SERVER_ERROR, {"error": f"Could not run OpenAI comparison: {exc}"}
             return HTTPStatus.OK, evaluation
+
+        if parsed.path == "/api/candidate-evaluations" and method == "POST":
+            try:
+                return HTTPStatus.OK, self._run_candidate_evaluation()
+            except ValueError as exc:
+                return HTTPStatus.CONFLICT, {"error": str(exc)}
+            except Exception as exc:
+                return HTTPStatus.INTERNAL_SERVER_ERROR, {"error": f"Could not run candidate evaluation: {exc}"}
+
+        if parsed.path == "/api/candidate-changes" and method == "GET":
+            candidates = [candidate.to_dict() for candidate in self._candidate_store.list_candidates()]
+            return HTTPStatus.OK, {"candidates": candidates}
+
+        requested_candidate_decision_id = _requested_candidate_decision_id(parsed.path)
+        if requested_candidate_decision_id is not None and method == "POST":
+            try:
+                candidate = self._apply_candidate_decision(requested_candidate_decision_id, body or {})
+            except KeyError:
+                return HTTPStatus.NOT_FOUND, {"error": "Unknown candidate change id"}
+            except ValueError as exc:
+                return HTTPStatus.BAD_REQUEST, {"error": str(exc)}
+            return HTTPStatus.OK, {"candidate": candidate.to_dict()}
 
         if parsed.path == "/api/unified-review-queue" and method == "GET":
             return HTTPStatus.OK, self._load_or_build_unified_review_queue()
@@ -580,6 +612,47 @@ class LocalBrowserReviewApp(LocalBrowserReviewRenderingMixin):
             return self._unified_review_queue.load_queue()
         return self._unified_review_queue.build_queue()
 
+    def _run_candidate_evaluation(self) -> dict:
+        candidates = [
+            candidate
+            for candidate in self._candidate_store.list_candidates()
+            if candidate.status not in {"promoted", "rejected", "override-promoted"}
+        ]
+        if not candidates:
+            raise ValueError("No pending candidate changes are available for evaluation.")
+        if self._run_candidate_eval_fn is not None:
+            report = self._run_candidate_eval_fn(candidates)
+        else:
+            report = evaluate_candidate_batch(
+                candidates=candidates,
+                provider_storage_dirs=self._provider_storage_dirs,
+                output_storage_dir=self._output_storage_dir,
+            )
+        report_ref = report.get("report_path", "")
+        recommendations = {
+            item["candidate_id"]: item.get("recommendation", "")
+            for item in report.get("candidate_summaries", [])
+        }
+        status_by_recommendation = {
+            "Promote": "recommended-promote",
+            "Review": "recommended-review",
+            "Reject": "recommended-reject",
+        }
+        updated_candidates = []
+        for candidate in candidates:
+            recommendation = recommendations.get(candidate.id, "")
+            updated = self._candidate_store.update_candidate(
+                candidate.id,
+                status=status_by_recommendation.get(recommendation, "evaluated"),
+                latest_evaluation_ref=report_ref,
+                latest_recommendation=recommendation,
+            )
+            updated_candidates.append(updated.to_dict())
+        return {
+            **report,
+            "updated_candidates": updated_candidates,
+        }
+
     def _load_operational_readiness(self) -> dict:
         reports_dir = self._output_storage_dir / "operational_readiness_reports"
         if reports_dir.exists():
@@ -595,6 +668,20 @@ class LocalBrowserReviewApp(LocalBrowserReviewRenderingMixin):
             return
         if requested_batch_id != self._batch_id:
             raise FileNotFoundError(requested_batch_id)
+
+    def _apply_candidate_decision(self, candidate_id: str, payload: dict) -> object:
+        decision = payload["decision"]
+        actor = payload.get("actor") or "browser-workbench"
+        latest_recommendation = payload.get("latest_recommendation")
+        if latest_recommendation is None:
+            latest_recommendation = self._candidate_store.get_candidate(candidate_id).latest_recommendation
+        return self._candidate_store.apply_decision(
+            candidate_id,
+            decision=decision,
+            actor=actor,
+            latest_recommendation=latest_recommendation,
+            override_reason=payload.get("override_reason", ""),
+        )
 
 def _requested_batch_id(path: str) -> str | None:
     prefix = "/api/batches/"
@@ -641,6 +728,17 @@ def _requested_evaluation_preference_id(path: str) -> str | None:
 def _requested_teachable_rule_disable_id(path: str) -> str | None:
     prefix = "/api/teachable-rules/"
     suffix = "/disable"
+    if not path.startswith(prefix) or not path.endswith(suffix):
+        return None
+    remainder = path[len(prefix):-len(suffix)]
+    if not remainder or "/" in remainder:
+        return None
+    return remainder
+
+
+def _requested_candidate_decision_id(path: str) -> str | None:
+    prefix = "/api/candidate-changes/"
+    suffix = "/decision"
     if not path.startswith(prefix) or not path.endswith(suffix):
         return None
     remainder = path[len(prefix):-len(suffix)]

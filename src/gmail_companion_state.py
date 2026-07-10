@@ -4,8 +4,10 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 from src.attention_feedback import load_attention_feedback
+from src.candidate_change_store import CandidateChangeStore
 from src.label_taxonomy import CANONICAL_LABEL_ORDER, gmail_label_name
 from src.local_artifacts import (
+    candidate_changes_path,
     inbox_removal_status_path,
     load_json,
     load_json_or_default,
@@ -439,8 +441,11 @@ def build_changed_today_summary(storage_dir: Path, batch_id: str) -> dict:
             "inbox_removed_count": 0,
             "taught_count": 0,
             "selected_unsubscribe_count": 0,
+            "candidate_pending_count": 0,
+            "candidate_promoted_count": 0,
             "items": [],
             "selected_unsubscribe_examples": [],
+            "candidate_examples": [],
         }
     batch = load_json_or_default(storage_dir / "batches" / f"{batch_id}.json", {})
     items = batch.get("items", [])
@@ -495,14 +500,30 @@ def build_changed_today_summary(storage_dir: Path, batch_id: str) -> dict:
         }
         for candidate in selected_candidates
     ][:3]
+    candidate_changes = CandidateChangeStore(candidate_changes_path(storage_dir)).list_candidates()
+    pending_statuses = {"pending", "evaluated", "recommended-promote", "recommended-review", "recommended-reject"}
+    promoted_statuses = {"promoted", "override-promoted"}
+    candidate_pending_count = sum(1 for candidate in candidate_changes if candidate.status in pending_statuses)
+    candidate_promoted_count = sum(1 for candidate in candidate_changes if candidate.status in promoted_statuses)
+    candidate_examples = [
+        {
+            "title": candidate.title,
+            "status": candidate.status,
+            "latest_recommendation": candidate.latest_recommendation,
+        }
+        for candidate in sorted(candidate_changes, key=lambda candidate: candidate.updated_at, reverse=True)[:3]
+    ]
     return {
         "label_writes_count": label_writes_count,
         "inbox_removed_count": inbox_removed_count,
         "taught_count": taught_count,
         "selected_unsubscribe_count": selected_unsubscribe_count,
+        "candidate_pending_count": candidate_pending_count,
+        "candidate_promoted_count": candidate_promoted_count,
         "items": changed_items[:6],
         "groups": group_changed_today_items(changed_items),
         "selected_unsubscribe_examples": selected_unsubscribe_examples,
+        "candidate_examples": candidate_examples,
     }
 
 def group_changed_today_items(items: list[dict]) -> list[dict]:

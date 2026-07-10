@@ -172,6 +172,22 @@ def render_dashboard_unsubscribe_cards(items: list[dict]) -> str:
         )
     return "".join(cards)
 
+def render_dashboard_candidate_cards(items: list[dict]) -> str:
+    if not items:
+        return '<div class="email-card"><div class="copy">No candidate changes are waiting for review.</div></div>'
+    cards = []
+    for item in items:
+        recommendation = item.get("latest_recommendation") or "Not yet evaluated"
+        cards.append(
+            '<article class="email-card">'
+            f'<h3>{escape_html(item.get("title") or "(untitled candidate)")}</h3>'
+            f'<div class="pill-row"><span class="pill">{escape_html(item.get("status") or "pending")}</span>'
+            f'<span class="pill">{escape_html(recommendation)}</span></div>'
+            '<div class="copy">Reviewed in the local evaluation lane before any durable promotion.</div>'
+            '</article>'
+        )
+    return "".join(cards)
+
 def escape_html(value: str) -> str:
     return (
         str(value or "")

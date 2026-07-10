@@ -29,6 +29,7 @@ from src.unsubscribe_execution import UnsubscribeExecutor
 from src.gmail_companion_rendering import (
     escape_html,
     render_dashboard_attention_cards,
+    render_dashboard_candidate_cards,
     render_dashboard_changed_cards,
     render_dashboard_email_cards,
     render_dashboard_section,
@@ -1880,6 +1881,7 @@ class GmailCompanionApp:
     function renderSummary() {
       const summary = (((harnessState || {}).sidebar_state) || {}).daily_summary || {};
       const changedToday = summary.changed_today || {};
+      const candidateExamples = changedToday.candidate_examples || [];
       const bucketLabel = activeBucketLabel();
       const topLabels = (summary.top_labels || []).map((label) =>
         `<span class="pill">${escapeHtml(label.label)} · ${label.count}</span>`
@@ -1893,6 +1895,14 @@ class GmailCompanionApp:
             </div>
           `).join("")
         : '<div class="empty">No tracked agent changes in this stored batch yet.</div>';
+      const candidateReviewHtml = candidateExamples.length
+        ? candidateExamples.map((item) => `
+            <div class="note">
+              <strong>${escapeHtml(item.title || "(untitled candidate)")}</strong><br>
+              ${escapeHtml(item.status || "pending")}${item.latest_recommendation ? ` · ${escapeHtml(item.latest_recommendation)}` : ""}
+            </div>
+          `).join("")
+        : '<div class="empty">No candidate changes are waiting in the evaluation lane.</div>';
       dailySummaryNode.innerHTML = `
         <div class="empty">${summary.run_count > 1 ? `Rolling view across the last ${summary.run_count} Gmail runs` : "Latest run snapshot"}</div>
         <div class="summary-grid summary-grid--three">
@@ -1922,8 +1932,11 @@ class GmailCompanionApp:
               <div class="metric-button"><strong>${changedToday.inbox_removed_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">removed from inbox</span></div>
               <div class="metric-button"><strong>${changedToday.taught_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">teaching changes</span></div>
               <div class="metric-button"><strong>${changedToday.selected_unsubscribe_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">unsubscribe queued</span></div>
+              <div class="metric-button"><strong>${changedToday.candidate_pending_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">candidate review</span></div>
             </div>
             <div class="field-stack" style="margin-top:12px;">${changedItemsHtml}</div>
+            <div class="reason-label" style="margin-top:12px;">Candidate review lane</div>
+            <div class="field-stack" style="margin-top:12px;">${candidateReviewHtml}</div>
           </div>
           ${topLabels ? `<div class="label-row">${topLabels}</div>` : '<p class="empty" style="margin-top:12px;">No stored label mix yet.</p>'}
           <p class="empty" style="margin-top:12px;">Source: ${escapeHtml(summary.source_label || "stored Gmail snapshot")}${summary.batch_id ? ` · ${escapeHtml(summary.batch_id)}` : ""}</p>
@@ -2500,6 +2513,7 @@ class GmailCompanionApp:
         inferred_account_id = infer_gmail_account_id(self._storage_dir)
         changed_today = summary.get("changed_today", {})
         selected_unsubscribe_examples = changed_today.get("selected_unsubscribe_examples", [])
+        candidate_examples = changed_today.get("candidate_examples", [])
         sections = [
             (
                 "Needs Attention",
@@ -2536,6 +2550,7 @@ class GmailCompanionApp:
         )
         changed_items_html = render_dashboard_changed_cards(changed_today.get("items", []))
         unsubscribe_html = render_dashboard_unsubscribe_cards(selected_unsubscribe_examples)
+        candidate_review_html = render_dashboard_candidate_cards(candidate_examples)
         sections_html = "".join(
             render_dashboard_section(title, description, cards)
             for title, description, cards in sections
@@ -2690,8 +2705,10 @@ class GmailCompanionApp:
           <div class="metric"><strong>{changed_today.get("inbox_removed_count", 0)}</strong><span>removed from inbox</span></div>
           <div class="metric"><strong>{changed_today.get("taught_count", 0)}</strong><span>teaching changes</span></div>
           <div class="metric"><strong>{changed_today.get("selected_unsubscribe_count", 0)}</strong><span>unsubscribe queued</span></div>
+          <div class="metric"><strong>{changed_today.get("candidate_pending_count", 0)}</strong><span>candidate review</span></div>
         </div>
         <div class="stack" style="margin-top:12px;">{changed_items_html}</div>
+        <div class="stack" style="margin-top:12px;">{candidate_review_html}</div>
       </article>
       <article class="card">
         <div class="eyebrow">Subscriptions</div>

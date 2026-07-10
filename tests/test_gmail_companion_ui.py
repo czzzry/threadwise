@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from src.attention_feedback import load_attention_feedback
 from src.attention_rules import attention_rules_path
+from src.candidate_change_store import CandidateChange, CandidateChangeStore
 from src.founder_feedback import load_founder_feedback
 from src.gmail_run_control import load_gmail_dashboard_run_status, write_gmail_dashboard_run_status
 from src.gmail_companion_rendering import (
@@ -26,6 +27,7 @@ from src.gmail_companion_state import (
 )
 from src.gmail_companion_ui import GmailCompanionApp, main
 from src.gmail_writer import MockGmailLabelClient
+from src.local_artifacts import candidate_changes_path
 
 
 class GmailCompanionUiTests(unittest.TestCase):
@@ -1624,18 +1626,45 @@ class GmailCompanionUiTests(unittest.TestCase):
                     indent=2,
                 )
             )
+            CandidateChangeStore(candidate_changes_path(storage_dir)).save_candidate(
+                CandidateChange(
+                    id="candidate-future-rule-001",
+                    kind="future-rule",
+                    source="sidebar-teach",
+                    title="Teach vendor digest as newsletter",
+                    description="Future rule candidate from inbox teaching.",
+                    affected_scope_summary="vendor digest family",
+                    latest_recommendation="Review",
+                    status="recommended-review",
+                )
+            )
+            CandidateChangeStore(candidate_changes_path(storage_dir)).save_candidate(
+                CandidateChange(
+                    id="candidate-future-rule-002",
+                    kind="future-rule",
+                    source="sidebar-teach",
+                    title="Teach another sender family",
+                    description="Promoted future rule.",
+                    affected_scope_summary="sender family",
+                    latest_recommendation="Promote",
+                    status="promoted",
+                )
+            )
 
             summary = GmailCompanionApp(storage_dir).sidebar_state({})["daily_summary"]["changed_today"]
 
             self.assertEqual(summary["label_writes_count"], 1)
             self.assertEqual(summary["inbox_removed_count"], 1)
             self.assertEqual(summary["selected_unsubscribe_count"], 1)
+            self.assertEqual(summary["candidate_pending_count"], 1)
+            self.assertEqual(summary["candidate_promoted_count"], 1)
             self.assertEqual(len(summary["items"]), 2)
             self.assertEqual(summary["items"][0]["change_group"], "Labels written")
             self.assertEqual(summary["items"][1]["change_group"], "Removed from inbox")
             self.assertEqual(summary["groups"][0]["label"], "Labels written")
             self.assertEqual(summary["groups"][1]["label"], "Removed from inbox")
             self.assertEqual(summary["selected_unsubscribe_examples"][0]["display_name"], "Store")
+            self.assertEqual(summary["candidate_examples"][0]["title"], "Teach another sender family")
             self.assertIn("list_key=gmail%3Afounder-test%3Anews%40example.com", summary["selected_unsubscribe_examples"][0]["handoff_path"])
 
     def test_teach_apply_matching_existing_relabels_current_without_saving_rule(self) -> None:
@@ -1877,11 +1906,12 @@ class GmailCompanionUiTests(unittest.TestCase):
                 }
             )
 
-            rule_payload = json.loads((storage_dir / "teachable_classification_rules.json").read_text())
+            candidate_payload = json.loads((storage_dir / "candidate_changes.json").read_text())
             batch_one = json.loads((storage_dir / "batches" / "founder-test-batch-1.json").read_text())
 
             self.assertIn("saved a future rule", result["acknowledgment"])
-            self.assertEqual(rule_payload["rules"][0]["label"], "job-related")
+            self.assertEqual(candidate_payload["candidates"][0]["kind"], "future-rule")
+            self.assertEqual(candidate_payload["candidates"][0]["metadata"]["rules"][0]["label"], "job-related")
             self.assertEqual(batch_one["items"][0]["final_labels"], [])
             self.assertEqual(gmail_client.calls, [])
             self.assertEqual(result["gmail_write_through"]["messages_written"], 0)

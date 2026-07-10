@@ -69,6 +69,7 @@ def _build_registry() -> dict[str, ArtifactDescriptor]:
         "runtime_cascades_dir": ArtifactDescriptor("runtime_cascades_dir", lambda storage_dir: storage_dir / "runtime_cascades", kind="directory"),
         "runtime_cascade": ArtifactDescriptor("runtime_cascade", lambda storage_dir, run_id: storage_dir / "runtime_cascades" / f"{run_id}.json"),
         "memory_proposals": ArtifactDescriptor("memory_proposals", lambda storage_dir: storage_dir / "memory_proposals.json", required_fields=("proposals",)),
+        "candidate_changes": ArtifactDescriptor("candidate_changes", lambda storage_dir: storage_dir / "candidate_changes.json", required_fields=("candidates",)),
         "safety_dispositions": ArtifactDescriptor("safety_dispositions", lambda storage_dir: storage_dir / "safety_dispositions.json"),
         "safety_review_digests_dir": ArtifactDescriptor("safety_review_digests_dir", lambda storage_dir: storage_dir / "safety_review_digests", kind="directory"),
         "safety_review_digest": ArtifactDescriptor("safety_review_digest", lambda storage_dir, digest_id: storage_dir / "safety_review_digests" / f"{digest_id}.json"),
@@ -105,6 +106,7 @@ CORE_VALIDATED_ARTIFACTS = {
     "inbox_removal_status",
     "teachable_rules",
     "memory_proposals",
+    "candidate_changes",
     "unsubscribe_selections",
     "unsubscribe_execution_audit",
     "unified_review_queue",
@@ -263,6 +265,10 @@ def runtime_cascade_path(storage_dir: Path, run_id: str) -> Path:
 
 def memory_proposals_path(storage_dir: Path) -> Path:
     return artifact_path("memory_proposals", storage_dir)
+
+
+def candidate_changes_path(storage_dir: Path) -> Path:
+    return artifact_path("candidate_changes", storage_dir)
 
 
 def safety_dispositions_path(storage_dir: Path) -> Path:

@@ -8,8 +8,14 @@ from pathlib import Path
 from src.gmail_batch_review_store import GmailBatchReviewStore
 from src.gmail_companion_state import find_matching_item
 from src.label_taxonomy import CANONICAL_LABEL_ORDER, gmail_label_name
-from src.local_artifacts import load_json, memory_proposals_path, teachable_rules_path
-from src.memory_proposal_store import MemoryProposalStore, build_memory_proposal, load_storage_items
+from src.candidate_change_store import CandidateChange, CandidateChangeStore
+from src.local_artifacts import candidate_changes_path, load_json, memory_proposals_path
+from src.memory_proposal_store import (
+    MemoryProposalStore,
+    build_memory_proposal,
+    load_storage_items,
+    rule_from_memory_proposal,
+)
 from src.sender_utils import normalized_sender_email
 from src.teaching_exclusions import (
     count_teaching_exclusions_for_proposal,
@@ -231,12 +237,36 @@ def apply_sidebar_teaching(
 
     matched_existing_count = 0
     proposal_record = None
+    candidate_record = None
     future_rule_saved = False
     if mode in {"save-future-rule", "future-only", "apply-included"}:
         store = MemoryProposalStore(memory_proposals_path(storage_dir))
-        store.save_proposal(proposal)
-        memory = TeachableRuleMemory(teachable_rules_path(storage_dir))
-        proposal_record = store.review_proposal(proposal.id, "approved", rules_memory=memory)
+        proposal_record = store.save_proposal(proposal)
+        candidate_store = CandidateChangeStore(candidate_changes_path(storage_dir))
+        projection_rule = rule_from_memory_proposal(proposal, existing_count=0)
+        candidate_record = candidate_store.save_candidate(
+            CandidateChange(
+                id=f"candidate-{proposal.id}",
+                kind="future-rule",
+                source="sidebar-teach",
+                title=proposal.instruction,
+                description="Reusable future rule saved from inbox teaching.",
+                affected_scope_summary=f"{proposal.scope} rule candidate for {proposal.label}",
+                provider=proposal.provider,
+                account_id=proposal.account_id,
+                source_refs=(
+                    f"proposal:{proposal.id}",
+                    *[f"message:{message_id}" for message_id in proposal.source_message_ids],
+                ),
+                created_at=proposal.created_at,
+                updated_at=proposal.updated_at,
+                metadata={
+                    "proposal_id": proposal.id,
+                    "rules": [projection_rule.to_dict()],
+                    "apply_mode": mode,
+                },
+            )
+        )
         future_rule_saved = True
     if mode in {"matching-existing", "apply-included"}:
         matched_existing_count = apply_label_to_preview_matches(
@@ -264,6 +294,7 @@ def apply_sidebar_teaching(
         "exceptions_saved_count": exceptions_saved_count,
         "future_rule_saved": future_rule_saved,
         "proposal": proposal_record.to_dict() if proposal_record else None,
+        "candidate_change": candidate_record.to_dict() if candidate_record else None,
         "current": current,
         "preview_matches": preview_matches,
     }
@@ -1001,13 +1032,17 @@ def build_apply_acknowledgment(
     if mode == "matching-existing":
         return f"I relabeled this email to {label_name} and rewrote {matched_existing_count} matching stored emails. I did not save a future rule."
     if mode == "apply-included":
-        future_copy = "saved a future rule" if future_rule_saved else "did not save a future rule"
+        future_copy = (
+            "saved a future rule candidate for evaluation"
+            if future_rule_saved
+            else "did not save a future rule candidate"
+        )
         return (
             f"I relabeled this email to {label_name}, rewrote {matched_existing_count} included stored emails, "
             f"kept {exceptions_saved_count} saved exceptions, and {future_copy}."
         )
     if mode == "save-future-rule":
-        return f"I saved a future rule. I did not relabel this email or rewrite other existing emails."
+        return f"I saved a future rule candidate for evaluation. I did not relabel this email or rewrite other existing emails."
     if mode == "future-only":
-        return f"I relabeled this email to {label_name} and saved a future rule. No other existing stored emails were rewritten."
+        return f"I relabeled this email to {label_name} and saved a future rule candidate for evaluation. No other existing stored emails were rewritten."
     return f"I applied the teaching action for {label_name}."

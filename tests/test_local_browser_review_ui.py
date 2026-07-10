@@ -6,6 +6,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from src.candidate_change_store import CandidateChange, CandidateChangeStore
+from src.local_artifacts import candidate_changes_path
 from src.local_browser_review_ui import LocalBrowserReviewApp, main
 
 
@@ -208,6 +210,102 @@ class LocalBrowserReviewUiTests(unittest.TestCase):
             self.assertIn("Unified Review Queue", page)
             self.assertIn("Runtime LLM candidate: gmail vendor@example.com", page)
             self.assertIn("Refresh queue", page)
+
+    def test_workbench_surfaces_candidate_change_review_panel(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            CandidateChangeStore(candidate_changes_path(storage_dir)).save_candidate(
+                CandidateChange(
+                    id="candidate-future-rule-001",
+                    kind="future-rule",
+                    source="sidebar-teach",
+                    title="Teach vendor digest as newsletter",
+                    description="Future rule candidate from inbox teaching.",
+                    affected_scope_summary="vendor digest family",
+                    latest_recommendation="Review",
+                    status="recommended-review",
+                )
+            )
+
+            app = LocalBrowserReviewApp(storage_dir, None)
+            page = app.render_page()
+
+            self.assertIn("Candidate Change Review", page)
+            self.assertIn("Teach vendor digest as newsletter", page)
+            self.assertIn("Run candidate evaluation", page)
+            self.assertIn("Override promote", page)
+
+    def test_workbench_candidate_eval_api_updates_candidate_statuses(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            store = CandidateChangeStore(candidate_changes_path(storage_dir))
+            store.save_candidate(
+                CandidateChange(
+                    id="candidate-future-rule-001",
+                    kind="future-rule",
+                    source="sidebar-teach",
+                    title="Teach vendor digest as newsletter",
+                    description="Future rule candidate from inbox teaching.",
+                    affected_scope_summary="vendor digest family",
+                )
+            )
+            app = LocalBrowserReviewApp(
+                storage_dir,
+                None,
+                run_candidate_eval_fn=lambda candidates: {
+                    "candidate_count": len(candidates),
+                    "batch_recommendation": "Promote",
+                    "candidate_summaries": [
+                        {
+                            "candidate_id": candidates[0].id,
+                            "recommendation": "Promote",
+                        }
+                    ],
+                    "report_path": str(storage_dir / "classifier_eval" / "evaluations" / "candidate-eval-test.json"),
+                },
+            )
+
+            status_code, payload = app.handle_api_request("POST", "/api/candidate-evaluations", {})
+            saved = store.get_candidate("candidate-future-rule-001")
+
+            self.assertEqual(status_code, 200)
+            self.assertEqual(payload["batch_recommendation"], "Promote")
+            self.assertEqual(saved.status, "recommended-promote")
+            self.assertEqual(saved.latest_recommendation, "Promote")
+
+    def test_workbench_candidate_decision_api_persists_override_audit(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            store = CandidateChangeStore(candidate_changes_path(storage_dir))
+            store.save_candidate(
+                CandidateChange(
+                    id="candidate-future-rule-001",
+                    kind="future-rule",
+                    source="sidebar-teach",
+                    title="Teach vendor digest as newsletter",
+                    description="Future rule candidate from inbox teaching.",
+                    affected_scope_summary="vendor digest family",
+                    latest_recommendation="Reject",
+                    status="recommended-reject",
+                )
+            )
+            app = LocalBrowserReviewApp(storage_dir, None)
+
+            status_code, payload = app.handle_api_request(
+                "POST",
+                "/api/candidate-changes/candidate-future-rule-001/decision",
+                {
+                    "decision": "override-promote",
+                    "latest_recommendation": "Reject",
+                    "override_reason": "Founder wants this automation despite the benchmark hit.",
+                },
+            )
+            saved = store.get_candidate("candidate-future-rule-001")
+
+            self.assertEqual(status_code, 200)
+            self.assertEqual(payload["candidate"]["status"], "override-promoted")
+            self.assertEqual(saved.decision_actor, "browser-workbench")
+            self.assertIn("benchmark hit", saved.override_reason)
 
     def test_workbench_surfaces_operational_readiness_panel(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
