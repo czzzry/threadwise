@@ -184,7 +184,7 @@ class LiveOutlookMailGraphClientTests(unittest.TestCase):
                 )
             )
 
-            with self.assertRaisesRegex(SetupError, "Install Certificates.command"):
+            with self.assertRaisesRegex(SetupError, "TLS certificate verification failed while talking to Microsoft"):
                 LiveOutlookMailGraphClient.from_local_oauth(
                     "founder-hotmail",
                     credentials_dir,

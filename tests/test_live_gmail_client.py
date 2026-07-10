@@ -354,7 +354,7 @@ class LiveGmailClientTests(unittest.TestCase):
                 )
             )
 
-            with self.assertRaisesRegex(SetupError, "Install Certificates.command"):
+            with self.assertRaisesRegex(SetupError, "TLS certificate verification failed while talking to Google"):
                 LiveGmailClient.from_local_oauth(
                     "founder-test",
                     credentials_dir,
