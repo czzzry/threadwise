@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Async Threadwise Extension Reference</title>
+    <link rel="stylesheet" href="../assets/teaching-pack.css">
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <p class="eyebrow">Reference 0001</p>
+        <h1>Async Threadwise Extension Cheat Sheet</h1>
+        <p class="lede">Use this when you need the compressed version: what we changed, why it works, where the code lives, and how to talk about it truthfully.</p>
+        <div class="link-row">
+          <a href="../lessons/0001-async-threadwise-extension-architecture.html">Read the main lesson</a>
+          <a href="../learning-records/0001-async-here-means-responsive-state-not-a-platform-rewrite.md">Open learning record 0001</a>
+        </div>
+      </section>
+
+      <h2>One-Sentence Definition</h2>
+      <div class="callout work">
+        Async in Threadwise means the founder sees a useful result as soon as possible, while slower supporting work continues separately and reports back through visible state changes instead of one long opaque wait.
+      </div>
+
+      <h2>Mnemonic</h2>
+      <div class="card">
+        <h3>A-W-D-R</h3>
+        <p><strong>Acknowledge</strong> the action quickly.</p>
+        <p><strong>Work</strong> in visible stages.</p>
+        <p><strong>Deliver</strong> the main result first.</p>
+        <p><strong>Refresh</strong> slower follow-up state in the background.</p>
+      </div>
+
+      <h2>State Machines</h2>
+      <div class="state-grid">
+        <div class="state-card">
+          <h3>Selected email</h3>
+          <p><span class="status-pill work">reading</span> -> <span class="status-pill work">understanding</span> -> <span class="status-pill done">ready</span></p>
+          <p>Purpose: reduce the frozen-feeling gap when Gmail selection changes.</p>
+        </div>
+        <div class="state-card">
+          <h3>Teach / fix</h3>
+          <p><span class="status-pill work">previewing</span> -> <span class="status-pill work">applying</span> -> <span class="status-pill done">result</span> or <span class="status-pill retry">retry</span></p>
+          <p>Purpose: separate request acceptance from final completion.</p>
+        </div>
+        <div class="state-card">
+          <h3>Follow-up refresh</h3>
+          <p><span class="status-pill work">working</span> -> <span class="status-pill done">done</span> or <span class="status-pill retry">retry</span></p>
+          <p>Purpose: move summary warming and broader refresh off the founder's main path.</p>
+        </div>
+      </div>
+
+      <h2>Architecture Map</h2>
+      <pre>Gmail page
+  -> extension content script
+      -> local companion API
+          -> local storage + teaching loop + Gmail write-through
+              -> returns fast sidebar state
+                  -> background follow-up refresh
+                      -> extension poll picks up done/retry state</pre>
+
+      <h2>What Changed In Code</h2>
+      <table class="reference-table">
+        <thead>
+          <tr>
+            <th>Area</th>
+            <th>Main code</th>
+            <th>Why it matters</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Selected-email understanding</td>
+            <td><code>src/gmail_companion_state.py</code></td>
+            <td>Introduces the `reading / understanding / ready` contract for current-email comprehension.</td>
+          </tr>
+          <tr>
+            <td>Server-side async follow-up</td>
+            <td><code>src/gmail_companion_ui.py</code></td>
+            <td>Returns the fast current-email result, then refreshes heavier summary state in a background thread.</td>
+          </tr>
+          <tr>
+            <td>Reusable rule data</td>
+            <td><code>src/teaching_loop.py</code></td>
+            <td>Reuses already-computed semantic rule data during apply instead of rebuilding preview work.</td>
+          </tr>
+          <tr>
+            <td>Founder-visible state machine</td>
+            <td><code>extensions/gmail_companion/content.js</code></td>
+            <td>Shows accepted, working, done, retry, and compact recent activity in the extension.</td>
+          </tr>
+          <tr>
+            <td>Proof</td>
+            <td><code>tests/test_gmail_companion_ui.py</code></td>
+            <td>Protects the architecture through product-facing tests instead of relying on memory.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Why Extension First Was The Right Call</h2>
+      <div class="compare-grid">
+        <div class="grid-card">
+          <h3>What the founder felt</h3>
+          <p>Threadwise seemed slow or frozen while understanding an email and doing work after a teach/fix action.</p>
+        </div>
+        <div class="grid-card">
+          <h3>What we diagnosed</h3>
+          <p>The pain came from the interaction model and state visibility, not from the extension shell itself.</p>
+        </div>
+        <div class="grid-card">
+          <h3>Decision</h3>
+          <p>Keep the extension as the primary entry point and redesign the request lifecycle first.</p>
+        </div>
+      </div>
+
+      <h2>When Professionals Use Async</h2>
+      <table class="reference-table">
+        <thead>
+          <tr>
+            <th>Use async when...</th>
+            <th>Do not reach for async when...</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>The user would otherwise wait on network I/O, browser messaging, storage reads, summary recomputation, or background refresh work.</td>
+            <td>The work is trivial, deterministic, and finishes instantly enough that extra state machinery would only add complexity.</td>
+          </tr>
+          <tr>
+            <td>You can deliver a smaller meaningful result now and a richer result later.</td>
+            <td>The action must remain strictly atomic and showing an intermediate result would be misleading.</td>
+          </tr>
+          <tr>
+            <td>You need the UI to distinguish accepted, working, done, and retry.</td>
+            <td>You have no intention of exposing state changes and the added queueing would become hidden complexity.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Truthful Resume / Demo Talking Points</h2>
+      <div class="card-grid">
+        <div class="grid-card">
+          <h3>Strong claim</h3>
+          <p>I redesigned a human-in-the-loop browser extension flow from opaque blocking interactions into staged async state machines with background follow-up refresh and retry visibility.</p>
+        </div>
+        <div class="grid-card">
+          <h3>Why it is true</h3>
+          <p>The implementation now has explicit lifecycle states in both the local companion contract and the extension UI, plus tests proving the contract.</p>
+        </div>
+        <div class="grid-card">
+          <h3>Do not claim</h3>
+          <p>Do not say we built a distributed queueing system or a standalone app. We did not.</p>
+        </div>
+      </div>
+
+      <p class="footer-note">If any part of this sheet stops feeling obvious, go back to the lesson and then ask follow-up questions. The goal is working understanding, not comfortable rereading.</p>
+    </main>
+  </body>
+</html>

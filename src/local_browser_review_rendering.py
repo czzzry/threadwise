@@ -252,6 +252,62 @@ class LocalBrowserReviewRenderingMixin:
       }
       window.location.href = `/?evaluation_id=${encodeURIComponent(payload.evaluation_id)}`;
     }
+    async function runCandidateEvaluation() {
+      const statusNode = document.getElementById("fetch-status");
+      if (statusNode) {
+        statusNode.textContent = "Running candidate evaluation over pending changes...";
+      }
+      const response = await fetch("/api/candidate-evaluations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({})
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        if (statusNode) {
+          statusNode.textContent = payload.error || "Could not run candidate evaluation.";
+        }
+        return;
+      }
+      if (statusNode) {
+        statusNode.textContent = `Saved candidate evaluation with ${payload.candidate_count} candidates. Batch recommendation: ${payload.batch_recommendation}.`;
+      }
+      window.location.reload();
+    }
+    async function decideCandidateChange(candidateId, decision, latestRecommendation) {
+      const statusNode = document.getElementById("fetch-status");
+      let overrideReason = "";
+      if (decision === "override-promote") {
+        overrideReason = window.prompt("Why are you promoting this despite the recommendation?", "Founder override after manual review") || "";
+        if (!overrideReason) {
+          if (statusNode) {
+            statusNode.textContent = "Override promotion needs a reason.";
+          }
+          return;
+        }
+      }
+      const response = await fetch(`/api/candidate-changes/${encodeURIComponent(candidateId)}/decision`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          decision,
+          actor: "browser-workbench",
+          latest_recommendation: latestRecommendation || "",
+          override_reason: overrideReason
+        })
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        if (statusNode) {
+          statusNode.textContent = payload.error || "Could not save candidate decision.";
+        }
+        return;
+      }
+      if (statusNode) {
+        statusNode.textContent = `Saved candidate decision for ${candidateId}.`;
+      }
+      window.location.reload();
+    }
     function selectedTeachingMessageIds() {
       return [...document.querySelectorAll(".teach-example-checkbox:checked")].map((checkbox) => checkbox.dataset.messageId);
     }
@@ -701,6 +757,10 @@ class LocalBrowserReviewRenderingMixin:
     if (runShadowEvalButton) {
       runShadowEvalButton.addEventListener("click", runShadowEvaluation);
     }
+    const runCandidateEvalButton = document.getElementById("run-candidate-eval");
+    if (runCandidateEvalButton) {
+      runCandidateEvalButton.addEventListener("click", runCandidateEvaluation);
+    }
     const saveUnsubscribeButton = document.getElementById("save-unsubscribe-selections");
     if (saveUnsubscribeButton) {
       saveUnsubscribeButton.addEventListener("click", saveUnsubscribeSelections);
@@ -758,6 +818,13 @@ class LocalBrowserReviewRenderingMixin:
         { answer_key: button.dataset.answerKey }
       ));
     }
+    for (const button of document.querySelectorAll(".candidate-decision")) {
+      button.addEventListener("click", () => decideCandidateChange(
+        button.dataset.candidateId,
+        button.dataset.decision,
+        button.dataset.latestRecommendation
+      ));
+    }
     for (const button of document.querySelectorAll(".taxonomy-option")) {
       button.addEventListener("click", () => button.classList.toggle("active"));
     }
@@ -808,6 +875,7 @@ class LocalBrowserReviewRenderingMixin:
     def _render_workbench(self) -> str:
         operational_readiness_html = self._render_operational_readiness_panel()
         unified_queue_html = self._render_unified_review_queue_panel()
+        candidate_change_html = self._render_candidate_change_panel()
         reminder_html = self._render_threshold_reminders()
         trusted_sender_html = self._render_trusted_sender_summary()
         unsubscribe_inventory_html = self._render_unsubscribe_inventory()
@@ -818,6 +886,7 @@ class LocalBrowserReviewRenderingMixin:
         return (
             operational_readiness_html
             + unified_queue_html
+            + candidate_change_html
             + '<section class="panel"><h2>Workbench actions</h2>'
             '<div class="actions">'
             '<button type="button" class="action" id="fetch-batch">Fetch another batch</button>'
@@ -878,6 +947,86 @@ class LocalBrowserReviewRenderingMixin:
             f'<ul>{reasons_html}</ul>'
             f'{runs_html}'
             '</section>'
+        )
+
+    def _render_candidate_change_panel(self) -> str:
+        candidates = self._list_candidate_changes()
+        if not candidates:
+            return (
+                '<section class="panel"><h2>Candidate Change Review</h2>'
+                '<p class="meta">No candidate changes are stored yet. Future-rule teaching candidates and broader change proposals will appear here for evaluation before promotion.</p>'
+                '</section>'
+            )
+        pending_like = [
+            candidate for candidate in candidates if candidate.get("status") not in {"promoted", "rejected", "override-promoted"}
+        ]
+        promoted_count = sum(1 for candidate in candidates if candidate.get("status") in {"promoted", "override-promoted"})
+        recommended_count = sum(1 for candidate in candidates if str(candidate.get("status", "")).startswith("recommended-"))
+        cards = "".join(self._render_candidate_change_card(candidate) for candidate in candidates[:10])
+        return (
+            '<section class="panel">'
+            '<h2>Candidate Change Review</h2>'
+            '<p class="meta">This is the eval-and-promote lane for future rules and bigger change candidates. Candidates are evaluated first, then either promoted, kept pending, rejected, or override-promoted with an audit reason.</p>'
+            '<div class="summary-grid">'
+            f'<div class="metric"><strong>{len(pending_like)}</strong><div class="meta">Pending review</div></div>'
+            f'<div class="metric"><strong>{recommended_count}</strong><div class="meta">With recommendation</div></div>'
+            f'<div class="metric"><strong>{promoted_count}</strong><div class="meta">Promoted</div></div>'
+            '</div>'
+            '<div class="actions">'
+            '<button type="button" class="action secondary" id="run-candidate-eval">Run candidate evaluation</button>'
+            '</div>'
+            '<div class="items">'
+            f'{cards}'
+            '</div>'
+            '</section>'
+        )
+
+    def _render_candidate_change_card(self, candidate: dict) -> str:
+        latest_recommendation = candidate.get("latest_recommendation") or "Not yet evaluated"
+        source_refs = candidate.get("source_refs") or []
+        decision_fields = ""
+        if candidate.get("status") not in {"promoted", "rejected", "override-promoted"}:
+            decision_fields = (
+                '<div class="actions">'
+                f'<button type="button" class="action candidate-decision" data-candidate-id="{escape(candidate["id"])}" data-decision="promote" data-latest-recommendation="{escape(latest_recommendation)}">Promote</button>'
+                f'<button type="button" class="action secondary candidate-decision" data-candidate-id="{escape(candidate["id"])}" data-decision="keep-pending" data-latest-recommendation="{escape(latest_recommendation)}">Keep pending</button>'
+                f'<button type="button" class="action secondary candidate-decision" data-candidate-id="{escape(candidate["id"])}" data-decision="reject" data-latest-recommendation="{escape(latest_recommendation)}">Reject</button>'
+                f'<button type="button" class="action secondary candidate-decision" data-candidate-id="{escape(candidate["id"])}" data-decision="override-promote" data-latest-recommendation="{escape(latest_recommendation)}">Override promote</button>'
+                '</div>'
+            )
+        audit_html = ""
+        if candidate.get("decision_actor") or candidate.get("override_reason"):
+            audit_html = (
+                f'<div class="field"><strong>Decided by:</strong> {escape(candidate.get("decision_actor") or "(missing)")}</div>'
+                f'<div class="field"><strong>Why:</strong> {escape(candidate.get("override_reason") or "(none)")}</div>'
+            )
+        return (
+            '<article class="item">'
+            f'<div class="field"><strong>Title:</strong> {escape(candidate.get("title") or "(missing)")}</div>'
+            f'<div class="field"><strong>Status:</strong> {escape(candidate.get("status") or "(missing)")} <span class="pill">{escape(latest_recommendation)}</span></div>'
+            f'<div class="field"><strong>Kind:</strong> {escape(candidate.get("kind") or "(missing)")}</div>'
+            f'<div class="field"><strong>Source:</strong> {escape(candidate.get("source") or "(missing)")}</div>'
+            f'<div class="field"><strong>Scope:</strong> {escape(candidate.get("affected_scope_summary") or "(missing)")}</div>'
+            f'<div class="field"><strong>Description:</strong> {escape(candidate.get("description") or "(none)")}</div>'
+            f'<div class="field"><strong>Evidence refs:</strong> {len(source_refs)}</div>'
+            f'<div class="field"><strong>Latest eval:</strong> {escape(candidate.get("latest_evaluation_ref") or "(none)")}</div>'
+            f'{audit_html}'
+            f'{decision_fields}'
+            '</article>'
+        )
+
+    def _list_candidate_changes(self) -> list[dict]:
+        if not hasattr(self, "_candidate_store"):
+            return []
+        candidates = [candidate.to_dict() for candidate in self._candidate_store.list_candidates()]
+        return sorted(
+            candidates,
+            key=lambda candidate: (
+                1 if candidate.get("status") not in {"promoted", "rejected", "override-promoted"} else 0,
+                candidate.get("updated_at", ""),
+                candidate.get("id", ""),
+            ),
+            reverse=True,
         )
 
     def _render_unified_review_queue_panel(self) -> str:

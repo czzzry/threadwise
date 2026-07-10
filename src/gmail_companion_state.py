@@ -4,8 +4,10 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 from src.attention_feedback import load_attention_feedback
+from src.candidate_change_store import CandidateChangeStore
 from src.label_taxonomy import CANONICAL_LABEL_ORDER, gmail_label_name
 from src.local_artifacts import (
+    candidate_changes_path,
     inbox_removal_status_path,
     load_json,
     load_json_or_default,
@@ -26,6 +28,9 @@ HIGH_CONSEQUENCE_ATTENTION_CATEGORIES = {
     "appointment",
     "job_opportunity",
 }
+
+SELECTED_EMAIL_READING_SECONDS = 0.35
+SELECTED_EMAIL_UNDERSTANDING_SECONDS = 1.5
 
 
 def selected_context_from_query(query: dict[str, list[str]]) -> dict:
@@ -63,6 +68,7 @@ def build_selected_email_state(storage_dir: Path, unsubscribe_candidates: list[d
             "sender": selected_context.get("sender") or "",
             "unsubscribe_available": False,
             "unsubscribe": None,
+            **selected_email_understanding_state(selected_context),
         }
 
     item = matched["item"]
@@ -94,6 +100,57 @@ def build_selected_email_state(storage_dir: Path, unsubscribe_candidates: list[d
         "sender": item.get("sender") or selected_context.get("sender") or "",
         "unsubscribe_available": unsubscribe_available,
         "unsubscribe": build_unsubscribe_detail(candidate, storage_dir) if candidate else None,
+        **selected_email_understanding_state(selected_context),
+    }
+
+def selected_email_understanding_state(selected_context: dict, now: datetime | None = None) -> dict:
+    has_context = bool(
+        selected_context.get("message_id")
+        or selected_context.get("subject")
+        or selected_context.get("sender")
+    )
+    if not has_context:
+        return {
+            "understanding_state": "idle",
+            "understanding_label": "Idle",
+            "understanding_message": "Open an email to inspect or teach Threadwise.",
+        }
+
+    selected_at_raw = str(selected_context.get("selected_at") or "").strip()
+    if not selected_at_raw:
+        return {
+            "understanding_state": "ready",
+            "understanding_label": "Ready",
+            "understanding_message": "Threadwise is ready with the current email.",
+        }
+
+    try:
+        selected_at = datetime.fromisoformat(selected_at_raw.replace("Z", "+00:00"))
+    except ValueError:
+        return {
+            "understanding_state": "ready",
+            "understanding_label": "Ready",
+            "understanding_message": "Threadwise is ready with the current email.",
+        }
+
+    current_time = now or datetime.now(UTC)
+    age_seconds = max(0.0, (current_time - selected_at).total_seconds())
+    if age_seconds < SELECTED_EMAIL_READING_SECONDS:
+        return {
+            "understanding_state": "reading",
+            "understanding_label": "Reading",
+            "understanding_message": "Reading this email...",
+        }
+    if age_seconds < SELECTED_EMAIL_UNDERSTANDING_SECONDS:
+        return {
+            "understanding_state": "understanding",
+            "understanding_label": "Understanding",
+            "understanding_message": "Understanding this email...",
+        }
+    return {
+        "understanding_state": "ready",
+        "understanding_label": "Ready",
+        "understanding_message": "Threadwise is ready with the current email.",
     }
 
 def classify_handling_status(item: dict, write_status: str | None, inbox_status: str | None) -> tuple[str, str]:
@@ -439,8 +496,11 @@ def build_changed_today_summary(storage_dir: Path, batch_id: str) -> dict:
             "inbox_removed_count": 0,
             "taught_count": 0,
             "selected_unsubscribe_count": 0,
+            "candidate_pending_count": 0,
+            "candidate_promoted_count": 0,
             "items": [],
             "selected_unsubscribe_examples": [],
+            "candidate_examples": [],
         }
     batch = load_json_or_default(storage_dir / "batches" / f"{batch_id}.json", {})
     items = batch.get("items", [])
@@ -495,14 +555,30 @@ def build_changed_today_summary(storage_dir: Path, batch_id: str) -> dict:
         }
         for candidate in selected_candidates
     ][:3]
+    candidate_changes = CandidateChangeStore(candidate_changes_path(storage_dir)).list_candidates()
+    pending_statuses = {"pending", "evaluated", "recommended-promote", "recommended-review", "recommended-reject"}
+    promoted_statuses = {"promoted", "override-promoted"}
+    candidate_pending_count = sum(1 for candidate in candidate_changes if candidate.status in pending_statuses)
+    candidate_promoted_count = sum(1 for candidate in candidate_changes if candidate.status in promoted_statuses)
+    candidate_examples = [
+        {
+            "title": candidate.title,
+            "status": candidate.status,
+            "latest_recommendation": candidate.latest_recommendation,
+        }
+        for candidate in sorted(candidate_changes, key=lambda candidate: candidate.updated_at, reverse=True)[:3]
+    ]
     return {
         "label_writes_count": label_writes_count,
         "inbox_removed_count": inbox_removed_count,
         "taught_count": taught_count,
         "selected_unsubscribe_count": selected_unsubscribe_count,
+        "candidate_pending_count": candidate_pending_count,
+        "candidate_promoted_count": candidate_promoted_count,
         "items": changed_items[:6],
         "groups": group_changed_today_items(changed_items),
         "selected_unsubscribe_examples": selected_unsubscribe_examples,
+        "candidate_examples": candidate_examples,
     }
 
 def group_changed_today_items(items: list[dict]) -> list[dict]:

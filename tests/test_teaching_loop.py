@@ -3,6 +3,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from src.candidate_change_store import CandidateChangeStore
+from src.local_artifacts import candidate_changes_path
 from src.teaching_loop import (
     apply_rule_amendment_decision,
     apply_sidebar_teaching,
@@ -11,7 +13,6 @@ from src.teaching_loop import (
     load_items_for_gmail_write_through,
 )
 from src.teaching_exclusions import is_rule_message_excluded
-from src.teachable_rule_memory import TeachableRuleMemory
 
 
 class TeachingLoopTests(unittest.TestCase):
@@ -531,7 +532,7 @@ class TeachingLoopTests(unittest.TestCase):
                 mode="save-future-rule",
             )
             batch_two = json.loads((storage_dir / "batches" / "founder-test-batch-2.json").read_text())
-            saved_rule = TeachableRuleMemory(storage_dir / "teachable_classification_rules.json").list_rules()[0]
+            saved_rule = future_result["candidate_change"]["metadata"]["rules"][0]
 
             self.assertIn("Exception saved", exclusion["acknowledgment"])
             self.assertEqual(exclusion["excluded_message_id"], "gmail-live-002")
@@ -539,11 +540,7 @@ class TeachingLoopTests(unittest.TestCase):
             self.assertEqual(result["matched_existing_count"], 0)
             self.assertIn("saved a future rule", future_result["acknowledgment"])
             self.assertTrue(
-                is_rule_message_excluded(
-                    storage_dir,
-                    rule=saved_rule.to_dict(),
-                    message_id="gmail-live-002",
-                )
+                is_rule_message_excluded(storage_dir, rule=saved_rule, message_id="gmail-live-002")
             )
             self.assertEqual(batch_two["items"][0]["final_labels"], [])
 
@@ -616,7 +613,7 @@ class TeachingLoopTests(unittest.TestCase):
                 mode="apply-included",
             )
             batch = json.loads((storage_dir / "batches" / "founder-test-batch-1.json").read_text())
-            rules = TeachableRuleMemory(storage_dir / "teachable_classification_rules.json").list_rules()
+            candidates = CandidateChangeStore(candidate_changes_path(storage_dir)).list_candidates()
 
             self.assertIn("saved a future rule", result["acknowledgment"])
             self.assertEqual(result["matched_existing_count"], 1)
@@ -625,7 +622,7 @@ class TeachingLoopTests(unittest.TestCase):
             self.assertEqual(batch["items"][0]["final_labels"], ["job-related"])
             self.assertEqual(batch["items"][1]["final_labels"], [])
             self.assertEqual(batch["items"][2]["final_labels"], ["job-related"])
-            self.assertEqual(len(rules), 1)
+            self.assertEqual(len(candidates), 1)
 
     def test_exclusion_proposes_rule_amendment_without_applying_it_silently(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -817,14 +814,15 @@ class TeachingLoopTests(unittest.TestCase):
             )
 
             batch_one = json.loads((storage_dir / "batches" / "founder-test-batch-1.json").read_text())
-            rules = json.loads((storage_dir / "teachable_classification_rules.json").read_text())
+            candidates = CandidateChangeStore(candidate_changes_path(storage_dir)).list_candidates()
 
             self.assertIn("saved a future rule", result["acknowledgment"])
             self.assertFalse(result["current_changed"])
             self.assertEqual(result["matched_existing_count"], 0)
             self.assertEqual(batch_one["items"][0]["final_labels"], [])
             self.assertEqual(batch_one["items"][1]["final_labels"], [])
-            self.assertEqual(rules["rules"][0]["label"], "job-related")
+            self.assertEqual(candidates[0].kind, "future-rule")
+            self.assertEqual(candidates[0].metadata["rules"][0]["label"], "job-related")
 
     def test_write_through_selection_skips_future_rule_only_mode(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
