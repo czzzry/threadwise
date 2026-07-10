@@ -1,149 +1,111 @@
 # CONTEXT.md
 
 Status: Current repo context
-Current as of: 2026-07-07
+Current as of: 2026-07-10
 
-This file exists to keep agents from re-litigating old project stages or mistaking historical docs for current instructions.
+This file is the short "you are here" guide for the repo.
+
+Its job is to stop agents or future sessions from treating old planning docs as current instructions.
+
+If this file becomes stale, update it or remove it. Do not keep it as ceremonial documentation.
+
+## What This File Is For
+
+Use `CONTEXT.md` to answer four questions quickly:
+
+1. What stage is the repo in now?
+2. Which docs are current?
+3. Which docs are historical?
+4. What trust boundaries still matter?
 
 ## Read Order
 
-Before doing substantial work, read these in order:
+Before substantial planning or implementation work, read:
 
 1. `AGENTS.md`
 2. `CONTEXT.md`
 3. `docs/v2-alignment.md`
-4. `docs/prd.md` for the current MVP+3 Gmail sidebar interactive teaching-loop slice
+4. the current bounded PRD, if one exists
 5. `docs/checkpoints/current-operating-model-2026-06-22.md`
-6. `docs/v2-issue-map.md`
-7. then only the specific current issue, handoff, or code relevant to the task
+6. the relevant current issue, if one exists
 
-## What This Repo Currently Is
-
-The repo is past the original Gmail MVP and already proves:
-
-- a Gmail daily run with bounded label write-back
-- bounded `INBOX` removal for low-value Gmail mail
-- daily and weekly reporting
-- provider-aware local artifacts
-- ProtonMail read-only import, live fetch, and daily run paths
-- unsubscribe inventory, supported execution, and manual follow-up
-- local browser review and workbench tools
-- a memory-first runtime cascade with founder feedback
-- a unified review queue and operational readiness loop
-- a supervised classifier state that has already reached under `10%` unresolved on the current stored corpora
-
-The repo is no longer blocked on basic implementation.
+Do not infer approval from `docs/v2-issue-map.md`, archived PRDs, or old handoffs alone.
 
 ## Current Stage
 
-This is a post-MVP, post-proof repo that has completed the Gmail release state and the MVP+1 recruiter-facing portfolio packaging pass.
+Threadwise is past basic MVP proof.
 
-The main uncertainty is no longer "can this be built?", no longer "can the classifier get under the current unresolved threshold?", and no longer "can a recruiter understand the product without setup?"
+The repo already proves:
 
-MVP+2 alignment is archived at `docs/archive/prd-mvp-plus-two-gmail-daily-usefulness-completed-2026-07-01.md`, and implementation issues `#8` through `#14` are complete. The completed MVP+2 thesis is:
+- Gmail daily run flows with bounded Gmail mutation
+- browser-based Gmail companion flows
+- dashboard and workbench surfaces
+- unsubscribe review and explicit execution support
+- ProtonMail read-only paths
+- local artifact, reporting, and review tooling
 
-- Gmail daily usefulness before ProtonMail expansion
-- a teachable LLM-backed Needs attention lane across newly processed Gmail plus bounded stored lookback
-- a dashboard-first Run Gmail check flow with confirmation, duplicate protection, and existing safe Gmail mutations only
-- generic local LLM usage tracking first wired to attention detection
-- explicit follow-up candidates for local data retention / inbox freshness and startup / packaging model review
+The current branch state has completed the async Gmail companion extension slices `133` through `137`, including:
 
-The latest completed bounded PRD is `docs/prd.md` for MVP+3 Slice B: Gmail companion shell polish. MVP+3 Slice A is archived at `docs/archive/prd-mvp-plus-three-slice-a-interactive-teaching-loop-completed-2026-07-01.md`. The completed Slice A thesis was:
+- visible selected-email understanding states
+- explicit async teach / fix lifecycle states
+- background follow-up refresh off the main response path
+- compact recent-activity and retry visibility
+- a founder-facing teaching pack for this async architecture
 
-- Gmail remains the main review surface
-- Threadwise remains the reasoning, explanation, and control surface
-- opening a Gmail email should show the selected email's `EA/...` classification, human-readable status, and a likely reason
-- Agent View should keep an always-visible correction/explanation box for the selected email
-- natural-language corrections should propose a current-email relabel, future rule, and affected-count estimate
-- current-email relabel, applying to similar existing emails, and saving a future rule must be separately confirmed
-- similar-email estimates use stored Threadwise data only in the first version
-- dashboard and sidebar lists should become useful review launchers instead of inert reports
-- full shell polish follows after the interactive core
+These changes are implemented on `codex/eval-promotion-pipeline` and are ready for PR review / merge flow.
 
-## Current Working Rule
+## Current Source Of Truth
 
-Do not restart first-principles Gmail-MVP discovery.
+For the just-completed async extension work, use:
 
-Do not infer an approved next build from `docs/v2-issue-map.md`, old handoffs, or archived V1 planning docs.
+1. `docs/prd-async-threadwise-extension-2026-07-10.md`
+2. `docs/issues/133-add-async-selected-email-understanding-states.md`
+3. `docs/issues/134-add-async-action-lifecycle-for-teach-and-fix.md`
+4. `docs/issues/135-move-slower-follow-up-work-off-the-main-sidebar-path.md`
+5. `docs/issues/136-add-recent-activity-and-retry-surface-for-async-operations.md`
+6. `docs/issues/137-build-comprehensive-teaching-pack-for-async-threadwise-extension.md`
 
-The current product direction for Threadwise is:
+For repo workflow and guardrails, use `AGENTS.md`.
 
-- first serious release target: Gmail only
-- primary surface: browser-based inbox companion sidebar
-- core interaction: in-inbox `Correct / Teach` loop with short agent acknowledgments
-- secondary surface: dashboard/workbench for summary, unsubscribe, review, and debugging
-- MVP+1 target: completed recruiter-ready portfolio README demo using synthetic Gmail-style data
+For broader product direction, use `docs/v2-alignment.md`.
 
-The current bounded PRD exists in `docs/prd.md` and covers MVP+3 Gmail sidebar interactive teaching loop. The completed MVP+2 PRD is archived at `docs/archive/prd-mvp-plus-two-gmail-daily-usefulness-completed-2026-07-01.md` and GitHub issue `#7`. The completed MVP+1 PRD is archived at `docs/archive/prd-mvp-plus-one-portfolio-demo-completed-2026-06-30.md`, with closeout recorded in `docs/issues/073-close-mvp-plus-one-public-demo-milestone.md`.
+## What Is Historical
 
-The MVP+2 implementation briefs in `docs/issues/083` through `docs/issues/089`, mirrored to GitHub issues `#8` through `#14`, are complete. The local data retention and inbox freshness HITL review in `docs/issues/090` / GitHub `#15` is complete, with output in `docs/local-data-retention-and-inbox-freshness-review-2026-07-01.md` and follow-up candidates in GitHub issues `#17` through `#21` / `docs/issues/092` through `docs/issues/096`. The startup and packaging model HITL review in `docs/issues/091` / GitHub `#16` is complete, with output in `docs/threadwise-startup-and-packaging-model-review-2026-07-01.md`. The companion health/status follow-up in GitHub `#24` / `docs/issues/099` is complete, and the immediate startup pair `#22` / `#23` is also complete. `#25` / `#26` remain future review candidates.
+Treat these as historical unless explicitly pulled back into an active slice:
 
-MVP+2 implementation progress is `issues 7/7 => MVP+2 = 7/7 done`. Treat the `#15` and `#16` follow-ups as follow-up candidates unless the founder explicitly pulls them into a new active milestone count.
+- `docs/v2-issue-map.md`
+- old handoffs in `docs/handoff/`
+- archived PRDs and planning docs in `docs/archive/`
+- older completed slice docs that describe already-shipped states rather than the current bounded task
 
-MVP+3 Slice A implementation progress is `issues 8/8 => MVP+3 Slice A = done`. GitHub parent issue `#27` and child issues `#28` through `#35` are closed. Published issue briefs:
-
-- `#28` Selected Email Agent View - complete
-- `#29` Clickable Sidebar Review Surfaces - complete
-- `#30` Dashboard Review Launcher - complete
-- `#31` Blocking Sidebar Usability Fixes - complete
-- `#32` Correction Proposal Session - complete
-- `#33` Confirm Current-Email Relabel - complete
-- `#34` Similar Existing Email Review - complete
-- `#35` Save Future Rule Separately - complete
-
-MVP+3 Slice B implementation progress is `issues 4/4 => MVP+3 Slice B = done`. GitHub parent issue `#36` and child issues `#37` through `#40` are closed. Completed issue briefs:
-
-- `#37` Logo-only minimized Gmail companion
-- `#38` Brand icon fallback
-- `#39` Remove technical sidebar footer
-- `#40` Friendly companion error state
-
-The current product step is the July 7 Correct / Teach state-machine simplification cycle, tracked in GitHub `#58` and `docs/prd-correct-teach-state-machine-simplification-2026-07-07.md`.
-
-The July 2 Gmail companion UX audit cycle from founder testing feedback is complete, tracked in GitHub `#51` through `#57` and summarized in `docs/handoff/2026-07-02-afk-gmail-companion-ux-progress.md`.
-
-Live testing tranche follow-up:
-
-- `#41` Live testing tranche: sidebar context and teach fixes - complete
-- `#42` Redesign Correct / Teach UX from live testing - complete
-- `#43` Review unsubscribe link behavior for provider error pages - complete
-- `#51` UX flow audit for Gmail companion daily-use loops - complete / closed
-- `#52` Tighten shared text-first Correct / Teach - complete / closed
-- `#53` Build unresolved review mode with queue compression - complete / closed
-- `#54` Build Threadwise Home and two-mode companion shell - complete / closed
-- `#55` Ensure companion response panels never overflow the sidebar - complete / closed
-- `#56` Add immediate loading and exact outcome states for companion actions - complete / closed
-- `#57` Keep dashboard email launches in the active Gmail companion context - complete / closed
-- `#58` PRD: Correct / Teach state-machine simplification - current planning focus
+Historical docs are still useful context. They are not approval.
 
 ## Trust Order When Docs Differ
 
 Use this order:
 
-1. current task-specific PRD or triaged issue, when one exists
-2. `AGENTS.md` for workflow and guardrails
-3. `CONTEXT.md` for current stage and read order
-4. `docs/v2-alignment.md` for current product direction
-5. `docs/prd-correct-teach-state-machine-simplification-2026-07-07.md` for the current Correct / Teach simplification slice
-6. `docs/prd.md` for the completed MVP+4 Gmail companion Home, modes, and unresolved review slice
-7. `docs/checkpoints/current-operating-model-2026-06-22.md` for what the repo currently proves
-8. `docs/v2-issue-map.md` for candidate next-slice themes only
-9. `docs/archive/`, `docs/handoff/`, and `docs/deep-research/` as historical context only
+1. current task-specific PRD or triaged issue
+2. `AGENTS.md`
+3. `CONTEXT.md`
+4. `docs/v2-alignment.md`
+5. `docs/checkpoints/current-operating-model-2026-06-22.md`
+6. archived docs and handoffs as background only
 
 ## Current Trust Boundaries
 
-- Gmail mutation is bounded to current `EA/` label write-back and limited `INBOX` removal.
-- ProtonMail remains read-only.
-- Unsubscribe execution must stay explicit, selected, and auditable.
-- Delete, trash, broad archive, and broad autonomous inbox actions are still out of scope by default.
-- Private email, credentials, OAuth material, and live inbox data remain sensitive.
+- Gmail mutation must stay bounded and auditable
+- ProtonMail remains read-only
+- unsubscribe execution must remain explicit and reviewable
+- broad autonomous inbox actions remain out of scope by default
+- private email, credentials, OAuth, and live inbox data remain sensitive
 
-## Practical Next-Step Rule
+## Maintenance Rule
 
-If a task is implementation work on an already-triaged bounded slice, proceed.
+Update this file when one of these changes:
 
-If a task is about the completed Gmail inbox companion release, completed in-inbox teaching loop, completed sidebar UX, completed MVP+1 daily dashboard, completed unsubscribe review handoff, or the recruiter-ready portfolio demo, treat the completed MVP+1 docs and handoff as historical source of truth for that shipped behavior.
+- the active bounded PRD changes
+- the current milestone or implementation slice changes
+- the trust order changes
+- the file starts pointing at stale "current" work
 
-If the task is about MVP+2 implementation, use `docs/prd.md` and the relevant issue brief as the source of truth.
-
-If a task changes product scope, chooses the next major slice, or pushes beyond the current trust boundary, stop and align first.
+If nobody is willing to maintain it, delete it and remove the read-order dependency from `AGENTS.md`.
