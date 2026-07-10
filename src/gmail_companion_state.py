@@ -29,6 +29,9 @@ HIGH_CONSEQUENCE_ATTENTION_CATEGORIES = {
     "job_opportunity",
 }
 
+SELECTED_EMAIL_READING_SECONDS = 0.35
+SELECTED_EMAIL_UNDERSTANDING_SECONDS = 1.5
+
 
 def selected_context_from_query(query: dict[str, list[str]]) -> dict:
     return {
@@ -65,6 +68,7 @@ def build_selected_email_state(storage_dir: Path, unsubscribe_candidates: list[d
             "sender": selected_context.get("sender") or "",
             "unsubscribe_available": False,
             "unsubscribe": None,
+            **selected_email_understanding_state(selected_context),
         }
 
     item = matched["item"]
@@ -96,6 +100,57 @@ def build_selected_email_state(storage_dir: Path, unsubscribe_candidates: list[d
         "sender": item.get("sender") or selected_context.get("sender") or "",
         "unsubscribe_available": unsubscribe_available,
         "unsubscribe": build_unsubscribe_detail(candidate, storage_dir) if candidate else None,
+        **selected_email_understanding_state(selected_context),
+    }
+
+def selected_email_understanding_state(selected_context: dict, now: datetime | None = None) -> dict:
+    has_context = bool(
+        selected_context.get("message_id")
+        or selected_context.get("subject")
+        or selected_context.get("sender")
+    )
+    if not has_context:
+        return {
+            "understanding_state": "idle",
+            "understanding_label": "Idle",
+            "understanding_message": "Open an email to inspect or teach Threadwise.",
+        }
+
+    selected_at_raw = str(selected_context.get("selected_at") or "").strip()
+    if not selected_at_raw:
+        return {
+            "understanding_state": "ready",
+            "understanding_label": "Ready",
+            "understanding_message": "Threadwise is ready with the current email.",
+        }
+
+    try:
+        selected_at = datetime.fromisoformat(selected_at_raw.replace("Z", "+00:00"))
+    except ValueError:
+        return {
+            "understanding_state": "ready",
+            "understanding_label": "Ready",
+            "understanding_message": "Threadwise is ready with the current email.",
+        }
+
+    current_time = now or datetime.now(UTC)
+    age_seconds = max(0.0, (current_time - selected_at).total_seconds())
+    if age_seconds < SELECTED_EMAIL_READING_SECONDS:
+        return {
+            "understanding_state": "reading",
+            "understanding_label": "Reading",
+            "understanding_message": "Reading this email...",
+        }
+    if age_seconds < SELECTED_EMAIL_UNDERSTANDING_SECONDS:
+        return {
+            "understanding_state": "understanding",
+            "understanding_label": "Understanding",
+            "understanding_message": "Understanding this email...",
+        }
+    return {
+        "understanding_state": "ready",
+        "understanding_label": "Ready",
+        "understanding_message": "Threadwise is ready with the current email.",
     }
 
 def classify_handling_status(item: dict, write_status: str | None, inbox_status: str | None) -> tuple[str, str]:

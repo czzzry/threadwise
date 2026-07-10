@@ -748,15 +748,44 @@
 
     const selected = lastSidebarState.selected_email || null;
     const summary = lastSidebarState.daily_summary || {};
+    const activityHtml = renderRecentActivityHtml(recentActivityItems(lastSidebarState));
     const showingQueuePreview = !!manualPreviewContext;
     const stepCopy = nextStepCopy(selected, showingQueuePreview);
+    const understandingActive = selectedUnderstandingActive(selected);
     if (!(selected && selected.found)) {
       previousTeachPreview = null;
       unsubscribeResult = "";
       detailsExpanded = false;
     }
 
-    if (!selected || !selected.found) {
+    if (understandingActive) {
+      const liveSubject = (selected && selected.subject) || (lastLiveContext && lastLiveContext.subject) || "(no subject)";
+      const liveSender = (selected && selected.sender) || (lastLiveContext && lastLiveContext.sender) || "(unknown sender)";
+      setHtml(selectedEmailNode, `
+        <div style="margin-top:7px;font-size:1.45rem;font-weight:840;letter-spacing:-0.015em;line-height:1.04;">${escapeHtml(liveSubject)}</div>
+        <div style="margin-top:6px;color:#6b6255;font-size:0.88rem;overflow-wrap:anywhere;">${escapeHtml(liveSender)}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;">
+          <span style="display:inline-flex;align-items:center;padding:7px 10px;border:2px solid #241812;border-radius:999px;background:#fff4dd;color:#8a4b00;font-size:0.78rem;font-weight:760;box-shadow:2px 2px 0 rgba(36,24,18,.28);">${escapeHtml((selected && selected.understanding_label) || "Understanding")}</span>
+        </div>
+        <div style="margin-top:14px;border-radius:14px;background:#fff8eb;padding:12px;color:#1f1a14;line-height:1.45;">
+          <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">Reading progress</div>
+          <div style="margin-top:8px;">${escapeHtml(selectedUnderstandingMessage(selected))}</div>
+          <div style="margin-top:6px;color:#6b6255;">Threadwise is updating the current email view before it shows the full judgment.</div>
+        </div>
+      `);
+      setHtml(selectedEmailSecondaryNode, "");
+      setHtml(teachPanelNode, `
+        <div style="box-sizing:border-box;width:100%;min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word;margin-top:12px;border-radius:14px;background:#fff8eb;padding:12px;color:#8a4b00;line-height:1.45;">
+          <div style="font-weight:700;">${escapeHtml(selectedUnderstandingMessage(selected))}</div>
+          <div style="margin-top:8px;">Threadwise is still understanding this email. Teaching controls will appear when the email is ready.</div>
+        </div>
+      `);
+      setHtml(dailySummaryNode, `
+        <div style="margin-top:10px;color:#6b6255;line-height:1.45;">Latest run snapshot</div>
+        <div style="margin-top:12px;border-radius:14px;background:#f5efe2;padding:12px;color:#1f1a14;line-height:1.45;">${escapeHtml(selectedUnderstandingMessage(selected))}</div>
+        ${activityHtml}
+      `);
+    } else if (!selected || !selected.found) {
       const hasSnapshotMiss = selected && selected.status === "not-in-snapshot";
       const title = hasSnapshotMiss
         ? "Threadwise has not synced this email yet."
@@ -820,7 +849,7 @@
         ${fallbackHtml}
       `);
       const teachPanelHtml = teachFlowState === "result" && teachResult && !String(teachResult.kind || "").endsWith("-error")
-        ? renderTeachReceiptHtml(teachResult.message || "", teachOutcome)
+        ? renderTeachReceiptHtml(teachResult.message || "", teachOutcome, ((lastSidebarState || {}).ui_state || {}).async_follow_up)
         : teachResult
           ? renderTeachResultHtml(teachResult)
           : gmailCheckResult
@@ -842,9 +871,10 @@
             }>${escapeHtml(option.name)}</option>`,
         )
         .join("");
+      const teachPending = isTeachPending();
       let teachPanelHtml = "";
       if (teachFlowState === "result" && teachResult && !String(teachResult.kind || "").endsWith("-error")) {
-        teachPanelHtml = renderTeachReceiptHtml(teachResult.message || "", teachOutcome);
+        teachPanelHtml = renderTeachReceiptHtml(teachResult.message || "", teachOutcome, ((lastSidebarState || {}).ui_state || {}).async_follow_up);
       } else if (teachPreview && (teachFlowState === "scope-confirmation" || teachFlowState === "applying")) {
         teachPanelHtml = `${renderPreviousTeachPreviewHtml(previousTeachPreview)}${renderTeachScopeHtml(teachPreview)}`;
       } else if (teachPreview && teachFlowState === "rule-proposed") {
@@ -969,17 +999,17 @@
       `);
       setHtml(teachPanelNode, `
         <div style="display:grid;gap:8px;">
-          <textarea id="ea-teach-note" rows="3" placeholder="What should Threadwise understand?" style="box-sizing:border-box;width:100%;padding:10px 12px;border-radius:11px;border:2px solid #241812;background:#fffdf7;color:#1f1a14;font:inherit;resize:vertical;box-shadow:2px 2px 0 rgba(36,24,18,.18);">${escapeHtml(teachDraft.note)}</textarea>
+          <textarea id="ea-teach-note" rows="3" placeholder="What should Threadwise understand?" ${teachPending ? "disabled" : ""} style="box-sizing:border-box;width:100%;padding:10px 12px;border-radius:11px;border:2px solid #241812;background:${teachPending ? "#f1eadf" : "#fffdf7"};color:#1f1a14;font:inherit;resize:vertical;box-shadow:2px 2px 0 rgba(36,24,18,.18);">${escapeHtml(teachDraft.note)}</textarea>
           <details style="color:#6b6255;line-height:1.35;font-size:0.82rem;">
             <summary style="cursor:pointer;font-weight:800;color:#241812;">Choose label manually</summary>
-            <select id="ea-target-label" style="box-sizing:border-box;width:100%;margin-top:8px;padding:10px 12px;border-radius:11px;border:2px solid #241812;background:#fffdf7;color:#1f1a14;font:inherit;box-shadow:2px 2px 0 rgba(36,24,18,.18);">
+            <select id="ea-target-label" ${teachPending ? "disabled" : ""} style="box-sizing:border-box;width:100%;margin-top:8px;padding:10px 12px;border-radius:11px;border:2px solid #241812;background:${teachPending ? "#f1eadf" : "#fffdf7"};color:#1f1a14;font:inherit;box-shadow:2px 2px 0 rgba(36,24,18,.18);">
               <option value="">Infer from note</option>
               ${labelOptions}
             </select>
           </details>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <button type="button" data-ea-action="preview-teach" style="border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Propose rule</button>
-            <button type="button" data-ea-action="clear-teach" style="border:0;background:transparent;color:#5d5342;border-radius:0;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;box-shadow:none;">Clear draft</button>
+            <button type="button" data-ea-action="preview-teach" ${teachPending ? "disabled" : ""} style="border:2px solid #241812;background:${teachPending ? "#c7d8cc" : "#2eb67d"};color:#241812;border-radius:11px;padding:9px 12px;cursor:${teachPending ? "wait" : "pointer"};font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">${teachFlowState === "previewing" ? "Preparing rule..." : "Propose rule"}</button>
+            <button type="button" data-ea-action="clear-teach" ${teachPending ? "disabled" : ""} style="border:0;background:transparent;color:#5d5342;border-radius:0;padding:7px 2px;cursor:${teachPending ? "wait" : "pointer"};font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;box-shadow:none;opacity:${teachPending ? "0.55" : "1"};">Clear draft</button>
           </div>
         </div>
         ${teachPanelHtml}
@@ -1000,6 +1030,7 @@
       `border:2px solid #241812;border-radius:11px;background:${activeSummaryFilter === key ? "#dff8ed" : "#fffdf7"};box-shadow:2px 2px 0 rgba(36,24,18,.18);padding:12px;text-align:left;cursor:pointer;font:inherit;color:#241812;`;
     const keptVisibleCount = summary.kept_visible_count ?? countForFilter("kept_visible_items");
     setHtml(dailySummaryNode, `
+      ${activityHtml}
       <div style="margin-top:10px;color:#6b6255;line-height:1.45;">${summary.run_count > 1 ? `Rolling view across the last ${summary.run_count} Gmail runs` : "Latest run snapshot"}</div>
       <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px;">
         <button type="button" data-ea-summary-filter="recent_items" style="${metricButtonStyle("recent_items")}"><strong style="display:block;font-size:1.15rem;">${summary.processed_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">processed</span></button>
@@ -1332,6 +1363,30 @@
     };
   }
 
+  function selectedUnderstandingState(selected) {
+    return String((selected && selected.understanding_state) || "ready");
+  }
+
+  function selectedUnderstandingActive(selected) {
+    return selectedUnderstandingState(selected) === "reading" || selectedUnderstandingState(selected) === "understanding";
+  }
+
+  function selectedUnderstandingMessage(selected) {
+    const message = selected && selected.understanding_message;
+    if (message) {
+      return message;
+    }
+    return selectedUnderstandingState(selected) === "reading"
+      ? "Reading this email..."
+      : selectedUnderstandingState(selected) === "understanding"
+        ? "Understanding this email..."
+        : "Threadwise is ready with the current email.";
+  }
+
+  function isTeachPending() {
+    return teachFlowState === "previewing" || teachFlowState === "applying";
+  }
+
   function openSelectedEmailInGmail() {
     return openGmailItem(selectedEmailAsItem());
   }
@@ -1350,16 +1405,44 @@
       : "Nothing was stored or changed. The preview is still here so you can check the connection and retry without rewriting your note.";
     return {
       kind: `${operation}-error`,
-      title: operation === "preview" ? "Preview failed" : "Lesson not applied",
+      state_label: "Retry available",
+      title: operation === "preview" ? "Preview blocked" : "Lesson blocked",
       message: `${friendlyErrorMessage(rawMessage || `Could not ${operationLabel} the lesson.`)} ${retryCopy}`,
     };
   }
 
+  function teachPendingResult(operation, mode) {
+    if (operation === "preview") {
+      return {
+        kind: "preview-pending",
+        state_label: "Working",
+        title: "Preview accepted",
+        message: "Threadwise accepted your note and is drafting the rule now.",
+      };
+    }
+    const modeLabel = mode === "apply-included"
+      ? "Fix + inbox accepted"
+      : mode === "future-only"
+        ? "Fix + future accepted"
+        : "Fix accepted";
+    return {
+      kind: "apply-pending",
+      state_label: "Working",
+      title: modeLabel,
+      message: "Threadwise is applying this lesson now. We will update this panel when the result is ready.",
+    };
+  }
+
   function renderTeachResultHtml(result) {
-    const isError = String(result.kind || "").endsWith("-error");
-    const tone = isError
-      ? { background: "#fff4dd", color: "#8a4b00" }
-      : { background: "#d8f3ef", color: "#0f766e" };
+    const kind = String(result.kind || "");
+    const isError = kind.endsWith("-error");
+    const isPending = kind.endsWith("-pending");
+    const tone = isPending
+      ? { background: "#eef3ff", color: "#2146b7" }
+      : isError
+        ? { background: "#fff4dd", color: "#8a4b00" }
+        : { background: "#d8f3ef", color: "#0f766e" };
+    const stateLabel = result.state_label || (isPending ? "Working" : isError ? "Retry available" : "Done");
     const recoveryActions = isError
       ? `
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
@@ -1374,6 +1457,7 @@
       : "";
     return `
       <div style="box-sizing:border-box;width:100%;min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word;margin-top:12px;border-radius:14px;background:${tone.background};padding:12px;color:${tone.color};line-height:1.45;">
+        <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;font-weight:850;">${escapeHtml(stateLabel)}</div>
         <div style="font-weight:700;">${escapeHtml(result.title || (isError ? "Lesson failed" : "Lesson applied"))}</div>
         <div style="margin-top:8px;">${escapeHtml(result.message || "")}</div>
         ${recoveryActions}
@@ -1397,7 +1481,118 @@
     `;
   }
 
-  function renderTeachReceiptHtml(message, outcome) {
+  function renderAsyncFollowUpHtml(followUp) {
+    if (!followUp || followUp.kind !== "teach-apply-refresh") {
+      return "";
+    }
+    const state = String(followUp.state || "working");
+    const tone = state === "done"
+      ? { background: "#eef7f5", color: "#0f766e" }
+      : state === "retry"
+        ? { background: "#fff4dd", color: "#8a4b00" }
+        : { background: "#eef3ff", color: "#2146b7" };
+    return `
+      <div style="margin-top:12px;border-radius:11px;background:${tone.background};padding:10px 12px;color:${tone.color};line-height:1.45;">
+        <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;font-weight:850;">${escapeHtml(followUp.label || "Background refresh")}</div>
+        <div style="margin-top:6px;">${escapeHtml(followUp.message || "")}</div>
+      </div>
+    `;
+  }
+
+  function localTeachActivityItem() {
+    if (!teachResult) {
+      return null;
+    }
+    const kind = String(teachResult.kind || "");
+    if (kind.endsWith("-pending")) {
+      return {
+        id: kind,
+        kind,
+        state: "working",
+        label: teachResult.title || "Action accepted",
+        message: teachResult.message || "",
+      };
+    }
+    if (kind.endsWith("-error")) {
+      return {
+        id: kind,
+        kind,
+        state: "retry",
+        label: teachResult.title || "Retry available",
+        message: teachResult.message || "",
+        action: kind === "apply-error" ? "retry-apply-teach" : "retry-preview-teach",
+        action_label: kind === "apply-error" ? "Retry fix" : "Retry preview",
+      };
+    }
+    if (teachFlowState === "result") {
+      return {
+        id: kind || "teach-result",
+        kind: kind || "teach-result",
+        state: "done",
+        label: teachResult.title || "Last lesson",
+        message: teachResult.message || "",
+      };
+    }
+    return null;
+  }
+
+  function recentActivityItems(sidebarState) {
+    const items = [];
+    const localTeach = localTeachActivityItem();
+    if (localTeach) {
+      items.push(localTeach);
+    }
+    const backendItems = (((sidebarState || {}).ui_state || {}).activity_feed) || [];
+    for (const item of backendItems) {
+      if (!item || !item.id) {
+        continue;
+      }
+      if (items.some((candidate) => candidate.id === item.id)) {
+        continue;
+      }
+      items.push(item);
+    }
+    return items.slice(0, 3);
+  }
+
+  function renderRecentActivityHtml(items) {
+    if (!items.length) {
+      return "";
+    }
+    return `
+      <div style="margin-top:12px;border:2px solid #241812;border-radius:14px;background:#fffdf7;padding:12px;color:#241812;line-height:1.45;">
+        <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">Recent activity</div>
+        <div style="display:grid;gap:8px;margin-top:10px;">
+          ${items.map((item) => {
+            const state = String(item.state || "working");
+            const tone = state === "done"
+              ? { background: "#eef7f5", color: "#0f766e" }
+              : state === "retry"
+                ? { background: "#fff4dd", color: "#8a4b00" }
+                : { background: "#eef3ff", color: "#2146b7" };
+            return `
+              <div data-ea-activity-item="${escapeHtml(item.id || item.kind || "activity")}" style="border-radius:11px;background:${tone.background};padding:10px 12px;color:${tone.color};">
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                  <div style="font-weight:800;">${escapeHtml(item.label || "Activity")}</div>
+                  <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;font-weight:850;">${escapeHtml(state)}</div>
+                </div>
+                <div style="margin-top:6px;">${escapeHtml(item.message || "")}</div>
+                ${
+                  item.action
+                    ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+                        <button type="button" data-ea-action="${escapeHtml(item.action)}"${item.action === "retry-apply-teach" ? ' data-ea-apply="current-only"' : ""} style="border:2px solid #241812;background:#fffdf7;color:#241812;border-radius:9px;padding:7px 10px;cursor:pointer;font:inherit;font-weight:800;box-shadow:2px 2px 0 #241812;">${escapeHtml(item.action_label || "Retry")}</button>
+                      </div>`
+                    : ""
+                }
+              </div>
+            `;
+          }).join("")}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderTeachReceiptHtml(message, outcome, followUp) {
     const rows = [
       ["This email", outcome?.current_email_changed_locally ? "done" : "not changed"],
       ["Gmail label", outcome?.current_email_written_to_gmail ? "done" : "not confirmed"],
@@ -1406,6 +1601,7 @@
     ];
     return `
       <div data-ea-teach-state="result" style="box-sizing:border-box;width:100%;min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word;margin-top:12px;border-radius:14px;background:#d8f3ef;padding:12px;color:#0f766e;line-height:1.45;">
+        <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;font-weight:850;">Done</div>
         <div style="font-weight:700;">Rule applied</div>
         <div style="margin-top:8px;">${escapeHtml(message || "Rule applied.")}</div>
         <div style="margin-top:12px;border:2px solid #241812;border-radius:11px;background:#fffdf7;padding:10px 12px;color:#1f1a14;line-height:1.45;">
@@ -1419,6 +1615,7 @@
             `).join("")}
           </div>
         </div>
+        ${renderAsyncFollowUpHtml(followUp)}
       </div>
     `;
   }
@@ -1439,6 +1636,7 @@
   function renderTeachScopeHtml(preview) {
     const backfill = preview.inbox_backfill || {};
     const pending = teachFlowState === "applying";
+    const pendingHtml = pending && teachResult ? renderTeachResultHtml(teachResult) : "";
     return `
       <div data-ea-teach-state="${pending ? "applying" : "scope-confirmation"}" style="box-sizing:border-box;width:100%;min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word;margin-top:12px;border:2px solid #241812;border-radius:14px;background:#fffdf7;padding:12px;color:#241812;line-height:1.45;">
         <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">Accepted rule</div>
@@ -1451,6 +1649,7 @@
         </div>
         <div style="margin-top:8px;color:#6b6255;">Fix email applies only to this email. Fix + future also saves the rule. Fix + inbox also applies it to matching inbox emails.</div>
         ${backfill.available ? `<div style="margin-top:8px;color:#6b6255;">Will update about ${escapeHtml(String(backfill.estimated_count || 0))} matching inbox emails.</div>` : ""}
+        ${pendingHtml}
         ${inboxApplyConfirmOpen ? `
           <div style="margin-top:12px;border-radius:14px;background:#fff4dd;padding:12px;color:#8a4b00;line-height:1.45;">
             <div style="font-weight:800;">Apply to inbox?</div>
@@ -1764,11 +1963,17 @@
     const previewButton = event.target.closest("[data-ea-action='preview-teach']");
     if (previewButton) {
       event.preventDefault();
+      if (isTeachPending()) {
+        return;
+      }
       return previewTeach();
     }
     const retryPreviewButton = event.target.closest("[data-ea-action='retry-preview-teach']");
     if (retryPreviewButton) {
       event.preventDefault();
+      if (isTeachPending()) {
+        return;
+      }
       return previewTeach();
     }
     const clearButton = event.target.closest("[data-ea-action='clear-teach']");
@@ -1836,6 +2041,9 @@
     const applyButton = event.target.closest("[data-ea-apply]");
     if (applyButton) {
       event.preventDefault();
+      if (isTeachPending()) {
+        return;
+      }
       const mode = applyButton.getAttribute("data-ea-apply");
       if (mode === "apply-included" && teachPreview?.inbox_backfill?.requires_confirmation && !inboxApplyConfirmOpen) {
         inboxApplyConfirmOpen = true;
@@ -1845,6 +2053,7 @@
         return;
       }
       teachFlowState = "applying";
+      teachResult = teachPendingResult("apply", mode);
       if (lastSidebarState) {
         renderState(lastSidebarState);
       }
@@ -1917,9 +2126,20 @@
     if (!lastSidebarState || !lastSidebarState.selected_email || !lastSidebarState.selected_email.found) {
       return;
     }
+    if (isTeachPending()) {
+      return;
+    }
     syncTeachDraftFromDom();
     const targetLabel = teachDraft.targetLabel;
     const note = teachDraft.note;
+    teachFlowState = "previewing";
+    teachResult = teachPendingResult("preview");
+    teachPreview = null;
+    inboxApplyConfirmOpen = false;
+    teachOutcome = null;
+    affectedReviewOpen = false;
+    unsubscribeResult = "";
+    renderState(lastSidebarState);
     chrome.runtime.sendMessage({
       type: "email-agent:api",
       path: "/api/teach-preview",
@@ -1934,10 +2154,12 @@
       if (chrome.runtime.lastError) {
         teachResult = teachErrorResult("preview", chrome.runtime.lastError.message || "Could not preview the lesson.");
         teachPreview = null;
+        teachFlowState = "teaching";
         affectedReviewOpen = false;
       } else if (!response || !response.ok) {
         teachResult = teachErrorResult("preview", (response && (response.payload?.error || response.error)) || "Could not preview the lesson.");
         teachPreview = null;
+        teachFlowState = "teaching";
         affectedReviewOpen = false;
       } else {
         teachResult = null;
@@ -1954,6 +2176,9 @@
 
   async function applyTeach(mode) {
     if (!lastSidebarState || !lastSidebarState.selected_email || !lastSidebarState.selected_email.found) {
+      return;
+    }
+    if (isTeachPending() && teachFlowState !== "applying") {
       return;
     }
     syncTeachDraftFromDom();
@@ -1973,6 +2198,7 @@
     }, (response) => {
       if (chrome.runtime.lastError) {
         teachResult = teachErrorResult("apply", chrome.runtime.lastError.message || "Could not apply the lesson.");
+        teachFlowState = "scope-confirmation";
         renderState(lastSidebarState);
         return;
       }

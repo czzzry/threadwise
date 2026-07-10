@@ -4,6 +4,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -22,6 +23,7 @@ from src.gmail_companion_rendering import (
 from src.gmail_companion_state import (
     build_selected_email_state,
     classify_handling_status,
+    selected_email_understanding_state,
     selected_context_from_query,
     selected_email_contract,
 )
@@ -78,6 +80,31 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertFalse(selected["found"])
         self.assertEqual(selected["status"], "not-in-snapshot")
         self.assertEqual(selected["status_label"], "Not in local snapshot")
+
+    def test_selected_email_understanding_state_progresses_from_reading_to_ready(self) -> None:
+        context = {
+            "message_id": "gmail-live-001",
+            "subject": "Interview update",
+            "sender": "notifications@example.com",
+            "selected_at": "2026-07-10T10:00:00Z",
+        }
+
+        reading = selected_email_understanding_state(
+            context,
+            now=datetime.fromisoformat("2026-07-10T10:00:00+00:00"),
+        )
+        understanding = selected_email_understanding_state(
+            context,
+            now=datetime.fromisoformat("2026-07-10T10:00:01+00:00"),
+        )
+        ready = selected_email_understanding_state(
+            context,
+            now=datetime.fromisoformat("2026-07-10T10:00:02+00:00"),
+        )
+
+        self.assertEqual(reading["understanding_state"], "reading")
+        self.assertEqual(understanding["understanding_state"], "understanding")
+        self.assertEqual(ready["understanding_state"], "ready")
 
     def test_companion_state_exposes_all_classifications_when_message_has_multiple_labels(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -216,6 +243,9 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("Check again", content_js)
         self.assertIn("data-ea-action=\"force-refresh\"", content_js)
         self.assertIn("friendlyErrorMessage", content_js)
+        self.assertIn("Reading this email...", content_js)
+        self.assertIn("Understanding this email...", content_js)
+        self.assertIn("Threadwise is still understanding this email. Teaching controls will appear when the email is ready.", content_js)
         self.assertIn('id="ea-status"', content_js)
         self.assertIn("Needs attention", content_js)
         self.assertIn("Health check failed", content_js)
@@ -249,14 +279,33 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("box-sizing:border-box;width:100%", content_js)
         self.assertIn("teachErrorResult", content_js)
         self.assertIn("renderTeachResultHtml", content_js)
-        self.assertIn("Preview failed", content_js)
-        self.assertIn("Lesson not applied", content_js)
+        self.assertIn("Preview blocked", content_js)
+        self.assertIn("Lesson blocked", content_js)
+        self.assertIn("Retry available", content_js)
+        self.assertIn("Preview accepted", content_js)
+        self.assertIn("Fix accepted", content_js)
+        self.assertIn("Fix + future accepted", content_js)
+        self.assertIn("Fix + inbox accepted", content_js)
+        self.assertIn("Working", content_js)
+        self.assertIn("Done", content_js)
+        self.assertIn("Preparing rule...", content_js)
+        self.assertIn("renderAsyncFollowUpHtml", content_js)
+        self.assertIn("renderRecentActivityHtml", content_js)
+        self.assertIn("recentActivityItems", content_js)
+        self.assertIn("Recent activity", content_js)
+        self.assertIn("data-ea-activity-item", content_js)
+        self.assertIn("teach-apply-refresh", content_js)
+        self.assertIn("Background refresh", content_js)
         self.assertIn("Nothing was stored or changed. The preview is still here", content_js)
         self.assertIn("Try fix again", content_js)
         self.assertIn("data-ea-action=\"retry-preview-teach\"", content_js)
         self.assertIn("max-width:100%;overflow-wrap:anywhere;word-break:break-word", content_js)
         self.assertIn("Nothing was changed. Check the local companion connection and try Preview again.", content_js)
         self.assertNotIn("No confirmed lesson was applied from this failed request", content_js)
+        self.assertIn("isTeachPending()", content_js)
+        self.assertIn('teachFlowState = "previewing"', content_js)
+        self.assertIn('teachResult = teachPendingResult("preview")', content_js)
+        self.assertIn('teachResult = teachPendingResult("apply", mode)', content_js)
         self.assertIn("response.payload?.error", background_js)
         self.assertIn("status: response.status", background_js)
         self.assertIn("Queue preview", content_js)
@@ -1295,6 +1344,7 @@ class GmailCompanionUiTests(unittest.TestCase):
                     "message_id": "gmail-live-001",
                     "subject": "Big sale this week",
                     "sender": "news@example.com",
+                    "selected_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
                 }
             )
 
@@ -1309,6 +1359,7 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertIn("list_key=gmail%3Afounder-test%3Anews%40example.com", state["selected_email"]["unsubscribe"]["handoff_path"])
             self.assertEqual(state["selected_email"]["details"]["write_status"], "applied")
             self.assertEqual(state["selected_email"]["details"]["inbox_status"], "applied")
+            self.assertIn(state["selected_email"]["understanding_state"], {"reading", "understanding"})
             self.assertEqual(state["daily_summary"]["processed_count"], 6)
             self.assertEqual(state["daily_summary"]["auto_handled_count"], 2)
             self.assertEqual(state["daily_summary"]["needs_attention_count"], 1)
@@ -2185,6 +2236,110 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertIn("saved a future rule", result["acknowledgment"])
             self.assertIn("No other existing stored emails were rewritten", result["acknowledgment"])
 
+    def test_teach_apply_returns_fast_sidebar_state_and_starts_follow_up_refresh(self) -> None:
+        app = GmailCompanionApp(Path("/tmp/example"))
+        selected_context = {
+            "provider": "gmail",
+            "message_id": "gmail-live-001",
+            "subject": "Need a response",
+            "sender": "boss@example.com",
+        }
+        teaching_result = {
+            "mode": "current-only",
+            "matched_existing_count": 0,
+            "proposal": None,
+            "preview_matches": [],
+            "semantic_rule": {"target_label": "reply-needed", "sender": "boss@example.com"},
+            "current": {
+                "account_id": "founder-test",
+                "message_id": "gmail-live-001",
+                "subject": "Need a response",
+                "sender": "boss@example.com",
+            },
+            "future_rule_saved": False,
+        }
+        write_through = {
+            "mode": "mock",
+            "messages_written": 1,
+            "label_write_failed": 0,
+            "label_write_skipped": 0,
+            "inbox_removed": 0,
+            "inbox_remove_failed": 0,
+        }
+        fast_sidebar = {
+            "selected_email": {"message_id": "gmail-live-001"},
+            "daily_summary": {"processed_count": 12},
+            "ui_state": {
+                "async_follow_up": {
+                    "kind": "teach-apply-refresh",
+                    "state": "working",
+                    "label": "Background refresh running",
+                    "message": "Refreshing the queue summary and follow-up context in the background.",
+                }
+            },
+        }
+
+        with (
+            patch("src.gmail_companion_ui.apply_sidebar_teaching", return_value=teaching_result),
+            patch.object(app, "_write_teach_result_to_gmail", return_value=write_through),
+            patch.object(app, "_teach_apply_acknowledgment", return_value="Lesson applied."),
+            patch.object(app, "_teach_apply_outcome", return_value={"future_rule_saved": False}),
+            patch.object(app, "_start_teach_apply_follow_up_refresh") as start_follow_up_mock,
+            patch.object(app, "_fast_sidebar_state", return_value=fast_sidebar) as fast_sidebar_mock,
+        ):
+            result = app.teach_apply(
+                {
+                    "selected_context": selected_context,
+                    "target_label": "reply-needed",
+                    "note": "This needs a reply.",
+                    "mode": "current-only",
+                }
+            )
+
+        start_follow_up_mock.assert_called_once_with(selected_context)
+        fast_sidebar_mock.assert_called_once_with(selected_context)
+        self.assertEqual(result["sidebar_state"]["ui_state"]["async_follow_up"]["state"], "working")
+        self.assertEqual(result["acknowledgment"], "Lesson applied.")
+
+    def test_teach_apply_follow_up_refresh_marks_done_after_rebuild(self) -> None:
+        app = GmailCompanionApp(Path("/tmp/example"))
+        selected_context = {"provider": "gmail", "message_id": "gmail-live-001"}
+        app._set_async_follow_up_state(
+            {
+                "kind": "teach-apply-refresh",
+                "state": "working",
+                "label": "Background refresh running",
+                "message": "Refreshing the queue summary and follow-up context in the background.",
+            }
+        )
+
+        with (
+            patch.object(app, "_invalidate_companion_caches") as invalidate_mock,
+            patch.object(app, "sidebar_state", return_value={"selected_email": {}, "daily_summary": {}, "ui_state": {}}),
+            patch.object(app, "_build_harness_state", return_value={"sidebar_state": {"selected_email": {}}}),
+        ):
+            app._run_teach_apply_follow_up_refresh(selected_context)
+
+        invalidate_mock.assert_called_once()
+        self.assertEqual(app._async_follow_up_payload()["state"], "done")
+
+    def test_sidebar_state_exposes_recent_activity_feed_for_async_follow_up(self) -> None:
+        app = GmailCompanionApp(Path("/tmp/example"))
+        app._set_async_follow_up_state(
+            {
+                "kind": "teach-apply-refresh",
+                "state": "retry",
+                "label": "Background refresh stalled",
+                "message": "Queue summary refresh stalled: timeout",
+            }
+        )
+
+        state = app.sidebar_state({})
+
+        self.assertEqual(state["ui_state"]["activity_feed"][0]["kind"], "teach-apply-refresh")
+        self.assertEqual(state["ui_state"]["activity_feed"][0]["state"], "retry")
+        self.assertEqual(state["ui_state"]["activity_feed"][0]["label"], "Background refresh stalled")
+
     def test_install_page_is_extension_first_and_mentions_gmail_surface(self) -> None:
         app = GmailCompanionApp(Path("/tmp/example"))
         page = app.render_install_page("127.0.0.1:8021")
@@ -2262,15 +2417,30 @@ class GmailCompanionUiTests(unittest.TestCase):
 
     def test_harness_state_reuses_short_lived_cache_for_same_context(self) -> None:
         app = GmailCompanionApp(Path("/tmp/example"))
-        context = {"provider": "gmail", "message_id": "cached-msg"}
+        context = {"provider": "gmail", "message_id": "cached-msg", "selected_at": "2026-07-10T10:00:00Z"}
 
         with patch("src.gmail_companion_ui.build_companion_runtime_payload") as runtime_mock:
             runtime_mock.return_value = {"items": []}
-            first = app.harness_state(context)
-            second = app.harness_state(context)
+            with patch("src.gmail_companion_ui.selected_email_understanding_state") as understanding_mock:
+                understanding_mock.side_effect = [
+                    {
+                        "understanding_state": "reading",
+                        "understanding_label": "Reading",
+                        "understanding_message": "Reading this email...",
+                    },
+                    {
+                        "understanding_state": "ready",
+                        "understanding_label": "Ready",
+                        "understanding_message": "Threadwise is ready with the current email.",
+                    },
+                ]
+                first = app.harness_state(context)
+                second = app.harness_state(context)
 
-        self.assertEqual(first, second)
+        self.assertNotEqual(first["sidebar_state"]["selected_email"]["understanding_state"], second["sidebar_state"]["selected_email"]["understanding_state"])
         self.assertEqual(runtime_mock.call_count, 1)
+        self.assertEqual(first["sidebar_state"]["selected_email"]["understanding_state"], "reading")
+        self.assertEqual(second["sidebar_state"]["selected_email"]["understanding_state"], "ready")
 
     def test_harness_state_endpoint_includes_cors_headers(self) -> None:
         app = GmailCompanionApp(Path("/tmp/example"))

@@ -51,6 +51,7 @@ from src.gmail_companion_state import (
     load_latest_report,
     selected_context_from_query,
     selected_email_contract,
+    selected_email_understanding_state,
 )
 from src.teaching_loop import (
     apply_rule_amendment_decision,
@@ -178,6 +179,8 @@ class GmailCompanionApp:
         self._daily_summary_cache: tuple[float, dict] | None = None
         self._unsubscribe_candidates_cache: tuple[float, list[dict]] | None = None
         self._companion_data_lock = threading.Lock()
+        self._async_follow_up_state: dict | None = None
+        self._async_follow_up_lock = threading.Lock()
 
     def handle_request(self, handler: BaseHTTPRequestHandler) -> None:
         parsed = urlparse(handler.path)
@@ -505,30 +508,109 @@ class GmailCompanionApp:
             self._unsubscribe_candidates_cache = (time.monotonic(), payload)
             return payload
 
-    def sidebar_state(self, selected_context: dict | None) -> dict:
-        summary = self._cached_daily_summary()
-        selected_email = build_selected_email_state(
-            self._storage_dir,
-            self._cached_unsubscribe_candidates(),
-            selected_context or {},
-        )
+    def _async_follow_up_payload(self) -> dict | None:
+        with self._async_follow_up_lock:
+            if self._async_follow_up_state is None:
+                return None
+            return dict(self._async_follow_up_state)
+
+    def _set_async_follow_up_state(self, payload: dict | None) -> None:
+        with self._async_follow_up_lock:
+            self._async_follow_up_state = dict(payload) if payload else None
+
+    def _recent_activity_feed(self) -> list[dict]:
+        follow_up = self._async_follow_up_payload()
+        if not follow_up:
+            return []
+        return [
+            {
+                "id": follow_up.get("kind") or "async-follow-up",
+                "kind": follow_up.get("kind") or "async-follow-up",
+                "state": follow_up.get("state") or "working",
+                "label": follow_up.get("label") or "Background refresh",
+                "message": follow_up.get("message") or "",
+            }
+        ]
+
+    def _sidebar_ui_state(self) -> dict:
+        return {
+            "default_mode": "expanded",
+            "can_minimize": True,
+            "panel_title": "Threadwise",
+            "allowed_labels": [
+                {"id": label, "name": gmail_label_name(label)}
+                for label in CANONICAL_LABEL_ORDER
+            ],
+            "async_follow_up": self._async_follow_up_payload(),
+            "activity_feed": self._recent_activity_feed(),
+        }
+
+    def _fast_sidebar_state(self, selected_context: dict | None) -> dict:
         return {
             "contract_version": "gmail-companion-sidebar-v1",
             "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
             "selected_context": selected_context or {},
-            "selected_email": selected_email,
-            "daily_summary": summary,
+            "selected_email": build_selected_email_state(
+                self._storage_dir,
+                self._cached_unsubscribe_candidates(),
+                selected_context or {},
+            ),
+            "daily_summary": self._cached_daily_summary(),
             "run_status": load_gmail_dashboard_run_status(self._storage_dir),
-            "ui_state": {
-                "default_mode": "expanded",
-                "can_minimize": True,
-                "panel_title": "Threadwise",
-                "allowed_labels": [
-                    {"id": label, "name": gmail_label_name(label)}
-                    for label in CANONICAL_LABEL_ORDER
-                ],
-            },
+            "ui_state": self._sidebar_ui_state(),
         }
+
+    def _invalidate_companion_caches(self) -> None:
+        with self._companion_data_lock:
+            self._runtime_payload_cache = None
+            self._daily_summary_cache = None
+            self._unsubscribe_candidates_cache = None
+        with self._harness_state_lock:
+            self._harness_state_cache.clear()
+
+    def _run_teach_apply_follow_up_refresh(self, selected_context: dict) -> None:
+        try:
+            self._invalidate_companion_caches()
+            self.sidebar_state(selected_context)
+            cache_key = json.dumps(selected_context or {}, sort_keys=True)
+            payload = self._build_harness_state(selected_context)
+            with self._harness_state_lock:
+                self._harness_state_cache[cache_key] = (time.monotonic(), payload)
+            self._set_async_follow_up_state(
+                {
+                    "kind": "teach-apply-refresh",
+                    "state": "done",
+                    "label": "Background refresh done",
+                    "message": "Queue summary and follow-up context are ready.",
+                }
+            )
+        except Exception as exc:
+            self._set_async_follow_up_state(
+                {
+                    "kind": "teach-apply-refresh",
+                    "state": "retry",
+                    "label": "Background refresh stalled",
+                    "message": f"Queue summary refresh stalled: {exc}",
+                }
+            )
+
+    def _start_teach_apply_follow_up_refresh(self, selected_context: dict) -> None:
+        self._set_async_follow_up_state(
+            {
+                "kind": "teach-apply-refresh",
+                "state": "working",
+                "label": "Background refresh running",
+                "message": "Refreshing the queue summary and follow-up context in the background.",
+            }
+        )
+        threading.Thread(
+            target=self._run_teach_apply_follow_up_refresh,
+            args=(dict(selected_context or {}),),
+            daemon=True,
+        ).start()
+
+    def sidebar_state(self, selected_context: dict | None) -> dict:
+        return self._fast_sidebar_state(selected_context)
 
     def harness_state(self, selected_context: dict | None) -> dict:
         cache_key = json.dumps(selected_context or {}, sort_keys=True)
@@ -538,11 +620,11 @@ class GmailCompanionApp:
             if cached is not None:
                 created_at, payload = cached
                 if now - created_at <= HARNESS_STATE_CACHE_SECONDS:
-                    return payload
+                    return self._with_live_understanding_state(payload, selected_context or {})
 
             payload = self._build_harness_state(selected_context)
             self._harness_state_cache[cache_key] = (time.monotonic(), payload)
-            return payload
+            return self._with_live_understanding_state(payload, selected_context or {})
 
     def _build_harness_state(self, selected_context: dict | None) -> dict:
         runtime = self._cached_runtime_payload()
@@ -565,6 +647,17 @@ class GmailCompanionApp:
             "needs_attention_items": [item for item in items if item.get("status") == "needs-attention"][:12],
             "auto_handled_items": [item for item in items if item.get("status") == "auto-handled"][:12],
             "kept_visible_items": [item for item in items if item.get("status") in {"kept-visible", "auto-labeled"}][:12],
+        }
+
+    def _with_live_understanding_state(self, payload: dict, selected_context: dict) -> dict:
+        sidebar_state = dict(payload.get("sidebar_state") or {})
+        selected_email = dict(sidebar_state.get("selected_email") or {})
+        live_context = selected_context or payload.get("selected_context") or {}
+        selected_email.update(selected_email_understanding_state(live_context))
+        sidebar_state["selected_email"] = selected_email
+        return {
+            **payload,
+            "sidebar_state": sidebar_state,
         }
 
     def teach_preview(self, payload: dict) -> dict:
@@ -602,22 +695,14 @@ class GmailCompanionApp:
             teaching_result["mode"],
             teaching_result["preview_matches"],
             semantic_rule={
-                **(
-                    build_sidebar_teach_preview(
-                        self._storage_dir,
-                        selected_context=selected_context,
-                        target_label=target_label,
-                        note=note,
-                        scope=scope,
-                    ).get("semantic_rule")
-                    or {}
-                ),
+                **(teaching_result.get("semantic_rule") or {}),
                 "target_label": target_label,
             },
             current_subject=teaching_result["current"].get("subject") or "",
             current_sender=teaching_result["current"].get("sender") or "",
         )
-        refreshed = self.sidebar_state(selected_context)
+        self._start_teach_apply_follow_up_refresh(selected_context)
+        refreshed = self._fast_sidebar_state(selected_context)
         return {
             "acknowledgment": self._teach_apply_acknowledgment(teaching_result, write_through_summary),
             "mode": teaching_result["mode"],
@@ -1486,6 +1571,17 @@ class GmailCompanionApp:
 
     function renderReadingPane() {
       const selected = selectedEmail();
+      const understandingState = String((selected || {}).understanding_state || "ready");
+      const understandingActive = understandingState === "reading" || understandingState === "understanding";
+      if (understandingActive) {
+        messageNode.innerHTML = `
+          <div class="message-title">${escapeHtml((selected && selected.subject) || currentContext.subject || "Current email")}</div>
+          <div class="message-meta">${escapeHtml((selected && selected.sender) || currentContext.sender || "unknown sender")}</div>
+          <div class="message-body">${escapeHtml((selected && selected.understanding_message) || "Understanding this email...")}</div>
+          <div class="note">Threadwise is updating the current email view before showing the full judgment.</div>
+        `;
+        return;
+      }
       if (!selected || !selected.found) {
         messageNode.innerHTML = `
           <div class="message-title">${escapeHtml(currentContext.subject || "Unsynced email")}</div>
@@ -2962,6 +3058,21 @@ class GmailCompanionApp:
 
     function renderSelectedEmail(selectedEmail) {
       const stepCopy = nextStepCopy(selectedEmail);
+      const understandingState = String((selectedEmail || {}).understanding_state || "ready");
+      const understandingActive = understandingState === "reading" || understandingState === "understanding";
+      if (understandingActive) {
+        affectedReviewOpen = false;
+        syncAffectedReviewLayout();
+        selectedEmailNode.innerHTML = `
+          <div class="empty">${escapeHtml((selectedEmail && selectedEmail.understanding_message) || "Understanding this email...")}</div>
+          <div class="reason-wrap">
+            <div class="reason-label">${escapeHtml((selectedEmail && selectedEmail.understanding_label) || "Understanding")}</div>
+            <div class="reason">Threadwise is working through the currently selected Gmail email before showing the full judgment.</div>
+          </div>
+        `;
+        teachPanelNode.innerHTML = '<div class="empty">Threadwise is still understanding this email. Teaching controls will appear when the email is ready.</div>';
+        return;
+      }
       if (!selectedEmail || !selectedEmail.found) {
         affectedReviewOpen = false;
         syncAffectedReviewLayout();

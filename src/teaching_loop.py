@@ -214,13 +214,14 @@ def apply_sidebar_teaching(
     target_label = intent["target_label"]
 
     current = load_selected_storage_item(storage_dir, selected_context)
+    semantic_rule = build_semantic_future_rule(current=current, target_label=target_label, note=note, scope=scope, intent=intent)
     proposal = build_companion_memory_proposal(
         storage_dir,
         current=current,
         target_label=target_label,
         note=note,
         scope=scope,
-        semantic_rule=build_semantic_future_rule(current=current, target_label=target_label, note=note, scope=scope, intent=intent),
+        semantic_rule=semantic_rule,
     )
     preview_matches = filter_excluded_preview_matches(storage_dir, proposal.to_dict(), proposal.preview.get("matches", []))
 
@@ -297,6 +298,7 @@ def apply_sidebar_teaching(
         "candidate_change": candidate_record.to_dict() if candidate_record else None,
         "current": current,
         "preview_matches": preview_matches,
+        "semantic_rule": semantic_rule,
     }
 
 
