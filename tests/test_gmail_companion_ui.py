@@ -23,12 +23,13 @@ from src.gmail_companion_rendering import (
 from src.gmail_companion_state import (
     build_selected_email_state,
     classify_handling_status,
+    load_latest_batch,
     selected_email_understanding_state,
     selected_context_from_query,
     selected_email_contract,
 )
 from src.gmail_companion_ui import GmailCompanionApp, main
-from src.gmail_writer import MockGmailLabelClient
+from src.gmail_writer import MockGmailLabelClient, MockGmailLabelWriter
 from src.local_artifacts import candidate_changes_path
 
 
@@ -2160,6 +2161,155 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertEqual(result["gmail_write_through"]["remote_match_count"], 1)
             self.assertEqual(result["gmail_write_through"]["remote_applied_count"], 1)
             self.assertEqual(result["gmail_write_through"]["messages_written"], 2)
+            remote_batch_id = result["gmail_write_through"]["remote_batch_id"]
+            writer = MockGmailLabelWriter(
+                gmail_client=gmail_client,
+                storage_dir=storage_dir,
+                label_name_resolver=lambda label: {"job-related": "EA/Work"}[label],
+            )
+            self.assertEqual(writer.get_write_status(remote_batch_id, "gmail-remote-003"), "applied")
+            self.assertEqual(writer.get_inbox_removal_status(remote_batch_id, "gmail-remote-003"), "ineligible")
+            self.assertEqual(
+                writer.get_write_attempt_history(remote_batch_id, "gmail-remote-003"),
+                [{"status": "applied", "final_labels": ["job-related"]}],
+            )
+            self.assertEqual(load_latest_batch(storage_dir)["batch_id"], "founder-test-batch-1")
+
+    def test_teach_apply_remote_backfill_preserves_label_success_when_inbox_removal_fails(self) -> None:
+        class InboxRemovalFailingClient(MockGmailLabelClient):
+            def remove_inbox_label(self, message_id: str) -> None:
+                self.calls.append(("remove_inbox_label", message_id))
+                if message_id == "gmail-remote-003":
+                    raise RuntimeError("Temporary INBOX removal failure")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            gmail_client = InboxRemovalFailingClient(
+                search_results_by_query={
+                    "from:news@example.com {summer sale}": [
+                        "gmail-live-001",
+                        "gmail-remote-003",
+                    ]
+                }
+            )
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": "News <news@example.com>",
+                        "subject": "Summer sale",
+                        "snippet": "Offers",
+                        "interpretation": "Informational message with no confident category.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                ],
+            )
+
+            result = GmailCompanionApp(
+                storage_dir,
+                gmail_client_factory=lambda account_id, credentials_dir, client_secret_path, required_scope: gmail_client,
+            ).teach_apply(
+                {
+                    "selected_context": {
+                        "provider": "gmail",
+                        "message_id": "gmail-live-001",
+                        "subject": "Summer sale",
+                        "sender": "news@example.com",
+                    },
+                    "target_label": "promotions",
+                    "note": "Marketing email that should be treated as a promotion.",
+                    "mode": "apply-included",
+                }
+            )
+
+            summary = result["gmail_write_through"]
+            writer = MockGmailLabelWriter(
+                gmail_client=gmail_client,
+                storage_dir=storage_dir,
+                label_name_resolver=lambda label: {"promotions": "EA/Promotions"}[label],
+            )
+            self.assertEqual(summary["remote_applied_count"], 1)
+            self.assertEqual(summary["remote_failed_count"], 0)
+            self.assertEqual(summary["remote_inbox_failed_count"], 1)
+            self.assertEqual(summary["label_write_failed"], 0)
+            self.assertEqual(summary["inbox_remove_failed"], 1)
+            self.assertEqual(writer.get_write_status(summary["remote_batch_id"], "gmail-remote-003"), "applied")
+            self.assertEqual(writer.get_inbox_removal_status(summary["remote_batch_id"], "gmail-remote-003"), "failed")
+            self.assertIn("Inbox removal: 1 applied, 1 failed", result["acknowledgment"])
+
+    def test_teach_apply_remote_backfill_does_not_remove_inbox_after_label_failure(self) -> None:
+        class RemoteLabelFailingClient(MockGmailLabelClient):
+            def replace_threadwise_labels(
+                self,
+                message_id: str,
+                label_ids: list[str],
+                namespace_prefix: str = "EA/",
+            ) -> None:
+                if message_id == "gmail-remote-003":
+                    self.calls.append(("replace_threadwise_labels", message_id, label_ids, namespace_prefix))
+                    raise RuntimeError("Temporary label write failure")
+                super().replace_threadwise_labels(message_id, label_ids, namespace_prefix)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            gmail_client = RemoteLabelFailingClient(
+                search_results_by_query={
+                    "from:news@example.com {summer sale}": [
+                        "gmail-live-001",
+                        "gmail-remote-003",
+                    ]
+                }
+            )
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": "News <news@example.com>",
+                        "subject": "Summer sale",
+                        "snippet": "Offers",
+                        "interpretation": "Informational message with no confident category.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                ],
+            )
+
+            result = GmailCompanionApp(
+                storage_dir,
+                gmail_client_factory=lambda account_id, credentials_dir, client_secret_path, required_scope: gmail_client,
+            ).teach_apply(
+                {
+                    "selected_context": {
+                        "provider": "gmail",
+                        "message_id": "gmail-live-001",
+                        "subject": "Summer sale",
+                        "sender": "news@example.com",
+                    },
+                    "target_label": "promotions",
+                    "note": "Marketing email that should be treated as a promotion.",
+                    "mode": "apply-included",
+                }
+            )
+
+            summary = result["gmail_write_through"]
+            writer = MockGmailLabelWriter(gmail_client, storage_dir)
+            self.assertEqual(summary["remote_applied_count"], 0)
+            self.assertEqual(summary["remote_failed_count"], 1)
+            self.assertEqual(summary["remote_inbox_skipped_count"], 1)
+            self.assertEqual(writer.get_write_status(summary["remote_batch_id"], "gmail-remote-003"), "failed")
+            self.assertEqual(writer.get_inbox_removal_status(summary["remote_batch_id"], "gmail-remote-003"), "skipped")
+            self.assertNotIn(("remove_inbox_label", "gmail-remote-003"), gmail_client.calls)
 
     def test_teach_apply_can_disable_gmail_write_through_for_simulator(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

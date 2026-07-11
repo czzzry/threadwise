@@ -9,6 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import sys
 from urllib.parse import parse_qs, urlparse
+from uuid import uuid4
 
 from src.attention_feedback import record_attention_feedback
 from src.gmail_automation import run_daily_gmail_automation
@@ -23,6 +24,7 @@ from src.attention_rules import (
 from src.gmail_writer import MockGmailLabelWriter
 from src.label_taxonomy import CANONICAL_LABEL_ORDER, gmail_label_name
 from src.live_gmail_client import GMAIL_MODIFY_SCOPE
+from src.local_artifacts import write_json_artifact
 from src.product_analytics import (
     ANALYTICS_WORKFLOW_VERSION,
     AnonymousDistinctIdStore,
@@ -1020,8 +1022,9 @@ class GmailCompanionApp:
         inbox_skipped = 0
         inbox_ineligible = 0
         for batch_id, items in batch_items.items():
-            write_summary = writer.write_reviewed_labels(batch_id, items)
-            inbox_summary = writer.remove_inbox_for_low_value_messages(batch_id, items)
+            mutation = writer.apply_reviewed_mutations(batch_id, items)
+            write_summary = mutation["write_summary"]
+            inbox_summary = mutation["inbox_summary"]
             write_applied += write_summary["applied_count"]
             write_failed += write_summary["failed_count"]
             write_skipped += write_summary["skipped_count"]
@@ -1033,6 +1036,11 @@ class GmailCompanionApp:
         remote_applied = 0
         remote_failed = 0
         remote_skipped = 0
+        remote_batch_id = ""
+        remote_inbox_removed = 0
+        remote_inbox_failed = 0
+        remote_inbox_skipped = 0
+        remote_inbox_ineligible = 0
         if mode == "apply-included":
             local_ids = {
                 item.get("message_id")
@@ -1042,6 +1050,7 @@ class GmailCompanionApp:
             }
             remote_summary = self._apply_rule_to_matching_inbox_messages(
                 gmail_client,
+                account_id=account_id,
                 semantic_rule=semantic_rule or {},
                 current_subject=current_subject,
                 current_sender=current_sender,
@@ -1051,9 +1060,18 @@ class GmailCompanionApp:
             remote_applied = remote_summary["applied_count"]
             remote_failed = remote_summary["failed_count"]
             remote_skipped = remote_summary["skipped_count"]
+            remote_batch_id = remote_summary["batch_id"]
+            remote_inbox_removed = remote_summary["inbox_removed_count"]
+            remote_inbox_failed = remote_summary["inbox_failed_count"]
+            remote_inbox_skipped = remote_summary["inbox_skipped_count"]
+            remote_inbox_ineligible = remote_summary["inbox_ineligible_count"]
             write_applied += remote_applied
             write_failed += remote_failed
             write_skipped += remote_skipped
+            inbox_removed += remote_inbox_removed
+            inbox_failed += remote_inbox_failed
+            inbox_skipped += remote_inbox_skipped
+            inbox_ineligible += remote_inbox_ineligible
         return {
             "messages_written": write_applied,
             "inbox_removed": inbox_removed,
@@ -1066,6 +1084,11 @@ class GmailCompanionApp:
             "remote_applied_count": remote_applied,
             "remote_failed_count": remote_failed,
             "remote_skipped_count": remote_skipped,
+            "remote_batch_id": remote_batch_id,
+            "remote_inbox_removed_count": remote_inbox_removed,
+            "remote_inbox_failed_count": remote_inbox_failed,
+            "remote_inbox_skipped_count": remote_inbox_skipped,
+            "remote_inbox_ineligible_count": remote_inbox_ineligible,
             "mode": "applied",
         }
 
@@ -1121,6 +1144,7 @@ class GmailCompanionApp:
         self,
         gmail_client,
         *,
+        account_id: str,
         semantic_rule: dict,
         current_subject: str,
         current_sender: str,
@@ -1132,31 +1156,73 @@ class GmailCompanionApp:
             current_sender=current_sender,
         )
         if not query:
-            return {"matched_count": 0, "applied_count": 0, "failed_count": 0, "skipped_count": 0}
+            return self._empty_remote_mutation_summary()
         message_ids = gmail_client.search_message_ids(query, 1000)
         filtered_ids = [message_id for message_id in message_ids if message_id and message_id not in excluded_message_ids]
-        label_name = gmail_label_name((semantic_rule or {}).get("target_label") or "")
-        if not label_name:
-            return {"matched_count": len(filtered_ids), "applied_count": 0, "failed_count": 0, "skipped_count": len(filtered_ids)}
-        label_id = gmail_client.get_or_create_label(label_name)
-        applied_count = 0
-        failed_count = 0
-        for message_id in filtered_ids:
-            try:
-                if hasattr(gmail_client, "replace_threadwise_labels"):
-                    gmail_client.replace_threadwise_labels(message_id, [label_id], "EA/")
-                else:
-                    gmail_client.apply_labels(message_id, [label_id])
-                if self._is_inbox_removal_label_eligible((semantic_rule or {}).get("target_label") or ""):
-                    gmail_client.remove_inbox_label(message_id)
-                applied_count += 1
-            except Exception:
-                failed_count += 1
+        target_label = (semantic_rule or {}).get("target_label") or ""
+        if not gmail_label_name(target_label):
+            return {
+                **self._empty_remote_mutation_summary(),
+                "matched_count": len(filtered_ids),
+                "skipped_count": len(filtered_ids),
+            }
+        if not filtered_ids:
+            return self._empty_remote_mutation_summary()
+        batch_id = f"gmail-companion-backfill-{uuid4().hex}"
+        reviewed_items = [
+            {
+                "source": "gmail",
+                "account_id": account_id,
+                "message_id": message_id,
+                "review_state": "reviewed",
+                "review_action": "sidebar-remote-backfill",
+                "applied_labels": [target_label],
+                "final_labels": [target_label],
+            }
+            for message_id in filtered_ids
+        ]
+        write_json_artifact(
+            "gmail_mutation_batch",
+            self._storage_dir,
+            {
+                "batch_id": batch_id,
+                "provider": "gmail",
+                "account_id": account_id,
+                "items": reviewed_items,
+            },
+            batch_id,
+        )
+        writer = MockGmailLabelWriter(
+            gmail_client=gmail_client,
+            storage_dir=self._storage_dir,
+            label_name_resolver=gmail_label_name,
+        )
+        mutation = writer.apply_reviewed_mutations(batch_id, reviewed_items)
+        write_summary = mutation["write_summary"]
+        inbox_summary = mutation["inbox_summary"]
         return {
             "matched_count": len(filtered_ids),
-            "applied_count": applied_count,
-            "failed_count": failed_count,
+            "applied_count": write_summary["applied_count"],
+            "failed_count": write_summary["failed_count"],
+            "skipped_count": write_summary["skipped_count"],
+            "batch_id": batch_id,
+            "inbox_removed_count": inbox_summary["applied_count"],
+            "inbox_failed_count": inbox_summary["failed_count"],
+            "inbox_skipped_count": inbox_summary["skipped_count"],
+            "inbox_ineligible_count": inbox_summary["ineligible_count"],
+        }
+
+    def _empty_remote_mutation_summary(self) -> dict:
+        return {
+            "matched_count": 0,
+            "applied_count": 0,
+            "failed_count": 0,
             "skipped_count": 0,
+            "batch_id": "",
+            "inbox_removed_count": 0,
+            "inbox_failed_count": 0,
+            "inbox_skipped_count": 0,
+            "inbox_ineligible_count": 0,
         }
 
     def _build_gmail_backfill_query(self, *, semantic_rule: dict, current_subject: str, current_sender: str) -> str:
@@ -1200,9 +1266,6 @@ class GmailCompanionApp:
             if len(words) == 3:
                 break
         return words
-
-    def _is_inbox_removal_label_eligible(self, target_label: str) -> bool:
-        return target_label in {"promotions", "spam-low-value"}
 
     def _teach_apply_acknowledgment(self, teaching_result: dict, write_through_summary: dict) -> str:
         base = teaching_result["acknowledgment"]

@@ -26,6 +26,11 @@ class FakeWritableGmailClient:
         if message_id in self._failing_message_ids:
             raise RuntimeError(f"Failed to apply labels to {message_id}")
 
+    def remove_inbox_label(self, message_id: str) -> None:
+        self.calls.append(("remove_inbox_label", message_id))
+        if message_id in self._failing_message_ids:
+            raise RuntimeError(f"Failed to remove INBOX from {message_id}")
+
 
 class LiveGmailRetryCliTests(unittest.TestCase):
     def test_retry_script_runs_from_repo_root_without_pythonpath(self) -> None:
@@ -288,6 +293,72 @@ class LiveGmailRetryCliTests(unittest.TestCase):
             self.assertIn("Retryable failed writes: 1", stdout.getvalue())
             self.assertIn("Retried successfully: 0", stdout.getvalue())
             self.assertIn("Still failed after retry: 1", stdout.getvalue())
+
+    def test_main_retries_failed_inbox_removal_without_repeating_applied_label_write(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            batch_id = "gmail-companion-backfill-test"
+            mutation_batch_path = storage_dir / "gmail_mutation_batches" / f"{batch_id}.json"
+            mutation_batch_path.parent.mkdir(parents=True, exist_ok=True)
+            mutation_batch_path.write_text(
+                json.dumps(
+                    {
+                        "batch_id": batch_id,
+                        "account_id": "founder-test",
+                        "provider": "gmail",
+                        "items": [
+                            {
+                                "source": "gmail",
+                                "account_id": "founder-test",
+                                "message_id": "gmail-remote-003",
+                                "review_state": "reviewed",
+                                "review_action": "sidebar-remote-backfill",
+                                "applied_labels": ["promotions"],
+                                "final_labels": ["promotions"],
+                            }
+                        ],
+                    },
+                    indent=2,
+                )
+            )
+            (storage_dir / f"{batch_id}_write_status.json").write_text(
+                json.dumps({"gmail-remote-003": "applied"}, indent=2)
+            )
+            (storage_dir / f"{batch_id}_write_attempts.json").write_text(
+                json.dumps(
+                    {"gmail-remote-003": [{"status": "applied", "final_labels": ["promotions"]}]},
+                    indent=2,
+                )
+            )
+            (storage_dir / f"{batch_id}_inbox_removal_status.json").write_text(
+                json.dumps({"gmail-remote-003": "failed"}, indent=2)
+            )
+            (storage_dir / f"{batch_id}_inbox_removal_attempts.json").write_text(
+                json.dumps(
+                    {"gmail-remote-003": [{"status": "failed", "final_labels": ["promotions"]}]},
+                    indent=2,
+                )
+            )
+            stdout = io.StringIO()
+            gmail_client = FakeWritableGmailClient()
+
+            exit_code = main(
+                [
+                    "--batch-id",
+                    batch_id,
+                    "--storage-dir",
+                    temp_dir,
+                    "--credentials-dir",
+                    temp_dir,
+                ],
+                stdout=stdout,
+                gmail_client_factory=lambda account_id, credentials_dir, client_secret_path, required_scope: gmail_client,
+            )
+
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(gmail_client.calls, [("remove_inbox_label", "gmail-remote-003")])
+            self.assertIn("Retryable failed INBOX removals: 1", stdout.getvalue())
+            self.assertIn("INBOX removals retried successfully: 1", stdout.getvalue())
 
     def _write_batch(self, storage_dir: Path, items: list[dict]) -> None:
         batch_path = storage_dir / "batches" / "founder-test-batch-1.json"

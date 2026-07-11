@@ -141,6 +141,25 @@ class GmailAutomationTests(unittest.TestCase):
             self.assertEqual(result.still_failed_count, 0)
             self.assertEqual(result.blocked_messages, ["Message gmail-live-002 requires re-review before retry"])
 
+    def test_retry_failed_label_write_completes_eligible_inbox_removal_after_label_succeeds(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            client = MockGmailLabelClient(failing_message_ids={"gmail-remote-003"})
+            writer = build_gmail_label_writer(client, storage_dir)
+            item = {
+                "message_id": "gmail-remote-003",
+                "review_state": "reviewed",
+                "final_labels": ["promotions"],
+            }
+            writer.apply_reviewed_mutations("companion-backfill-1", [item])
+            client.clear_failure("gmail-remote-003")
+
+            retry_failed_writes("companion-backfill-1", [item], writer)
+
+            self.assertEqual(writer.get_write_status("companion-backfill-1", "gmail-remote-003"), "applied")
+            self.assertEqual(writer.get_inbox_removal_status("companion-backfill-1", "gmail-remote-003"), "applied")
+            self.assertIn(("remove_inbox_label", "gmail-remote-003"), client.calls)
+
     def test_daily_run_writes_attention_from_latest_batch_and_stored_lookback_without_extra_gmail_mutations(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)

@@ -56,6 +56,8 @@ There is no active bounded implementation PRD. The next slice should be selected
 
 The branch also now contains a bounded, privacy-first PostHog product analytics slice for the Gmail companion workflow. Its current source of truth is `docs/analytics/tracking-plan.md`; implementation and dashboard evidence is summarized in `docs/handoff/2026-07-10-posthog-analytics-integration.md`.
 
+The Gmail mutation reliability slice tracked in GitHub issue `#62` is also complete. Companion whole-inbox backfill now uses the same durable, bounded mutation implementation as daily automation, preserves partial label/inbox outcomes, and supports retrying failed inbox removal without repeating a successful label write. See `docs/handoff/2026-07-11-gmail-mutation-boundary.md`.
+
 ## Current Source Of Truth
 
 For the latest completed eval / promotion work, use:
@@ -80,6 +82,8 @@ For repo workflow and guardrails, use `AGENTS.md`.
 For broader product direction, use `docs/v2-alignment.md`.
 
 For the PostHog analytics boundary and event contract, use `docs/analytics/tracking-plan.md` and `docs/analytics/case-study.md`.
+
+For the latest Gmail mutation reliability evidence, use `docs/handoff/2026-07-11-gmail-mutation-boundary.md` and GitHub issue `#62`.
 
 ## What Is Historical
 

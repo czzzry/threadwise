@@ -157,6 +157,16 @@ class MockGmailLabelWriter:
     def get_write_attempt_history(self, batch_id: str, message_id: str) -> list[dict]:
         return self._load_attempts(batch_id).get(message_id, [])
 
+    def apply_reviewed_mutations(self, batch_id: str, reviewed_items: list[dict]) -> dict:
+        """Apply the complete bounded Gmail mutation contract for reviewed items."""
+        write_summary = self.write_reviewed_labels(batch_id, reviewed_items)
+        inbox_summary = self.remove_inbox_for_low_value_messages(batch_id, reviewed_items)
+        return {
+            "batch_id": batch_id,
+            "write_summary": write_summary,
+            "inbox_summary": inbox_summary,
+        }
+
     def remove_inbox_for_low_value_messages(self, batch_id: str, reviewed_items: list[dict]) -> dict:
         status_map = self._load_inbox_removal_status_map(batch_id)
         attempts = self._load_inbox_removal_attempts(batch_id)
@@ -205,6 +215,22 @@ class MockGmailLabelWriter:
 
     def get_inbox_removal_attempt_history(self, batch_id: str, message_id: str) -> list[dict]:
         return self._load_inbox_removal_attempts(batch_id).get(message_id, [])
+
+    def retry_failed_inbox_removal(self, batch_id: str, reviewed_item: dict) -> dict:
+        message_id = reviewed_item["message_id"]
+        history = self.get_inbox_removal_attempt_history(batch_id, message_id)
+        if not history or history[-1]["status"] != "failed":
+            raise ValueError(f"Message {message_id} has no failed INBOX removal to retry")
+
+        previous_labels = list(history[-1].get("final_labels") or [])
+        current_labels = list(reviewed_item.get("final_labels") or [])
+        if current_labels != previous_labels:
+            raise ValueError(f"Message {message_id} requires re-review before retry")
+        if self.get_write_status(batch_id, message_id) != "applied":
+            raise ValueError(f"Message {message_id} requires a successful label write before INBOX removal retry")
+
+        result = self.remove_inbox_for_low_value_messages(batch_id, [reviewed_item])
+        return {"batch_id": batch_id, "retried_count": result["applied_count"] + result["failed_count"]}
 
     def _status_path(self, batch_id: str) -> Path:
         return write_status_path(self._storage_dir, batch_id)

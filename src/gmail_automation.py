@@ -40,9 +40,12 @@ class DailyGmailRunResult:
 @dataclass
 class RetryFailedWritesResult:
     retried_items: list[dict]
+    retried_inbox_items: list[dict]
     blocked_messages: list[str]
     retried_successfully_count: int
     still_failed_count: int
+    inbox_retried_successfully_count: int
+    inbox_still_failed_count: int
 
 
 def build_gmail_label_writer(gmail_client, storage_dir: Path) -> MockGmailLabelWriter:
@@ -102,9 +105,11 @@ def execute_auto_apply_plan(
 ) -> GmailMutationResult:
     GmailBatchReviewStore(storage_dir).persist_reviewed_items(plan.batch_id, plan.stored_batch["items"])
     writer = build_gmail_label_writer(gmail_client, storage_dir)
-    write_summary = writer.write_reviewed_labels(plan.batch_id, plan.auto_items)
-    inbox_summary = writer.remove_inbox_for_low_value_messages(plan.batch_id, plan.auto_items)
-    return GmailMutationResult(write_summary=write_summary, inbox_summary=inbox_summary)
+    mutation = writer.apply_reviewed_mutations(plan.batch_id, plan.auto_items)
+    return GmailMutationResult(
+        write_summary=mutation["write_summary"],
+        inbox_summary=mutation["inbox_summary"],
+    )
 
 
 def summarize_inbox_removal_candidates(
@@ -140,6 +145,14 @@ def failed_write_items(items: list[dict], writer: MockGmailLabelWriter, batch_id
     return failed_items
 
 
+def failed_inbox_removal_items(items: list[dict], writer: MockGmailLabelWriter, batch_id: str) -> list[dict]:
+    return [
+        item
+        for item in items
+        if writer.get_inbox_removal_status(batch_id, item["message_id"]) == "failed"
+    ]
+
+
 def retry_failed_writes(
     batch_id: str,
     items: list[dict],
@@ -149,7 +162,9 @@ def retry_failed_writes(
     analytics_distinct_id: str | None = None,
 ) -> RetryFailedWritesResult:
     retried_items: list[dict] = []
+    retried_inbox_items: list[dict] = []
     blocked_messages: list[str] = []
+    inbox_items_to_retry = failed_inbox_removal_items(items, writer, batch_id)
     for item in failed_write_items(items, writer, batch_id):
         retry_count = max(1, len(writer.get_write_attempt_history(batch_id, item["message_id"])))
         try:
@@ -187,9 +202,19 @@ def retry_failed_writes(
                     **({} if retry_succeeded else {"error_category": "provider_write_error"}),
                 },
             )
+        if writer.get_write_status(batch_id, item["message_id"]) == "applied":
+            writer.remove_inbox_for_low_value_messages(batch_id, [item])
+
+    for item in inbox_items_to_retry:
+        try:
+            writer.retry_failed_inbox_removal(batch_id, item)
+            retried_inbox_items.append(item)
+        except ValueError as exc:
+            blocked_messages.append(str(exc))
 
     return RetryFailedWritesResult(
         retried_items=retried_items,
+        retried_inbox_items=retried_inbox_items,
         blocked_messages=blocked_messages,
         retried_successfully_count=sum(
             1 for item in retried_items
@@ -198,6 +223,14 @@ def retry_failed_writes(
         still_failed_count=sum(
             1 for item in retried_items
             if writer.get_write_status(batch_id, item["message_id"]) == "failed"
+        ),
+        inbox_retried_successfully_count=sum(
+            1 for item in retried_inbox_items
+            if writer.get_inbox_removal_status(batch_id, item["message_id"]) == "applied"
+        ),
+        inbox_still_failed_count=sum(
+            1 for item in retried_inbox_items
+            if writer.get_inbox_removal_status(batch_id, item["message_id"]) == "failed"
         ),
     )
 
@@ -223,8 +256,9 @@ def run_daily_gmail_automation(
     batch_store.persist_reviewed_items(review_queue["batch_id"], stored_batch["items"])
 
     writer = build_gmail_label_writer(gmail_client, storage_dir)
-    write_summary = writer.write_reviewed_labels(review_queue["batch_id"], auto_items)
-    inbox_summary = writer.remove_inbox_for_low_value_messages(review_queue["batch_id"], auto_items)
+    mutation = writer.apply_reviewed_mutations(review_queue["batch_id"], auto_items)
+    write_summary = mutation["write_summary"]
+    inbox_summary = mutation["inbox_summary"]
     unlabeled_exceptions = [
         item for item in stored_batch["items"] if item.get("review_state") != "reviewed"
     ]
