@@ -989,6 +989,23 @@
       `);
       setHtml(selectedEmailSecondaryNode, "");
       setHtml(teachPanelNode, "");
+    } else if (selected.status === "needs-attention" && selectedDecisionMode === "preview") {
+      const label = humanLabelNameFromId(teachDraft.targetLabel || selected.classification || "");
+      setHtml(selectedEmailNode, `
+        <div data-ea-selected-state="preview" style="display:grid;gap:12px;margin-top:10px;">
+          <div>
+            <div data-ea-preview-heading style="font-size:1.3rem;font-weight:840;line-height:1.15;overflow-wrap:anywhere;">Change this email to ${escapeHtml(label)}</div>
+            <div style="margin-top:6px;color:#6b6255;font-size:0.88rem;overflow-wrap:anywhere;">${escapeHtml(selected.subject || "(no subject)")}</div>
+          </div>
+          <div data-ea-preview-effect style="border-radius:14px;background:#f5efe2;padding:12px;color:#1f1a14;line-height:1.45;">This updates the current email only.</div>
+          <div style="display:grid;gap:9px;">
+            <button type="button" data-ea-apply="current-only" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Apply change</button>
+            <button type="button" data-ea-action="edit-current-change" style="border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Edit</button>
+          </div>
+        </div>
+      `);
+      setHtml(selectedEmailSecondaryNode, "");
+      setHtml(teachPanelNode, "");
     } else {
       gmailCheckResult = null;
       const statusStyle =
@@ -2122,6 +2139,22 @@
       selectedDecisionMode = "review";
       teachDraft = { targetLabel: "", note: "" };
       if (lastSidebarState) renderState(lastSidebarState);
+      return;
+    }
+    const previewCurrentChangeButton = event.target.closest("[data-ea-action='preview-current-change']");
+    if (previewCurrentChangeButton) {
+      event.preventDefault();
+      syncTeachDraftFromDom();
+      selectedDecisionMode = "preview";
+      if (lastSidebarState) renderState(lastSidebarState);
+      return;
+    }
+    const editCurrentChangeButton = event.target.closest("[data-ea-action='edit-current-change']");
+    if (editCurrentChangeButton) {
+      event.preventDefault();
+      selectedDecisionMode = "change";
+      if (lastSidebarState) renderState(lastSidebarState);
+      document.getElementById("ea-target-label")?.focus();
       return;
     }
     const retryPreviewButton = event.target.closest("[data-ea-action='retry-preview-teach']");
