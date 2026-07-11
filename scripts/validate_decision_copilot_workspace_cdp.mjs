@@ -120,6 +120,36 @@ try {
   await evaluate(`(() => {
     window.__workspaceState = {
       ...window.__workspaceState,
+      selected_email: { ...window.__workspaceState.selected_email, message_id: 'synthetic-partial-1' }
+    };
+    window.__eaTestHooks.forceRefresh();
+  })()`);
+  await waitFor(() => evaluate(`document.querySelector('[data-ea-selected-state="review"]') !== null`));
+  await evaluate(`document.querySelector('[data-ea-action="change-suggestion"]').click()`);
+  await waitFor(() => evaluate(`document.querySelector('[data-ea-selected-state="change"]') !== null`));
+  await evaluate(`document.querySelector('#ea-target-label').value = 'EA/Promotions'; document.querySelector('#ea-target-label').dispatchEvent(new Event('change', { bubbles: true })); document.querySelector('[data-ea-action="preview-current-change"]').click()`);
+  await waitFor(() => evaluate(`document.querySelector('[data-ea-selected-state="preview"]') !== null`));
+  await evaluate(`document.querySelector('[data-ea-apply="current-only"]').click()`);
+  await waitFor(() => evaluate(`document.querySelector('[data-ea-selected-state="applying"]') !== null`));
+  await evaluate(`window.__resolveTeachApply?.({
+    ok: true,
+    payload: {
+      acknowledgment: 'Synthetic label applied with Inbox cleanup pending.',
+      outcome: {
+        state: 'changed', scope: 'current-email', current_email_changed_locally: true,
+        current_email_written_to_gmail: true, matching_existing_changed_locally: 0,
+        future_rule_saved: false, gmail_write_mode: 'partial', gmail_label_write_failed: 0
+      },
+      gmail_write_through: { messages_written: 1, inbox_removed: 0, inbox_remove_failed: 1 },
+      sidebar_state: window.__workspaceState
+    }
+  })`);
+  await waitFor(() => evaluate(`document.querySelector('[data-ea-selected-state="receipt"]') !== null`));
+  const partialReceipt = await receiptSnapshot();
+
+  await evaluate(`(() => {
+    window.__workspaceState = {
+      ...window.__workspaceState,
       selected_email: {
         found: true,
         message_id: "synthetic-auto-1",
@@ -171,7 +201,7 @@ try {
   await waitFor(() => evaluate(`document.querySelector('[data-ea-workspace-body="home"]') !== null`));
   const home = await workspaceSnapshot();
 
-  const result = { selected, review, change, conflict, preview, applying, receipt, teachApplyRequestCount, changeAfterEdit, reviewAfterCancel, autoHandled, autoHandledWhy, autoHandledChangeOpened, autoHandledRemovedReceipt, home, uncaughtErrorCount: uncaughtErrors.length };
+  const result = { selected, review, change, conflict, preview, applying, receipt, partialReceipt, teachApplyRequestCount, changeAfterEdit, reviewAfterCancel, autoHandled, autoHandledWhy, autoHandledChangeOpened, autoHandledRemovedReceipt, home, uncaughtErrorCount: uncaughtErrors.length };
   console.log(JSON.stringify(result, null, 2));
   if (
     selected.bodyCount !== 1 || selected.mode !== "selected-email" || selected.hasHome || selected.hasDailySummary ||
@@ -190,6 +220,9 @@ try {
     receipt.state !== "receipt" || receipt.heading !== "Changed to Promotions" ||
     receipt.outcomes.join(",") !== "Gmail label updated.,Removed from Inbox." ||
     receipt.primaryActions.join(",") !== "Next email" || receipt.hasLabelPicker || receipt.hasNote ||
+    partialReceipt.state !== "receipt" || partialReceipt.heading !== "Changed to Promotions" ||
+    partialReceipt.outcomes.join(",") !== "Gmail label updated.,Couldn’t remove from Inbox. Retry is available in Activity." ||
+    partialReceipt.primaryActions.length !== 0 || partialReceipt.hasLabelPicker || partialReceipt.hasNote ||
     changeAfterEdit.state !== "change" || changeAfterEdit.selectedLabel !== "EA/Promotions" ||
     reviewAfterCancel.state !== "review" || reviewAfterCancel.primaryActions.length !== 1 ||
     autoHandled.heading !== "Newsletter · Auto-handled" ||

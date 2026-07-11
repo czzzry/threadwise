@@ -945,9 +945,9 @@
           </div>
           <div style="display:grid;gap:8px;border-radius:14px;background:#eef7f5;padding:12px;color:#1f1a14;line-height:1.45;">
             <div data-ea-receipt-outcome>${gmailLabelUpdated ? "Gmail label updated." : "Gmail label not confirmed."}</div>
-            <div data-ea-receipt-outcome>${inboxFailed ? "Inbox removal failed." : inboxRemoved ? "Removed from Inbox." : "Kept in Inbox."}</div>
+            <div data-ea-receipt-outcome>${inboxFailed ? "Couldn’t remove from Inbox. Retry is available in Activity." : inboxRemoved ? "Removed from Inbox." : "Kept in Inbox."}</div>
           </div>
-          ${needsReviewCount > 0 ? '<button type="button" data-ea-action="open-needs-attention" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Next email</button>' : ""}
+          ${needsReviewCount > 0 && !inboxFailed ? '<button type="button" data-ea-action="open-needs-attention" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Next email</button>' : ""}
         </div>
       `);
       setHtml(selectedEmailSecondaryNode, "");
