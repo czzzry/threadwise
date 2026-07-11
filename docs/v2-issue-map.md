@@ -1,9 +1,9 @@
 # V2 Issue Map
 
-Status: Current candidate next-slice map
+Status: Historical candidate next-slice map
 Current as of: 2026-06-29
 Builds on: `docs/checkpoints/current-operating-model-2026-06-22.md`
-Current bounded PRD: `docs/prd.md`
+Superseded by: `CONTEXT.md`
 
 This file is a candidate map, not an approved implementation sequence.
 
@@ -20,7 +20,7 @@ The repo already proves the operating model through later slices beyond the orig
 - unsubscribe inventory and supported execution
 - maintenance refactors for UI responsibilities and artifact contracts
 
-The current bounded planning focus is the Gmail inbox companion release through `docs/prd.md`.
+At the time of this map, the bounded planning focus was the Gmail inbox companion release through `docs/prd.md`. That PRD is completed; do not infer the next slice from this map.
 
 ## Candidate Decision Lanes
 

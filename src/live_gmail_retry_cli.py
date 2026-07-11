@@ -11,6 +11,7 @@ from src.gmail_writer import MockGmailLabelWriter
 from src.gmail_automation import failed_write_items, retry_failed_writes
 from src.label_taxonomy import gmail_label_name
 from src.live_gmail_client import GMAIL_MODIFY_SCOPE, SetupError
+from src.product_analytics import AnonymousDistinctIdStore, ProductAnalytics
 
 
 DEFAULT_STORAGE_DIR = Path("data/gmail_fetch")
@@ -61,7 +62,14 @@ def main(
             label_name_resolver=gmail_label_name,
         )
 
-        result = retry_failed_writes(args.batch_id, stored_batch["items"], writer)
+        analytics = ProductAnalytics.from_environment()
+        result = retry_failed_writes(
+            args.batch_id,
+            stored_batch["items"],
+            writer,
+            analytics=analytics,
+            analytics_distinct_id=AnonymousDistinctIdStore(storage_dir).get_or_create(),
+        )
 
         output.write(f"Retryable failed writes: {len(result.retried_items)}\n")
         output.write(f"Retried successfully: {result.retried_successfully_count}\n")
@@ -69,6 +77,7 @@ def main(
         output.write(f"Blocked by changed labels: {len(result.blocked_messages)}\n")
         for message in result.blocked_messages:
             output.write(f"{message}\n")
+        analytics.shutdown()
         return 0
     except SetupError as exc:
         error_output.write(f"{exc}\n")

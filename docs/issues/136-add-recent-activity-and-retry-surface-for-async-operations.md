@@ -1,6 +1,8 @@
 # Add Recent Activity and Retry Surface for Async Operations
 
-Status: Triaged ready-for-agent
+Status: Completed
+Current as of: 2026-07-11
+Triage state: `completed`
 Type: AFK
 Parent PRD: `docs/prd-async-threadwise-extension-2026-07-10.md`
 
@@ -26,11 +28,11 @@ with the richer workbench or dashboard remaining available for deeper inspection
 
 ## Acceptance criteria
 
-- [ ] The sidebar exposes a compact recent-activity or operation-receipt view for async actions.
-- [ ] Retryable or blocked actions are visible after the main action moment passes.
-- [ ] The sidebar stays compact and does not become a full debug surface.
-- [ ] The activity model can be reused later by a richer Threadwise-owned workspace without rewriting the state semantics.
-- [ ] Tests cover recent-activity and retry visibility through the product-facing contract.
+- [x] The sidebar exposes a compact recent-activity or operation-receipt view for async actions.
+- [x] Retryable or blocked actions are visible after the main action moment passes.
+- [x] The sidebar stays compact and does not become a full debug surface.
+- [x] The activity model can be reused later by a richer Threadwise-owned workspace without rewriting the state semantics.
+- [x] Tests cover recent-activity and retry visibility through the product-facing contract.
 
 ## Blocked by
 

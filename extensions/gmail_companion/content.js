@@ -7,6 +7,7 @@
   const LOCAL_ORIGIN = "http://127.0.0.1:8021";
   const HEALTH_PATH = "/api/health";
   const HEALTH_SERVICE_ID = "threadwise-gmail-companion";
+  const ANALYTICS = globalThis.ThreadwiseAnalytics;
   const BRAND_ICON_URL = chrome.runtime.getURL("assets/brand/threadwise-app-icon.png");
   const PANEL_WIDTH = "420px";
   const PANEL_WIDTH_EXPANDED = "min(920px, calc(100vw - 84px))";
@@ -168,6 +169,7 @@
     if (!content || !footer || !button || !header || !brandButton) {
       return;
     }
+    const wasMinimized = root.dataset.eaMinimized === "true";
     const statusCopy = connectionStatusCopy();
     content.style.display = minimized ? "none" : "grid";
     footer.style.display = "none";
@@ -196,6 +198,10 @@
     const subtitle = root.querySelector("#ea-status")?.nextElementSibling;
     if (subtitle) {
       subtitle.style.display = minimized ? "none" : "block";
+    }
+    root.dataset.eaMinimized = minimized ? "true" : "false";
+    if (!minimized && wasMinimized) {
+      ANALYTICS?.openExtension();
     }
   }
 
@@ -307,6 +313,11 @@
     if (options.clearDraft !== false) {
       teachDraft = { targetLabel: "", note: "" };
     }
+    ANALYTICS?.startEmailReview(
+      item.message_id || "",
+      "needs_attention_queue",
+      Number((lastSidebarState?.daily_summary || {}).needs_attention_count || 0),
+    );
     refreshSelection(true);
     return true;
   }
@@ -748,6 +759,13 @@
 
     const selected = lastSidebarState.selected_email || null;
     const summary = lastSidebarState.daily_summary || {};
+    if (selected?.found && !manualPreviewContext) {
+      ANALYTICS?.startEmailReview(
+        selected.message_id || "",
+        "gmail_selected_email",
+        Number(summary.needs_attention_count || 0),
+      );
+    }
     const activityHtml = renderRecentActivityHtml(recentActivityItems(lastSidebarState));
     const showingQueuePreview = !!manualPreviewContext;
     const stepCopy = nextStepCopy(selected, showingQueuePreview);
@@ -1920,6 +1938,7 @@
     if (queueButton) {
       event.preventDefault();
       activeSummaryFilter = "needs_attention_items";
+      ANALYTICS?.openReviewQueue(Number((lastSidebarState?.daily_summary || {}).needs_attention_count || 0));
       openFirstSummaryItemIfHelpful(activeSummaryFilter);
       return;
     }
@@ -1958,7 +1977,9 @@
     const amendmentButton = event.target.closest("[data-ea-amendment-decision]");
     if (amendmentButton) {
       event.preventDefault();
-      return decideRuleAmendment(amendmentButton.getAttribute("data-ea-amendment-decision") || "");
+      const decision = amendmentButton.getAttribute("data-ea-amendment-decision") || "";
+      ANALYTICS?.decideSuggestion(decision === "accept" ? "approve" : "reject");
+      return decideRuleAmendment(decision);
     }
     const previewButton = event.target.closest("[data-ea-action='preview-teach']");
     if (previewButton) {
@@ -1996,6 +2017,7 @@
     const acceptTeachRuleButton = event.target.closest("[data-ea-action='accept-teach-rule']");
     if (acceptTeachRuleButton) {
       event.preventDefault();
+      ANALYTICS?.decideSuggestion("approve");
       teachFlowState = "scope-confirmation";
       inboxApplyConfirmOpen = false;
       if (lastSidebarState) {
@@ -2006,6 +2028,7 @@
     const refineButton = event.target.closest("[data-ea-action='refine-teach']");
     if (refineButton) {
       event.preventDefault();
+      ANALYTICS?.decideSuggestion("edit");
       previousTeachPreview = teachPreview;
       teachPreview = null;
       teachResult = null;
@@ -2182,6 +2205,16 @@
       return;
     }
     syncTeachDraftFromDom();
+    const ruleScope = mode === "apply-included" || mode === "matching-existing"
+      ? "included_existing"
+      : mode === "save-future-rule" || mode === "future-only"
+        ? "future_email"
+        : "current_email";
+    const affectedCount = mode === "apply-included" || mode === "matching-existing"
+      ? Number(teachPreview?.impact?.matching_existing_count || 0) + 1
+      : 1;
+    const previousQueueSize = Number((lastSidebarState.daily_summary || {}).needs_attention_count || 0);
+    ANALYTICS?.confirmRule(ruleScope, affectedCount, false);
     const targetLabel = teachDraft.targetLabel;
     const note = teachDraft.note;
     chrome.runtime.sendMessage({
@@ -2221,6 +2254,10 @@
       inboxApplyConfirmOpen = false;
       affectedReviewOpen = false;
       unsubscribeResult = "";
+      const remainingQueueSize = Number((payload.sidebar_state?.daily_summary || {}).needs_attention_count || 0);
+      if (previousQueueSize > 0 && remainingQueueSize === 0) {
+        ANALYTICS?.completeReviewBatch(previousQueueSize);
+      }
       renderState(payload.sidebar_state || lastSidebarState);
     });
   }

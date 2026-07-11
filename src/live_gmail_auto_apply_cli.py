@@ -90,7 +90,7 @@ def _print_dry_run(auto_items: list[dict], pending_count: int, output: TextIO) -
             output.write(f"{label_name}: {count}\n")
     else:
         output.write("(none)\n")
-    output.write("This writes EA labels and removes INBOX only for EA/LowValue.\n")
+    output.write("This writes EA labels and removes INBOX only for EA/Promotions and EA/LowValue.\n")
     output.write("Type AUTOAPPLY to apply these changes to Gmail.\n")
 
 

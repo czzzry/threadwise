@@ -1,8 +1,8 @@
 # Add Per-Candidate Promotion, Override, and Audit Flow
 
-Status: Proposed
-Current as of: 2026-07-10
-Triage state: `proposed`
+Status: Completed
+Current as of: 2026-07-11
+Triage state: `completed`
 Parent PRD: `docs/prd-eval-promotion-pipeline-2026-07-10.md`
 Blocked by: `docs/issues/130-add-batched-candidate-evaluation-and-recommendations.md`
 
@@ -39,12 +39,11 @@ This is the slice that turns the eval system from “numbers generator” into a
 
 ## Acceptance criteria
 
-- [ ] Evaluated candidates can be promoted individually without forcing an all-or-nothing batch decision.
-- [ ] Candidates can remain pending after evaluation instead of being forced into immediate promote/reject.
-- [ ] Candidates recommended `Reject` can still be override-promoted by the founder.
-- [ ] Override-promoted candidates persist a non-empty override reason.
-- [ ] Promoted, rejected, kept-pending, and override-promoted states are durable and reloadable.
-- [ ] The system preserves the latest recommendation alongside the final human decision.
-- [ ] Tests prove one safe candidate can be promoted while another candidate from the same batch remains pending or is rejected.
-- [ ] Tests prove override promotion is explicit and audited rather than silent.
-
+- [x] Evaluated candidates can be promoted individually without forcing an all-or-nothing batch decision.
+- [x] Candidates can remain pending after evaluation instead of being forced into immediate promote/reject.
+- [x] Candidates recommended `Reject` can still be override-promoted by the founder.
+- [x] Override-promoted candidates persist a non-empty override reason.
+- [x] Promoted, rejected, kept-pending, and override-promoted states are durable and reloadable.
+- [x] The system preserves the latest recommendation alongside the final human decision.
+- [x] Tests prove one safe candidate can be promoted while another candidate from the same batch remains pending or is rejected.
+- [x] Tests prove override promotion is explicit and audited rather than silent.

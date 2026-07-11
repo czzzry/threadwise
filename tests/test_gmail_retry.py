@@ -3,6 +3,19 @@ import unittest
 from pathlib import Path
 
 from src.gmail_writer import MockGmailLabelClient, MockGmailLabelWriter
+from src.gmail_automation import retry_failed_writes
+from src.product_analytics import ProductAnalytics
+
+
+class FakePostHogClient:
+    def __init__(self) -> None:
+        self.calls: list[dict] = []
+
+    def capture(self, event: str, **kwargs) -> None:
+        self.calls.append({"event": event, **kwargs})
+
+    def shutdown(self) -> None:
+        return
 
 
 class MockGmailRetryTests(unittest.TestCase):
@@ -57,6 +70,27 @@ class MockGmailRetryTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "not currently retryable"):
             self.writer.retry_failed_write("founder-test-batch-1", self.failed_item)
+
+    def test_retry_outcome_is_captured_without_gmail_identifiers(self) -> None:
+        self.client.clear_failure("gmail-005")
+        posthog_client = FakePostHogClient()
+        analytics = ProductAnalytics(client=posthog_client, environment="production", enabled=True)
+
+        result = retry_failed_writes(
+            "founder-test-batch-1",
+            [self.failed_item],
+            self.writer,
+            analytics=analytics,
+            analytics_distinct_id="tw_anon_12345678-1234-4234-8234-123456789abc",
+        )
+
+        self.assertEqual(result.retried_successfully_count, 1)
+        self.assertEqual(posthog_client.calls[0]["event"], "label write retried")
+        properties = posthog_client.calls[0]["properties"]
+        self.assertEqual(properties["retry_outcome"], "completed")
+        self.assertEqual(properties["retry_count"], 1)
+        self.assertNotIn("message_id", properties)
+        self.assertNotIn("batch_id", properties)
 
 
 if __name__ == "__main__":

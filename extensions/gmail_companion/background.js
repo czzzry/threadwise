@@ -3,15 +3,33 @@ const HEALTH_PATH = "/api/health";
 const HEALTH_SERVICE_ID = "threadwise-gmail-companion";
 const HEALTH_TIMEOUT_MS = 5000;
 const HARNESS_STATE_TIMEOUT_MS = 30000;
+const ANALYTICS_DISTINCT_ID_KEY = "threadwise_analytics_distinct_id";
+const ANONYMOUS_ID_PATTERN = /^tw_anon_[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+async function analyticsDistinctId() {
+  const stored = await chrome.storage.local.get(ANALYTICS_DISTINCT_ID_KEY);
+  const existing = stored[ANALYTICS_DISTINCT_ID_KEY];
+  if (typeof existing === "string" && ANONYMOUS_ID_PATTERN.test(existing)) {
+    return existing;
+  }
+  const created = `tw_anon_${crypto.randomUUID()}`;
+  await chrome.storage.local.set({ [ANALYTICS_DISTINCT_ID_KEY]: created });
+  return created;
+}
 
 async function fetchJson(path, options = {}) {
   const controller = new AbortController();
   const timeoutMs = options.timeoutMs || 0;
   const timeoutId = timeoutMs > 0 ? setTimeout(() => controller.abort(), timeoutMs) : null;
   try {
+    const distinctId = await analyticsDistinctId();
     const response = await fetch(`${LOCAL_ORIGIN}${path}`, {
       method: options.method || "GET",
-      headers: options.headers || { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(options.headers || {}),
+        "X-PostHog-Distinct-Id": distinctId,
+      },
       body: options.body,
       signal: controller.signal,
     });
@@ -153,6 +171,20 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         });
       });
 
+    return true;
+  }
+
+  if (message.type === "threadwise:analytics") {
+    fetchJson("/api/analytics/capture", {
+      method: "POST",
+      timeoutMs: HEALTH_TIMEOUT_MS,
+      body: JSON.stringify({
+        event: message.event,
+        properties: message.properties,
+      }),
+    })
+      .then((response) => sendResponse({ ok: response.ok, payload: response.payload }))
+      .catch(() => sendResponse({ ok: false }));
     return true;
   }
 

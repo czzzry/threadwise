@@ -1,6 +1,8 @@
 # Add Async Selected-Email Understanding States
 
-Status: Triaged ready-for-agent
+Status: Completed
+Current as of: 2026-07-11
+Triage state: `completed`
 Type: AFK
 Parent PRD: `docs/prd-async-threadwise-extension-2026-07-10.md`
 
@@ -26,11 +28,11 @@ The founder should be able to tell that Threadwise is alive and working even whe
 
 ## Acceptance criteria
 
-- [ ] Opening a selected Gmail email can enter an immediate visible working state before full selected-email understanding completes.
-- [ ] The sidebar exposes explicit selected-email understanding states such as `Reading`, `Understanding`, and `Ready`, or equivalent clear user-facing wording.
-- [ ] The first useful selected-email response appears without waiting for every secondary sidebar detail to finish.
-- [ ] Refreshing or switching emails does not leave the previous email's final state silently pinned while new understanding is in progress.
-- [ ] Tests cover the staged selected-email contract through the companion state/API seam and at least one browser/simulator flow.
+- [x] Opening a selected Gmail email can enter an immediate visible working state before full selected-email understanding completes.
+- [x] The sidebar exposes explicit selected-email understanding states such as `Reading`, `Understanding`, and `Ready`, or equivalent clear user-facing wording.
+- [x] The first useful selected-email response appears without waiting for every secondary sidebar detail to finish.
+- [x] Refreshing or switching emails does not leave the previous email's final state silently pinned while new understanding is in progress.
+- [x] Tests cover the staged selected-email contract through the companion state/API seam and at least one browser/simulator flow.
 
 ## Blocked by
 

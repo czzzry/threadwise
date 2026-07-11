@@ -1,6 +1,8 @@
 # Add Async Action Lifecycle for Teach and Fix
 
-Status: Triaged ready-for-agent
+Status: Completed
+Current as of: 2026-07-11
+Triage state: `completed`
 Type: AFK
 Parent PRD: `docs/prd-async-threadwise-extension-2026-07-10.md`
 
@@ -26,11 +28,11 @@ without leaving the founder guessing whether the request was accepted or whether
 
 ## Acceptance criteria
 
-- [ ] Submitting a teach or fix action produces an immediate acknowledgment before the final result is known.
-- [ ] The sidebar shows an explicit in-progress action state while the request is still running.
-- [ ] Success, blocked, and retryable outcomes are visibly distinct and do not rely on ambiguous prose alone.
-- [ ] Duplicate submissions are prevented while the same action is already in progress.
-- [ ] Tests cover the async action lifecycle through the companion API contract and visible sidebar behavior.
+- [x] Submitting a teach or fix action produces an immediate acknowledgment before the final result is known.
+- [x] The sidebar shows an explicit in-progress action state while the request is still running.
+- [x] Success, blocked, and retryable outcomes are visibly distinct and do not rely on ambiguous prose alone.
+- [x] Duplicate submissions are prevented while the same action is already in progress.
+- [x] Tests cover the async action lifecycle through the companion API contract and visible sidebar behavior.
 
 ## Blocked by
 

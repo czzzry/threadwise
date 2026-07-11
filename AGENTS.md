@@ -38,8 +38,8 @@ Before substantial implementation or planning work, read:
 2. `CONTEXT.md`
 3. `docs/v2-alignment.md`
 4. `docs/prd.md` when a current bounded slice is active
-5. `docs/checkpoints/current-operating-model-2026-06-22.md`
-6. the relevant current issue if one exists
+5. the relevant current issue if one exists
+6. older checkpoints only when the task depends on historical operating context
 
 Do not infer approval from `docs/v2-issue-map.md`, archived V1 docs, or old handoffs alone.
 

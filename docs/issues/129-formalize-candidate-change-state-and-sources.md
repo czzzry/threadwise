@@ -1,8 +1,8 @@
 # Formalize Candidate Change State and Sources
 
-Status: Proposed
-Current as of: 2026-07-10
-Triage state: `proposed`
+Status: Completed
+Current as of: 2026-07-11
+Triage state: `completed`
 Parent PRD: `docs/prd-eval-promotion-pipeline-2026-07-10.md`
 
 ## Type
@@ -57,12 +57,11 @@ This slice is about durable state and source-of-change modeling only. It should 
 
 ## Acceptance criteria
 
-- [ ] Reusable future rules can be stored as durable candidates instead of being treated as immediately promoted global logic.
-- [ ] Rule amendments can be represented as reusable candidates with source metadata.
-- [ ] A classifier-behavior code change can be declared as a candidate using the same durable model.
-- [ ] Single-email corrections remain outside the candidate pipeline by default.
-- [ ] Candidate lifecycle states are explicit and durable.
-- [ ] Candidate records can point to their latest evaluation artifact without embedding the full evaluation result.
-- [ ] Tests prove one-off corrections do not become candidates automatically.
-- [ ] Tests prove at least one product-originated candidate and one code-originated candidate can be persisted and reloaded.
-
+- [x] Reusable future rules can be stored as durable candidates instead of being treated as immediately promoted global logic.
+- [x] Rule amendments can be represented as reusable candidates with source metadata.
+- [x] A classifier-behavior code change can be declared as a candidate using the same durable model.
+- [x] Single-email corrections remain outside the candidate pipeline by default.
+- [x] Candidate lifecycle states are explicit and durable.
+- [x] Candidate records can point to their latest evaluation artifact without embedding the full evaluation result.
+- [x] Tests prove one-off corrections do not become candidates automatically.
+- [x] Tests prove at least one product-originated candidate and one code-originated candidate can be persisted and reloaded.

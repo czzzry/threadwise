@@ -2,6 +2,23 @@
 
 ## Knowledge
 
+- External: `https://posthog.com/docs/product-analytics/funnels`
+  Use for: how PostHog funnels represent ordered product flows, conversion, drop-off, and time to convert.
+- External: `https://posthog.com/docs/product-analytics/trends/overview`
+  Use for: event counts, comparisons, property breakdowns, and monitoring change over time.
+- External: `https://posthog.com/docs/product-analytics/dashboards`
+  Use for: operating saved insights together as a recurring product dashboard.
+- External: `https://posthog.com/docs/product-analytics/capture-events`
+  Use for: PostHog's event and property capture model.
+- Local: `docs/analytics/tracking-plan.md`
+  Use for: the exact nine Threadwise events, their properties, and which runtime emits them.
+- Local: `posthog/threadwise-dashboard.json`
+  Use for: the five dashboard insights currently installed in PostHog.
+- Local: `src/product_analytics.py`
+  Use for: the enforced event vocabulary, environment controls, and Python SDK boundary.
+- Local: `extensions/gmail_companion/analytics.js`
+  Use for: the frontend review lifecycle and what the extension currently records.
+
 - Local: `docs/prd-async-threadwise-extension-2026-07-10.md`
   Use for: the product problem, the approved scope, and the vertical-slice sequence behind this redesign.
 - Local: `docs/issues/133-add-async-selected-email-understanding-states.md`

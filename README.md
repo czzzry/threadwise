@@ -21,9 +21,10 @@ The product bet is simple: let the agent do the repetitive first pass, but keep 
 Start here if you want the public project story:
 
 - [Portfolio overview](docs/portfolio.md)
+- [Current repo context](CONTEXT.md)
 - [Current product direction](docs/v2-alignment.md)
-- [Current bounded PRD](docs/prd.md)
-- [Current operating checkpoint](docs/checkpoints/current-operating-model-2026-06-22.md)
+- [Latest completed interaction PRD](docs/prd-async-threadwise-extension-2026-07-10.md)
+- [Historical operating checkpoint](docs/checkpoints/current-operating-model-2026-06-22.md)
 
 ## What The Demo Shows
 
@@ -102,9 +103,10 @@ Key choices:
 
 - Product loop: [demo GIF](docs/assets/threadwise-recruiter-story.gif)
 - Portfolio framing: [docs/portfolio.md](docs/portfolio.md)
+- Current repo context: [CONTEXT.md](CONTEXT.md)
 - Current product direction: [docs/v2-alignment.md](docs/v2-alignment.md)
-- Current bounded PRD: [docs/prd.md](docs/prd.md)
-- Operating checkpoint: [docs/checkpoints/current-operating-model-2026-06-22.md](docs/checkpoints/current-operating-model-2026-06-22.md)
+- Latest completed interaction PRD: [docs/prd-async-threadwise-extension-2026-07-10.md](docs/prd-async-threadwise-extension-2026-07-10.md)
+- Historical operating checkpoint: [docs/checkpoints/current-operating-model-2026-06-22.md](docs/checkpoints/current-operating-model-2026-06-22.md)
 - Gmail autonomy decision: [docs/decisions/gmail-bounded-autonomy.md](docs/decisions/gmail-bounded-autonomy.md)
 
 ## Repo Guide
@@ -153,7 +155,7 @@ python3 scripts/check_operational_readiness.py
 More operational detail:
 
 - [Current operational readiness note](docs/current-operational-readiness-2026-06-29.md)
-- [Current operating model checkpoint](docs/checkpoints/current-operating-model-2026-06-22.md)
+- [Historical operating model checkpoint](docs/checkpoints/current-operating-model-2026-06-22.md)
 - [Historical Gmail MVP guide](docs/archive/mvp-happy-path-gmail-manual-review.md)
 
 ## Private Local Data
@@ -165,3 +167,44 @@ This repo uses local private data paths such as:
 - `data/protonmail_credentials/protonmail_bridge/<account_id>.json`
 
 These paths are local-only and should not be committed.
+
+## Privacy-First PostHog Analytics
+
+Threadwise includes an opt-in PostHog EU Cloud integration for the Gmail companion review flow. It uses one anonymous installation ID, never identifies by Gmail address, and disables autocapture, session replay, exception autocapture, GeoIP enrichment, and person profiles. The PostHog SDK runs in the local companion service; no PostHog SDK or remote script is injected into Gmail.
+
+Install the pinned dependency and create a local environment file:
+
+```bash
+python3 -m pip install -r requirements.txt
+cp .env.example .env
+```
+
+Set `POSTHOG_PROJECT_TOKEN` locally. For production capture, also set:
+
+```bash
+set -a; source .env; set +a
+export POSTHOG_HOST=https://eu.i.posthog.com
+export THREADWISE_ANALYTICS_ENABLED=true
+export THREADWISE_ENVIRONMENT=production
+```
+
+Local validation is offline and reads no email data:
+
+```bash
+python3 scripts/validate_posthog_analytics.py
+```
+
+To send the fixed synthetic fixture after the privacy tests pass:
+
+```bash
+set -a; source .env; set +a
+THREADWISE_ANALYTICS_ENABLED=true THREADWISE_ANALYTICS_ALLOW_SYNTHETIC=true THREADWISE_ENVIRONMENT=development python3 scripts/validate_posthog_analytics.py --send
+```
+
+Apply the source-controlled dashboard using the authenticated official CLI:
+
+```bash
+python3 scripts/apply_posthog_dashboard.py
+```
+
+See [the tracking plan](docs/analytics/tracking-plan.md) and [implementation case study](docs/analytics/case-study.md).

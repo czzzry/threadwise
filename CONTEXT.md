@@ -1,7 +1,7 @@
 # CONTEXT.md
 
 Status: Current repo context
-Current as of: 2026-07-10
+Current as of: 2026-07-11
 
 This file is the short "you are here" guide for the repo.
 
@@ -26,8 +26,8 @@ Before substantial planning or implementation work, read:
 2. `CONTEXT.md`
 3. `docs/v2-alignment.md`
 4. the current bounded PRD, if one exists
-5. `docs/checkpoints/current-operating-model-2026-06-22.md`
-6. the relevant current issue, if one exists
+5. the relevant current issue, if one exists
+6. older checkpoints only when historical operating context is needed
 
 Do not infer approval from `docs/v2-issue-map.md`, archived PRDs, or old handoffs alone.
 
@@ -44,7 +44,7 @@ The repo already proves:
 - ProtonMail read-only paths
 - local artifact, reporting, and review tooling
 
-The current branch state has completed the async Gmail companion extension slices `133` through `137`, including:
+The current repo state has completed the eval / promotion slices `129` through `132` and the async Gmail companion extension slices `133` through `137`, including:
 
 - visible selected-email understanding states
 - explicit async teach / fix lifecycle states
@@ -52,11 +52,21 @@ The current branch state has completed the async Gmail companion extension slice
 - compact recent-activity and retry visibility
 - a founder-facing teaching pack for this async architecture
 
-These changes are implemented on `codex/eval-promotion-pipeline` and are ready for PR review / merge flow.
+There is no active bounded implementation PRD. The next slice should be selected explicitly rather than inferred from a historical issue map or completed PRD.
+
+The branch also now contains a bounded, privacy-first PostHog product analytics slice for the Gmail companion workflow. Its current source of truth is `docs/analytics/tracking-plan.md`; implementation and dashboard evidence is summarized in `docs/handoff/2026-07-10-posthog-analytics-integration.md`.
 
 ## Current Source Of Truth
 
-For the just-completed async extension work, use:
+For the latest completed eval / promotion work, use:
+
+1. `docs/prd-eval-promotion-pipeline-2026-07-10.md`
+2. `docs/issues/129-formalize-candidate-change-state-and-sources.md`
+3. `docs/issues/130-add-batched-candidate-evaluation-and-recommendations.md`
+4. `docs/issues/131-add-per-candidate-promotion-override-and-audit-flow.md`
+5. `docs/issues/132-add-minimal-product-status-and-workbench-eval-review.md`
+
+For the latest completed async extension work, use:
 
 1. `docs/prd-async-threadwise-extension-2026-07-10.md`
 2. `docs/issues/133-add-async-selected-email-understanding-states.md`
@@ -68,6 +78,8 @@ For the just-completed async extension work, use:
 For repo workflow and guardrails, use `AGENTS.md`.
 
 For broader product direction, use `docs/v2-alignment.md`.
+
+For the PostHog analytics boundary and event contract, use `docs/analytics/tracking-plan.md` and `docs/analytics/case-study.md`.
 
 ## What Is Historical
 
@@ -84,11 +96,11 @@ Historical docs are still useful context. They are not approval.
 
 Use this order:
 
-1. current task-specific PRD or triaged issue
+1. current task-specific PRD or triaged issue, if one exists
 2. `AGENTS.md`
 3. `CONTEXT.md`
 4. `docs/v2-alignment.md`
-5. `docs/checkpoints/current-operating-model-2026-06-22.md`
+5. completed PRDs and checkpoints as historical implementation evidence
 6. archived docs and handoffs as background only
 
 ## Current Trust Boundaries

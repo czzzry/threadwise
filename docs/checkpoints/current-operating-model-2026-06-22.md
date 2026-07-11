@@ -1,12 +1,12 @@
 # Current Operating Model Checkpoint
 
-Status: Current checkpoint
+Status: Historical checkpoint
 Current as of: 2026-06-29
 Builds on: `docs/v2-alignment.md`
-Current bounded PRD: `docs/prd.md` for the MVP+1 portfolio demo release
+Superseded by: `CONTEXT.md`
 Historical predecessors: `docs/archive/alignment-v1-gmail-mvp.md`, `docs/archive/prd-v1-gmail-mvp.md`, and `docs/archive/mvp-checkpoint-v1-issues-001-027.md`
 
-This checkpoint is the short read for what Threadwise currently proves. The older MVP checkpoint stops at issues `001` through `027`; the repo now includes later slices through `039`.
+This checkpoint records what Threadwise proved on 2026-06-29. The older MVP checkpoint stops at issues `001` through `027`; this snapshot includes later slices through `039`. Use `CONTEXT.md` for the current repo state.
 
 ## Current operating model
 

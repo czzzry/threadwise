@@ -7,6 +7,12 @@
 .env
 .env.*
 !.env.example
+.posthog/
+posthog.env
+
+# Local vendor skill installed by the PostHog wizard; product analytics source
+# and dashboard definitions remain tracked elsewhere in this repository.
+.agents/skills/omnibus-instrument-product-analytics/
 
 # Logs
 *.log

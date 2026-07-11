@@ -2,7 +2,7 @@
 
 Completed
 Current as of: 2026-06-30
-Triage state: `ready-for-agent`
+Triage state: `completed`
 Builds on: `docs/issues/080-deepen-gmail-companion-product-module.md`
 
 # Title

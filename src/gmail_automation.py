@@ -8,6 +8,7 @@ from src.gmail_fetcher import GmailBatchFetcher
 from src.gmail_writer import MockGmailLabelWriter
 from src.label_taxonomy import gmail_label_name
 from src.local_artifacts import load_json_or_default, write_status_path
+from src.product_analytics import ANALYTICS_WORKFLOW_VERSION, ProductAnalytics
 
 
 @dataclass
@@ -143,15 +144,49 @@ def retry_failed_writes(
     batch_id: str,
     items: list[dict],
     writer: MockGmailLabelWriter,
+    *,
+    analytics: ProductAnalytics | None = None,
+    analytics_distinct_id: str | None = None,
 ) -> RetryFailedWritesResult:
     retried_items: list[dict] = []
     blocked_messages: list[str] = []
     for item in failed_write_items(items, writer, batch_id):
+        retry_count = max(1, len(writer.get_write_attempt_history(batch_id, item["message_id"])))
         try:
             writer.retry_failed_write(batch_id, item)
             retried_items.append(item)
         except ValueError as exc:
             blocked_messages.append(str(exc))
+            if analytics and analytics_distinct_id:
+                analytics.capture(
+                    distinct_id=analytics_distinct_id,
+                    event="label write retried",
+                    properties={
+                        "app_version": "0.1.0",
+                        "workflow_version": ANALYTICS_WORKFLOW_VERSION,
+                        "source": "retry_cli",
+                        "rule_scope": "current_email",
+                        "retry_count": retry_count,
+                        "retry_outcome": "blocked",
+                        "error_category": "changed_labels",
+                    },
+                )
+            continue
+        if analytics and analytics_distinct_id:
+            retry_succeeded = writer.get_write_status(batch_id, item["message_id"]) == "applied"
+            analytics.capture(
+                distinct_id=analytics_distinct_id,
+                event="label write retried",
+                properties={
+                    "app_version": "0.1.0",
+                    "workflow_version": ANALYTICS_WORKFLOW_VERSION,
+                    "source": "retry_cli",
+                    "rule_scope": "current_email",
+                    "retry_count": retry_count,
+                    "retry_outcome": "completed" if retry_succeeded else "failed",
+                    **({} if retry_succeeded else {"error_category": "provider_write_error"}),
+                },
+            )
 
     return RetryFailedWritesResult(
         retried_items=retried_items,

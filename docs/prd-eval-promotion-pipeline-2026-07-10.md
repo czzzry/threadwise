@@ -1,7 +1,7 @@
 # Eval / Promotion Pipeline PRD
 
-Status: Proposed bounded-slice PRD
-Current as of: 2026-07-10
+Status: Completed bounded-slice PRD
+Current as of: 2026-07-11
 Builds on: `AGENTS.md`, `CONTEXT.md`, `docs/v2-alignment.md`, `docs/current-multi-inbox-eval-contract-2026-06-28.md`, `docs/issues/056-read-only-two-inbox-shadow-classifier-evaluation.md`, and `docs/issues/057-freeze-multi-inbox-eval-contract-and-contamination-rules.md`
 Supersedes as next planning focus: ad hoc eval scaffolds and one-off corpus runs for classifier-change decisions
 

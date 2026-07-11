@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Threadwise Analytics Operating Reference</title>
+    <link rel="stylesheet" href="../assets/teaching-pack.css">
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <p class="eyebrow">Reference 0002</p>
+        <h1>Threadwise analytics: the founder's operating sheet</h1>
+        <p class="lede">Use this for the ten-minute weekly review: what each signal means, what it does not mean, and what decision it should trigger.</p>
+        <div class="link-row">
+          <a href="../lessons/0002-using-posthog-to-improve-threadwise.html">Read the lesson</a>
+          <a href="https://eu.posthog.com/project/220933/dashboard/809649">Open the live dashboard</a>
+        </div>
+      </section>
+
+      <h2>The mental model</h2>
+      <div class="callout work">
+        Threadwise emits receipts → PostHog groups the receipts → you form a diagnosis → you change one thing → the next receipts tell you whether it helped.
+      </div>
+
+      <h2>Weekly review order</h2>
+      <div class="flow">
+        <div class="flow-step"><div class="flow-index">1</div><div><h3>Reliability</h3><p>Read successful writes, failed writes, and retry outcomes first. If the product cannot reliably finish the job, do not optimize polish yet.</p></div></div>
+        <div class="flow-step"><div class="flow-index">2</div><div><h3>Use</h3><p>Check queue opens, reviews started, and batches completed. These show whether the workflow is actually being used repeatedly.</p></div></div>
+        <div class="flow-step"><div class="flow-index">3</div><div><h3>Quality</h3><p>Check approve/edit/reject mix. Today this reflects rule-proposal decisions; add explicit classification decisions before treating it as label accuracy.</p></div></div>
+        <div class="flow-step"><div class="flow-index">4</div><div><h3>Speed</h3><p>Check decision and completion duration only after enough real review sessions exist to make the distribution meaningful.</p></div></div>
+      </div>
+
+      <h2>Signal → diagnosis → action</h2>
+      <table class="reference-table">
+        <thead><tr><th>Signal</th><th>Likely diagnosis</th><th>Next action</th></tr></thead>
+        <tbody>
+          <tr><td>Queue opens are low while backlog exists</td><td>The queue is hard to find or not worth entering.</td><td>Improve the Home prompt or queue entry point.</td></tr>
+          <tr><td>Reviews start but decisions are low</td><td>The proposal is confusing, slow, or demands too much thought.</td><td>Inspect copy and reduce decision complexity.</td></tr>
+          <tr><td>Edit/reject share rises</td><td>Rule interpretation may be weak.</td><td>Review examples and improve rule generation or taxonomy.</td></tr>
+          <tr><td>Write failures rise</td><td>The provider execution path is unhealthy.</td><td>Fix reliability before adding features.</td></tr>
+          <tr><td>Retries usually recover</td><td>The failure is transient and retry UX is valuable.</td><td>Keep retry visible; investigate the transient cause.</td></tr>
+          <tr><td>Batches rarely complete</td><td>The queue may be too tedious or too large.</td><td>Improve batching, shortcuts, or matching-rule leverage.</td></tr>
+        </tbody>
+      </table>
+
+      <h2>What to add next</h2>
+      <div class="card-grid">
+        <div class="grid-card"><h3>Anonymous review session</h3><p>Generate a fresh safe ID when a review queue begins and carry it through the write. This makes repeated one-user funnels meaningful.</p></div>
+        <div class="grid-card"><h3>Classification decision</h3><p>Separate approve/edit/reject of the proposed label from approval/edit/reject of the broader rule.</p></div>
+        <div class="grid-card"><h3>Label and source properties</h3><p>Add proposed label, final label, suggestion source, and confidence bucket. These aggregate cleanly and reveal where quality is weak.</p></div>
+      </div>
+
+      <h2>Do not add</h2>
+      <div class="callout warn">
+        Do not dump email bodies, subjects, or arbitrary rule prose into PostHog. Even if privacy is not a concern, each value is unique, so it produces expensive noise rather than useful breakdowns.
+      </div>
+
+      <h2>Mnemonic</h2>
+      <div class="card"><h3>R-U-Q-S</h3><p><strong>Reliability</strong> first. <strong>Use</strong> second. <strong>Quality</strong> third. <strong>Speed</strong> fourth.</p></div>
+
+      <p class="footer-note">Ask the agent to walk through a real weekly dashboard reading once production events exist.</p>
+    </main>
+  </body>
+</html>

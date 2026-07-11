@@ -175,6 +175,10 @@ class LiveGmailAutoApplyCliTests(unittest.TestCase):
             self.assertIn("Auto-apply dry run:", rendered)
             self.assertIn("Eligible for auto-apply: 5", rendered)
             self.assertIn("Remaining pending review: 1", rendered)
+            self.assertIn(
+                "removes INBOX only for EA/Promotions and EA/LowValue",
+                rendered,
+            )
             self.assertIn("Auto-applied Gmail label updates: 5", rendered)
             self.assertIn("Removed from INBOX: 1", rendered)
 

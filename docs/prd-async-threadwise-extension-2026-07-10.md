@@ -1,7 +1,7 @@
 # Async Threadwise Extension Behavior PRD
 
-Status: Proposed bounded-slice PRD
-Current as of: 2026-07-10
+Status: Completed bounded-slice PRD
+Current as of: 2026-07-11
 Builds on: `AGENTS.md`, `CONTEXT.md`, `docs/v2-alignment.md`, `docs/checkpoints/current-operating-model-2026-06-22.md`, `docs/prd-correct-teach-state-machine-simplification-2026-07-07.md`, and the implemented eval/promotion pipeline PRD at `docs/prd-eval-promotion-pipeline-2026-07-10.md`
 Supersedes as next planning focus: ad hoc performance tweaks to the current extension flow without a clear response-state model
 

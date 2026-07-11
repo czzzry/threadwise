@@ -192,21 +192,34 @@ class GmailCompanionUiTests(unittest.TestCase):
             text=True,
             check=False,
         )
+        analytics_result = subprocess.run(
+            ["node", "tests/gmail_companion_analytics_test.js"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
 
         self.assertEqual(manifest_result.returncode, 0, manifest_result.stderr)
         self.assertEqual(content_result.returncode, 0, content_result.stderr)
         self.assertEqual(background_result.returncode, 0, background_result.stderr)
+        self.assertEqual(analytics_result.returncode, 0, analytics_result.stderr)
 
     def test_extension_uses_harness_state_and_clickable_summary_filters(self) -> None:
         repo_root = Path(__file__).resolve().parent.parent
         background_js = (repo_root / "extensions" / "gmail_companion" / "background.js").read_text()
         content_js = (repo_root / "extensions" / "gmail_companion" / "content.js").read_text()
+        manifest = json.loads((repo_root / "extensions" / "gmail_companion" / "manifest.json").read_text())
 
         self.assertIn("/api/harness-state", background_js)
         self.assertIn("/api/health", background_js)
         self.assertIn("Helper unreachable", background_js)
         self.assertIn("Wrong service on port", background_js)
         self.assertIn("HARNESS_STATE_TIMEOUT_MS", background_js)
+        self.assertIn("/api/analytics/capture", background_js)
+        self.assertIn("X-PostHog-Distinct-Id", background_js)
+        self.assertIn("storage", manifest["permissions"])
+        self.assertEqual(manifest["content_scripts"][0]["js"][0], "analytics.js")
         self.assertIn("data-ea-summary-filter", content_js)
         self.assertIn('previousPayload = "";', content_js)
         self.assertIn("refreshInFlight", content_js)
@@ -2451,7 +2464,10 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertEqual(handler.code, 200)
         self.assertEqual(handler.sent_headers["Access-Control-Allow-Origin"], "*")
         self.assertEqual(handler.sent_headers["Access-Control-Allow-Methods"], "GET, POST, OPTIONS")
-        self.assertEqual(handler.sent_headers["Access-Control-Allow-Headers"], "Content-Type")
+        self.assertEqual(
+            handler.sent_headers["Access-Control-Allow-Headers"],
+            "Content-Type, X-PostHog-Distinct-Id",
+        )
         self.assertEqual(handler.sent_headers["Access-Control-Allow-Private-Network"], "true")
 
     def test_options_request_returns_cors_preflight_headers(self) -> None:
@@ -2463,7 +2479,10 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertEqual(handler.code, 204)
         self.assertEqual(handler.sent_headers["Access-Control-Allow-Origin"], "*")
         self.assertEqual(handler.sent_headers["Access-Control-Allow-Methods"], "GET, POST, OPTIONS")
-        self.assertEqual(handler.sent_headers["Access-Control-Allow-Headers"], "Content-Type")
+        self.assertEqual(
+            handler.sent_headers["Access-Control-Allow-Headers"],
+            "Content-Type, X-PostHog-Distinct-Id",
+        )
         self.assertEqual(handler.sent_headers["Access-Control-Allow-Private-Network"], "true")
         self.assertEqual(handler.sent_headers["Content-Length"], "0")
 

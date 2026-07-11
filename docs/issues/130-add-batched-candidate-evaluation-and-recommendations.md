@@ -1,8 +1,8 @@
 # Add Batched Candidate Evaluation and Recommendations
 
-Status: Proposed
-Current as of: 2026-07-10
-Triage state: `proposed`
+Status: Completed
+Current as of: 2026-07-11
+Triage state: `completed`
 Parent PRD: `docs/prd-eval-promotion-pipeline-2026-07-10.md`
 Blocked by: `docs/issues/129-formalize-candidate-change-state-and-sources.md`
 
@@ -46,12 +46,11 @@ This slice should keep LLM-assisted analysis out of the core decision path. Opti
 
 ## Acceptance criteria
 
-- [ ] Pending candidates can be evaluated together in one explicit batch run.
-- [ ] The evaluation uses the current reviewed-versus-shadow trust boundary rather than collapsing all evidence into one score.
-- [ ] The output includes both batch-level and per-candidate metric deltas versus baseline.
-- [ ] The output computes recommendations using explicit policy logic rather than one opaque aggregate score.
-- [ ] A candidate that improves discovery only but weakens validation or holdout can be recommended `Review` or `Reject`.
-- [ ] A candidate that regresses reviewed Gmail behavior beyond the agreed threshold is not recommended `Promote`.
-- [ ] A candidate that worsens attention misses or unsafe-action count is not recommended `Promote`.
-- [ ] Tests prove one good candidate and one risky candidate in the same batch can receive different recommendations.
-
+- [x] Pending candidates can be evaluated together in one explicit batch run.
+- [x] The evaluation uses the current reviewed-versus-shadow trust boundary rather than collapsing all evidence into one score.
+- [x] The output includes both batch-level and per-candidate metric deltas versus baseline.
+- [x] The output computes recommendations using explicit policy logic rather than one opaque aggregate score.
+- [x] A candidate that improves discovery only but weakens validation or holdout can be recommended `Review` or `Reject`.
+- [x] A candidate that regresses reviewed Gmail behavior beyond the agreed threshold is not recommended `Promote`.
+- [x] A candidate that worsens attention misses or unsafe-action count is not recommended `Promote`.
+- [x] Tests prove one good candidate and one risky candidate in the same batch can receive different recommendations.

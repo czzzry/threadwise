@@ -1,0 +1,3 @@
+# Analytics is a product feedback loop, not a scoreboard
+
+For Threadwise, PostHog should be used to connect product behavior to the next product decision: where the review flow is entered, where it becomes tedious or unclear, whether Gmail writes work, and whether retries recover. Because Threadwise currently has one user and one stable anonymous installation ID, raw person-based conversion percentages are less useful than repeated event counts, outcome breakdowns, and review-session funnels. The next analytics improvement should add an anonymous review-session identifier and clearer classification-quality events rather than collecting raw email text.

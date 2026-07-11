@@ -23,6 +23,12 @@ from src.attention_rules import (
 from src.gmail_writer import MockGmailLabelWriter
 from src.label_taxonomy import CANONICAL_LABEL_ORDER, gmail_label_name
 from src.live_gmail_client import GMAIL_MODIFY_SCOPE
+from src.product_analytics import (
+    ANALYTICS_WORKFLOW_VERSION,
+    AnonymousDistinctIdStore,
+    ProductAnalytics,
+    bucket_count,
+)
 from src.unsubscribe_inventory_store import UnsubscribeInventoryStore
 from src.unsubscribe_execution import UnsubscribeExecutor
 
@@ -74,6 +80,7 @@ HEALTH_STATUS_CACHE_SECONDS = 5.0
 COMPANION_DATA_CACHE_SECONDS = 120.0
 INBOX_BACKFILL_CONFIRM_THRESHOLD = 200
 INBOX_BACKFILL_ESTIMATE_CAP = 250
+THREADWISE_APP_VERSION = "0.1.0"
 
 
 def infer_gmail_account_id(storage_dir: Path) -> str:
@@ -162,6 +169,7 @@ class GmailCompanionApp:
         gmail_write_through_enabled: bool = True,
         gmail_run_runner=None,
         attention_model_client: object | None = None,
+        analytics: ProductAnalytics | None = None,
     ) -> None:
         self._storage_dir = storage_dir
         self._credentials_dir = credentials_dir
@@ -170,6 +178,8 @@ class GmailCompanionApp:
         self._gmail_write_through_enabled = gmail_write_through_enabled
         self._gmail_run_runner = gmail_run_runner
         self._attention_model_client = attention_model_client
+        self._analytics = analytics or ProductAnalytics.from_environment()
+        self._analytics_distinct_ids = AnonymousDistinctIdStore(storage_dir)
         self._unsubscribe_store = UnsubscribeInventoryStore(storage_dir)
         self._harness_state_cache: dict[str, tuple[float, dict]] = {}
         self._harness_state_lock = threading.Lock()
@@ -304,8 +314,23 @@ class GmailCompanionApp:
         if handler.command == "POST" and parsed.path == "/api/teach-apply":
             try:
                 payload = self._read_json_body(handler)
-                response = self.teach_apply(payload)
+                response = self.teach_apply(
+                    payload,
+                    analytics_distinct_id=self._analytics_distinct_id_from_request(handler),
+                )
                 return self._write_json(handler, HTTPStatus.OK, response)
+            except (KeyError, ValueError, HTTPException) as exc:
+                return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+
+        if handler.command == "POST" and parsed.path == "/api/analytics/capture":
+            try:
+                payload = self._read_json_body(handler)
+                captured = self._analytics.capture(
+                    distinct_id=self._analytics_distinct_id_from_request(handler),
+                    event=payload["event"],
+                    properties=payload["properties"],
+                )
+                return self._write_json(handler, HTTPStatus.ACCEPTED, {"captured": captured})
             except (KeyError, ValueError, HTTPException) as exc:
                 return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
 
@@ -397,6 +422,12 @@ class GmailCompanionApp:
             raise ValueError("Request body must be an object.")
         return payload
 
+    def _analytics_distinct_id_from_request(self, handler: BaseHTTPRequestHandler) -> str:
+        supplied = (handler.headers.get("X-PostHog-Distinct-Id") or "").strip()
+        if supplied:
+            return self._analytics_distinct_ids.remember(supplied)
+        return self._analytics_distinct_ids.get_or_create()
+
     def _write_json(self, handler: BaseHTTPRequestHandler, status: HTTPStatus, payload: dict) -> None:
         encoded = json.dumps(payload).encode("utf-8")
         handler.send_response(status)
@@ -409,7 +440,7 @@ class GmailCompanionApp:
     def _write_cors_headers(self, handler: BaseHTTPRequestHandler) -> None:
         handler.send_header("Access-Control-Allow-Origin", "*")
         handler.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        handler.send_header("Access-Control-Allow-Headers", "Content-Type")
+        handler.send_header("Access-Control-Allow-Headers", "Content-Type, X-PostHog-Distinct-Id")
         handler.send_header("Access-Control-Allow-Private-Network", "true")
 
     def _write_cors_preflight(self, handler: BaseHTTPRequestHandler) -> None:
@@ -675,7 +706,7 @@ class GmailCompanionApp:
         preview["inbox_backfill"] = self._build_inbox_backfill_preview(preview)
         return preview
 
-    def teach_apply(self, payload: dict) -> dict:
+    def teach_apply(self, payload: dict, *, analytics_distinct_id: str | None = None) -> dict:
         selected_context = payload.get("selected_context") or {}
         target_label = payload["target_label"]
         note = (payload.get("note") or "").strip()
@@ -701,6 +732,11 @@ class GmailCompanionApp:
             current_subject=teaching_result["current"].get("subject") or "",
             current_sender=teaching_result["current"].get("sender") or "",
         )
+        self._capture_label_write_outcomes(
+            analytics_distinct_id or self._analytics_distinct_ids.get_or_create(),
+            teaching_result["mode"],
+            write_through_summary,
+        )
         self._start_teach_apply_follow_up_refresh(selected_context)
         refreshed = self._fast_sidebar_state(selected_context)
         return {
@@ -712,6 +748,48 @@ class GmailCompanionApp:
             "outcome": self._teach_apply_outcome(teaching_result, write_through_summary),
             "sidebar_state": refreshed,
         }
+
+    def _capture_label_write_outcomes(
+        self,
+        distinct_id: str,
+        mode: str,
+        write_summary: dict,
+    ) -> None:
+        if write_summary.get("mode") in {"disabled", "no-gmail-write-future-rule-only"}:
+            return
+        rule_scope = {
+            "current-only": "current_email",
+            "matching-existing": "included_existing",
+            "apply-included": "included_existing",
+            "save-future-rule": "future_email",
+            "future-only": "future_email",
+        }.get(mode, "current_email")
+        common = {
+            "app_version": THREADWISE_APP_VERSION,
+            "workflow_version": ANALYTICS_WORKFLOW_VERSION,
+            "source": "companion_service",
+            "rule_scope": rule_scope,
+            "retry_count": 0,
+        }
+        messages_written = int(write_summary.get("messages_written") or 0)
+        failed_count = int(write_summary.get("label_write_failed") or 0)
+        if messages_written:
+            self._analytics.capture(
+                distinct_id=distinct_id,
+                event="label write completed",
+                properties={**common, "write_count_bucket": bucket_count(messages_written)},
+            )
+        if failed_count or write_summary.get("mode") == "gmail-write-failed":
+            error_category = (
+                "gmail_client_initialization"
+                if write_summary.get("mode") == "gmail-write-failed"
+                else "provider_write_error"
+            )
+            self._analytics.capture(
+                distinct_id=distinct_id,
+                event="label write failed",
+                properties={**common, "error_category": error_category},
+            )
 
     def teach_exclude(self, payload: dict) -> dict:
         selected_context = payload.get("selected_context") or {}

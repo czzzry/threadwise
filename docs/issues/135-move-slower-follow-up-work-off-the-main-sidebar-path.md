@@ -1,6 +1,8 @@
 # Move Slower Follow-Up Work Off the Main Sidebar Path
 
-Status: Triaged ready-for-agent
+Status: Completed
+Current as of: 2026-07-11
+Triage state: `completed`
 Type: AFK
 Parent PRD: `docs/prd-async-threadwise-extension-2026-07-10.md`
 
@@ -25,11 +27,11 @@ The founder should feel that Threadwise acted quickly even when secondary work i
 
 ## Acceptance criteria
 
-- [ ] At least one currently slow follow-up path is moved behind the fast current-email response path.
-- [ ] The founder can receive a useful current-email result before every secondary refresh or reusable-change follow-up completes.
-- [ ] Follow-up work updates the UI when it completes instead of requiring the founder to guess or manually retry without context.
-- [ ] Existing safety boundaries and result correctness are preserved.
-- [ ] Tests prove that the fast-path response and slower follow-up path can complete in separate visible stages.
+- [x] At least one currently slow follow-up path is moved behind the fast current-email response path.
+- [x] The founder can receive a useful current-email result before every secondary refresh or reusable-change follow-up completes.
+- [x] Follow-up work updates the UI when it completes instead of requiring the founder to guess or manually retry without context.
+- [x] Existing safety boundaries and result correctness are preserved.
+- [x] Tests prove that the fast-path response and slower follow-up path can complete in separate visible stages.
 
 ## Blocked by
 

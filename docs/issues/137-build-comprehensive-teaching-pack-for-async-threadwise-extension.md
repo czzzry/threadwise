@@ -1,6 +1,8 @@
 # Build Comprehensive Teaching Pack for Async Threadwise Extension
 
-Status: Triaged ready-for-agent
+Status: Completed
+Current as of: 2026-07-11
+Triage state: `completed`
 Type: AFK
 Parent PRD: `docs/prd-async-threadwise-extension-2026-07-10.md`
 
@@ -30,12 +32,12 @@ The output should be tied to the founder's real mission in this repo: learning t
 
 ## Acceptance criteria
 
-- [ ] A teaching workspace mission for this topic exists and reflects why the founder wants to learn this material.
-- [ ] The teaching pack explains the async extension redesign from user problem through architecture, implementation choices, and future product branches.
-- [ ] The pack includes at least one lesson, one durable reference artifact, and one learning record tied to this async Threadwise work.
-- [ ] The material uses diagrams or equivalent visual explanations where they improve understanding.
-- [ ] The material explains when async is the right tool, when it is not, and what alternatives were available here.
-- [ ] The pack is grounded in the actual implemented Threadwise code and product decisions, not a generic async tutorial.
+- [x] A teaching workspace mission for this topic exists and reflects why the founder wants to learn this material.
+- [x] The teaching pack explains the async extension redesign from user problem through architecture, implementation choices, and future product branches.
+- [x] The pack includes at least one lesson, one durable reference artifact, and one learning record tied to this async Threadwise work.
+- [x] The material uses diagrams or equivalent visual explanations where they improve understanding.
+- [x] The material explains when async is the right tool, when it is not, and what alternatives were available here.
+- [x] The pack is grounded in the actual implemented Threadwise code and product decisions, not a generic async tutorial.
 
 ## Blocked by
 

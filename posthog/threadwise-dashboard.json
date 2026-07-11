@@ -1,0 +1,93 @@
+{
+  "dashboard": {
+    "name": "Threadwise Product Analytics",
+    "description": "Privacy-safe activation, review decisions, Gmail write outcomes, retries, and time to first successful write.",
+    "pinned": true,
+    "tags": ["threadwise", "product-analytics"]
+  },
+  "insights": [
+    {
+      "name": "Activation funnel",
+      "description": "Extension opened to authoritative Gmail label write completion.",
+      "query": {
+        "kind": "InsightVizNode",
+        "source": {
+          "kind": "FunnelsQuery",
+          "series": [
+            {"kind": "EventsNode", "event": "extension opened"},
+            {"kind": "EventsNode", "event": "review queue opened"},
+            {"kind": "EventsNode", "event": "suggestion decision made"},
+            {"kind": "EventsNode", "event": "label write completed"}
+          ],
+          "dateRange": {"date_from": "-30d"},
+          "properties": [{"key": "environment", "operator": "exact", "type": "event", "value": ["production"]}],
+          "funnelsFilter": {"funnelOrderType": "ordered", "funnelWindowInterval": 14, "funnelWindowIntervalUnit": "day", "funnelVizType": "steps"}
+        }
+      }
+    },
+    {
+      "name": "Approval, edit, and reject breakdown",
+      "description": "Suggestion decisions by safe decision_type.",
+      "query": {
+        "kind": "InsightVizNode",
+        "source": {
+          "kind": "TrendsQuery",
+          "series": [{"kind": "EventsNode", "event": "suggestion decision made", "math": "total"}],
+          "dateRange": {"date_from": "-30d"},
+          "properties": [{"key": "environment", "operator": "exact", "type": "event", "value": ["production"]}],
+          "breakdownFilter": {"breakdowns": [{"property": "decision_type", "type": "event"}]},
+          "trendsFilter": {"display": "ActionsPie", "showLegend": true}
+        }
+      }
+    },
+    {
+      "name": "Successful versus failed label writes",
+      "description": "Authoritative Gmail label-write outcomes.",
+      "query": {
+        "kind": "InsightVizNode",
+        "source": {
+          "kind": "TrendsQuery",
+          "series": [
+            {"kind": "EventsNode", "event": "label write completed", "math": "total"},
+            {"kind": "EventsNode", "event": "label write failed", "math": "total"}
+          ],
+          "dateRange": {"date_from": "-30d"},
+          "properties": [{"key": "environment", "operator": "exact", "type": "event", "value": ["production"]}],
+          "trendsFilter": {"display": "ActionsBar", "showLegend": true}
+        }
+      }
+    },
+    {
+      "name": "Retry outcomes",
+      "description": "Completed, failed, and blocked Gmail label-write retries.",
+      "query": {
+        "kind": "InsightVizNode",
+        "source": {
+          "kind": "TrendsQuery",
+          "series": [{"kind": "EventsNode", "event": "label write retried", "math": "total"}],
+          "dateRange": {"date_from": "-30d"},
+          "properties": [{"key": "environment", "operator": "exact", "type": "event", "value": ["production"]}],
+          "breakdownFilter": {"breakdowns": [{"property": "retry_outcome", "type": "event"}]},
+          "trendsFilter": {"display": "ActionsBarValue", "showLegend": true}
+        }
+      }
+    },
+    {
+      "name": "Time to first successful label write",
+      "description": "Time from opening Threadwise to the first authoritative successful Gmail label write.",
+      "query": {
+        "kind": "InsightVizNode",
+        "source": {
+          "kind": "FunnelsQuery",
+          "series": [
+            {"kind": "EventsNode", "event": "extension opened"},
+            {"kind": "EventsNode", "event": "label write completed"}
+          ],
+          "dateRange": {"date_from": "-30d"},
+          "properties": [{"key": "environment", "operator": "exact", "type": "event", "value": ["production"]}],
+          "funnelsFilter": {"funnelOrderType": "ordered", "funnelWindowInterval": 14, "funnelWindowIntervalUnit": "day", "funnelVizType": "time_to_convert", "binCount": 10}
+        }
+      }
+    }
+  ]
+}

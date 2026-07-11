@@ -4,8 +4,8 @@ Status: Current product-direction alignment
 Current as of: 2026-07-01
 Builds on: `docs/archive/alignment-v1-gmail-mvp.md` and `docs/archive/prd-v1-gmail-mvp.md` as historical Gmail V1 artifacts
 Completed bounded milestone: `docs/archive/prd-memory-runtime-milestone-completed-2026-06-29.md`
-Current bounded PRD: `docs/prd.md` for MVP+2 Gmail daily usefulness
-Implementation checkpoint: `docs/checkpoints/current-operating-model-2026-06-22.md`
+Current bounded PRD: None; choose the next slice explicitly from the current repo state in `CONTEXT.md`
+Historical implementation checkpoint: `docs/checkpoints/current-operating-model-2026-06-22.md`
 
 Threadwise is the public-facing project name for this repo.
 

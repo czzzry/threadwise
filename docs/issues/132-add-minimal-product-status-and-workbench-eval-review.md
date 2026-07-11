@@ -1,8 +1,8 @@
 # Add Minimal Product Status and Workbench Eval Review
 
-Status: Proposed
-Current as of: 2026-07-10
-Triage state: `proposed`
+Status: Completed
+Current as of: 2026-07-11
+Triage state: `completed`
 Parent PRD: `docs/prd-eval-promotion-pipeline-2026-07-10.md`
 Blocked by: `docs/issues/131-add-per-candidate-promotion-override-and-audit-flow.md`
 
@@ -48,11 +48,10 @@ This slice should keep the product UI intentionally sparse while making the eval
 
 ## Acceptance criteria
 
-- [ ] Saving a reusable future rule can surface a minimal product-side candidate status without opening a dense evaluation panel.
-- [ ] Single-email corrections remain fast and do not automatically render a full evaluation review UI.
-- [ ] The product UI does not expose split-by-split benchmark and shadow tables in the primary companion flow.
-- [ ] A workbench view can list pending evaluated candidates and their current recommendations.
-- [ ] A workbench view can show enough per-candidate detail to support promote / keep pending / reject / override-promote decisions.
-- [ ] Tests prove minimal product copy remains decoupled from the fuller workbench details.
-- [ ] Tests prove the workbench can surface mixed recommendations across candidates from the same batch.
-
+- [x] Saving a reusable future rule can surface a minimal product-side candidate status without opening a dense evaluation panel.
+- [x] Single-email corrections remain fast and do not automatically render a full evaluation review UI.
+- [x] The product UI does not expose split-by-split benchmark and shadow tables in the primary companion flow.
+- [x] A workbench view can list pending evaluated candidates and their current recommendations.
+- [x] A workbench view can show enough per-candidate detail to support promote / keep pending / reject / override-promote decisions.
+- [x] Tests prove minimal product copy remains decoupled from the fuller workbench details.
+- [x] Tests prove the workbench can surface mixed recommendations across candidates from the same batch.

@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Lesson 0002: Using PostHog to Improve Threadwise</title>
+    <link rel="stylesheet" href="../assets/teaching-pack.css">
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <p class="eyebrow">Lesson 0002</p>
+        <h1>PostHog is Threadwise's product feedback loop</h1>
+        <p class="lede">The goal is not to admire a dashboard. The goal is to see what happened in the real review workflow, make a product diagnosis, change one thing, and learn whether it helped.</p>
+        <div class="link-row">
+          <a href="../reference/0002-threadwise-analytics-operating-reference.html">Open the operating sheet</a>
+          <a href="https://eu.posthog.com/project/220933/dashboard/809649">Open the Threadwise dashboard</a>
+        </div>
+      </section>
+
+      <h2>Mission tie-in</h2>
+      <div class="callout">You want to reason about Threadwise like a professional product engineer. Analytics is how you move from “this felt weird” to “this step is repeatedly failing, so here is the next bounded change.”</div>
+
+      <h2>What happens when you use Threadwise</h2>
+      <div class="flow">
+        <div class="flow-step"><div class="flow-index">1</div><div><h3>You act normally</h3><p>Open the sidebar, enter the needs-attention queue, review an email, accept or refine a proposal, choose the scope, and let Threadwise write the label.</p></div></div>
+        <div class="flow-step"><div class="flow-index">2</div><div><h3>Threadwise emits small receipts</h3><p>Each meaningful transition becomes an event such as <code>review queue opened</code>, <code>suggestion decision made</code>, or <code>label write completed</code>.</p></div></div>
+        <div class="flow-step"><div class="flow-index">3</div><div><h3>PostHog aggregates receipts</h3><p>Trends compare counts and outcomes over time. Funnels attempt to show where a sequence stops. Breakdowns split a total by properties such as decision type or retry outcome.</p></div></div>
+        <div class="flow-step"><div class="flow-index">4</div><div><h3>You choose the next product change</h3><p>A repeated pattern becomes a hypothesis: perhaps the queue is hard to enter, proposals require too many edits, or Gmail writes are unreliable.</p></div></div>
+      </div>
+
+      <div class="callout work"><strong>Events are receipts, not surveillance.</strong> A receipt says that one meaningful thing happened and carries a few fields that help aggregate it.</div>
+
+      <h2>What the installed dashboard does today</h2>
+      <table class="reference-table">
+        <thead><tr><th>Insight</th><th>Question it tries to answer</th><th>How useful today?</th></tr></thead>
+        <tbody>
+          <tr><td>Activation funnel</td><td>Do opens lead to queue entry, decisions, and successful writes?</td><td>Good instrumentation proof; limited as a percentage while Threadwise has one anonymous user.</td></tr>
+          <tr><td>Decision breakdown</td><td>How often are rule proposals approved, edited, or rejected?</td><td>Useful once enough decisions accumulate; it is not yet a complete label-accuracy metric.</td></tr>
+          <tr><td>Write outcomes</td><td>Are Gmail label writes succeeding?</td><td>Immediately useful. This is the strongest operational metric.</td></tr>
+          <tr><td>Retry outcomes</td><td>Do retries recover transient failures?</td><td>Immediately useful when failures occur.</td></tr>
+          <tr><td>Time to first write</td><td>How long from opening to a successful write?</td><td>Directional only until reviews are grouped into repeated anonymous sessions.</td></tr>
+        </tbody>
+      </table>
+
+      <h2>The one-user analytics trap</h2>
+      <div class="card">
+        <p>PostHog funnels normally reason about people moving through steps. Threadwise currently has one founder and one stable anonymous installation ID.</p>
+        <p>That means a person-level funnel can collapse many review attempts into one “person converted” result. It cannot, by itself, tell you that 17 of 25 review sessions reached a successful write.</p>
+        <p><strong>Recommendation:</strong> add a fresh anonymous <code>review_session_id</code> for each queue-review run, propagate it to the authoritative write event, and aggregate funnels by that session.</p>
+      </div>
+      <p>PostHog recommends starting funnels with the first action in a flow and ending with the success action, while keeping the flow simple. It also offers “time to convert” for finding high-friction steps. See the <a href="https://posthog.com/docs/product-analytics/funnels">official funnels guide</a>.</p>
+
+      <h2>How I recommend you use it</h2>
+      <div class="state-grid">
+        <div class="state-card"><h3>For 1–2 weeks</h3><p>Turn production analytics on and use Threadwise normally. Do not change behavior to feed the dashboard.</p></div>
+        <div class="state-card"><h3>Once a week</h3><p>Spend ten minutes reading reliability, use, quality, and speed—in that order.</p></div>
+        <div class="state-card"><h3>Choose one hypothesis</h3><p>Write one sentence: “I think X happens because Y.” Avoid changing three things at once.</p></div>
+        <div class="state-card"><h3>Compare later</h3><p>Use trends to see whether event counts or breakdowns moved after the change. PostHog describes trends as the tool for monitoring important metrics and comparing usage over time.</p></div>
+      </div>
+
+      <h2>Your weekly reading order</h2>
+      <div class="card">
+        <h3>R-U-Q-S</h3>
+        <p><strong>Reliability:</strong> Did writes succeed? Did retries recover?</p>
+        <p><strong>Use:</strong> Did you enter the queue, start reviews, and finish batches?</p>
+        <p><strong>Quality:</strong> Did you approve, edit, or reject what Threadwise proposed?</p>
+        <p><strong>Speed:</strong> How long did decisions and successful outcomes take?</p>
+      </div>
+
+      <h2>How to turn a chart into a decision</h2>
+      <div class="compare-grid">
+        <div class="grid-card"><h3>Observation</h3><p>“Reviews start, but edits are common and batches rarely complete.”</p></div>
+        <div class="grid-card"><h3>Hypothesis</h3><p>“Rule proposals are too broad, so every email becomes a negotiation.”</p></div>
+        <div class="grid-card"><h3>Bounded change</h3><p>“Default to current-email scope and make broader rules a secondary action.”</p></div>
+      </div>
+
+      <h2>What I would add next</h2>
+      <div class="flow">
+        <div class="flow-step"><div class="flow-index">A</div><div><h3>Review session identity</h3><p>A random per-review identifier makes repeated single-user funnels and duration analysis legitimate.</p></div></div>
+        <div class="flow-step"><div class="flow-index">B</div><div><h3>Separate classification from rule decisions</h3><p>Record whether the proposed label was approved, edited, or rejected separately from whether a broader reusable rule was accepted.</p></div></div>
+        <div class="flow-step"><div class="flow-index">C</div><div><h3>Add aggregatable quality properties</h3><p>Track proposed label, final label, suggestion source, and confidence bucket. This reveals which categories and mechanisms are weak.</p></div></div>
+      </div>
+
+      <div class="callout warn"><strong>Why not send whole emails?</strong> Not because we need to be precious about privacy. Because bodies, subjects, and prose are nearly unique values. PostHog cannot turn that high-cardinality soup into a useful chart. Keep the content local; send the categories needed for comparison.</div>
+
+      <h2>Retrieval practice</h2>
+      <div class="quiz">
+        <h3>Answer before rereading:</h3>
+        <ol>
+          <li>What is the difference between an event, an insight, and a dashboard?</li>
+          <li>Why is the current person-level activation funnel weak for a one-user product?</li>
+          <li>Which metric should you inspect before proposal quality or speed?</li>
+          <li>If edits rise, what can you conclude—and what can you not conclude?</li>
+          <li>What three properties would most improve classification-quality analysis?</li>
+        </ol>
+      </div>
+
+      <h2>Primary sources</h2>
+      <div class="card-grid">
+        <div class="grid-card"><h3>Funnels</h3><p><a href="https://posthog.com/docs/product-analytics/funnels">Official PostHog funnels guide</a></p></div>
+        <div class="grid-card"><h3>Trends</h3><p><a href="https://posthog.com/docs/product-analytics/trends/overview">Official PostHog trends guide</a></p></div>
+        <div class="grid-card"><h3>Threadwise plan</h3><p><a href="../docs/analytics/tracking-plan.md">Exact local tracking plan</a></p></div>
+      </div>
+
+      <p class="footer-note">Ask follow-up questions whenever a chart or term feels fuzzy. The next high-value exercise is to read the live dashboard together after real events exist.</p>
+    </main>
+  </body>
+</html>
