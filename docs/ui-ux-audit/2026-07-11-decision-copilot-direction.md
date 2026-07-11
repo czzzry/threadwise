@@ -4,6 +4,7 @@ Status: Founder-approved implementation direction
 Current as of: 2026-07-11
 Builds on: `docs/ui-ux-audit/ui-ux-audit.md`, `docs/prd-correct-teach-state-machine-simplification-2026-07-07.md`, and current simulator/browser inspection
 Founder approval: Direction A approved for autonomous implementation on 2026-07-11
+Implementation evidence: `docs/handoff/2026-07-11-decision-copilot-ui.md`
 
 ## Decision summary
 

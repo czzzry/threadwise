@@ -52,7 +52,9 @@ The current repo state has completed the eval / promotion slices `129` through `
 - compact recent-activity and retry visibility
 - a founder-facing teaching pack for this async architecture
 
-The active product direction is the founder-approved Decision Copilot UI/UX redesign in `docs/ui-ux-audit/2026-07-11-decision-copilot-direction.md`. Its slices must be implemented sequentially and verified independently; do not infer additional scope from historical UI issues.
+The founder-approved Decision Copilot UI/UX redesign is implemented on `codex/decision-copilot-ui`. The Gmail companion now presents one current-email job at a time, with future learning and matching-existing review after the current decision; the dashboard and unsubscribe review remain separate supporting surfaces. See `docs/handoff/2026-07-11-decision-copilot-ui.md` for implementation and verification evidence.
+
+The next stage is real-product observation: use the Gmail workflow, observe the existing privacy-safe analytics and concrete interaction friction, then choose a new bounded slice. There is no active bounded PRD. Do not infer further work from historical UI issues or completed implementation plans.
 
 The branch also now contains a bounded, privacy-first PostHog product analytics slice for the Gmail companion workflow. Its current source of truth is `docs/analytics/tracking-plan.md`; implementation and dashboard evidence is summarized in `docs/handoff/2026-07-10-posthog-analytics-integration.md`.
 
@@ -85,11 +87,11 @@ For the PostHog analytics boundary and event contract, use `docs/analytics/track
 
 For the latest Gmail mutation reliability evidence, use `docs/handoff/2026-07-11-gmail-mutation-boundary.md` and GitHub issue `#62`.
 
-For the active Decision Copilot UI/UX implementation, use:
+For the completed Decision Copilot UI/UX implementation, use:
 
 1. `docs/ui-ux-audit/2026-07-11-decision-copilot-direction.md`
-2. `docs/prd-async-threadwise-extension-2026-07-10.md` for async behavior that must be preserved
-3. the current implementation branch and its slice-by-slice verification evidence
+2. `docs/handoff/2026-07-11-decision-copilot-ui.md`
+3. `docs/prd-async-threadwise-extension-2026-07-10.md` for the async behavior preserved by the redesign
 
 ## What Is Historical
 
