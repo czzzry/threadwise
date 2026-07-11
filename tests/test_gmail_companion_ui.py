@@ -494,6 +494,10 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("expanded-review", page)
         self.assertIn("open-affected-review", page)
         self.assertIn("Reviewing affected emails", page)
+        selected_renderer = page.split("function renderSelectedEmail", 1)[1].split(
+            "function renderPreviousTeachPreview", 1
+        )[0]
+        self.assertEqual(selected_renderer.count("syncAffectedReviewLayout();"), 3)
         self.assertIn("data-affected-open-gmail", page)
         self.assertIn("data-affected-exclude", page)
         self.assertIn("/api/teach-exclude", page)

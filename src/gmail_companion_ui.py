@@ -4149,6 +4149,7 @@ class GmailCompanionApp:
           draftNote = noteNode.value;
         });
       }
+      syncAffectedReviewLayout();
     }
 
     function renderPreviousTeachPreview(previousPreview) {
