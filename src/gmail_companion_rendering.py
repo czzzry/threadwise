@@ -19,21 +19,53 @@ def dashboard_item_identity(item: dict) -> str:
 
 def unsubscribe_section_key(detail: dict, preview: dict) -> str:
     if detail.get("decision_state") == "selected":
-        return "selected"
+        return "queued"
     if preview.get("status") == "ready":
         return "ready"
-    if preview.get("status") == "unsupported":
-        return "manual"
-    return "other"
+    return "manual"
 
-def render_unsubscribe_section(title: str, description: str, cards: list[str]) -> str:
+
+def render_unsubscribe_section(key: str, title: str, description: str, rows: list[str]) -> str:
     return (
-        '<section class="hero">'
+        f'<section class="unsubscribe-group" data-unsubscribe-group="{escape_html(key)}">'
         f'<div class="eyebrow">{escape_html(title)}</div>'
         f'<h2>{escape_html(title)}</h2>'
         f'<p>{escape_html(description)}</p>'
-        f'<div class="grid">{"".join(cards)}</div>'
+        f'<div class="unsubscribe-list">{"".join(rows)}</div>'
         '</section>'
+    )
+
+
+def render_unsubscribe_row(
+    detail: dict,
+    preview: dict,
+    *,
+    action_html: str = "",
+    focused: bool = False,
+) -> str:
+    latest_execution = detail.get("latest_execution") or {}
+    decision_state = detail.get("decision_state") or "undecided"
+    checked = " checked" if decision_state == "selected" else ""
+    focus_html = '<div class="focus-note">Opened from inbox</div>' if focused else ""
+    latest_status = latest_execution.get("status") or "none"
+    latest_notes = latest_execution.get("notes") or "No recorded execution yet."
+    return (
+        f'<article class="unsubscribe-row{" focused" if focused else ""}" data-unsubscribe-row '
+        f'data-unsubscribe-candidate="{escape_html(detail.get("list_key") or "")}">'
+        '<div class="selection-cell">'
+        f'<input type="checkbox" data-unsubscribe-selection value="{escape_html(detail.get("list_key") or "")}"{checked} '
+        f'aria-label="Queue {escape_html(detail.get("display_name") or "subscription")}">'
+        '</div>'
+        f'<div class="identity-cell">{focus_html}<h3>{escape_html(detail.get("display_name") or "(unknown list)")}</h3>'
+        f'<div class="address">{escape_html(detail.get("sender") or "(unknown sender)")}</div></div>'
+        f'<div class="evidence-cell"><strong>{detail.get("evidence_count", 0)}</strong><span>messages</span></div>'
+        '<div class="readiness-cell">'
+        f'<strong>{escape_html(preview.get("notes") or "Manual follow-up")}</strong>'
+        f'<span>{escape_html(preview.get("method") or "unsupported")}</span></div>'
+        '<div class="attempt-cell"><strong>Latest attempt</strong>'
+        f'<span>{escape_html(latest_status)} · {escape_html(latest_notes)}</span></div>'
+        f'<div class="row-action-cell">{action_html}</div>'
+        '</article>'
     )
 
 def render_dashboard_section(title: str, description: str, cards_html: str) -> str:

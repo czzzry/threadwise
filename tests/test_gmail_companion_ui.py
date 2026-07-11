@@ -33,6 +33,8 @@ from src.gmail_companion_state import (
 from src.gmail_companion_ui import GmailCompanionApp, main
 from src.gmail_writer import MockGmailLabelClient, MockGmailLabelWriter
 from src.local_artifacts import candidate_changes_path
+from src.unsubscribe_inventory_store import UnsubscribeInventoryStore
+from src.unsubscribe_execution import UnsubscribeExecutor
 
 
 class GmailCompanionUiTests(unittest.TestCase):
@@ -152,7 +154,7 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertEqual(escape_html('<a href="x">Tom & Jerry</a>'), "&lt;a href=&quot;x&quot;&gt;Tom &amp; Jerry&lt;/a&gt;")
         self.assertEqual(server_origin("127.0.0.1:8021"), "http://127.0.0.1:8021")
         self.assertEqual(server_origin("https://example.test"), "https://example.test")
-        self.assertEqual(unsubscribe_section_key({"decision_state": "selected"}, {"status": "ready"}), "selected")
+        self.assertEqual(unsubscribe_section_key({"decision_state": "selected"}, {"status": "ready"}), "queued")
         self.assertIn(
             "No recent mail",
             render_dashboard_email_cards([], empty_label="No recent mail"),
@@ -632,11 +634,11 @@ class GmailCompanionUiTests(unittest.TestCase):
 
             self.assertIn("Subscription cleanup", page)
             self.assertIn("Store", page)
-            self.assertIn("Manual provider page", page)
-            self.assertIn("Open provider page manually", page)
-            self.assertIn("Opening it does not execute a Threadwise unsubscribe.", page)
+            self.assertIn("Open provider page · does not execute here", page)
+            self.assertIn("Manual follow-up", page)
+            self.assertEqual(page.count("data-unsubscribe-safety-note"), 1)
+            self.assertIn("Manual mail or provider links leave Threadwise and do not count as execution.", page)
             self.assertNotIn("Open unsubscribe link", page)
-            self.assertIn("Manual Follow-Up", page)
             self.assertIn("All candidates: 2", page)
 
     def test_unsubscribe_review_page_does_not_open_one_click_https_directly(self) -> None:
@@ -678,11 +680,255 @@ class GmailCompanionUiTests(unittest.TestCase):
 
             page = GmailCompanionApp(storage_dir).render_unsubscribe_review_page()
 
-            self.assertIn("Ready Now", page)
-            self.assertIn("Audited action only", page)
-            self.assertIn("explicit confirmation", page)
-            self.assertNotIn("Open provider page manually", page)
+            self.assertIn("Ready now", page)
+            self.assertEqual(page.count("data-unsubscribe-safety-note"), 1)
+            self.assertIn("Ready one-click HTTPS actions require a separate explicit confirmation.", page)
+            self.assertNotIn('href="https://example.com/unsub"', page)
+            self.assertNotIn("Open provider page · does not execute here", page)
             self.assertNotIn("Open unsubscribe link", page)
+            self.assertIn("data-unsubscribe-batch-bar hidden", page)
+
+    def test_unsubscribe_review_groups_each_candidate_once_in_ready_queued_manual_order(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-ready",
+                        "sender": "Ready Store <ready@example.com>",
+                        "subject": "Ready sale",
+                        "review_state": "reviewed",
+                        "final_labels": ["promotions"],
+                        "list_unsubscribe": "<https://example.com/ready>",
+                    },
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-queued",
+                        "sender": "Queued Store <queued@example.com>",
+                        "subject": "Queued sale",
+                        "review_state": "reviewed",
+                        "final_labels": ["promotions"],
+                        "list_unsubscribe": "<https://example.com/queued>",
+                    },
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-manual",
+                        "sender": "Manual Digest <manual@example.com>",
+                        "subject": "Manual digest",
+                        "review_state": "reviewed",
+                        "final_labels": ["newsletter"],
+                        "list_unsubscribe": "<mailto:leave@example.com>",
+                    },
+                ],
+                raw_messages=[
+                    {
+                        "id": "gmail-ready",
+                        "payload": {"headers": [
+                            {"name": "From", "value": "Ready Store <ready@example.com>"},
+                            {"name": "List-Unsubscribe", "value": "<https://example.com/ready>"},
+                            {"name": "List-Unsubscribe-Post", "value": "List-Unsubscribe=One-Click"},
+                        ]},
+                        "labelIds": ["CATEGORY_PROMOTIONS"],
+                    },
+                    {
+                        "id": "gmail-queued",
+                        "payload": {"headers": [
+                            {"name": "From", "value": "Queued Store <queued@example.com>"},
+                            {"name": "List-Unsubscribe", "value": "<https://example.com/queued>"},
+                            {"name": "List-Unsubscribe-Post", "value": "List-Unsubscribe=One-Click"},
+                        ]},
+                        "labelIds": ["CATEGORY_PROMOTIONS"],
+                    },
+                    {
+                        "id": "gmail-manual",
+                        "payload": {"headers": [
+                            {"name": "From", "value": "Manual Digest <manual@example.com>"},
+                            {"name": "List-Unsubscribe", "value": "<mailto:leave@example.com>"},
+                        ]},
+                        "labelIds": ["CATEGORY_PROMOTIONS"],
+                    },
+                ],
+            )
+            store = UnsubscribeInventoryStore(storage_dir)
+            candidates = store.list_candidates()
+            queued_key = next(item["list_key"] for item in candidates if item["display_name"] == "Queued Store")
+            store.save_selection_states(
+                [item["list_key"] for item in candidates],
+                [queued_key],
+            )
+
+            page = GmailCompanionApp(storage_dir).render_unsubscribe_review_page()
+            markers = [
+                'data-unsubscribe-group="ready"',
+                'data-unsubscribe-group="queued"',
+                'data-unsubscribe-group="manual"',
+            ]
+
+            self.assertEqual([page.count(marker) for marker in markers], [1, 1, 1])
+            self.assertEqual(
+                [page.index(marker) for marker in markers],
+                sorted(page.index(marker) for marker in markers),
+            )
+            self.assertEqual(page.count("data-unsubscribe-row"), 3)
+            self.assertEqual(page.count("<h3>Ready Store</h3>"), 1)
+            self.assertEqual(page.count("<h3>Queued Store</h3>"), 1)
+            self.assertEqual(page.count("<h3>Manual Digest</h3>"), 1)
+            self.assertIn("Ready now: 1", page)
+            self.assertIn("Queued: 1", page)
+            self.assertIn("Manual follow-up: 1", page)
+            self.assertEqual(page.count('type="checkbox" data-unsubscribe-selection'), 3)
+            self.assertEqual(page.count("<strong>Latest attempt</strong>"), 3)
+            self.assertIn("one-click-post", page)
+            self.assertIn("unsupported", page)
+            self.assertIn('href="mailto:leave@example.com"', page)
+            self.assertIn("Open mail app · does not execute here", page)
+            queued_group = page.split(markers[1], 1)[1].split(markers[2], 1)[0]
+            self.assertIn("Queued Store", queued_group)
+            self.assertNotIn("Ready Store", queued_group)
+
+    def test_unsubscribe_selection_endpoint_persists_only_selection_and_invalidates_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-ready",
+                        "sender": "Ready Store <ready@example.com>",
+                        "subject": "Ready sale",
+                        "review_state": "reviewed",
+                        "final_labels": ["promotions"],
+                        "list_unsubscribe": "<https://example.com/ready>",
+                    }
+                ],
+                raw_messages=[
+                    {
+                        "id": "gmail-ready",
+                        "payload": {"headers": [
+                            {"name": "From", "value": "Ready Store <ready@example.com>"},
+                            {"name": "List-Unsubscribe", "value": "<https://example.com/ready>"},
+                            {"name": "List-Unsubscribe-Post", "value": "List-Unsubscribe=One-Click"},
+                        ]},
+                        "labelIds": ["CATEGORY_PROMOTIONS"],
+                    }
+                ],
+            )
+            app = GmailCompanionApp(storage_dir)
+            candidate_key = app._cached_unsubscribe_candidates()[0]["list_key"]
+            handler = _FakeRequestHandler(
+                "/api/unsubscribe-candidates/selections",
+                method="POST",
+                json_body={
+                    "candidate_keys": [candidate_key],
+                    "selected_candidate_keys": [candidate_key],
+                },
+            )
+
+            with patch.object(
+                UnsubscribeExecutor,
+                "execute_selected_candidates",
+                side_effect=AssertionError("selection endpoint must not execute"),
+            ) as execute:
+                app.handle_request(handler)
+
+            response = json.loads(handler.wfile.value.decode("utf-8"))
+            saved = UnsubscribeInventoryStore(storage_dir).list_candidates()
+            self.assertEqual(handler.code, 200)
+            self.assertEqual(response["candidate_count"], 1)
+            self.assertEqual(response["selected_count"], 1)
+            self.assertEqual(response["execution"], "none")
+            self.assertEqual(response["gmail_mutation"], "none")
+            self.assertIn("Nothing was unsubscribed", response["acknowledgment"])
+            self.assertEqual(saved[0]["decision_state"], "selected")
+            self.assertIsNone(app._unsubscribe_candidates_cache)
+            execute.assert_not_called()
+
+    def test_unsubscribe_batch_bar_is_selection_only_and_mobile_ready(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-ready",
+                        "sender": "A Very Long Subscription Address <newsletter-and-updates@example.com>",
+                        "subject": "Ready sale",
+                        "review_state": "reviewed",
+                        "final_labels": ["promotions"],
+                        "list_unsubscribe": "<https://example.com/ready>",
+                    }
+                ],
+                raw_messages=[
+                    {
+                        "id": "gmail-ready",
+                        "payload": {"headers": [
+                            {"name": "From", "value": "A Very Long Subscription Address <newsletter-and-updates@example.com>"},
+                            {"name": "List-Unsubscribe", "value": "<https://example.com/ready>"},
+                            {"name": "List-Unsubscribe-Post", "value": "List-Unsubscribe=One-Click"},
+                        ]},
+                        "labelIds": ["CATEGORY_PROMOTIONS"],
+                    }
+                ],
+            )
+            store = UnsubscribeInventoryStore(storage_dir)
+            candidate_key = store.list_candidates()[0]["list_key"]
+            store.save_selection_states([candidate_key], [candidate_key])
+
+            page = GmailCompanionApp(storage_dir).render_unsubscribe_review_page()
+
+            self.assertIn("data-unsubscribe-batch-bar", page)
+            self.assertNotIn("data-unsubscribe-batch-bar hidden", page)
+            self.assertIn("Save selection", page)
+            self.assertIn("Clear queued selections", page)
+            self.assertIn("/api/unsubscribe-candidates/selections", page)
+            self.assertIn("position:sticky", page)
+            self.assertIn(".batch-bar[hidden] { display:none; }", page)
+            self.assertIn("@media (max-width: 880px)", page)
+            self.assertIn("overflow-wrap:anywhere", page)
+            self.assertIn("let selectionSaveInFlight = false", page)
+            self.assertIn("selectionSaveInFlight = true", page)
+            self.assertIn("selectionSaveInFlight = false", page)
+            self.assertIn("window.location.reload()", page)
+            self.assertIn("finally", page)
+            self.assertNotIn("execute_selected_candidates", page)
+            self.assertNotIn("/api/unsubscribe-executions", page)
+            self.assertNotIn("Execute selected", page)
+            self.assertNotIn("Unsubscribe now", page)
+
+    def test_unsubscribe_selection_endpoint_rejects_non_list_and_non_subset_payloads(self) -> None:
+        app = GmailCompanionApp(Path("/tmp/example"))
+        invalid_lists = _FakeRequestHandler(
+            "/api/unsubscribe-candidates/selections",
+            method="POST",
+            json_body={"candidate_keys": "not-a-list", "selected_candidate_keys": []},
+        )
+        invalid_subset = _FakeRequestHandler(
+            "/api/unsubscribe-candidates/selections",
+            method="POST",
+            json_body={"candidate_keys": [], "selected_candidate_keys": ["unknown"]},
+        )
+
+        app.handle_request(invalid_lists)
+        app.handle_request(invalid_subset)
+
+        list_error = json.loads(invalid_lists.wfile.value.decode("utf-8"))
+        subset_error = json.loads(invalid_subset.wfile.value.decode("utf-8"))
+        self.assertEqual(invalid_lists.code, 400)
+        self.assertIn("must be lists", list_error["error"])
+        self.assertEqual(invalid_subset.code, 400)
+        self.assertIn("must be a subset", subset_error["error"])
 
     def test_daily_dashboard_page_has_three_default_sections_in_operational_order(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
