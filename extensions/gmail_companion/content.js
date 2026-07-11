@@ -31,6 +31,7 @@
   let teachWriteThrough = null;
   let unsubscribeResult = "";
   let feedbackOpen = false;
+  let founderFeedbackVisible = false;
   let feedbackDraft = "";
   let feedbackResult = "";
   let activeSummaryFilter = "recent_items";
@@ -99,6 +100,118 @@
       pointerEvents: "auto",
     });
     setHtml(root, `
+      <style id="ea-editorial-utility-styles">
+        #${ROOT_ID} {
+          --tw-ink: #241812;
+          --tw-paper: #fff7e8;
+          --tw-paper-raised: #fffdf7;
+          --tw-hairline: rgba(36,24,18,.28);
+          --tw-focus: #3d6df2;
+        }
+        #${ROOT_ID} #ea-panel {
+          border-width: 2px !important;
+          box-shadow: 0 14px 34px rgba(36,24,18,.14) !important;
+        }
+        #${ROOT_ID} #ea-panel * {
+          box-shadow: none !important;
+        }
+        #${ROOT_ID} #ea-header {
+          border-bottom: 1px solid var(--tw-hairline) !important;
+        }
+        #${ROOT_ID} #ea-brand-toggle,
+        #${ROOT_ID} #ea-status,
+        #${ROOT_ID} #ea-minimize {
+          border-width: 1px !important;
+          box-shadow: none !important;
+        }
+        #${ROOT_ID} #ea-header-tagline {
+          display: none !important;
+        }
+        #${ROOT_ID} #ea-status {
+          min-width: 0;
+          max-width: 100%;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        #${ROOT_ID} #ea-content {
+          padding: 12px !important;
+        }
+        #${ROOT_ID} #ea-workspace > [data-ea-workspace-body] {
+          border: 1px solid var(--tw-hairline) !important;
+          box-shadow: none !important;
+        }
+        #${ROOT_ID} #ea-workspace [data-ea-selected-state],
+        #${ROOT_ID} #ea-workspace [data-ea-selected-state] * {
+          box-shadow: none !important;
+        }
+        #${ROOT_ID} #ea-panel button:not([data-tw-primary-action]),
+        #${ROOT_ID} #ea-panel a:not([data-tw-primary-action]) {
+          border-width: 1px !important;
+          box-shadow: none !important;
+        }
+        #${ROOT_ID} #ea-panel button:not([data-tw-primary-action])[style*="background:#2eb67d"],
+        #${ROOT_ID} #ea-panel button:not([data-tw-primary-action])[style*="background:#3d6df2"],
+        #${ROOT_ID} #ea-panel button:not([data-tw-primary-action])[style*="background:#ffc64a"] {
+          background: var(--tw-paper-raised) !important;
+          color: var(--tw-ink) !important;
+        }
+        #${ROOT_ID} #ea-panel [data-tw-primary-action] {
+          border-width: 2px !important;
+          box-shadow: 3px 3px 0 var(--tw-ink) !important;
+        }
+        #${ROOT_ID} :where(button, a, input, select, textarea, summary, [tabindex]):focus-visible {
+          outline: 3px solid var(--tw-focus) !important;
+          outline-offset: 2px !important;
+        }
+        #${ROOT_ID} #ea-panel [data-tw-primary-action]:focus-visible {
+          box-shadow: 3px 3px 0 var(--tw-ink) !important;
+        }
+        @media (max-width: 480px) {
+          #${ROOT_ID}:not([data-ea-minimized="true"]) {
+            top: 8px !important;
+            right: 8px !important;
+            width: calc(100vw - 16px) !important;
+            max-width: calc(100vw - 16px) !important;
+            max-height: calc(100vh - 16px) !important;
+          }
+          #${ROOT_ID}:not([data-ea-minimized="true"]) #ea-panel {
+            max-height: calc(100vh - 16px) !important;
+          }
+          #${ROOT_ID}:not([data-ea-minimized="true"]) #ea-header {
+            grid-template-columns: 36px minmax(0, 1fr) auto !important;
+            gap: 8px !important;
+            padding: 10px !important;
+          }
+          #${ROOT_ID} #ea-brand-toggle {
+            width: 34px !important;
+            height: 34px !important;
+            border-radius: 10px !important;
+          }
+          #${ROOT_ID} #ea-title {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-size: 1.08rem !important;
+          }
+          #${ROOT_ID} #ea-status {
+            padding: 3px 6px !important;
+            font-size: .66rem !important;
+          }
+          #${ROOT_ID} #ea-minimize {
+            min-width: 0;
+            padding: 7px 8px !important;
+            font-size: .78rem !important;
+          }
+          #${ROOT_ID} #ea-content {
+            padding: 10px !important;
+          }
+          #${ROOT_ID} #ea-workspace > [data-ea-workspace-body] {
+            padding: 14px !important;
+          }
+        }
+      </style>
       <div id="ea-panel" style="background:#fff7e8;border:3px solid #241812;border-radius:18px;box-shadow:6px 6px 0 #241812;overflow:hidden;font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#241812;display:flex;flex-direction:column;max-height:calc(100vh - 28px);">
         <div id="ea-header" style="display:grid;grid-template-columns:52px 1fr auto;align-items:center;gap:12px;padding:17px 18px;border-bottom:3px solid #241812;background:#fff4d7;">
           <div style="display:flex;align-items:center;gap:10px;min-width:0;">
@@ -109,9 +222,9 @@
           </div>
           <div style="display:flex;align-items:center;gap:10px;min-width:0;">
             <div style="display:grid;gap:3px;min-width:0;">
-              <div style="font-size:1.35rem;font-weight:840;letter-spacing:-0.04em;line-height:1;">Threadwise</div>
+              <div id="ea-title" style="font-size:1.35rem;font-weight:840;letter-spacing:-0.04em;line-height:1;">Threadwise</div>
               <div id="ea-status" style="display:inline-flex;align-items:center;gap:6px;width:max-content;border:2px solid #241812;border-radius:999px;padding:4px 8px;background:#d8f3ef;color:#0f766e;font-size:0.72rem;font-weight:800;line-height:1;">Connecting</div>
-              <div style="color:#ad6400;font-family:ui-serif,Georgia,'Times New Roman',serif;font-size:0.58rem;font-weight:900;letter-spacing:0.08em;text-transform:uppercase;line-height:1.05;white-space:nowrap;">CLEAR THREADS. BETTER INBOX.</div>
+              <div id="ea-header-tagline" style="color:#ad6400;font-family:ui-serif,Georgia,'Times New Roman',serif;font-size:0.58rem;font-weight:900;letter-spacing:0.08em;text-transform:uppercase;line-height:1.05;white-space:nowrap;">CLEAR THREADS. BETTER INBOX.</div>
             </div>
           </div>
           <button id="ea-minimize" type="button" style="border:2px solid #241812;background:#e9efe2;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:760;box-shadow:2px 2px 0 #241812;">Minimize</button>
@@ -120,7 +233,7 @@
           <main id="ea-workspace"></main>
         </div>
         <div id="ea-footer" style="display:none;flex:0 0 auto;"></div>
-        <div id="ea-feedback-shell" style="border-top:3px solid #241812;background:#fffdf7;padding:10px 12px;flex:0 0 auto;">
+        <div id="ea-feedback-shell" style="display:none;border-top:1px solid rgba(36,24,18,.28);background:#fffdf7;padding:10px 12px;flex:0 0 auto;">
           <button id="ea-feedback-open" type="button" data-ea-action="open-feedback" style="width:100%;border:2px solid #241812;background:#ffc64a;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:840;box-shadow:2px 2px 0 #241812;">Note</button>
           <div id="ea-feedback-panel" style="display:none;margin-top:10px;"></div>
         </div>
@@ -171,7 +284,8 @@
     content.style.display = minimized ? "none" : "grid";
     footer.style.display = "none";
     if (feedbackShell) {
-      feedbackShell.style.display = minimized ? "none" : "block";
+      feedbackShell.style.display = !minimized && founderFeedbackVisible ? "block" : "none";
+      root.dataset.eaFounderTools = founderFeedbackVisible ? "true" : "false";
     }
     root.style.width = minimized ? PANEL_WIDTH_MINIMIZED : (affectedReviewOpen ? PANEL_WIDTH_EXPANDED : PANEL_WIDTH);
     header.style.gridTemplateColumns = minimized ? "1fr" : "52px 1fr auto";
@@ -3181,6 +3295,15 @@
           recentCount: (lastHarnessState?.recent_items || []).length,
           needsAttentionCount: (lastHarnessState?.needs_attention_items || []).length,
         };
+      },
+      setFounderFeedbackVisible(visible) {
+        founderFeedbackVisible = Boolean(visible);
+        if (!founderFeedbackVisible) {
+          feedbackOpen = false;
+        }
+        renderMinimized();
+        renderFeedbackPanel();
+        return { ok: true, visible: founderFeedbackVisible };
       },
       selectSummaryItem(messageId) {
         const item = findSummaryItem(messageId);
