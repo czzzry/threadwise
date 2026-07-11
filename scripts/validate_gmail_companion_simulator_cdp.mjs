@@ -41,6 +41,8 @@ try {
     const original = harnessState.sidebar_state.selected_email;
     harnessState.sidebar_state.selected_email = {
       ...original,
+      internal_label: 'job-related',
+      classification: 'EA/Work',
       status: 'auto-labeled',
       status_label: 'Auto-labeled',
       details: { ...(original.details || {}), write_status: '', inbox_status: '' }
