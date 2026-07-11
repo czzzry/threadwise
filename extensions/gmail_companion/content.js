@@ -108,19 +108,7 @@
           <button id="ea-minimize" type="button" style="border:2px solid #241812;background:#e9efe2;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:760;box-shadow:2px 2px 0 #241812;">Minimize</button>
         </div>
         <div id="ea-content" style="padding:14px;display:grid;gap:13px;overflow-y:auto;min-height:0;">
-          <section style="border:3px solid #241812;border-radius:18px;padding:16px;background:#fffdf7;box-shadow:2px 2px 0 rgba(36,24,18,.18);">
-            <div style="color:#6b6255;font-size:0.68rem;text-transform:uppercase;letter-spacing:0.14em;font-weight:820;">Agent View</div>
-            <div id="ea-selected-email"></div>
-            <div style="margin-top:14px;border:3px solid #241812;border-radius:18px;background:#ffe1a3;overflow:hidden;box-shadow:2px 2px 0 rgba(36,24,18,.18);">
-              <div style="min-height:40px;display:flex;align-items:center;padding:0 13px;border-bottom:3px solid #241812;background:#ffc64a;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.14em;color:#241812;font-weight:900;">Correct / Teach</div>
-              <div id="ea-teach-panel" style="display:grid;gap:12px;margin:12px;"></div>
-            </div>
-            <div id="ea-selected-email-secondary"></div>
-          </section>
-          <section style="border:3px solid #241812;border-radius:18px;padding:16px;background:#e9efe2;box-shadow:2px 2px 0 rgba(36,24,18,.18);">
-            <div style="color:#6b6255;font-size:0.68rem;text-transform:uppercase;letter-spacing:0.14em;font-weight:820;">Today</div>
-            <div id="ea-daily-summary"></div>
-          </section>
+          <main id="ea-workspace"></main>
         </div>
         <div id="ea-footer" style="display:none;flex:0 0 auto;"></div>
         <div id="ea-feedback-shell" style="border-top:3px solid #241812;background:#fffdf7;padding:10px 12px;flex:0 0 auto;">
@@ -746,18 +734,57 @@
     });
   }
 
+  function renderWorkspaceShell(mode) {
+    const workspace = document.getElementById("ea-workspace");
+    if (!workspace) {
+      return null;
+    }
+
+    workspace.dataset.eaWorkspaceMode = mode;
+    if (mode === "selected-email") {
+      setHtml(workspace, `
+        <section data-ea-workspace-body="selected-email" style="border:3px solid #241812;border-radius:18px;padding:16px;background:#fffdf7;box-shadow:2px 2px 0 rgba(36,24,18,.18);">
+          <div style="color:#6b6255;font-size:0.68rem;text-transform:uppercase;letter-spacing:0.14em;font-weight:820;">Agent View</div>
+          <div id="ea-selected-email"></div>
+          <div style="margin-top:14px;border:3px solid #241812;border-radius:18px;background:#ffe1a3;overflow:hidden;box-shadow:2px 2px 0 rgba(36,24,18,.18);">
+            <div style="min-height:40px;display:flex;align-items:center;padding:0 13px;border-bottom:3px solid #241812;background:#ffc64a;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.14em;color:#241812;font-weight:900;">Correct / Teach</div>
+            <div id="ea-teach-panel" style="display:grid;gap:12px;margin:12px;"></div>
+          </div>
+          <div id="ea-selected-email-secondary"></div>
+        </section>
+      `);
+    } else {
+      setHtml(workspace, `
+        <section data-ea-workspace-body="home" style="border:3px solid #241812;border-radius:18px;padding:16px;background:#e9efe2;box-shadow:2px 2px 0 rgba(36,24,18,.18);">
+          <div style="color:#6b6255;font-size:0.68rem;text-transform:uppercase;letter-spacing:0.14em;font-weight:820;">Home</div>
+          <div id="ea-daily-summary"></div>
+        </section>
+      `);
+    }
+
+    return {
+      selectedEmailNode: document.getElementById("ea-selected-email") || document.createElement("div"),
+      selectedEmailSecondaryNode: document.getElementById("ea-selected-email-secondary") || document.createElement("div"),
+      teachPanelNode: document.getElementById("ea-teach-panel") || document.createElement("div"),
+      dailySummaryNode: document.getElementById("ea-daily-summary") || document.createElement("div"),
+    };
+  }
+
   function renderState(state) {
     lastHarnessState = normalizeHarnessState(state);
     lastSidebarState = lastHarnessState.sidebar_state;
-    const selectedEmailNode = document.getElementById("ea-selected-email");
-    const selectedEmailSecondaryNode = document.getElementById("ea-selected-email-secondary");
-    const teachPanelNode = document.getElementById("ea-teach-panel");
-    const dailySummaryNode = document.getElementById("ea-daily-summary");
-    if (!selectedEmailNode || !selectedEmailSecondaryNode || !teachPanelNode || !dailySummaryNode) {
+    const selected = lastSidebarState.selected_email || null;
+    const workspaceNodes = renderWorkspaceShell(selected?.found ? "selected-email" : "home");
+    if (!workspaceNodes) {
       return;
     }
+    const {
+      selectedEmailNode,
+      selectedEmailSecondaryNode,
+      teachPanelNode,
+      dailySummaryNode,
+    } = workspaceNodes;
 
-    const selected = lastSidebarState.selected_email || null;
     const summary = lastSidebarState.daily_summary || {};
     if (selected?.found && !manualPreviewContext) {
       ANALYTICS?.startEmailReview(
