@@ -31,7 +31,7 @@ from src.gmail_companion_state import (
     selected_context_from_query,
     selected_email_contract,
 )
-from src.gmail_companion_ui import GmailCompanionApp, main
+from src.gmail_companion_ui import GmailCompanionApp, main, script_safe_json
 from src.gmail_writer import MockGmailLabelClient, MockGmailLabelWriter
 from src.local_artifacts import candidate_changes_path
 from src.unsubscribe_inventory_store import UnsubscribeInventoryStore
@@ -39,6 +39,40 @@ from src.unsubscribe_execution import UnsubscribeExecutor
 
 
 class GmailCompanionUiTests(unittest.TestCase):
+    def test_script_safe_json_round_trips_hostile_unsubscribe_candidate_key(self) -> None:
+        hostile_key = "gmail:test:</script><script>window.pwned=1</script>&@example.com"
+
+        encoded = script_safe_json([hostile_key])
+
+        self.assertNotIn("</script>", encoded)
+        self.assertIn("\\u003c/script\\u003e", encoded)
+        self.assertIn("\\u0026", encoded)
+        self.assertEqual(json.loads(encoded), [hostile_key])
+
+    def test_unsubscribe_page_embeds_candidate_keys_in_script_safe_json(self) -> None:
+        hostile_key = "gmail:test:</script><script>window.pwned=1</script>&@example.com"
+        app = GmailCompanionApp(Path("/tmp/example"))
+        candidate = {"list_key": hostile_key}
+        detail = {
+            "list_key": hostile_key,
+            "display_name": "Hostile fixture",
+            "sender": "fixture@example.com",
+            "decision_state": "undecided",
+            "evidence_count": 1,
+            "latest_execution": None,
+            "preview": {"status": "unsupported", "method": "unsupported", "notes": "Manual follow-up", "url": ""},
+        }
+        with (
+            patch.object(app._unsubscribe_store, "list_candidates", return_value=[candidate]),
+            patch("src.gmail_companion_ui.build_unsubscribe_detail", return_value=detail),
+        ):
+            page = app.render_unsubscribe_review_page()
+
+        candidate_script = page.split("const candidateKeys = ", 1)[1].split(";", 1)[0]
+        self.assertNotIn("</script>", candidate_script)
+        self.assertEqual(json.loads(candidate_script), [hostile_key])
+        self.assertIn("data-unsubscribe-candidate=\"gmail:test:&lt;/script&gt;&lt;script&gt;window.pwned=1&lt;/script&gt;&amp;@example.com\"", page)
+
     def test_companion_state_module_preserves_selected_context_contract(self) -> None:
         context = selected_context_from_query(
             {
@@ -920,9 +954,17 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertIn("overflow-wrap:anywhere", page)
             self.assertIn("let selectionSaveInFlight = false", page)
             self.assertIn("selectionSaveInFlight = true", page)
-            self.assertIn("selectionSaveInFlight = false", page)
+            self.assertIn("let reloadScheduled = false", page)
+            self.assertIn("reloadScheduled = true", page)
+            self.assertIn("if (!reloadScheduled)", page)
             self.assertIn("window.location.reload()", page)
             self.assertIn("finally", page)
+            script = page.split("<script>", 1)[1].split("</script>", 1)[0]
+            self.assertLess(script.index("reloadScheduled = true"), script.index("window.location.reload()"))
+            conditional_unlock = script.split("if (!reloadScheduled)", 1)[1]
+            self.assertIn("selectionSaveInFlight = false", conditional_unlock)
+            self.assertIn("saveSelectionButton.disabled = false", conditional_unlock)
+            self.assertIn("clearSelectionButton.disabled = false", conditional_unlock)
             self.assertNotIn("execute_selected_candidates", page)
             self.assertNotIn("/api/unsubscribe-executions", page)
             self.assertNotIn("Execute selected", page)

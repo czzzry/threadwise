@@ -87,6 +87,15 @@ INBOX_BACKFILL_ESTIMATE_CAP = 250
 THREADWISE_APP_VERSION = "0.1.0"
 
 
+def script_safe_json(value: object) -> str:
+    return (
+        json.dumps(value)
+        .replace("&", "\\u0026")
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+    )
+
+
 def infer_gmail_account_id(storage_dir: Path) -> str:
     latest_report = load_latest_report(storage_dir)
     if latest_report and latest_report.get("account_id"):
@@ -3193,7 +3202,7 @@ class GmailCompanionApp:
             else ""
         )
         group_counts = {key: len(rows) for key, rows in rows_by_section.items()}
-        candidate_keys_json = json.dumps(
+        candidate_keys_json = script_safe_json(
             [candidate.get("list_key") for candidate in candidates if candidate.get("list_key")]
         )
         return f"""<!doctype html>
@@ -3283,6 +3292,7 @@ class GmailCompanionApp:
     const saveSelectionButton = document.querySelector('[data-save-unsubscribe-selection]');
     const clearSelectionButton = document.querySelector('[data-clear-unsubscribe-selection]');
     let selectionSaveInFlight = false;
+    let reloadScheduled = false;
 
     function selectedKeys() {{
       return selectionInputs.filter((input) => input.checked).map((input) => input.value);
@@ -3318,13 +3328,16 @@ class GmailCompanionApp:
         }}
         selectionStatus.textContent = payload.acknowledgment;
         updateBatchBar();
+        reloadScheduled = true;
         window.setTimeout(() => window.location.reload(), 350);
       }} catch (_error) {{
         selectionStatus.textContent = 'Could not reach Threadwise. Selection was not saved.';
       }} finally {{
-        selectionSaveInFlight = false;
-        saveSelectionButton.disabled = false;
-        clearSelectionButton.disabled = false;
+        if (!reloadScheduled) {{
+          selectionSaveInFlight = false;
+          saveSelectionButton.disabled = false;
+          clearSelectionButton.disabled = false;
+        }}
       }}
     }}
 
