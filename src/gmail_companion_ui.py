@@ -3403,17 +3403,29 @@ class GmailCompanionApp:
             render_dashboard_section(title, description, cards)
             for title, description, cards in diagnostic_sections
         )
-        classification_review_html = render_dashboard_email_cards(
-            classification_review_items,
-            empty_label="No classification-review emails in the current snapshot.",
+        classification_review_html = (
+            render_dashboard_email_cards(
+                classification_review_items,
+                empty_label="No classification-review emails in the current snapshot.",
+            )
+            if classification_review_items
+            else ""
         )
-        attention_now_html = render_dashboard_attention_cards(
-            attention_now_items,
-            empty_label="No attention-now items in the latest Gmail daily report.",
+        attention_now_html = (
+            render_dashboard_attention_cards(
+                attention_now_items,
+                empty_label="No attention-now items in the latest Gmail daily report.",
+            )
+            if attention_now_items
+            else ""
         )
-        possible_attention_html = render_dashboard_attention_cards(
-            possible_attention_items,
-            empty_label="No possible-attention items in the latest Gmail daily report.",
+        possible_attention_html = (
+            render_dashboard_attention_cards(
+                possible_attention_items,
+                empty_label="No possible-attention items in the latest Gmail daily report.",
+            )
+            if possible_attention_items
+            else ""
         )
         hidden_insufficient_context_count = attention_summary.get("hidden_insufficient_context_count", 0)
         hidden_insufficient_context_html = (
@@ -3427,17 +3439,83 @@ class GmailCompanionApp:
                 else ""
             )
         )
-        attention_report_pills = "".join(
+        has_attention_contract = bool(attention_summary.get("has_attention_contract"))
+        has_rich_attention_items = bool(attention_now_items or possible_attention_items)
+        attention_report_pills = (
+            "".join(
+                [
+                    (
+                        f'<span class="pill">Latest attention report: {escape_html(attention_summary.get("report_date", ""))}</span>'
+                        if attention_summary.get("report_date")
+                        else ""
+                    ),
+                    f'<span class="pill">Evaluated: {attention_summary.get("evaluated_message_count", 0)}</span>',
+                    (f'<span class="pill">Now: {len(attention_now_items)}</span>' if attention_now_items else ""),
+                    (f'<span class="pill">Possible: {len(possible_attention_items)}</span>' if possible_attention_items else ""),
+                ]
+            )
+            if has_attention_contract
+            else ""
+        )
+        attention_lanes_html = "".join(
             [
                 (
-                    f'<span class="pill">Latest attention report: {escape_html(attention_summary.get("report_date", ""))}</span>'
-                    if attention_summary.get("report_date")
+                    '<section class="review-lane" data-dashboard-attention-lane="now">'
+                    '<div class="eyebrow">Strong Signals</div>'
+                    '<h2>Needs Attention Now</h2>'
+                    f'<div class="stack">{attention_now_html}</div>'
+                    '</section>'
+                    if attention_now_items
                     else ""
                 ),
-                f'<span class="pill">Evaluated: {attention_summary.get("evaluated_message_count", 0)}</span>',
-                f'<span class="pill">Now: {len(attention_now_items)}</span>',
-                f'<span class="pill">Possible: {len(possible_attention_items)}</span>',
+                (
+                    '<section class="review-lane" data-dashboard-attention-lane="possible">'
+                    '<div class="eyebrow">Lower Confidence</div>'
+                    '<h2>Possible Attention</h2>'
+                    f'<div class="stack">{possible_attention_html}</div>'
+                    f'{hidden_insufficient_context_html}'
+                    '</section>'
+                    if possible_attention_items
+                    else ""
+                ),
             ]
+        )
+        classification_lane_html = (
+            '<section class="review-lane" data-dashboard-classification-review>'
+            '<div class="eyebrow">Classification review</div>'
+            '<h2>Needs a label decision</h2>'
+            f'<div class="stack">{classification_review_html}</div>'
+            '</section>'
+            if classification_review_items
+            else ""
+        )
+        attention_status_html = ""
+        if not has_rich_attention_items:
+            if has_attention_contract:
+                attention_status_html = (
+                    '<div class="attention-status" data-dashboard-attention-status="clear">'
+                    '<strong>Attention pass clear</strong>'
+                    '<div>Latest attention pass found no attention-now or possible-attention items.</div>'
+                    f'{hidden_insufficient_context_html}'
+                    '</div>'
+                )
+            else:
+                attention_status_html = (
+                    '<div class="attention-status" data-dashboard-attention-status="unavailable">'
+                    '<strong>No attention report yet</strong>'
+                    f'<div>{escape_html(attention_summary.get("empty_reason", ""))}</div>'
+                    '</div>'
+                )
+        hidden_insufficient_context_after_lanes_html = (
+            hidden_insufficient_context_html
+            if has_rich_attention_items and not possible_attention_items
+            else ""
+        )
+        review_lanes_html = (
+            f'<div class="review-grid">{attention_lanes_html}</div>'
+            f'{hidden_insufficient_context_after_lanes_html}{classification_lane_html}'
+            if has_rich_attention_items
+            else f'{classification_lane_html}{attention_status_html}'
         )
         run_result = run_status.get("result") or {}
         run_status_pills = "".join(
@@ -3465,7 +3543,7 @@ class GmailCompanionApp:
                   <input id="confirm-run-gmail-check" type="checkbox" name="confirmed" value="true" required>
                   Confirm safe label/inbox boundaries and small LLM cost.
                 </label>
-                <button class="action" type="submit" {'disabled' if run_status_label == 'running' else ''}>Run Gmail check</button>
+                <button class="action action--primary" data-dashboard-primary-action type="submit" {'disabled' if run_status_label == 'running' else ''}>Run Gmail check</button>
               </form>
             """
             if self._gmail_check_enabled
@@ -3478,14 +3556,16 @@ class GmailCompanionApp:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Threadwise Daily Dashboard</title>
   <style>
-    body {{ margin:0; min-height:100vh; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: radial-gradient(circle at 18px 18px, rgba(36,24,18,.05) 2px, transparent 2px) 0 0 / 36px 36px, linear-gradient(135deg,#f7efe0 0%,#fdfaf2 52%,#e7f3ee 100%); color:#241812; }}
-    main {{ max-width: 1180px; margin: 0 auto; padding: 34px; display:grid; gap:18px; }}
-    .hero,.card {{ background:#fffdf7; border:3px solid #241812; border-radius:18px; padding:18px; box-shadow:5px 5px 0 #241812; }}
+    * {{ box-sizing:border-box; }}
+    body {{ margin:0; min-height:100vh; padding:clamp(8px,3vw,28px); font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: radial-gradient(circle at 18px 18px, rgba(36,24,18,.05) 2px, transparent 2px) 0 0 / 36px 36px, linear-gradient(135deg,#f7efe0 0%,#fdfaf2 52%,#e7f3ee 100%); color:#241812; }}
+    main {{ width:min(1180px,100%); margin:0 auto; padding:0; display:grid; gap:0; overflow:hidden; background:#fff7e8; border:2px solid #241812; border-radius:20px; box-shadow:0 16px 40px rgba(36,24,18,.14); }}
+    .hero,.card {{ background:#fffdf7; border:0; border-radius:0; padding:clamp(16px,2.5vw,24px); box-shadow:none; }}
     .hero {{ background:#fff7e8; }}
+    main > .card {{ border-top:1px solid rgba(36,24,18,.28); }}
     .hero-heading {{ display:flex; align-items:flex-start; justify-content:space-between; gap:18px; flex-wrap:wrap; }}
     .hero-action-area {{ display:grid; justify-items:end; gap:8px; max-width:420px; }}
     .gmail-check-form {{ display:grid; justify-items:end; gap:8px; }}
-    .brand-mark {{ width:42px; height:42px; border-radius:12px; border:2px solid #241812; box-shadow:3px 3px 0 #241812; flex:0 0 auto; background:#fff8df; }}
+    .brand-mark {{ width:42px; height:42px; border-radius:12px; border:1px solid rgba(36,24,18,.34); box-shadow:none; flex:0 0 auto; background:#fff8df; }}
     .grid {{ display:grid; grid-template-columns: repeat(auto-fit,minmax(260px,1fr)); gap:14px; }}
     .section {{ display:grid; gap:12px; }}
     .eyebrow {{ color:#6b6255; font-size:0.72rem; text-transform:uppercase; letter-spacing:0.14em; font-weight:820; }}
@@ -3493,24 +3573,43 @@ class GmailCompanionApp:
     h1 {{ font-size:2rem; line-height:1.05; }}
     p {{ line-height:1.45; }}
     .pill-row {{ display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }}
-    .pill {{ border:2px solid #241812; border-radius:999px; padding:6px 10px; background:#f1eadf; color:#241812; font-size:0.8rem; font-weight:760; box-shadow:2px 2px 0 rgba(36,24,18,.28); }}
+    .pill {{ border:1px solid rgba(36,24,18,.28); border-radius:999px; padding:6px 10px; background:#f1eadf; color:#241812; font-size:0.8rem; font-weight:760; box-shadow:none; }}
     .metric-grid {{ display:grid; grid-template-columns: repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin-top:14px; }}
-    .metric {{ border:2px solid #241812; border-radius:11px; background:#fffdf7; padding:12px; box-shadow:2px 2px 0 rgba(36,24,18,.18); }}
+    .metric {{ border:1px solid rgba(36,24,18,.28); border-radius:11px; background:#fffdf7; padding:12px; box-shadow:none; }}
     .metric strong {{ display:block; font-size:1.15rem; }}
     .stack {{ display:grid; gap:10px; }}
-    .email-card {{ border:2px solid #241812; border-radius:11px; background:#fffdf7; padding:12px; box-shadow:2px 2px 0 rgba(36,24,18,.18); }}
+    .email-card,.review-lane {{ border:1px solid rgba(36,24,18,.28); border-radius:12px; background:#fffdf7; padding:14px; box-shadow:none; }}
     .attention-card {{ background:#fffaf0; }}
     .email-card h3 {{ margin:0; font-size:0.98rem; line-height:1.3; }}
     .meta {{ margin-top:6px; color:#6b6255; font-size:0.84rem; overflow-wrap:anywhere; }}
     .copy {{ margin-top:8px; color:#1f1a14; line-height:1.45; }}
-    .action {{ display:inline-flex; align-items:center; margin-top:10px; border:2px solid #241812; border-radius:11px; background:#2eb67d; color:#241812; padding:9px 12px; text-decoration:none; font-weight:800; box-shadow:3px 3px 0 #241812; }}
+    .review-lanes,.review-grid {{ display:grid; gap:12px; margin-top:12px; }}
+    .review-grid {{ grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); margin-top:0; }}
+    .attention-status,.empty-state {{ border:1px solid rgba(36,24,18,.24); border-radius:11px; background:#f5efe2; padding:12px; color:#5d5342; line-height:1.45; }}
+    .attention-status strong {{ display:block; color:#241812; margin-bottom:4px; }}
+    .action {{ display:inline-flex; align-items:center; margin-top:10px; border:1px solid rgba(36,24,18,.38); border-radius:11px; background:#fffdf7; color:#241812; padding:9px 12px; text-decoration:none; font:inherit; font-weight:800; box-shadow:none; cursor:pointer; }}
+    .action--primary {{ border:2px solid #241812; background:#2eb67d; box-shadow:3px 3px 0 #241812; }}
+    .action--feedback {{ padding:7px 10px; }}
+    .subscription-row {{ display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:14px; }}
+    .subscription-identity .pill {{ margin-bottom:8px; }}
+    .subscription-row .action {{ margin-top:0; }}
     details[data-dashboard-diagnostics] > summary {{ cursor:pointer; font-weight:850; }}
     .diagnostics-body {{ display:grid; gap:14px; margin-top:14px; }}
-    @media (max-width: 820px) {{ .grid {{ grid-template-columns: 1fr; }} }}
+    .diagnostics-body > .card {{ border:1px solid rgba(36,24,18,.24); border-radius:12px; }}
+    :where(button,a,input,summary):focus-visible {{ outline:3px solid #3d6df2; outline-offset:2px; }}
+    @media (max-width: 820px) {{
+      .grid,.review-grid {{ grid-template-columns:1fr; }}
+      .hero-action-area,.gmail-check-form {{ justify-items:start; max-width:none; }}
+    }}
+    @media (max-width: 560px) {{
+      body {{ padding:8px; }}
+      .subscription-row {{ grid-template-columns:1fr; }}
+      .subscription-row .action {{ justify-self:start; }}
+    }}
   </style>
 </head>
 <body>
-  <main>
+  <main data-dashboard-shell>
     <section class="hero">
       <div class="hero-heading">
         <div class="hero-heading" style="justify-content:flex-start;">
@@ -3536,22 +3635,8 @@ class GmailCompanionApp:
       <div class="eyebrow">Needs review</div>
       <h2>Emails waiting for you</h2>
       <p>Attention detection is separate from classification and does not mutate Gmail. Strong signals and lower-confidence candidates are split so uncertainty does not swamp the daily view.</p>
-      <div class="pill-row">{attention_report_pills}</div>
-      {f'<div class="copy">{escape_html(attention_summary.get("empty_reason", ""))}</div>' if attention_summary.get("empty_reason") else ""}
-      <div class="grid" style="margin-top:12px;">
-        <article class="email-card">
-          <div class="eyebrow">Strong Signals</div>
-          <h2>Needs Attention Now</h2>
-          <div class="stack">{attention_now_html}</div>
-        </article>
-        <article class="email-card">
-          <div class="eyebrow">Lower Confidence</div>
-          <h2>Possible Attention</h2>
-          <div class="stack">{possible_attention_html}</div>
-          {hidden_insufficient_context_html}
-        </article>
-      </div>
-      <div class="stack" style="margin-top:12px;">{classification_review_html}</div>
+      {f'<div class="pill-row">{attention_report_pills}</div>' if attention_report_pills else ""}
+      <div class="review-lanes">{review_lanes_html}</div>
     </section>
     <section class="card" data-dashboard-section="activity">
       <div class="eyebrow">Activity</div>
@@ -3570,7 +3655,7 @@ class GmailCompanionApp:
       <h2>Queued unsubscribe review</h2>
       <p>The inbox sidebar can queue subscriptions for later review. This page shows the currently queued families.</p>
       <div class="stack">{unsubscribe_html}</div>
-      <a class="action" href="/unsubscribe-review" target="_blank" rel="noreferrer">Open unsubscribe review</a>
+      <a class="action action--primary" data-dashboard-primary-action href="/unsubscribe-review" target="_blank" rel="noreferrer">Open unsubscribe review</a>
     </section>
     <details data-dashboard-diagnostics class="card">
       <summary>Diagnostics and label distribution</summary>

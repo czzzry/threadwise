@@ -19,6 +19,7 @@ from src.gmail_run_control import load_gmail_dashboard_run_status, write_gmail_d
 from src.gmail_companion_rendering import (
     escape_html,
     render_dashboard_email_cards,
+    render_dashboard_unsubscribe_cards,
     server_origin,
     unsubscribe_section_key,
 )
@@ -155,10 +156,10 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertEqual(server_origin("127.0.0.1:8021"), "http://127.0.0.1:8021")
         self.assertEqual(server_origin("https://example.test"), "https://example.test")
         self.assertEqual(unsubscribe_section_key({"decision_state": "selected"}, {"status": "ready"}), "queued")
-        self.assertIn(
-            "No recent mail",
-            render_dashboard_email_cards([], empty_label="No recent mail"),
-        )
+        empty_cards = render_dashboard_email_cards([], empty_label="No recent mail")
+        self.assertIn("No recent mail", empty_cards)
+        self.assertIn('class="empty-state"', empty_cards)
+        self.assertNotIn('class="email-card"', empty_cards)
         rendered_card = render_dashboard_email_cards(
             [
                 {
@@ -172,6 +173,22 @@ class GmailCompanionUiTests(unittest.TestCase):
         )
         self.assertIn("Open in Gmail", rendered_card)
         self.assertIn("https://mail.google.com/mail/u/0/#search/", rendered_card)
+        empty_subscriptions = render_dashboard_unsubscribe_cards([])
+        self.assertIn('class="empty-state"', empty_subscriptions)
+        self.assertNotIn('class="email-card"', empty_subscriptions)
+        queued_subscription = render_dashboard_unsubscribe_cards(
+            [
+                {
+                    "display_name": "Store updates",
+                    "sender": "news@example.com",
+                    "handoff_path": "/unsubscribe-review?list_key=store",
+                }
+            ]
+        )
+        self.assertIn('class="email-card subscription-row"', queued_subscription)
+        self.assertIn('<span class="pill">Queued</span>', queued_subscription)
+        self.assertIn('class="action action--secondary"', queued_subscription)
+        self.assertIn("Open focused review", queued_subscription)
 
     def test_extension_assets_have_valid_javascript_and_manifest(self) -> None:
         repo_root = Path(__file__).resolve().parent.parent
@@ -1024,6 +1041,12 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertNotIn('data-dashboard-section="recent-queue"', page)
             self.assertEqual(page.count("<details data-dashboard-diagnostics"), 1)
             self.assertIn("Open unsubscribe review", page)
+            self.assertIn("<main data-dashboard-shell>", page)
+            self.assertEqual(page.count("data-dashboard-primary-action"), 2)
+            self.assertIn(".action--primary", page)
+            self.assertIn(":focus-visible", page)
+            self.assertIn("padding:clamp(8px,3vw,28px)", page)
+            self.assertIn("main > .card", page)
 
     def test_daily_dashboard_page_renders_attention_now_and_possible_from_daily_report(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1057,6 +1080,19 @@ class GmailCompanionUiTests(unittest.TestCase):
                         "review_state": "reviewed",
                         "final_labels": ["job-related"],
                         "applied_labels": ["job-related"],
+                    },
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-003",
+                        "thread_id": "thread-003",
+                        "sender": "Unknown <unknown@example.com>",
+                        "subject": "Choose a label for this email",
+                        "snippet": "Classification review fixture.",
+                        "interpretation": "This email still needs a label decision.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
                     },
                 ],
             )
@@ -1104,6 +1140,15 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertIn("Attention pass: no Gmail changes", page)
             self.assertIn("Choose an interview slot", page)
             self.assertIn("job_opportunity", page)
+            needs_review = page.split('data-dashboard-section="needs-review"', 1)[1].split(
+                'data-dashboard-section="activity"', 1
+            )[0]
+            self.assertIn("Classification review", needs_review)
+            self.assertIn("Choose a label for this email", needs_review)
+            self.assertLess(
+                needs_review.index('data-dashboard-attention-lane="now"'),
+                needs_review.index("Choose a label for this email"),
+            )
 
     def test_daily_dashboard_deduplicates_review_items_and_keeps_rich_attention_controls(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1142,7 +1187,17 @@ class GmailCompanionUiTests(unittest.TestCase):
                         "handled_state": "appears_unhandled",
                         "feedback_state": "unset",
                         "gmail_mutation": "none",
-                    }
+                    },
+                    {
+                        "message_id": "gmail-live-hidden",
+                        "thread_id": "thread-hidden",
+                        "level": "insufficient_context",
+                        "category": "newsletter",
+                        "reason": "The reading-list summary is too vague to evaluate.",
+                        "evidence": "Only a generic newsletter snippet is available.",
+                        "source": "compact_payload",
+                        "gmail_mutation": "none",
+                    },
                 ],
             )
 
@@ -1157,6 +1212,7 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertIn("Good catch", needs_review)
             self.assertIn("Not attention", needs_review)
             self.assertIn("Wrong reason", needs_review)
+            self.assertIn("1 lower-risk insufficient-context item kept out of this daily attention view.", needs_review)
 
     def test_daily_dashboard_page_surfaces_only_high_consequence_insufficient_context(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1230,6 +1286,10 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertIn("Could be account-risk mail, but compact context is not enough.", attention_section)
             self.assertIn("1 lower-risk insufficient-context item kept out of this daily attention view.", attention_section)
             self.assertNotIn("Weekly reading list", attention_section)
+            self.assertIn("Possible Attention", attention_section)
+            self.assertNotIn("Needs Attention Now", attention_section)
+            self.assertNotIn("No attention-now items in the latest Gmail daily report.", attention_section)
+            self.assertNotIn("Now: 0", attention_section)
 
     def test_daily_dashboard_page_has_useful_empty_attention_state(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1238,11 +1298,67 @@ class GmailCompanionUiTests(unittest.TestCase):
 
             page = GmailCompanionApp(storage_dir).render_daily_dashboard_page()
 
-            self.assertIn("Needs Attention Now", page)
-            self.assertIn("No attention-now items in the latest Gmail daily report.", page)
-            self.assertIn("Possible Attention", page)
-            self.assertIn("No possible-attention items in the latest Gmail daily report.", page)
+            self.assertEqual(page.count('data-dashboard-attention-status="clear"'), 1)
+            self.assertIn("Latest attention pass found no attention-now or possible-attention items.", page)
+            self.assertNotIn("Needs Attention Now", page)
+            self.assertNotIn("Possible Attention", page)
+            self.assertNotIn("No attention-now items in the latest Gmail daily report.", page)
+            self.assertNotIn("No possible-attention items in the latest Gmail daily report.", page)
             self.assertIn("Latest attention report: 2026-07-01", page)
+            self.assertIn("Evaluated: 2", page)
+            self.assertNotIn("Now: 0", page)
+            self.assertNotIn("Possible: 0", page)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-2",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-classification",
+                        "sender": "Sender <sender@example.com>",
+                        "subject": "Choose a classification",
+                        "snippet": "Classification review fixture",
+                        "interpretation": "The email still needs a label decision.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                ],
+            )
+            reports_dir = storage_dir / "reports"
+            reports_dir.mkdir(parents=True, exist_ok=True)
+            (reports_dir / "founder-test-batch-2_daily_report.json").write_text(
+                json.dumps(
+                    {
+                        "provider": "gmail",
+                        "account_id": "founder-test",
+                        "batch_id": "founder-test-batch-2",
+                        "report_date": "2026-07-02",
+                        "processed_count": 1,
+                    }
+                )
+            )
+
+            page = GmailCompanionApp(storage_dir).render_daily_dashboard_page()
+            needs_review = page.split('data-dashboard-section="needs-review"', 1)[1].split(
+                'data-dashboard-section="activity"', 1
+            )[0]
+
+            self.assertEqual(needs_review.count('data-dashboard-attention-status="unavailable"'), 1)
+            self.assertIn("Classification review", needs_review)
+            self.assertIn("Needs a label decision", needs_review)
+            self.assertIn("Choose a classification", needs_review)
+            self.assertLess(
+                needs_review.index("Choose a classification"),
+                needs_review.index('data-dashboard-attention-status="unavailable"'),
+            )
+            self.assertNotIn("Needs Attention Now", needs_review)
+            self.assertNotIn("Possible Attention", needs_review)
+            self.assertNotIn("Evaluated:", needs_review)
 
     def test_daily_dashboard_exposes_confirmed_run_gmail_check_flow(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1497,7 +1613,8 @@ class GmailCompanionUiTests(unittest.TestCase):
             )[0]
 
             self.assertNotIn("Flight check-in closes tonight", attention_section)
-            self.assertIn("No attention-now items in the latest Gmail daily report.", attention_section)
+            self.assertIn('data-dashboard-attention-status="clear"', attention_section)
+            self.assertIn("Latest attention pass found no attention-now or possible-attention items.", attention_section)
 
     def test_attention_feedback_wrong_reason_captures_correction_without_gmail_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
