@@ -116,6 +116,12 @@ try {
   })`);
   await waitFor(() => evaluate(`document.querySelector('[data-ea-selected-state="receipt"]') !== null`));
   const receipt = await receiptSnapshot();
+  await evaluate(`document.querySelector('[data-ea-action="teach-future-after-receipt"]').click()`);
+  await waitFor(() => evaluate(`document.querySelector('[data-ea-selected-state="future-learning"]') !== null`));
+  const futureLearning = await decisionSnapshot();
+  await evaluate(`document.querySelector('[data-ea-action="back-to-current-receipt"]').click()`);
+  await waitFor(() => evaluate(`document.querySelector('[data-ea-selected-state="receipt"]') !== null`));
+  const receiptAfterFutureLearning = await receiptSnapshot();
 
   await evaluate(`(() => {
     window.__workspaceState = {
@@ -201,7 +207,7 @@ try {
   await waitFor(() => evaluate(`document.querySelector('[data-ea-workspace-body="home"]') !== null`));
   const home = await workspaceSnapshot();
 
-  const result = { selected, review, change, conflict, preview, applying, receipt, partialReceipt, teachApplyRequestCount, changeAfterEdit, reviewAfterCancel, autoHandled, autoHandledWhy, autoHandledChangeOpened, autoHandledRemovedReceipt, home, uncaughtErrorCount: uncaughtErrors.length };
+  const result = { selected, review, change, conflict, preview, applying, receipt, futureLearning, receiptAfterFutureLearning, partialReceipt, teachApplyRequestCount, changeAfterEdit, reviewAfterCancel, autoHandled, autoHandledWhy, autoHandledChangeOpened, autoHandledRemovedReceipt, home, uncaughtErrorCount: uncaughtErrors.length };
   console.log(JSON.stringify(result, null, 2));
   if (
     selected.bodyCount !== 1 || selected.mode !== "selected-email" || selected.hasHome || selected.hasDailySummary ||
@@ -220,9 +226,13 @@ try {
     receipt.state !== "receipt" || receipt.heading !== "Changed to Promotions" ||
     receipt.outcomes.join(",") !== "Gmail label updated.,Removed from Inbox." ||
     receipt.primaryActions.join(",") !== "Next email" || receipt.hasLabelPicker || receipt.hasNote ||
+    receipt.followUps.join(",") !== "Teach Threadwise for future emails" ||
+    futureLearning.state !== "future-learning" || futureLearning.primaryActions.length !== 0 ||
+    futureLearning.heading !== "Teach future emails" || !futureLearning.hasFutureNote ||
+    receiptAfterFutureLearning.followUps.join(",") !== "Teach Threadwise for future emails" ||
     partialReceipt.state !== "receipt" || partialReceipt.heading !== "Changed to Promotions" ||
     partialReceipt.outcomes.join(",") !== "Gmail label updated.,Couldn’t remove from Inbox. Retry is available in Activity." ||
-    partialReceipt.primaryActions.length !== 0 || partialReceipt.hasLabelPicker || partialReceipt.hasNote ||
+    partialReceipt.primaryActions.length !== 0 || partialReceipt.followUps.length !== 0 || partialReceipt.hasLabelPicker || partialReceipt.hasNote ||
     changeAfterEdit.state !== "change" || changeAfterEdit.selectedLabel !== "EA/Promotions" ||
     reviewAfterCancel.state !== "review" || reviewAfterCancel.primaryActions.length !== 1 ||
     autoHandled.heading !== "Newsletter · Auto-handled" ||
@@ -250,7 +260,9 @@ async function decisionSnapshot() {
       hasNote: !!state?.querySelector('#ea-teach-note'),
       heading: state?.querySelector('[data-ea-preview-heading]')?.textContent?.trim() || '',
       effect: state?.querySelector('[data-ea-preview-effect]')?.textContent?.trim() || '',
-      conflict: state?.querySelector('[data-ea-label-conflict]')?.textContent?.trim() || ''
+      conflict: state?.querySelector('[data-ea-label-conflict]')?.textContent?.trim() || '',
+      hasFutureNote: !!state?.querySelector('#ea-future-note'),
+      followUps: [...(state?.querySelectorAll('[data-ea-action="teach-future-after-receipt"]') || [])].map((node) => node.textContent.trim())
     };
   })()`);
 }
@@ -275,6 +287,7 @@ async function receiptSnapshot() {
       heading: state?.querySelector('[data-ea-receipt-heading]')?.textContent?.trim() || '',
       outcomes: [...(state?.querySelectorAll('[data-ea-receipt-outcome]') || [])].map((node) => node.textContent.trim()),
       primaryActions: [...(state?.querySelectorAll('[data-tw-primary-action]') || [])].map((node) => node.textContent.trim()),
+      followUps: [...(state?.querySelectorAll('[data-ea-action="teach-future-after-receipt"]') || [])].map((node) => node.textContent.trim()),
       hasLabelPicker: !!state?.querySelector('#ea-target-label'),
       hasNote: !!state?.querySelector('#ea-teach-note')
     };

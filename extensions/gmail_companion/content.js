@@ -930,6 +930,24 @@
             : `<div style="color:#6b6255;line-height:1.45;">Select a synced email to preview or teach a correction.</div>`;
       setHtml(teachPanelNode, teachPanelHtml);
       setHtml(selectedEmailSecondaryNode, "");
+    } else if (selectedDecisionMode === "future-learning" && teachFlowState === "result" && teachOutcome?.scope === "current-email" && teachOutcome.current_email_written_to_gmail) {
+      const label = humanLabelNameFromId(teachDraft.targetLabel || selected.classification || "");
+      setHtml(selectedEmailNode, `
+        <div data-ea-selected-state="future-learning" style="display:grid;gap:12px;margin-top:10px;">
+          <div>
+            <div style="color:#8a4b00;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;font-weight:820;">Optional follow-up</div>
+            <div data-ea-preview-heading style="margin-top:6px;font-size:1.3rem;font-weight:840;line-height:1.15;overflow-wrap:anywhere;">Teach future emails</div>
+          </div>
+          <div style="border-radius:14px;background:#fff4dd;padding:12px;color:#1f1a14;line-height:1.45;">The current email is already changed to ${escapeHtml(label)}. Any lesson you create here applies to future emails only.</div>
+          <label for="ea-future-note" style="display:grid;gap:7px;color:#241812;font-weight:760;">
+            What should Threadwise remember?
+            <textarea id="ea-future-note" rows="4" placeholder="Describe which future emails should be ${escapeHtml(label)}" style="box-sizing:border-box;width:100%;padding:10px 12px;border-radius:11px;border:2px solid #241812;background:#fffdf7;color:#1f1a14;font:inherit;resize:vertical;box-shadow:2px 2px 0 rgba(36,24,18,.18);"></textarea>
+          </label>
+          <button type="button" data-ea-action="back-to-current-receipt" style="justify-self:start;border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Back to receipt</button>
+        </div>
+      `);
+      setHtml(selectedEmailSecondaryNode, "");
+      setHtml(teachPanelNode, "");
     } else if (teachFlowState === "result" && teachOutcome?.scope === "current-email" && teachOutcome.current_email_written_to_gmail) {
       gmailCheckResult = null;
       const label = humanLabelNameFromId(teachDraft.targetLabel || selected.classification || "");
@@ -948,6 +966,7 @@
             <div data-ea-receipt-outcome>${inboxFailed ? "Couldn’t remove from Inbox. Retry is available in Activity." : inboxRemoved ? "Removed from Inbox." : "Kept in Inbox."}</div>
           </div>
           ${needsReviewCount > 0 && !inboxFailed ? '<button type="button" data-ea-action="open-needs-attention" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Next email</button>' : ""}
+          ${!inboxFailed ? '<button type="button" data-ea-action="teach-future-after-receipt" style="justify-self:start;border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Teach Threadwise for future emails</button>' : ""}
         </div>
       `);
       setHtml(selectedEmailSecondaryNode, "");
@@ -2138,6 +2157,20 @@
       activeSummaryFilter = "needs_attention_items";
       ANALYTICS?.openReviewQueue(Number((lastSidebarState?.daily_summary || {}).needs_attention_count || 0));
       openFirstSummaryItemIfHelpful(activeSummaryFilter);
+      return;
+    }
+
+    const teachFutureAfterReceiptButton = event.target.closest("[data-ea-action='teach-future-after-receipt']");
+    if (teachFutureAfterReceiptButton) {
+      selectedDecisionMode = "future-learning";
+      renderState(lastHarnessState);
+      return;
+    }
+
+    const backToCurrentReceiptButton = event.target.closest("[data-ea-action='back-to-current-receipt']");
+    if (backToCurrentReceiptButton) {
+      selectedDecisionMode = "review";
+      renderState(lastHarnessState);
       return;
     }
     const openAffectedReviewButton = event.target.closest("[data-ea-action='open-affected-review']");
