@@ -52,7 +52,14 @@ try {
       lastError: null,
       getURL: (value) => value,
       onMessage: { addListener: (listener) => listeners.push(listener), removeListener: () => undefined },
-      sendMessage: (_message, callback) => callback({ ok: true, payload: window.__workspaceState })
+      sendMessage: (message, callback) => {
+        if (message?.path === '/api/teach-apply') {
+          window.__teachApplyRequestCount = (window.__teachApplyRequestCount || 0) + 1;
+          window.__resolveTeachApply = callback;
+          return;
+        }
+        callback({ ok: true, payload: window.__workspaceState });
+      }
     }};
     return true;
   })()`);
@@ -66,6 +73,17 @@ try {
   await evaluate(`document.querySelector('#ea-target-label').value = 'EA/Promotions'; document.querySelector('#ea-target-label').dispatchEvent(new Event('change', { bubbles: true })); document.querySelector('[data-ea-action="preview-current-change"]').click()`);
   await waitFor(() => evaluate(`document.querySelector('[data-ea-selected-state="preview"]') !== null`));
   const preview = await decisionSnapshot();
+  await evaluate(`(() => {
+    const apply = document.querySelector('[data-ea-apply="current-only"]');
+    apply.click();
+    apply.click();
+    return true;
+  })()`);
+  await waitFor(() => evaluate(`document.querySelector('[data-ea-selected-state="applying"]') !== null`));
+  const applying = await decisionSnapshot();
+  const teachApplyRequestCount = await evaluate(`window.__teachApplyRequestCount || 0`);
+  await evaluate(`window.__resolveTeachApply?.({ ok: false, error: 'Synthetic reset after applying assertion.' })`);
+  await waitFor(() => evaluate(`document.querySelector('[data-ea-selected-state="preview"]') !== null`));
   await evaluate(`document.querySelector('[data-ea-action="edit-current-change"]').click()`);
   await waitFor(() => evaluate(`document.querySelector('[data-ea-selected-state="change"]') !== null`));
   const changeAfterEdit = await decisionSnapshot();
@@ -127,7 +145,7 @@ try {
   await waitFor(() => evaluate(`document.querySelector('[data-ea-workspace-body="home"]') !== null`));
   const home = await workspaceSnapshot();
 
-  const result = { selected, review, change, preview, changeAfterEdit, reviewAfterCancel, autoHandled, autoHandledWhy, autoHandledChangeOpened, autoHandledRemovedReceipt, home, uncaughtErrorCount: uncaughtErrors.length };
+  const result = { selected, review, change, preview, applying, teachApplyRequestCount, changeAfterEdit, reviewAfterCancel, autoHandled, autoHandledWhy, autoHandledChangeOpened, autoHandledRemovedReceipt, home, uncaughtErrorCount: uncaughtErrors.length };
   console.log(JSON.stringify(result, null, 2));
   if (
     selected.bodyCount !== 1 || selected.mode !== "selected-email" || selected.hasHome || selected.hasDailySummary ||
@@ -138,6 +156,9 @@ try {
     preview.state !== "preview" || preview.primaryActions.join(",") !== "Apply change" ||
     preview.heading !== "Change this email to Promotions" || preview.effect !== "This updates the current email only." ||
     preview.hasLabelPicker || preview.hasNote ||
+    applying.state !== "applying" || applying.primaryActions.length !== 0 ||
+    applying.heading !== "Applying Promotions" || applying.effect !== "Updating the current email only…" ||
+    applying.hasLabelPicker || applying.hasNote || teachApplyRequestCount !== 1 ||
     changeAfterEdit.state !== "change" || changeAfterEdit.selectedLabel !== "EA/Promotions" ||
     reviewAfterCancel.state !== "review" || reviewAfterCancel.primaryActions.length !== 1 ||
     autoHandled.heading !== "Newsletter · Auto-handled" ||

@@ -989,6 +989,19 @@
       `);
       setHtml(selectedEmailSecondaryNode, "");
       setHtml(teachPanelNode, "");
+    } else if (selected.status === "needs-attention" && selectedDecisionMode === "preview" && isTeachPending()) {
+      const label = humanLabelNameFromId(teachDraft.targetLabel || selected.classification || "");
+      setHtml(selectedEmailNode, `
+        <div data-ea-selected-state="applying" aria-live="polite" style="display:grid;gap:12px;margin-top:10px;">
+          <div>
+            <div data-ea-preview-heading style="font-size:1.3rem;font-weight:840;line-height:1.15;overflow-wrap:anywhere;">Applying ${escapeHtml(label)}</div>
+            <div style="margin-top:6px;color:#6b6255;font-size:0.88rem;overflow-wrap:anywhere;">${escapeHtml(selected.subject || "(no subject)")}</div>
+          </div>
+          <div data-ea-preview-effect style="border-radius:14px;background:#f5efe2;padding:12px;color:#1f1a14;line-height:1.45;">Updating the current email only…</div>
+        </div>
+      `);
+      setHtml(selectedEmailSecondaryNode, "");
+      setHtml(teachPanelNode, "");
     } else if (selected.status === "needs-attention" && selectedDecisionMode === "preview") {
       const label = humanLabelNameFromId(teachDraft.targetLabel || selected.classification || "");
       setHtml(selectedEmailNode, `
