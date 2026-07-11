@@ -35,6 +35,7 @@
   let activeSummaryFilter = "recent_items";
   let detailsExpanded = false;
   let autoHandledChangeOpen = false;
+  let selectedDecisionMode = "review";
   let lastSelectedMessageId = "";
   let affectedReviewOpen = false;
   let gmailCheckPending = false;
@@ -784,6 +785,7 @@
     if (selectedMessageId !== lastSelectedMessageId) {
       lastSelectedMessageId = selectedMessageId;
       autoHandledChangeOpen = false;
+      selectedDecisionMode = "review";
       detailsExpanded = false;
     }
     const selectedState = selected?.status === "auto-handled"
@@ -940,6 +942,52 @@
       setHtml(selectedEmailSecondaryNode, detailsExpanded
         ? `<div style="margin-top:14px;border-radius:14px;background:#f5efe2;padding:12px;color:#1f1a14;line-height:1.45;">${escapeHtml(likelyReasonForSelected(selected))}</div>`
         : "");
+      setHtml(teachPanelNode, "");
+    } else if (selected.status === "needs-attention" && selectedDecisionMode === "review") {
+      gmailCheckResult = null;
+      const label = humanLabelNameFromId(selected.classification || "Uncategorized");
+      setHtml(selectedEmailNode, `
+        <div data-ea-selected-state="review" style="display:grid;gap:12px;margin-top:10px;">
+          <div style="color:#8a4b00;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;font-weight:820;">Needs your review</div>
+          <div>
+            <div style="font-size:1.3rem;font-weight:840;line-height:1.15;overflow-wrap:anywhere;">${escapeHtml(selected.subject || "(no subject)")}</div>
+            <div style="margin-top:6px;color:#6b6255;font-size:0.88rem;overflow-wrap:anywhere;">${escapeHtml(selected.sender || "(unknown sender)")}</div>
+          </div>
+          <div data-ea-review-suggestion style="font-size:1.05rem;font-weight:760;line-height:1.4;">Threadwise suggests ${escapeHtml(label)}</div>
+          <div style="border-radius:14px;background:#fff4dd;padding:12px;color:#1f1a14;line-height:1.45;">${escapeHtml(likelyReasonForSelected(selected).slice(0, 160))}</div>
+          <div style="display:grid;gap:9px;">
+            <button type="button" data-ea-action="accept-suggestion" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Accept ${escapeHtml(label)}</button>
+            <button type="button" data-ea-action="change-suggestion" style="min-height:44px;border:1px solid rgba(36,24,18,.16);background:#f5efe2;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:760;">Change label</button>
+          </div>
+        </div>
+      `);
+      setHtml(selectedEmailSecondaryNode, "");
+      setHtml(teachPanelNode, "");
+    } else if (selected.status === "needs-attention" && selectedDecisionMode === "change") {
+      const allowedLabels = (((lastSidebarState.ui_state || {}).allowed_labels) || []);
+      const currentLabel = teachDraft.targetLabel || selected.classification || "";
+      const labelOptions = allowedLabels.map((option) =>
+        `<option value="${escapeHtml(option.id)}"${option.id === currentLabel ? " selected" : ""}>${escapeHtml(option.name)}</option>`,
+      ).join("");
+      setHtml(selectedEmailNode, `
+        <div data-ea-selected-state="change" style="display:grid;gap:12px;margin-top:10px;">
+          <div>
+            <div style="font-size:1.3rem;font-weight:840;line-height:1.15;">What should this email be?</div>
+            <div style="margin-top:6px;color:#6b6255;font-size:0.88rem;overflow-wrap:anywhere;">${escapeHtml(selected.subject || "(no subject)")}</div>
+          </div>
+          <label style="display:grid;gap:6px;font-weight:760;">Label
+            <select id="ea-target-label" style="box-sizing:border-box;width:100%;min-height:44px;padding:10px 12px;border-radius:10px;border:1px solid rgba(36,24,18,.32);background:#fffdf7;color:#241812;font:inherit;">${labelOptions}</select>
+          </label>
+          <label style="display:grid;gap:6px;font-weight:760;">Anything Threadwise should remember? (optional)
+            <textarea id="ea-teach-note" rows="3" style="box-sizing:border-box;width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(36,24,18,.32);background:#fffdf7;color:#241812;font:inherit;resize:vertical;">${escapeHtml(teachDraft.note)}</textarea>
+          </label>
+          <div style="display:grid;gap:9px;">
+            <button type="button" data-ea-action="preview-current-change" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Preview change</button>
+            <button type="button" data-ea-action="cancel-current-change" style="border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Cancel</button>
+          </div>
+        </div>
+      `);
+      setHtml(selectedEmailSecondaryNode, "");
       setHtml(teachPanelNode, "");
     } else {
       gmailCheckResult = null;
@@ -2054,6 +2102,27 @@
         return;
       }
       return previewTeach();
+    }
+    const changeSuggestionButton = event.target.closest("[data-ea-action='change-suggestion']");
+    if (changeSuggestionButton) {
+      event.preventDefault();
+      ANALYTICS?.decideSuggestion("edit");
+      selectedDecisionMode = "change";
+      teachDraft = {
+        targetLabel: lastSidebarState?.selected_email?.classification || "",
+        note: "",
+      };
+      if (lastSidebarState) renderState(lastSidebarState);
+      document.getElementById("ea-target-label")?.focus();
+      return;
+    }
+    const cancelCurrentChangeButton = event.target.closest("[data-ea-action='cancel-current-change']");
+    if (cancelCurrentChangeButton) {
+      event.preventDefault();
+      selectedDecisionMode = "review";
+      teachDraft = { targetLabel: "", note: "" };
+      if (lastSidebarState) renderState(lastSidebarState);
+      return;
     }
     const retryPreviewButton = event.target.closest("[data-ea-action='retry-preview-teach']");
     if (retryPreviewButton) {

@@ -42,7 +42,10 @@ try {
         details: {}
       },
       daily_summary: { processed_count: 12, auto_handled_count: 2, kept_visible_count: 7 },
-      ui_state: { allowed_labels: [] }
+      ui_state: { allowed_labels: [
+        { id: "EA/Work", name: "Work" },
+        { id: "EA/Promotions", name: "Promotions" }
+      ] }
     };
     const listeners = [];
     window.chrome = { runtime: {
@@ -56,6 +59,13 @@ try {
   await evaluate(contentScript);
   await waitFor(() => evaluate(`document.querySelector('[data-ea-workspace-body="selected-email"]') !== null`));
   const selected = await workspaceSnapshot();
+  const review = await decisionSnapshot();
+  await evaluate(`document.querySelector('[data-ea-action="change-suggestion"]').click()`);
+  await waitFor(() => evaluate(`document.querySelector('[data-ea-selected-state="change"]') !== null`));
+  const change = await decisionSnapshot();
+  await evaluate(`document.querySelector('[data-ea-action="cancel-current-change"]').click()`);
+  await waitFor(() => evaluate(`document.querySelector('[data-ea-selected-state="review"]') !== null`));
+  const reviewAfterCancel = await decisionSnapshot();
 
   await evaluate(`(() => {
     window.__workspaceState = {
@@ -111,10 +121,15 @@ try {
   await waitFor(() => evaluate(`document.querySelector('[data-ea-workspace-body="home"]') !== null`));
   const home = await workspaceSnapshot();
 
-  const result = { selected, autoHandled, autoHandledWhy, autoHandledChangeOpened, autoHandledRemovedReceipt, home, uncaughtErrorCount: uncaughtErrors.length };
+  const result = { selected, review, change, reviewAfterCancel, autoHandled, autoHandledWhy, autoHandledChangeOpened, autoHandledRemovedReceipt, home, uncaughtErrorCount: uncaughtErrors.length };
   console.log(JSON.stringify(result, null, 2));
   if (
     selected.bodyCount !== 1 || selected.mode !== "selected-email" || selected.hasHome || selected.hasDailySummary ||
+    review.state !== "review" || review.primaryActions.join(",") !== "Accept Work" ||
+    review.suggestion !== "Threadwise suggests Work" || review.hasLabelPicker || review.hasNote ||
+    change.state !== "change" || change.primaryActions.join(",") !== "Preview change" ||
+    change.selectedLabel !== "EA/Work" || !change.hasLabelPicker || !change.hasNote ||
+    reviewAfterCancel.state !== "review" || reviewAfterCancel.primaryActions.length !== 1 ||
     autoHandled.heading !== "Newsletter · Auto-handled" ||
     autoHandled.receipt !== "Threadwise applied Newsletter and kept this email in Inbox." ||
     autoHandled.hasCorrectionForm || autoHandled.actions.join(",") !== "Change,Why" ||
@@ -126,6 +141,20 @@ try {
 } finally {
   socket.close();
   await fetch(`${cdpBase}/json/close/${target.id}`).catch(() => {});
+}
+
+async function decisionSnapshot() {
+  return evaluate(`(() => {
+    const state = document.querySelector('[data-ea-selected-state]');
+    return {
+      state: state?.dataset.eaSelectedState || '',
+      suggestion: state?.querySelector('[data-ea-review-suggestion]')?.textContent?.trim() || '',
+      primaryActions: [...(state?.querySelectorAll('[data-tw-primary-action]') || [])].map((node) => node.textContent.trim()),
+      hasLabelPicker: !!state?.querySelector('#ea-target-label'),
+      selectedLabel: state?.querySelector('#ea-target-label')?.value || '',
+      hasNote: !!state?.querySelector('#ea-teach-note')
+    };
+  })()`);
 }
 
 async function autoHandledSnapshot() {
