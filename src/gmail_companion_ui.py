@@ -107,6 +107,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Keep all teaching/apply behavior local-only and do not write label changes back to Gmail.",
     )
+    parser.add_argument(
+        "--disable-gmail-check",
+        action="store_true",
+        help="Disable Gmail check execution for synthetic-only server configurations.",
+    )
     return parser
 
 
@@ -120,6 +125,7 @@ def main(argv: list[str] | None = None, stdout=None, server_factory=None) -> int
         args.port,
         args.storage_dir,
         gmail_write_through_enabled=not args.disable_gmail_write_through,
+        gmail_check_enabled=not args.disable_gmail_check,
     )
     try:
         output.write(f"Serving Gmail companion sidebar at http://{args.host}:{server.server_port}\n")
@@ -138,10 +144,12 @@ def create_server(
     storage_dir: Path,
     *,
     gmail_write_through_enabled: bool = True,
+    gmail_check_enabled: bool = True,
 ) -> ThreadingHTTPServer:
     app = GmailCompanionApp(
         storage_dir=storage_dir,
         gmail_write_through_enabled=gmail_write_through_enabled,
+        gmail_check_enabled=gmail_check_enabled,
     )
 
     class Handler(BaseHTTPRequestHandler):
@@ -169,6 +177,7 @@ class GmailCompanionApp:
         client_secret_path: Path | None = None,
         gmail_client_factory=None,
         gmail_write_through_enabled: bool = True,
+        gmail_check_enabled: bool = True,
         gmail_run_runner=None,
         attention_model_client: object | None = None,
         analytics: ProductAnalytics | None = None,
@@ -178,6 +187,7 @@ class GmailCompanionApp:
         self._client_secret_path = client_secret_path
         self._gmail_client_factory = gmail_client_factory or default_gmail_client_factory
         self._gmail_write_through_enabled = gmail_write_through_enabled
+        self._gmail_check_enabled = gmail_check_enabled
         self._gmail_run_runner = gmail_run_runner
         self._attention_model_client = attention_model_client
         self._analytics = analytics or ProductAnalytics.from_environment()
@@ -897,6 +907,8 @@ class GmailCompanionApp:
         }
 
     def trigger_gmail_check(self, payload: dict) -> dict:
+        if not self._gmail_check_enabled:
+            raise ValueError("Gmail checks are disabled for this server.")
         payload = dict(payload)
         payload.setdefault("account_id", infer_gmail_account_id(self._storage_dir))
         runner = self._gmail_run_runner or self._run_daily_gmail_check
@@ -1475,6 +1487,7 @@ class GmailCompanionApp:
       </div>
       <div class="hero-actions">
         <button id="sim-refresh" class="button secondary" type="button">Refresh snapshot</button>
+        <button id="sim-home" class="button secondary" type="button">Open Home</button>
         <button id="sim-unsynced" class="button primary" type="button">Load unsynced message</button>
       </div>
     </section>
@@ -1503,18 +1516,7 @@ class GmailCompanionApp:
           <button id="sim-minimize" class="minimize" type="button">Minimize</button>
         </header>
         <div class="content">
-          <section class="hero-card">
-            <div class="eyebrow">Agent View</div>
-            <div id="sim-selected-email"></div>
-          </section>
-          <section class="teach-card">
-            <div class="reason-label">Correct / Teach</div>
-            <div id="sim-teach-panel" class="teach-panel"></div>
-          </section>
-          <section class="secondary-card">
-            <div class="eyebrow">Today</div>
-            <div id="sim-daily-summary"></div>
-          </section>
+          <div id="sim-workspace"></div>
         </div>
       </section>
     </section>
@@ -1523,10 +1525,13 @@ class GmailCompanionApp:
     const filterNode = document.getElementById("sim-filter-pills");
     const listNode = document.getElementById("sim-list");
     const messageNode = document.getElementById("sim-message");
-    const selectedEmailNode = document.getElementById("sim-selected-email");
-    const teachPanelNode = document.getElementById("sim-teach-panel");
-    const dailySummaryNode = document.getElementById("sim-daily-summary");
+    const workspaceNode = document.getElementById("sim-workspace");
+    let selectedEmailNode = null;
+    let selectedEmailSecondaryNode = null;
+    let teachPanelNode = null;
+    let dailySummaryNode = null;
     const refreshButton = document.getElementById("sim-refresh");
+    const homeButton = document.getElementById("sim-home");
     const unsyncedButton = document.getElementById("sim-unsynced");
     const layoutNode = document.querySelector(".layout");
     const panelNode = document.querySelector('.panel');
@@ -1542,13 +1547,20 @@ class GmailCompanionApp:
     let teachFlowState = "teaching";
     let inboxApplyConfirmOpen = false;
     let teachOutcome = null;
+    let teachWriteThrough = null;
     let unsubscribeResult = "";
     let detailsExpanded = false;
+    let autoHandledChangeOpen = false;
+    let lastSelectedMessageId = "";
     let affectedReviewOpen = false;
-    let gmailCheckPending = false;
-    let gmailCheckResult = null;
+    let applyInFlight = false;
+    let lastApplyMode = "";
+    let futureLearningSaved = false;
     let draftLabel = "";
     let draftNote = "";
+    let selectedDecisionMode = "review";
+    let selectedDecisionConflict = "";
+    let forceHome = false;
     const unsyncedContext = {
       provider: "gmail",
       message_id: "simulated-unsynced-001",
@@ -1565,29 +1577,100 @@ class GmailCompanionApp:
         .replaceAll("'", "&#39;");
     }
 
-    function nextStepCopy(selectedEmail) {
-      if (!selectedEmail || !selectedEmail.found) {
-        return {
-          title: "What to do now",
-          body: "Preview a synced email below, or run a Gmail check from the dashboard to refresh what Threadwise knows.",
-        };
+    function renderWorkspaceShell(mode, selectedState = "") {
+      workspaceNode.dataset.eaWorkspaceMode = mode;
+      workspaceNode.dataset.eaSelectedState = selectedState;
+      if (mode === "home") {
+        workspaceNode.innerHTML = `
+          <section data-ea-workspace-body="home" class="secondary-card">
+            <div class="eyebrow">Home</div>
+            <div id="sim-daily-summary"></div>
+          </section>
+        `;
+      } else {
+        workspaceNode.innerHTML = `
+          <section data-ea-workspace-body="selected-email" class="hero-card">
+            <div id="sim-selected-email"></div>
+            <div id="sim-teach-panel" class="teach-panel"></div>
+            <div id="sim-selected-email-secondary"></div>
+          </section>
+        `;
       }
-      if (selectedEmail.status === "needs-attention") {
-        return {
-          title: "What to do now",
-          body: "This email still needs a decision. Teach the right label below or leave it visible for later.",
-        };
+      selectedEmailNode = document.getElementById("sim-selected-email");
+      selectedEmailSecondaryNode = document.getElementById("sim-selected-email-secondary");
+      teachPanelNode = document.getElementById("sim-teach-panel");
+      dailySummaryNode = document.getElementById("sim-daily-summary");
+    }
+
+    function renderLoadingWorkspace() {
+      renderWorkspaceShell("selected-email", "loading");
+      selectedEmailNode.innerHTML = `
+        <div data-ea-selected-state="loading" aria-live="polite" style="display:grid;gap:12px;margin-top:10px;">
+          <div class="subject">Loading Threadwise…</div>
+          <div class="preview-card">Refreshing the selected email and its current decision state.</div>
+        </div>
+      `;
+    }
+
+    function humanLabelNameFromId(labelId) {
+      if (!labelId) {
+        return "Uncategorized";
       }
-      if (selectedEmail.unsubscribe_available) {
-        return {
-          title: "What to do now",
-          body: "The agent already understands this email. If it is recurring, you can queue it for unsubscribe review here.",
-        };
+      const allowedLabels = ((((harnessState || {}).sidebar_state || {}).ui_state || {}).allowed_labels) || [];
+      const match = allowedLabels.find((item) => item.id === labelId || item.name === labelId);
+      return match ? String(match.name || "").replace(/^EA\\//, "") : String(labelId).replace(/^EA\\//, "");
+    }
+
+    function internalLabelId(value) {
+      if (!value) {
+        return "";
       }
-      return {
-        title: "What to do now",
-        body: "The agent has already classified this email. You only need to step in if the label or handling looks wrong.",
-      };
+      const allowedLabels = ((((harnessState || {}).sidebar_state || {}).ui_state || {}).allowed_labels) || [];
+      const match = allowedLabels.find((item) => item.id === value || item.name === value);
+      return match ? String(match.id || "") : "";
+    }
+
+    function handledReceiptKind(selected) {
+      const status = String((selected || {}).status || "").toLowerCase();
+      const details = (selected || {}).details || {};
+      const writeStatus = String(details.write_status || "").toLowerCase();
+      const inboxStatus = String(details.inbox_status || "").toLowerCase();
+      const incomplete = [writeStatus, inboxStatus].some((value) =>
+        value && (value.includes("fail") || value.includes("pending") || value.includes("error"))
+      );
+      if (incomplete) {
+        return "";
+      }
+      if (status === "auto-handled" && writeStatus === "applied" && inboxStatus === "applied") {
+        return "auto-handled";
+      }
+      if (status === "kept-visible" && writeStatus === "applied") {
+        return "kept-visible";
+      }
+      if (status === "auto-labeled") {
+        return "auto-labeled";
+      }
+      return "";
+    }
+
+    function labelConflictForDraft() {
+      const note = String(draftNote || "").trim().toLowerCase();
+      if (!note || !draftLabel) {
+        return "";
+      }
+      const allowedLabels = ((((harnessState || {}).sidebar_state || {}).ui_state || {}).allowed_labels) || [];
+      const mentioned = allowedLabels.find((item) => {
+        const name = String(item.name || "").replace(/^EA\\//, "").trim().toLowerCase();
+        if (!name || item.id === draftLabel) {
+          return false;
+        }
+        const escaped = name.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&");
+        return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, "i").test(note);
+      });
+      if (!mentioned) {
+        return "";
+      }
+      return `Your note sounds like ${humanLabelNameFromId(mentioned.id)}, but ${humanLabelNameFromId(draftLabel)} is selected. Choose which one you mean.`;
     }
 
     function activeHarnessBucketDescription() {
@@ -1616,6 +1699,9 @@ class GmailCompanionApp:
       if (!item) {
         return;
       }
+      forceHome = false;
+      selectedDecisionMode = "review";
+      selectedDecisionConflict = "";
       currentContext = {
         provider: "gmail",
         message_id: item.message_id || "",
@@ -1928,19 +2014,6 @@ class GmailCompanionApp:
       `;
     }
 
-    function renderGmailCheckResult() {
-      if (!gmailCheckResult) {
-        return "";
-      }
-      const isError = String(gmailCheckResult.kind || "").endsWith("-error");
-      return `
-        <div class="${isError ? "error-card" : "success-card"}">
-          <div style="font-weight:800;">${escapeHtml(gmailCheckResult.title || "Gmail sync")}</div>
-          <div style="margin-top:8px;">${escapeHtml(gmailCheckResult.message || "")}</div>
-        </div>
-      `;
-    }
-
     function renderTeachProposal(preview) {
       return `
         <div class="preview-card" data-teach-state="rule-proposed">
@@ -2005,42 +2078,310 @@ class GmailCompanionApp:
     function renderSelectedPanel() {
       const selected = selectedEmail();
       const stepCopy = nextStepCopy(selected);
+      const selectedMessageId = selected && selected.found ? String(selected.message_id || "") : "";
+      if (selectedMessageId !== lastSelectedMessageId) {
+        lastSelectedMessageId = selectedMessageId;
+        selectedDecisionMode = "review";
+        selectedDecisionConflict = "";
+        autoHandledChangeOpen = false;
+        detailsExpanded = false;
+        futureLearningSaved = false;
+        if (teachFlowState === "result" && teachOutcome && teachOutcome.scope === "current-email") {
+          teachFlowState = "teaching";
+          teachResult = null;
+          teachOutcome = null;
+          teachWriteThrough = null;
+          draftLabel = "";
+          draftNote = "";
+        }
+      }
+
+      if (forceHome) {
+        renderWorkspaceShell("home", "home");
+        return;
+      }
+
+      const hasSelectedContext = Boolean(
+        currentContext.message_id || currentContext.subject || currentContext.sender
+      );
+      if ((!selected || !selected.found) && !hasSelectedContext) {
+        renderWorkspaceShell("home", "home");
+        return;
+      }
+
+      const understandingActive = Boolean(
+        selected && ["reading", "understanding"].includes(selected.understanding_state)
+      );
+      const handledKind = handledReceiptKind(selected);
+      const decisionState = selectedDecisionMode === "future-learning"
+        ? teachFlowState === "applying"
+          ? "applying"
+          : teachFlowState === "apply-error"
+            ? "blocked"
+            : futureLearningSaved
+              ? "receipt"
+              : "future-learning"
+        : selectedDecisionMode === "preview" && teachFlowState === "applying"
+          ? "applying"
+          : selectedDecisionMode === "preview" && teachFlowState === "apply-error"
+            ? "blocked"
+            : selectedDecisionMode;
+      const selectedState = understandingActive
+        ? "understanding"
+        : (!selected || !selected.found)
+          ? "blocked"
+          : selected.status === "needs-attention"
+            ? decisionState
+            : handledKind && !autoHandledChangeOpen
+              ? "receipt"
+              : handledKind
+                ? "change"
+                : "blocked";
+      renderWorkspaceShell("selected-email", selectedState);
+
+      if (understandingActive) {
+        selectedEmailNode.innerHTML = `
+          <div data-ea-selected-state="understanding" style="display:grid;gap:12px;margin-top:10px;">
+            <div class="subject">${escapeHtml(selected.subject || currentContext.subject || "(no subject)")}</div>
+            <div class="sender">${escapeHtml(selected.sender || currentContext.sender || "(unknown sender)")}</div>
+            <div class="preview-card" aria-live="polite">
+              <div class="reason-label">${escapeHtml(selected.understanding_label || "Understanding")}</div>
+              <div class="reason">${escapeHtml(selected.understanding_message || "Understanding this email...")}</div>
+            </div>
+          </div>
+        `;
+        return;
+      }
+
       if (!selected || !selected.found) {
         affectedReviewOpen = false;
         syncAffectedReviewLayout();
-        const queueItems = (((harnessState || {}).needs_attention_items) || []).slice(0, 4);
-        const syncButtonDisabled = gmailCheckPending ? "disabled" : "";
-        const syncButtonLabel = gmailCheckPending ? "Running Gmail sync..." : "Run Gmail sync now";
         selectedEmailNode.innerHTML = `
+          <div data-ea-selected-state="blocked" style="display:grid;gap:12px;margin-top:10px;">
           <div class="empty">Threadwise has not synced this email yet.</div>
-          <div class="error-card">This simulated fresh email lets you test the pre-sync state safely.</div>
+          <div class="error-card">${escapeHtml(selected && selected.reason ? selected.reason : "This simulated fresh email lets you test the pre-sync state safely.")}</div>
           <div class="reason-wrap">
             <div class="reason-label">${escapeHtml(stepCopy.title)}</div>
             <div class="reason">${escapeHtml(stepCopy.body)}</div>
           </div>
           <div class="button-row" style="margin-top:12px;">
-            <button type="button" class="action-button future" data-action="run-gmail-sync" ${syncButtonDisabled}>${syncButtonLabel}</button>
+            <button type="button" class="action-button future" data-action="return-to-fixture-list" data-tw-primary-action>Return to fixture list</button>
           </div>
-          <div style="margin-top:14px;border-top:1px solid #e5dccb;padding-top:14px;">
-            <div class="reason-label">Current Queue</div>
-            <div class="field-stack">${renderQueueCards(queueItems)}</div>
           </div>
         `;
-        teachPanelNode.innerHTML = teachFlowState === "result" && teachResult
-          ? renderTeachReceipt()
-          : teachError
-            ? renderTeachError(teachError)
-            : gmailCheckResult
-              ? renderGmailCheckResult()
-              : '<div class="empty">Select a synced email to preview or teach a correction.</div>';
         return;
       }
-      gmailCheckResult = null;
+
       const allowedLabels = ((((harnessState || {}).sidebar_state || {}).ui_state || {}).allowed_labels) || [];
+      const defaultLabel = internalLabelId(draftLabel)
+        || internalLabelId(selected.internal_label)
+        || internalLabelId(selected.suggested_label)
+        || internalLabelId(selected.classification);
       const labelOptions = allowedLabels.map((option) => {
-        const selectedAttr = (draftLabel || selected.internal_label || selected.suggested_label || "") === option.id ? " selected" : "";
+        const selectedAttr = defaultLabel === option.id ? " selected" : "";
         return `<option value="${escapeHtml(option.id)}"${selectedAttr}>${escapeHtml(option.name)}</option>`;
       }).join("");
+
+      if (selectedDecisionMode === "future-learning" && teachOutcome && teachOutcome.scope === "current-email" && teachOutcome.current_email_written_to_gmail) {
+        const label = humanLabelNameFromId(draftLabel || selected.internal_label || selected.classification || "");
+        if (teachFlowState === "applying") {
+          selectedEmailNode.innerHTML = `
+            <div data-ea-selected-state="applying" aria-live="polite" style="display:grid;gap:12px;margin-top:10px;">
+              <div class="subject">Saving future rule</div>
+              <div class="preview-card">Creating a reviewable learning candidate without changing Gmail…</div>
+            </div>
+          `;
+          return;
+        }
+        if (teachFlowState === "apply-error") {
+          selectedEmailNode.innerHTML = `
+            <div data-ea-selected-state="blocked" style="display:grid;gap:12px;margin-top:10px;">
+              <div class="subject">Couldn’t save the future rule</div>
+              <div class="error-card">${escapeHtml(teachError || "The learning candidate was not saved.")}</div>
+              <button type="button" class="action-button primary" data-action="retry-future-learning" data-tw-primary-action>Try save again</button>
+              <button type="button" class="action-button quiet" data-action="back-to-current-receipt">Not now</button>
+            </div>
+          `;
+          return;
+        }
+        if (futureLearningSaved) {
+          selectedEmailNode.innerHTML = `
+            <div data-ea-selected-state="receipt" style="display:grid;gap:12px;margin-top:10px;">
+              <div class="subject">Future rule saved for review</div>
+              <div class="success-card">Saved as a learning candidate. No Gmail messages were changed.</div>
+              <button type="button" class="action-button quiet" data-action="back-to-current-receipt">Not now</button>
+            </div>
+          `;
+          return;
+        }
+        selectedEmailNode.innerHTML = `
+          <div data-ea-selected-state="future-learning" style="display:grid;gap:12px;margin-top:10px;">
+            <div class="eyebrow">Optional follow-up</div>
+            <div data-ea-preview-heading class="subject">Teach future emails</div>
+            <div class="preview-card">The current email is already changed to ${escapeHtml(label)}. Any lesson you create here applies to future emails only.</div>
+            <label class="field-stack">What should Threadwise remember?
+              <textarea id="sim-future-note" class="textarea" placeholder="Describe which future emails should be ${escapeHtml(label)}">${escapeHtml(draftNote)}</textarea>
+            </label>
+            <button type="button" class="action-button primary" data-action="save-future-learning" data-tw-primary-action>Save future rule</button>
+            <button type="button" class="action-button quiet" data-action="back-to-current-receipt">Not now</button>
+          </div>
+        `;
+        return;
+      }
+
+      if (teachFlowState === "result" && teachOutcome && teachOutcome.scope === "current-email" && teachOutcome.current_email_written_to_gmail) {
+        const label = humanLabelNameFromId(draftLabel || selected.internal_label || selected.classification || "");
+        const inboxFailed = Number((teachWriteThrough || {}).inbox_remove_failed || 0) > 0;
+        const inboxRemoved = Number((teachWriteThrough || {}).inbox_removed || 0) > 0;
+        const needsReviewCount = Number(((((harnessState || {}).sidebar_state || {}).daily_summary || {}).needs_attention_count) || 0);
+        selectedEmailNode.innerHTML = `
+          <div data-ea-selected-state="receipt" style="display:grid;gap:12px;margin-top:10px;">
+            <div data-ea-receipt-heading class="subject">Changed to ${escapeHtml(label)}</div>
+            <div class="sender">${escapeHtml(selected.subject || "(no subject)")}</div>
+            <div class="success-card" style="display:grid;gap:8px;">
+              <div data-ea-receipt-outcome>Gmail label updated.</div>
+              <div data-ea-receipt-outcome>${inboxFailed ? "Inbox removal needs attention. Open Activity for details." : inboxRemoved ? "Removed from Inbox." : "Kept in Inbox."}</div>
+            </div>
+            ${inboxFailed ? '<a class="action-button quiet" data-ea-partial-recovery href="/daily-dashboard" target="_blank" rel="noreferrer">Open Activity</a>' : ""}
+            ${needsReviewCount > 0 && !inboxFailed ? '<button type="button" class="action-button primary" data-action="open-needs-attention" data-tw-primary-action>Next email</button>' : ""}
+            ${!inboxFailed ? '<button type="button" class="action-button quiet" data-action="teach-future-after-receipt">Teach Threadwise for future emails</button>' : ""}
+          </div>
+        `;
+        return;
+      }
+
+      if (handledKind && !autoHandledChangeOpen) {
+        const label = humanLabelNameFromId(selected.internal_label || selected.classification || "");
+        const heading = handledKind === "auto-handled"
+          ? `${label} · Auto-handled`
+          : handledKind === "auto-labeled"
+            ? `${label} · Auto-labeled`
+            : `Labeled ${label}`;
+        const receipt = handledKind === "auto-handled"
+          ? "Gmail label applied. Removed from Inbox."
+          : handledKind === "auto-labeled"
+            ? "Threadwise classified this email and kept it visible. Gmail label not confirmed."
+            : "Gmail label applied. Kept in Inbox.";
+        selectedEmailNode.innerHTML = `
+          <div data-ea-selected-state="receipt" data-ea-handled-kind="${escapeHtml(handledKind)}" style="display:grid;gap:12px;margin-top:10px;">
+            <div data-ea-auto-handled-heading class="subject">${escapeHtml(heading)}</div>
+            <div class="sender">${escapeHtml(selected.subject || "(no subject)")} · ${escapeHtml(selected.sender || "(unknown sender)")}</div>
+            <div data-ea-auto-handled-receipt class="success-card">${escapeHtml(receipt)}</div>
+            <div class="button-row">
+              <button type="button" class="action-button quiet" data-action="change-auto-handled">Change</button>
+              <button type="button" class="action-button quiet" data-action="toggle-details">Why</button>
+            </div>
+          </div>
+        `;
+        selectedEmailSecondaryNode.innerHTML = detailsExpanded
+          ? `<div class="preview-card">${escapeHtml(selected.reason || "No reason recorded.")}</div>`
+          : "";
+        return;
+      }
+
+      if (selected.status !== "needs-attention" && !handledKind) {
+        selectedEmailNode.innerHTML = `
+          <div data-ea-selected-state="blocked" style="display:grid;gap:12px;margin-top:10px;">
+            <div class="subject">Handling is not complete</div>
+            <div class="sender">${escapeHtml(selected.subject || "(no subject)")}</div>
+            <div class="error-card">Threadwise has not recorded a completed label and inbox action for this fixture.</div>
+            <a class="action-button quiet" href="/daily-dashboard" target="_blank" rel="noreferrer">Open Activity for details</a>
+          </div>
+        `;
+        return;
+      }
+
+      if (selected.status === "needs-attention" && selectedDecisionMode === "review") {
+        const labelId = internalLabelId(selected.internal_label)
+          || internalLabelId(selected.suggested_label)
+          || internalLabelId(draftLabel)
+          || internalLabelId(selected.classification);
+        const label = humanLabelNameFromId(labelId || selected.classification || "");
+        selectedEmailNode.innerHTML = `
+          <div data-ea-selected-state="review" style="display:grid;gap:12px;margin-top:10px;">
+            <div class="eyebrow">Needs your review</div>
+            <div class="subject">${escapeHtml(selected.subject || "(no subject)")}</div>
+            <div class="sender">${escapeHtml(selected.sender || "(unknown sender)")}</div>
+            <div data-ea-review-suggestion class="agent-copy">${labelId ? `Threadwise suggests ${escapeHtml(label)}` : "Threadwise needs a label"}</div>
+            <div class="preview-card">${escapeHtml(String(selected.reason || stepCopy.body || "").slice(0, 160))}</div>
+            ${labelId ? `<button type="button" class="action-button primary" data-action="accept-suggestion" data-tw-primary-action>Accept ${escapeHtml(label)}</button>` : ""}
+            <button type="button" class="action-button secondary" data-action="change-suggestion">Change label</button>
+          </div>
+        `;
+        return;
+      }
+
+      if (selected.status === "needs-attention" && selectedDecisionMode === "change") {
+        const placeholder = defaultLabel ? "" : '<option value="" selected disabled>Choose a label</option>';
+        selectedEmailNode.innerHTML = `
+          <div data-ea-selected-state="change" style="display:grid;gap:12px;margin-top:10px;">
+            <div class="subject">What should this email be?</div>
+            <div class="sender">${escapeHtml(selected.subject || "(no subject)")}</div>
+            <label class="field-stack">Label
+              <select id="sim-target-label" class="select">${placeholder}${labelOptions}</select>
+            </label>
+            <label class="field-stack">Anything Threadwise should remember? (optional)
+              <textarea id="sim-teach-note" class="textarea">${escapeHtml(draftNote)}</textarea>
+            </label>
+            ${selectedDecisionConflict ? `<div data-ea-label-conflict class="error-card">${escapeHtml(selectedDecisionConflict)}</div>` : ""}
+            <button type="button" class="action-button primary" data-action="preview-current-change" data-tw-primary-action ${defaultLabel ? "" : "disabled"}>Preview change</button>
+            <button type="button" class="action-button quiet" data-action="cancel-current-change">Cancel</button>
+          </div>
+        `;
+        bindDraftInputs();
+        return;
+      }
+
+      if (selected.status === "needs-attention" && selectedDecisionMode === "preview" && teachFlowState === "apply-error") {
+        const label = humanLabelNameFromId(draftLabel || defaultLabel);
+        selectedEmailNode.innerHTML = `
+          <div data-ea-selected-state="blocked" style="display:grid;gap:12px;margin-top:10px;">
+            <div data-ea-preview-heading class="subject">Couldn’t apply ${escapeHtml(label)}</div>
+            <div class="error-card">${escapeHtml(teachError || "Nothing was stored or changed. The preview is still here so you can retry.")}</div>
+            <button type="button" class="action-button primary" data-action="retry-current-change" data-tw-primary-action>Try fix again</button>
+            <button type="button" class="action-button quiet" data-action="edit-current-change">Edit</button>
+          </div>
+        `;
+        return;
+      }
+
+      if (selected.status === "needs-attention" && selectedDecisionMode === "preview" && teachFlowState === "applying") {
+        const label = humanLabelNameFromId(draftLabel || defaultLabel);
+        selectedEmailNode.innerHTML = `
+          <div data-ea-selected-state="applying" aria-live="polite" style="display:grid;gap:12px;margin-top:10px;">
+            <div data-ea-preview-heading class="subject">Applying ${escapeHtml(label)}</div>
+            <div data-ea-preview-effect class="preview-card">Updating the current email only…</div>
+          </div>
+        `;
+        return;
+      }
+
+      if (selected.status === "needs-attention" && selectedDecisionMode === "preview") {
+        const label = humanLabelNameFromId(draftLabel || defaultLabel);
+        selectedEmailNode.innerHTML = `
+          <div data-ea-selected-state="preview" style="display:grid;gap:12px;margin-top:10px;">
+            <div data-ea-preview-heading class="subject">Change this email to ${escapeHtml(label)}</div>
+            <div data-ea-preview-effect class="preview-card">This updates the current email only.</div>
+            <button type="button" class="action-button primary" data-apply-mode="current-only" data-tw-primary-action>Apply change</button>
+            <button type="button" class="action-button quiet" data-action="edit-current-change">Edit</button>
+          </div>
+        `;
+        return;
+      }
+
+      if (teachFlowState === "apply-error") {
+        renderWorkspaceShell("selected-email", "blocked");
+        selectedEmailNode.innerHTML = `
+          <div data-ea-selected-state="blocked" style="display:grid;gap:12px;margin-top:10px;">
+            <div class="subject">Couldn’t complete the simulated update</div>
+            <div class="error-card">${escapeHtml(teachError || "Nothing was stored or changed.")}</div>
+            <button type="button" class="action-button primary" data-action="retry-broad-apply" data-tw-primary-action>Try again</button>
+            <button type="button" class="action-button quiet" data-action="refine-teach">Edit</button>
+          </div>
+        `;
+        return;
+      }
+
       const unsubscribe = selected.unsubscribe || null;
       const unsubscribePreview = (unsubscribe && unsubscribe.preview) || null;
       const canOpenUnsubscribeUrl = unsubscribePreview
@@ -2105,6 +2446,10 @@ class GmailCompanionApp:
       if (labelNode) {
         labelNode.addEventListener("change", () => {
           draftLabel = labelNode.value;
+          const previewButton = document.querySelector('[data-action="preview-current-change"]');
+          if (previewButton) {
+            previewButton.disabled = !internalLabelId(draftLabel);
+          }
         });
       }
       if (noteNode) {
@@ -2115,71 +2460,45 @@ class GmailCompanionApp:
       syncAffectedReviewLayout();
     }
 
+    function bindDraftInputs() {
+      const labelNode = document.getElementById("sim-target-label");
+      const noteNode = document.getElementById("sim-teach-note");
+      if (labelNode) {
+        labelNode.addEventListener("change", () => {
+          draftLabel = labelNode.value;
+          const previewButton = document.querySelector('[data-action="preview-current-change"]');
+          if (previewButton) {
+            previewButton.disabled = !internalLabelId(draftLabel);
+          }
+        });
+      }
+      if (noteNode) {
+        noteNode.addEventListener("input", () => {
+          draftNote = noteNode.value;
+        });
+      }
+    }
+
     function renderSummary() {
+      if (!dailySummaryNode) {
+        return;
+      }
       const summary = (((harnessState || {}).sidebar_state) || {}).daily_summary || {};
-      const changedToday = summary.changed_today || {};
-      const candidateExamples = changedToday.candidate_examples || [];
-      const bucketLabel = activeBucketLabel();
-      const topLabels = (summary.top_labels || []).map((label) =>
-        `<span class="pill">${escapeHtml(label.label)} · ${label.count}</span>`
-      ).join("");
-      const changedItemsHtml = (changedToday.items || []).length
-        ? (changedToday.items || []).map((item) => `
-            <div class="note">
-              <strong>${escapeHtml(item.subject || "(no subject)")}</strong><br>
-              ${escapeHtml(item.sender || "(unknown sender)")}<br>
-              ${escapeHtml(item.change_summary || "")}
-            </div>
-          `).join("")
-        : '<div class="empty">No tracked agent changes in this stored batch yet.</div>';
-      const candidateReviewHtml = candidateExamples.length
-        ? candidateExamples.map((item) => `
-            <div class="note">
-              <strong>${escapeHtml(item.title || "(untitled candidate)")}</strong><br>
-              ${escapeHtml(item.status || "pending")}${item.latest_recommendation ? ` · ${escapeHtml(item.latest_recommendation)}` : ""}
-            </div>
-          `).join("")
-        : '<div class="empty">No candidate changes are waiting in the evaluation lane.</div>';
+      const needsReviewCount = Number(summary.needs_attention_count || 0);
+      const keptVisibleCount = Number(
+        summary.kept_visible_count
+        ?? (((harnessState || {}).kept_visible_items || []).length)
+      );
       dailySummaryNode.innerHTML = `
-        <div class="empty">${summary.run_count > 1 ? `Rolling view across the last ${summary.run_count} Gmail runs` : "Latest run snapshot"}</div>
-        <div class="summary-grid summary-grid--three">
-          <button class="metric-button ${activeFilter === "recent_items" ? "active" : ""}" data-filter="recent_items"><strong>${summary.processed_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">processed</span></button>
-          <button class="metric-button ${activeFilter === "auto_handled_items" ? "active" : ""}" data-filter="auto_handled_items"><strong>${summary.auto_handled_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">auto-handled</span></button>
-          <button class="metric-button ${activeFilter === "kept_visible_items" ? "active" : ""}" data-filter="kept_visible_items"><strong>${summary.unlabeled_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">unlabeled</span></button>
-        </div>
-        <div class="label-row">
-          <span class="pill">Unsubscribe candidates · ${summary.unsubscribe_candidate_count || 0}</span>
-          ${summary.report_date ? `<span class="pill">Latest report · ${escapeHtml(summary.report_date)}</span>` : ""}
-        </div>
-        <div class="button-row" style="margin-top:12px;">
-          <a class="action-button quiet" style="display:inline-flex;align-items:center;" href="/daily-dashboard" target="_blank" rel="noreferrer">Open daily dashboard</a>
-          <a class="action-button quiet" style="display:inline-flex;align-items:center;" href="/unsubscribe-review" target="_blank" rel="noreferrer">Review unsubscribe candidates</a>
-        </div>
-        <details class="reason-wrap" style="margin-top:12px;">
-          <summary style="cursor:pointer;font-weight:800;color:#241812;">Report details</summary>
-          <div class="reason-wrap" style="margin-top:12px;background:#eef7f5;">
-            <div class="reason-label">Viewing</div>
-            <div class="reason"><strong>${escapeHtml(bucketLabel)}</strong> · ${itemsForActiveFilter().length}</div>
-            <div class="empty">${escapeHtml(bucketDescription())}</div>
+        <div data-ea-selected-state="home" style="display:grid;gap:12px;margin-top:10px;">
+          <div class="subject">${needsReviewCount ? `${needsReviewCount} email${needsReviewCount === 1 ? "" : "s"} need your review` : "Your inbox is caught up"}</div>
+          <div class="empty">${Number(summary.processed_count || 0)} processed · ${Number(summary.auto_handled_count || 0)} auto-handled · ${keptVisibleCount} kept visible</div>
+          ${needsReviewCount ? '<button type="button" class="action-button primary" data-action="open-needs-attention" data-tw-primary-action>Review next</button>' : ""}
+          <div class="button-row">
+            <a class="action-button quiet" href="/daily-dashboard" target="_blank" rel="noreferrer">Activity</a>
+            <a class="action-button quiet" href="/unsubscribe-review" target="_blank" rel="noreferrer">Subscription cleanup</a>
           </div>
-          <div class="reason-wrap" style="margin-top:12px;">
-            <div class="reason-label">What Changed Today</div>
-            <div class="summary-grid" style="margin-top:10px;">
-              <div class="metric-button"><strong>${changedToday.label_writes_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">labels written</span></div>
-              <div class="metric-button"><strong>${changedToday.inbox_removed_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">removed from inbox</span></div>
-              <div class="metric-button"><strong>${changedToday.taught_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">teaching changes</span></div>
-              <div class="metric-button"><strong>${changedToday.selected_unsubscribe_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">unsubscribe queued</span></div>
-              <div class="metric-button"><strong>${changedToday.candidate_pending_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">candidate review</span></div>
-            </div>
-            <div class="field-stack" style="margin-top:12px;">${changedItemsHtml}</div>
-            <div class="reason-label" style="margin-top:12px;">Candidate review lane</div>
-            <div class="field-stack" style="margin-top:12px;">${candidateReviewHtml}</div>
-          </div>
-          ${topLabels ? `<div class="label-row">${topLabels}</div>` : '<p class="empty" style="margin-top:12px;">No stored label mix yet.</p>'}
-          <p class="empty" style="margin-top:12px;">Source: ${escapeHtml(summary.source_label || "stored Gmail snapshot")}${summary.batch_id ? ` · ${escapeHtml(summary.batch_id)}` : ""}</p>
-          <div class="reason-label" style="margin-top:12px;">${escapeHtml(bucketLabel)}</div>
-          <div class="field-stack" style="margin-top:12px;">${renderQueueCards(itemsForActiveFilter().slice(0, 5))}</div>
-        </details>
+        </div>
       `;
     }
 
@@ -2193,13 +2512,18 @@ class GmailCompanionApp:
     }
 
     async function refreshState() {
+      if (!forceHome) {
+        renderLoadingWorkspace();
+      }
       const query = new URLSearchParams(currentContext);
       const response = await fetch(`/api/harness-state?${query.toString()}`);
       harnessState = await response.json();
       currentContext = harnessState.selected_context || currentContext;
       const selected = selectedEmail();
       if (selected && selected.found && !draftLabel) {
-        draftLabel = selected.internal_label || selected.suggested_label || "";
+        draftLabel = internalLabelId(selected.internal_label)
+          || internalLabelId(selected.suggested_label)
+          || internalLabelId(selected.classification);
       }
       if (!(selected && selected.found)) {
         previousTeachPreview = null;
@@ -2220,8 +2544,14 @@ class GmailCompanionApp:
       teachFlowState = "teaching";
       inboxApplyConfirmOpen = false;
       teachOutcome = null;
+      teachWriteThrough = null;
       unsubscribeResult = "";
       affectedReviewOpen = false;
+      selectedDecisionMode = "review";
+      selectedDecisionConflict = "";
+      autoHandledChangeOpen = false;
+      futureLearningSaved = false;
+      lastApplyMode = "";
       syncAffectedReviewLayout();
       if (clearDraft) {
         draftLabel = "";
@@ -2257,64 +2587,53 @@ class GmailCompanionApp:
     }
 
     async function applyTeach(mode) {
-      if (!selectedFound()) {
+      if (!selectedFound() || applyInFlight) {
         return;
       }
+      applyInFlight = true;
+      lastApplyMode = mode;
       const labelNode = document.getElementById("sim-target-label");
       const noteNode = document.getElementById("sim-teach-note");
       draftLabel = labelNode ? labelNode.value : draftLabel;
       draftNote = noteNode ? noteNode.value : draftNote;
-      const payload = await postApi("/api/teach-apply", {
-        selected_context: currentContext,
-        target_label: draftLabel,
-        note: draftNote,
-        scope: "sender",
-        mode,
-      });
-      if (payload.error) {
-        teachError = payload.error;
-        teachResult = null;
-        teachFlowState = "scope-confirmation";
-        renderSelectedPanel();
-        return;
-      } else {
+      teachError = "";
+      teachFlowState = "applying";
+      renderSelectedPanel();
+      try {
+        const payload = await postApi("/api/teach-apply", {
+          selected_context: currentContext,
+          target_label: draftLabel,
+          note: draftNote,
+          scope: "sender",
+          mode,
+        });
+        if (payload.error) {
+          throw new Error(payload.error);
+        }
         teachPreview = null;
         previousTeachPreview = null;
         teachError = "";
         teachResult = payload.acknowledgment || "Lesson applied.";
-        teachOutcome = payload.outcome || null;
+        if (mode === "save-future-rule") {
+          futureLearningSaved = true;
+        } else {
+          teachOutcome = payload.outcome || null;
+          teachWriteThrough = payload.gmail_write_through || null;
+        }
         teachFlowState = "result";
         unsubscribeResult = "";
         affectedReviewOpen = false;
-      }
-      await refreshState();
-      renderSelectedPanel();
-    }
-
-    async function runGmailSync() {
-      if (gmailCheckPending) {
-        return;
-      }
-      gmailCheckPending = true;
-      gmailCheckResult = null;
-      renderSelectedPanel();
-      const payload = await postApi("/api/gmail-check-run", { confirmed: "true" });
-      gmailCheckPending = false;
-      if (payload.error) {
-        gmailCheckResult = {
-          kind: "gmail-sync-error",
-          title: "Gmail sync did not start",
-          message: payload.error,
-        };
-      } else {
-        gmailCheckResult = {
-          kind: "gmail-sync-success",
-          title: "Gmail sync finished",
-          message: "Threadwise ran a Gmail sync. Checking this email again now.",
-        };
         await refreshState();
+      } catch (error) {
+        teachError = error && error.message
+          ? error.message
+          : "Threadwise could not complete this simulated update. Nothing else was attempted.";
+        teachResult = null;
+        teachFlowState = "apply-error";
+        renderSelectedPanel();
+      } finally {
+        applyInFlight = false;
       }
-      renderSelectedPanel();
     }
 
     async function excludeAffectedMatch(messageId, reason) {
@@ -2394,6 +2713,142 @@ class GmailCompanionApp:
         setContextFromItem(item);
         return;
       }
+      const acceptSuggestionButton = event.target.closest("[data-action='accept-suggestion']");
+      if (acceptSuggestionButton) {
+        const selected = selectedEmail();
+        draftLabel = selected && (
+          internalLabelId(selected.internal_label)
+          || internalLabelId(selected.suggested_label)
+          || internalLabelId(selected.classification)
+        ) || "";
+        if (!draftLabel) {
+          return;
+        }
+        draftNote = "";
+        selectedDecisionMode = "preview";
+        applyTeach("current-only");
+        return;
+      }
+      const changeSuggestionButton = event.target.closest("[data-action='change-suggestion']");
+      if (changeSuggestionButton) {
+        const selected = selectedEmail();
+        selectedDecisionMode = "change";
+        selectedDecisionConflict = "";
+        draftLabel = selected && (
+          internalLabelId(selected.internal_label)
+          || internalLabelId(selected.suggested_label)
+          || internalLabelId(selected.classification)
+        ) || "";
+        draftNote = "";
+        renderSelectedPanel();
+        document.getElementById("sim-target-label")?.focus();
+        return;
+      }
+      const cancelCurrentChangeButton = event.target.closest("[data-action='cancel-current-change']");
+      if (cancelCurrentChangeButton) {
+        selectedDecisionMode = "review";
+        selectedDecisionConflict = "";
+        draftLabel = "";
+        draftNote = "";
+        renderSelectedPanel();
+        return;
+      }
+      const previewCurrentChangeButton = event.target.closest("[data-action='preview-current-change']");
+      if (previewCurrentChangeButton) {
+        const labelNode = document.getElementById("sim-target-label");
+        const noteNode = document.getElementById("sim-teach-note");
+        draftLabel = labelNode ? labelNode.value : draftLabel;
+        draftNote = noteNode ? noteNode.value : draftNote;
+        if (!internalLabelId(draftLabel)) {
+          return;
+        }
+        selectedDecisionConflict = labelConflictForDraft();
+        if (selectedDecisionConflict) {
+          renderSelectedPanel();
+          return;
+        }
+        selectedDecisionMode = "preview";
+        renderSelectedPanel();
+        return;
+      }
+      const editCurrentChangeButton = event.target.closest("[data-action='edit-current-change']");
+      if (editCurrentChangeButton) {
+        selectedDecisionMode = "change";
+        selectedDecisionConflict = "";
+        teachFlowState = "teaching";
+        renderSelectedPanel();
+        return;
+      }
+      const retryCurrentChangeButton = event.target.closest("[data-action='retry-current-change']");
+      if (retryCurrentChangeButton) {
+        teachError = "";
+        applyTeach("current-only");
+        return;
+      }
+      const teachFutureAfterReceiptButton = event.target.closest("[data-action='teach-future-after-receipt']");
+      if (teachFutureAfterReceiptButton) {
+        selectedDecisionMode = "future-learning";
+        renderSelectedPanel();
+        return;
+      }
+      const backToCurrentReceiptButton = event.target.closest("[data-action='back-to-current-receipt']");
+      if (backToCurrentReceiptButton) {
+        selectedDecisionMode = "review";
+        teachFlowState = "result";
+        teachError = "";
+        renderSelectedPanel();
+        return;
+      }
+      const saveFutureLearningButton = event.target.closest("[data-action='save-future-learning']");
+      if (saveFutureLearningButton) {
+        const noteNode = document.getElementById("sim-future-note");
+        draftNote = noteNode ? noteNode.value : draftNote;
+        if (!draftNote.trim()) {
+          return;
+        }
+        applyTeach("save-future-rule");
+        return;
+      }
+      const retryFutureLearningButton = event.target.closest("[data-action='retry-future-learning']");
+      if (retryFutureLearningButton) {
+        applyTeach("save-future-rule");
+        return;
+      }
+      const retryBroadApplyButton = event.target.closest("[data-action='retry-broad-apply']");
+      if (retryBroadApplyButton) {
+        applyTeach(lastApplyMode || "apply-included");
+        return;
+      }
+      const changeAutoHandledButton = event.target.closest("[data-action='change-auto-handled']");
+      if (changeAutoHandledButton) {
+        const selected = selectedEmail();
+        autoHandledChangeOpen = true;
+        draftLabel = selected && (
+          internalLabelId(selected.internal_label)
+          || internalLabelId(selected.suggested_label)
+          || internalLabelId(selected.classification)
+        ) || "";
+        draftNote = "";
+        renderSelectedPanel();
+        return;
+      }
+      const toggleDetailsButton = event.target.closest("[data-action='toggle-details']");
+      if (toggleDetailsButton) {
+        detailsExpanded = !detailsExpanded;
+        renderSelectedPanel();
+        return;
+      }
+      const openNeedsAttentionButton = event.target.closest("[data-action='open-needs-attention']");
+      if (openNeedsAttentionButton) {
+        activeFilter = "needs_attention_items";
+        const currentMessageId = (selectedEmail() || {}).message_id || "";
+        const queue = (((harnessState || {}).needs_attention_items) || []);
+        const first = queue.find((item) => item.message_id && item.message_id !== currentMessageId) || queue[0];
+        if (first) {
+          setContextFromItem(first);
+        }
+        return;
+      }
       const previewButton = event.target.closest("[data-action='preview-teach']");
       if (previewButton) {
         previewTeach();
@@ -2411,9 +2866,13 @@ class GmailCompanionApp:
         refreshState();
         return;
       }
-      const runGmailSyncButton = event.target.closest("[data-action='run-gmail-sync']");
-      if (runGmailSyncButton) {
-        runGmailSync();
+      const returnToFixtureListButton = event.target.closest("[data-action='return-to-fixture-list']");
+      if (returnToFixtureListButton) {
+        forceHome = true;
+        currentContext = {};
+        resetTeachState(true);
+        renderSelectedPanel();
+        renderSummary();
         return;
       }
       const openAffectedReviewButton = event.target.closest("[data-action='open-affected-review']");
@@ -2485,8 +2944,6 @@ class GmailCompanionApp:
           renderSelectedPanel();
           return;
         }
-        teachFlowState = "applying";
-        renderSelectedPanel();
         applyTeach(mode);
         return;
       }
@@ -2497,8 +2954,15 @@ class GmailCompanionApp:
     });
 
     refreshButton.addEventListener("click", () => {
+      forceHome = false;
       resetTeachState(false);
       refreshState();
+    });
+    homeButton.addEventListener("click", () => {
+      forceHome = true;
+      resetTeachState(true);
+      renderSelectedPanel();
+      renderSummary();
     });
     minimizeButton.addEventListener("click", () => {
       minimized = !minimized;
@@ -2506,6 +2970,7 @@ class GmailCompanionApp:
       minimizeButton.textContent = minimized ? "Open" : "Minimize";
     });
     unsyncedButton.addEventListener("click", () => {
+      forceHome = false;
       currentContext = { ...unsyncedContext };
       resetTeachState(true);
       fetch(`/api/harness-state?${new URLSearchParams(currentContext).toString()}`)

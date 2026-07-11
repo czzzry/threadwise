@@ -1,23 +1,21 @@
 const appUrl = process.argv[2] || "http://127.0.0.1:8031/simulator";
 const cdpBase = process.argv[3] || "http://127.0.0.1:9222";
-const applyMode = process.argv[4] || "future-only";
 
 const target = await createTarget(appUrl);
 const socket = new WebSocket(target.webSocketDebuggerUrl);
-let nextId = 1;
 const pending = new Map();
+const uncaughtErrors = [];
+let nextId = 1;
 
 socket.addEventListener("message", (event) => {
   const message = JSON.parse(event.data);
-  if (message.id && pending.has(message.id)) {
-    const { resolve, reject } = pending.get(message.id);
-    pending.delete(message.id);
-    if (message.error) {
-      reject(new Error(message.error.message));
-    } else {
-      resolve(message.result);
-    }
+  if (message.method === "Runtime.exceptionThrown") {
+    uncaughtErrors.push(message.params.exceptionDetails);
   }
+  if (!message.id || !pending.has(message.id)) return;
+  const { resolve, reject } = pending.get(message.id);
+  pending.delete(message.id);
+  message.error ? reject(new Error(message.error.message)) : resolve(message.result);
 });
 
 await new Promise((resolve, reject) => {
@@ -29,319 +27,491 @@ try {
   await send("Runtime.enable");
   await send("Page.enable");
   await send("Page.navigate", { url: appUrl });
-  await waitFor(() => evaluate("document.readyState === 'complete'"), 15000);
-  await waitFor(() => evaluate("document.querySelectorAll('#sim-list [data-queue-message-id]').length > 0"), 15000);
+  await waitFor(() => evaluate("document.readyState === 'complete'"));
+  await waitFor(() => evaluate("document.querySelector('[data-ea-selected-state=\"review\"]') !== null"));
 
-  const initialState = await evaluate(`({
-    title: document.querySelector('h1')?.innerText || document.title,
-    subtitle: document.querySelector('#sim-subtitle')?.innerText || '',
-    listCount: document.querySelectorAll('#sim-list [data-queue-message-id]').length,
-    selectedSubject: document.querySelector('#sim-message .message-title')?.innerText || '',
-    minimizeLabel: document.querySelector('#sim-minimize')?.innerText || ''
-  })`);
+  const review = await decisionSnapshot();
+  assertWorkspace(review, "review", "selected-email");
+  assertEqual(review.suggestion, "Threadwise suggests Work", "production-shaped suggestion display");
+  assertEqual(review.primaryActions.join(","), "Accept Work", "review primary action");
+  assertEqual(review.hasDailySummary, false, "selected review excludes Today");
+  assertEqual(review.hasUnsubscribeJob, false, "selected review excludes unsubscribe job");
 
-  await evaluate(`(() => { document.querySelector('#sim-minimize').click(); return true; })()`);
-  await waitFor(() => evaluate("document.querySelector('.panel').classList.contains('minimized')"));
-  await evaluate(`(() => { document.querySelector('#sim-minimize').click(); return true; })()`);
-  await waitFor(() => evaluate("!document.querySelector('.panel').classList.contains('minimized')"));
-
-  await evaluate(`(() => {
-    const button = document.querySelector('#sim-filter-pills [data-filter="kept_visible_items"]');
-    if (button) button.click();
-    return true;
-  })()`);
-  await waitFor(() => evaluate("document.querySelector('#sim-filter-pills [data-filter=\"kept_visible_items\"]').classList.contains('active')"));
-  const keptVisibleCount = await evaluate("document.querySelectorAll('#sim-list [data-queue-message-id]').length");
-
-  await evaluate(`(() => {
-    const button = document.querySelector('#sim-filter-pills [data-filter="recent_items"]');
-    if (button) button.click();
-    return true;
-  })()`);
-  await waitFor(() => evaluate("document.querySelector('#sim-filter-pills [data-filter=\"recent_items\"]').classList.contains('active')"));
-  await evaluate(`(async () => {
-    const target = (harnessState?.recent_items || []).find((item) => item.unsubscribe_available);
-    if (!target) {
-      return false;
-    }
-    currentContext = {
-      provider: "gmail",
-      message_id: target.message_id || "",
-      subject: target.subject || "",
-      sender: target.sender || "",
+  const autoLabeledTruth = await evaluate(`(() => {
+    const original = harnessState.sidebar_state.selected_email;
+    harnessState.sidebar_state.selected_email = {
+      ...original,
+      status: 'auto-labeled',
+      status_label: 'Auto-labeled',
+      details: { ...(original.details || {}), write_status: '', inbox_status: '' }
     };
-    resetTeachState(true);
+    renderSelectedPanel();
+    const result = {
+      heading: document.querySelector('[data-ea-auto-handled-heading]')?.textContent.trim() || '',
+      receipt: document.querySelector('[data-ea-auto-handled-receipt]')?.textContent.trim() || ''
+    };
+    harnessState.sidebar_state.selected_email = original;
+    renderSelectedPanel();
+    return result;
+  })()`);
+  assertEqual(autoLabeledTruth.heading, "Work · Auto-labeled", "auto-labeled heading is local-only");
+  assertEqual(
+    autoLabeledTruth.receipt,
+    "Threadwise classified this email and kept it visible. Gmail label not confirmed.",
+    "auto-labeled receipt does not claim a Gmail write",
+  );
+
+  await installTeachApplyInterceptor();
+  await evaluate(`(() => {
+    window.__twHoldNextHarnessRefresh = true;
+    refreshState();
+    return true;
+  })()`);
+  await waitFor(() => evaluate("document.querySelector('[data-ea-selected-state=\"loading\"]') !== null"));
+  const loading = await decisionSnapshot();
+  assertWorkspace(loading, "loading", "selected-email");
+  assertEqual(loading.primaryActions.length, 0, "loading has no primary action");
+  await evaluate("window.__twReleaseHarnessRefresh?.()");
+  await waitFor(() => evaluate("document.querySelector('[data-ea-selected-state=\"review\"]') !== null"));
+
+  await evaluate(`(() => {
+    const button = document.querySelector('[data-action="accept-suggestion"]');
+    button.click();
+    applyTeach('current-only');
+    return true;
+  })()`);
+  await waitFor(() => evaluate("document.querySelector('[data-ea-selected-state=\"applying\"]') !== null"));
+  const accepting = await decisionSnapshot();
+  const acceptRequests = await capturedRequests();
+  assertWorkspace(accepting, "applying", "selected-email");
+  assertEqual(acceptRequests.length, 1, "duplicate Accept is blocked");
+  assertEqual(acceptRequests[0].mode, "current-only", "Accept uses current-only");
+  assertEqual(acceptRequests[0].target_label, "job-related", "Work suggestion maps to internal job-related id");
+
+  await rejectNextApply("Synthetic transport disconnect. Nothing was stored or changed.");
+  await waitFor(() => evaluate("document.querySelector('[data-ea-selected-state=\"blocked\"]') !== null"));
+  const blockedApply = await decisionSnapshot();
+  assertWorkspace(blockedApply, "blocked", "selected-email");
+  assertEqual(blockedApply.primaryActions.join(","), "Try fix again", "failed apply offers retry");
+
+  await evaluate("document.querySelector('[data-action=\"edit-current-change\"]').click()");
+  await waitFor(() => evaluate("document.querySelector('[data-ea-selected-state=\"change\"]') !== null"));
+  const change = await decisionSnapshot();
+  assertWorkspace(change, "change", "selected-email");
+  assertEqual(change.selectedLabel, "job-related", "Change selects the internal suggested id");
+  assertEqual(change.primaryActions.join(","), "Preview change", "Change primary action");
+
+  await evaluate(`(() => {
+    const note = document.querySelector('#sim-teach-note');
+    note.value = 'This should be Promotions';
+    note.dispatchEvent(new Event('input', { bubbles: true }));
+    document.querySelector('[data-action="preview-current-change"]').click();
+    return true;
+  })()`);
+  await waitFor(() => evaluate("document.querySelector('[data-ea-label-conflict]') !== null"));
+  const conflict = await decisionSnapshot();
+  assertEqual(
+    conflict.conflict,
+    "Your note sounds like Promotions, but Work is selected. Choose which one you mean.",
+    "label/note conflict",
+  );
+
+  await evaluate(`(() => {
+    const select = document.querySelector('#sim-target-label');
+    select.value = 'promotions';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    document.querySelector('[data-action="preview-current-change"]').click();
+    return true;
+  })()`);
+  await waitFor(() => evaluate("document.querySelector('[data-ea-selected-state=\"preview\"]') !== null"));
+  const preview = await decisionSnapshot();
+  assertWorkspace(preview, "preview", "selected-email");
+  assertEqual(preview.heading, "Change this email to Promotions", "preview heading");
+  assertEqual(preview.effect, "This updates the current email only.", "preview effect");
+
+  await evaluate(`(() => {
+    const button = document.querySelector('[data-apply-mode="current-only"]');
+    button.click();
+    applyTeach('current-only');
+    return true;
+  })()`);
+  await waitFor(() => evaluate("document.querySelector('[data-ea-selected-state=\"applying\"]') !== null"));
+  const applying = await decisionSnapshot();
+  const currentRequests = await capturedRequests();
+  assertWorkspace(applying, "applying", "selected-email");
+  assertEqual(currentRequests.length, 2, "duplicate Apply is blocked");
+  assertEqual(currentRequests[1].mode, "current-only", "changed label uses current-only");
+  assertEqual(currentRequests[1].target_label, "promotions", "apply payload uses selected internal Promotions id");
+
+  await resolveNextApply(successPayload({ inboxRemoved: 1, inboxFailed: 0 }));
+  await waitFor(() => evaluate("document.querySelector('[data-ea-selected-state=\"receipt\"]') !== null"));
+  const receipt = await receiptSnapshot();
+  assertWorkspace(receipt, "receipt", "selected-email");
+  assertEqual(receipt.heading, "Changed to Promotions", "success receipt heading");
+  assertEqual(receipt.outcomes.join(","), "Gmail label updated.,Removed from Inbox.", "success receipt outcomes");
+  assertEqual(receipt.followUps.join(","), "Teach Threadwise for future emails", "future learning follows success");
+
+  await evaluate("document.querySelector('[data-action=\"teach-future-after-receipt\"]').click()");
+  await waitFor(() => evaluate("document.querySelector('[data-ea-selected-state=\"future-learning\"]') !== null"));
+  const future = await decisionSnapshot();
+  assertWorkspace(future, "future-learning", "selected-email");
+  assertEqual(future.heading, "Teach future emails", "future-learning heading");
+  assertEqual(future.primaryActions.join(","), "Save future rule", "future-learning primary action");
+  assertEqual(
+    await evaluate("document.querySelector('[data-action=\"back-to-current-receipt\"]')?.textContent.trim()"),
+    "Not now",
+    "future learning can be declined",
+  );
+  await evaluate("document.querySelector('[data-action=\"back-to-current-receipt\"]').click()");
+  await waitFor(() => evaluate("document.querySelector('[data-ea-selected-state=\"receipt\"]') !== null"));
+
+  const firstMessageId = review.messageId;
+  await evaluate("document.querySelector('[data-action=\"open-needs-attention\"]').click()");
+  await waitFor(() => evaluate(`document.querySelector('[data-ea-selected-state="review"]') !== null && (selectedEmail()?.message_id || '') !== ${JSON.stringify(firstMessageId)}`));
+  const nextReview = await decisionSnapshot();
+  assertWorkspace(nextReview, "review", "selected-email");
+  assertNotEqual(nextReview.messageId, firstMessageId, "Next email advances the preserved queue");
+  assertEqual(nextReview.hasReceipt, false, "receipt state resets across message changes");
+
+  await moveToPromotionsPreview();
+  await evaluate("document.querySelector('[data-apply-mode=\"current-only\"]').click()");
+  await waitFor(() => evaluate("document.querySelector('[data-ea-selected-state=\"applying\"]') !== null"));
+  await resolveNextApply(successPayload({ inboxRemoved: 0, inboxFailed: 1 }));
+  await waitFor(() => evaluate("document.querySelector('[data-ea-selected-state=\"receipt\"]') !== null"));
+  const partial = await receiptSnapshot();
+  assertEqual(
+    partial.outcomes.join(","),
+    "Gmail label updated.,Inbox removal needs attention. Open Activity for details.",
+    "partial receipt preserves label success",
+  );
+  assertEqual(partial.primaryActions.length, 0, "partial receipt does not repeat successful work");
+  assertEqual(partial.followUps.length, 0, "partial receipt withholds optional learning");
+  assertEqual(partial.hasActivityRoute, true, "partial receipt routes to Activity details");
+
+  await evaluate(`(() => {
+    const current = selectedEmail()?.message_id || '';
+    const target = (harnessState?.needs_attention_items || []).find((item) => item.message_id && item.message_id !== current);
+    if (target) setContextFromItem(target);
+    return Boolean(target);
+  })()`);
+  await waitFor(() => evaluate("document.querySelector('[data-ea-selected-state=\"review\"]') !== null"));
+  const afterPartialChange = await decisionSnapshot();
+  assertEqual(afterPartialChange.hasReceipt, false, "partial receipt resets on another email");
+
+  await moveToPromotionsPreview();
+  await evaluate("document.querySelector('[data-apply-mode=\"current-only\"]').click()");
+  await waitFor(() => evaluate("document.querySelector('[data-ea-selected-state=\"applying\"]') !== null"));
+  await resolveNextApply(successPayload({ inboxRemoved: 0, inboxFailed: 0 }));
+  await waitFor(() => evaluate("document.querySelector('[data-ea-selected-state=\"receipt\"]') !== null"));
+  await evaluate("document.querySelector('[data-action=\"teach-future-after-receipt\"]').click()");
+  await waitFor(() => evaluate("document.querySelector('[data-ea-selected-state=\"future-learning\"]') !== null"));
+  const futureRequestCount = (await capturedRequests()).length;
+  await evaluate(`(() => {
+    const note = document.querySelector('#sim-future-note');
+    note.value = 'Use Promotions for future messages from this list.';
+    const button = document.querySelector('[data-action="save-future-learning"]');
+    button.click();
+    applyTeach('save-future-rule');
+    return true;
+  })()`);
+  await waitFor(async () => (await capturedRequests()).at(-1)?.mode === "save-future-rule");
+  const futureRequests = await capturedRequests();
+  assertEqual(futureRequests.length, futureRequestCount + 1, "duplicate future Save is blocked");
+  const futureRequest = futureRequests.at(-1);
+  assertEqual(futureRequest.mode, "save-future-rule", "future learning uses no-write save-future-rule mode");
+  assertEqual(futureRequest.target_label, "promotions", "future rule preserves the selected internal label");
+  await resolveNextApply({
+    acknowledgment: "Synthetic future rule saved without Gmail mutation.",
+    outcome: {
+      state: "future-rule-saved",
+      scope: "future-rule",
+      current_email_changed_locally: false,
+      current_email_written_to_gmail: false,
+      matching_existing_changed_locally: 0,
+      future_rule_saved: true,
+      gmail_write_mode: "no-gmail-write-future-rule-only",
+      gmail_label_write_failed: 0,
+    },
+    gmail_write_through: { messages_written: 0, inbox_removed: 0, inbox_remove_failed: 0 },
+  });
+  await waitFor(() => evaluate("document.querySelector('[data-ea-selected-state=\"receipt\"]')?.textContent.includes('Future rule saved for review')"));
+  const futureSaved = await decisionSnapshot();
+  assertWorkspace(futureSaved, "receipt", "selected-email");
+  assertEqual(futureSaved.primaryActions.length, 0, "saved future candidate has no repeated primary action");
+
+  const broadRequestCount = (await capturedRequests()).length;
+  await evaluate(`(() => {
+    teachPreview = {
+      plain_english_rule: 'Use Promotions for matching messages.',
+      inbox_backfill: { available: true, requires_confirmation: true, estimated_count: 2 }
+    };
+    selectedDecisionMode = 'teaching';
+    teachFlowState = 'scope-confirmation';
+    renderSelectedPanel();
+    document.querySelector('[data-apply-mode="apply-included"]').click();
+    return true;
+  })()`);
+  assertEqual((await capturedRequests()).length, broadRequestCount, "broad apply waits for explicit confirmation");
+  await evaluate(`(() => {
+    const button = document.querySelector('[data-action="confirm-inbox-apply"]');
+    button.click();
+    applyTeach('apply-included');
+    return true;
+  })()`);
+  await waitFor(async () => (await capturedRequests()).length === broadRequestCount + 1);
+  const broadRequest = (await capturedRequests()).at(-1);
+  assertEqual(broadRequest.mode, "apply-included", "confirmed broad apply uses apply-included");
+  await resolveNextApply({ error: "Synthetic broad apply stopped." });
+  await waitFor(() => evaluate("document.querySelector('[data-ea-selected-state=\"blocked\"]') !== null"));
+
+  await evaluate(`(async () => {
+    currentContext = { ...currentContext, selected_at: new Date().toISOString() };
     await refreshState();
     return true;
   })()`);
-  await waitFor(() => evaluate("document.querySelector('#sim-selected-email a[href^=\"/unsubscribe-review\"]') !== null"));
-  const unsubscribeState = await evaluate(`(() => {
-    const quick = document.querySelector('[data-action="select-unsubscribe"]');
-    const handoff = document.querySelector('#sim-selected-email a[href^="/unsubscribe-review"]');
-    const external = Array.from(document.querySelectorAll('#sim-selected-email a')).find((node) => node.getAttribute('href') !== '/unsubscribe-review');
-    const rawHttpExternal = Array.from(document.querySelectorAll('#sim-selected-email a[href^="http"]')).find((node) => !node.getAttribute('href').includes('/unsubscribe-review'));
-    return {
-      title: document.querySelector('#sim-selected-email .reason-wrap .reason')?.innerText || '',
-      quickActionVisible: !!quick,
-      handoffVisible: !!handoff,
-      externalLabel: external?.innerText || '',
-      rawHttpExternalVisible: !!rawHttpExternal
-    };
-  })()`);
-  if (await evaluate("document.querySelector('[data-action=\"select-unsubscribe\"]') !== null")) {
-    await evaluate(`(() => {
-      document.querySelector('[data-action="select-unsubscribe"]').click();
-      return true;
-    })()`);
-    await waitFor(() => evaluate("document.querySelector('#sim-selected-email').innerText.includes('Queued')"));
-  }
-  const unsubscribeAfterQueue = await evaluate(`({
-    queueAckPresent: document.querySelector('#sim-selected-email').innerText.includes('Queued'),
-    reviewLinkPresent: !!document.querySelector('#sim-selected-email a[href^="/unsubscribe-review"]')
-  })`);
+  await waitFor(() => evaluate("document.querySelector('[data-ea-selected-state=\"understanding\"]') !== null"));
+  const understanding = await decisionSnapshot();
+  assertWorkspace(understanding, "understanding", "selected-email");
+  assertEqual(understanding.primaryActions.length, 0, "understanding has no primary action");
 
-  await evaluate(`(() => {
-    const button =
-      document.querySelector('#sim-filter-pills [data-filter="needs_attention_items"]') ||
-      document.querySelector('#sim-filter-pills [data-filter="recent_items"]');
-    if (button) button.click();
-    return true;
-  })()`);
-  await waitFor(() => evaluate(`(() => {
-    const button =
-      document.querySelector('#sim-filter-pills [data-filter="needs_attention_items"]') ||
-      document.querySelector('#sim-filter-pills [data-filter="recent_items"]');
-    return !!button && button.classList.contains('active');
-  })()`));
+  await evaluate("document.querySelector('#sim-unsynced').click()");
+  await waitFor(() => evaluate("document.querySelector('[data-ea-selected-state=\"blocked\"]') !== null"));
+  const snapshotMiss = await decisionSnapshot();
+  assertWorkspace(snapshotMiss, "blocked", "selected-email");
+  assertEqual(snapshotMiss.primaryActions.join(","), "Return to fixture list", "snapshot miss stays fixture-only");
 
-  await evaluate(`(() => {
-    const target = Array.from(document.querySelectorAll('#sim-list [data-queue-message-id]'))
-      .find((node) => node.innerText.toLowerCase().includes('linkedin job alerts'));
-    if (target) target.click();
-    return true;
-  })()`);
-  await waitFor(() => evaluate("(document.querySelector('#sim-selected-email .sender')?.innerText || '').toLowerCase().includes('linkedin')"));
+  await evaluate("document.querySelector('#sim-home').click()");
+  await waitFor(() => evaluate("document.querySelector('[data-ea-workspace-body=\"home\"]') !== null"));
+  const home = await decisionSnapshot();
+  assertWorkspace(home, "home", "home");
+  assertEqual(home.hasSelectedEmail, false, "Home excludes selected email");
+  assertEqual(home.hasActivityRoute, true, "Home routes Activity separately");
+  assertEqual(home.hasSubscriptionRoute, true, "Home routes subscription cleanup separately");
 
-  const selectedBefore = await evaluate(`({
-    selectedSubject: document.querySelector('#sim-selected-email .subject')?.innerText || '',
-    classification: document.querySelector('#sim-selected-email .classification-pill')?.innerText || '',
-    status: document.querySelector('#sim-selected-email .warn-pill, #sim-selected-email .status-pill')?.innerText || ''
-  })`);
-
-  await evaluate(`(() => {
-    document.querySelector('#sim-target-label').value = 'job-related';
-    document.querySelector('#sim-target-label').dispatchEvent(new Event('change', { bubbles: true }));
-    const note = document.querySelector('#sim-teach-note');
-    note.value = 'Simulator teaching pass: LinkedIn job alerts should be work-related and kept visible.';
-    note.dispatchEvent(new Event('input', { bubbles: true }));
-    document.querySelector('[data-action="preview-teach"]').click();
-    return true;
-  })()`);
-  await waitFor(() => evaluate("document.querySelector('.preview-card[data-teach-state=\"rule-proposed\"]') !== null"));
-
-  const previewState = await evaluate(`({
-    previewVisible: !!document.querySelector('.preview-card'),
-    previewText: document.querySelector('.preview-card')?.innerText || '',
-    looksRightVisible: !!document.querySelector('[data-action="accept-teach-rule"]'),
-    editVisible: !!document.querySelector('[data-action="refine-teach"]')
-  })`);
-
-  await evaluate(`(() => {
-    const button = document.querySelector('[data-action="accept-teach-rule"]');
-    if (button) button.click();
-    return true;
-  })()`);
-  await waitFor(() => evaluate("document.querySelector('[data-apply-mode=\"future-only\"]') !== null"));
-
-  const scopeState = await evaluate(`({
-    scopeVisible: !!document.querySelector('.preview-card'),
-    scopeText: document.querySelector('.preview-card')?.innerText || '',
-    applyButtons: Array.from(document.querySelectorAll('[data-apply-mode]')).map((node) => node.innerText)
-  })`);
-
-  await evaluate(`(() => {
-    const originalFetch = window.fetch.bind(window);
-    let failedOnce = false;
-    window.fetch = (input, init) => {
-      const url = String(input || "");
-      if (!failedOnce && url.includes('/api/teach-apply')) {
-        failedOnce = true;
-        return Promise.resolve(new Response(JSON.stringify({
-          error: 'Simulated companion disconnect. Nothing was stored or changed. The preview is still here so you can check the connection and retry without rewriting your note.'
-        }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
-      }
-      return originalFetch(input, init);
-    };
-    document.querySelector('[data-apply-mode="current-only"]').click();
-    return true;
-  })()`);
-  await waitFor(() => evaluate("document.querySelector('.error-card') !== null && document.querySelector('.preview-card') !== null"));
-
-  const failedApplyState = await evaluate(`({
-    errorText: document.querySelector('.error-card')?.innerText || '',
-    previewStillVisible: !!document.querySelector('.preview-card'),
-    recoveryActions: Array.from(document.querySelectorAll('.error-card button')).map((node) => node.innerText),
-    panelOverflow: (() => {
+  const overflow = {};
+  for (const width of [360, 390, 420]) {
+    await send("Emulation.setDeviceMetricsOverride", {
+      width,
+      height: 900,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    overflow[width] = await evaluate(`(() => {
       const panel = document.querySelector('.panel');
-      const error = document.querySelector('.error-card');
-      if (!panel || !error) return null;
-      return error.getBoundingClientRect().right - panel.getBoundingClientRect().right;
-    })()
-  })`);
-
-  if (applyMode === "apply-included") {
-    await evaluate(`(() => {
-      const button = document.querySelector('[data-action="open-affected-review"]');
-      if (button) button.click();
-      return true;
+      const workspace = document.querySelector('#sim-workspace');
+      return Math.max(
+        (panel?.scrollWidth || 0) - (panel?.clientWidth || 0),
+        (workspace?.scrollWidth || 0) - (workspace?.clientWidth || 0)
+      );
     })()`);
-    await waitFor(() => evaluate("document.querySelector('.affected-review') !== null && document.querySelector('[data-apply-mode=\"apply-included\"]') !== null"));
+    if (overflow[width] > 1) throw new Error(`Simulator overflowed by ${overflow[width]}px at ${width}px`);
   }
-
-  await evaluate(`(() => {
-    document.querySelector('[data-apply-mode="${applyMode}"]').click();
-    return true;
-  })()`);
-  await waitFor(() => evaluate("document.querySelector('.success-card') !== null"));
-
-  const afterApply = await evaluate(`({
-    successText: document.querySelector('.success-card')?.innerText || '',
-    selectedSubject: document.querySelector('#sim-selected-email .subject')?.innerText || '',
-    simulatorModeText: document.body.innerText.includes('disables Gmail write-through'),
-    needsAttentionSummary: document.querySelector('#sim-daily-summary')?.innerText || '',
-    draftNote: document.querySelector('#sim-teach-note')?.value || '',
-    previousVisible: !!document.querySelector('[data-previous-preview="true"]')
-  })`);
-
-  await evaluate(`(() => { document.querySelector('#sim-unsynced').click(); return true; })()`);
-  await waitFor(() => evaluate("document.body.innerText.includes('Threadwise has not synced this email yet')"));
-
-  const unsyncedState = await evaluate(`({
-    readingPaneTitle: document.querySelector('#sim-message .message-title')?.innerText || '',
-    panelNoticePresent: document.body.innerText.includes('Threadwise has not synced this email yet'),
-    queueVisible: document.body.innerText.toLowerCase().includes('current queue')
-  })`);
-
-  await evaluate(`(() => {
-    const firstQueueItem = document.querySelector('#sim-selected-email [data-queue-message-id]');
-    if (firstQueueItem) {
-      firstQueueItem.click();
-      return true;
-    }
-    return false;
-  })()`);
-  await waitFor(() => evaluate("document.querySelector('#sim-selected-email .subject') !== null"));
-
-  const queueRecoveryState = await evaluate(`({
-    selectedSubject: document.querySelector('#sim-selected-email .subject')?.innerText || '',
-    queuePreviewed: !document.body.innerText.includes('Threadwise has not synced this email yet')
-  })`);
-
-  await evaluate(`(() => {
-    const button = document.querySelector('#sim-daily-summary [data-filter="recent_items"]');
-    if (button) {
-      button.click();
-      return true;
-    }
-    return false;
-  })()`);
-  await waitFor(() => evaluate("document.querySelector('#sim-daily-summary [data-filter=\"recent_items\"]')?.classList.contains('active') === true"));
-  await evaluate(`(() => {
-    const firstQueueItem = document.querySelector('#sim-daily-summary [data-queue-message-id]');
-    if (firstQueueItem) {
-      firstQueueItem.click();
-      return true;
-    }
-    return false;
-  })()`);
-  await waitFor(() => evaluate("document.querySelector('#sim-selected-email .subject') !== null"));
-
-  const summaryNavigationState = await evaluate(`({
-    recentFilterActive: !!document.querySelector('#sim-daily-summary [data-filter="recent_items"].active'),
-    selectedSubject: document.querySelector('#sim-selected-email .subject')?.innerText || ''
-  })`);
 
   const result = {
-    initialState,
-    keptVisibleCount,
-    unsubscribeState,
-    unsubscribeAfterQueue,
-    selectedBefore,
-    previewState,
-    scopeState,
-    failedApplyState,
-    afterApply,
-    unsyncedState,
-    queueRecoveryState,
-    summaryNavigationState,
+    review,
+    autoLabeledTruth,
+    loading,
+    accepting,
+    blockedApply,
+    change,
+    conflict,
+    preview,
+    applying,
+    receipt,
+    future,
+    nextReview,
+    partial,
+    futureRequest,
+    futureSaved,
+    broadRequest,
+    understanding,
+    snapshotMiss,
+    home,
+    overflow,
+    analyticsHooksPresent: Boolean(await evaluate("globalThis.ThreadwiseAnalytics")),
+    uncaughtErrorCount: uncaughtErrors.length,
   };
-
   console.log(JSON.stringify(result, null, 2));
-
-  if (
-    !(initialState.title.includes("Threadwise") && initialState.title.includes("Simulator")) ||
-    initialState.listCount < 1 ||
-    initialState.minimizeLabel !== "Minimize" ||
-    keptVisibleCount < 1 ||
-    !unsubscribeState.handoffVisible ||
-    unsubscribeState.rawHttpExternalVisible ||
-    (unsubscribeState.quickActionVisible === false && unsubscribeState.externalLabel === "") ||
-    !unsubscribeAfterQueue.reviewLinkPresent ||
-    !selectedBefore.selectedSubject ||
-    !previewState.previewText.includes("EA/Work") ||
-    !previewState.previewVisible ||
-    !previewState.previewText.toLowerCase().includes("proposed rule") ||
-    !previewState.looksRightVisible ||
-    !previewState.editVisible ||
-    !scopeState.scopeVisible ||
-    !scopeState.scopeText.includes("Choose how broadly to apply this rule") ||
-    !scopeState.scopeText.includes("Fix + future") ||
-    !scopeState.scopeText.includes("Fix + inbox") ||
-    !scopeState.applyButtons.includes("Fix email") ||
-    !scopeState.applyButtons.includes("Fix + future") ||
-    !scopeState.applyButtons.includes("Fix + inbox") ||
-    !failedApplyState.errorText.includes("Nothing was stored or changed") ||
-    !failedApplyState.previewStillVisible ||
-    !failedApplyState.recoveryActions.includes("Check again") ||
-    !failedApplyState.recoveryActions.includes("Try fix again") ||
-    failedApplyState.panelOverflow > 1 ||
-    !(applyMode === "future-only"
-      ? afterApply.successText.includes("future rule")
-      : afterApply.successText.includes("rewrote")) ||
-    (applyMode === "apply-included" && (
-      !afterApply.successText.includes("included stored emails")
-      || !afterApply.successText.includes("saved exceptions")
-      || !afterApply.successText.includes("saved a future rule")
-    )) ||
-    afterApply.draftNote !== "" ||
-    afterApply.previousVisible ||
-    !unsyncedState.panelNoticePresent ||
-    !unsyncedState.queueVisible ||
-    !queueRecoveryState.queuePreviewed ||
-    queueRecoveryState.selectedSubject === "" ||
-    !summaryNavigationState.recentFilterActive ||
-    summaryNavigationState.selectedSubject === ""
-  ) {
-    process.exitCode = 1;
+  if (uncaughtErrors.length) {
+    throw new Error(`Simulator emitted ${uncaughtErrors.length} uncaught runtime error(s)`);
   }
+  assertEqual(await evaluate("(window.__twProhibitedRequests || []).length"), 0, "simulator never requests live Gmail sync");
 } finally {
   socket.close();
+  await fetch(`${cdpBase}/json/close/${target.id}`).catch(() => {});
+}
+
+async function moveToPromotionsPreview() {
+  await evaluate("document.querySelector('[data-action=\"change-suggestion\"]').click()");
+  await waitFor(() => evaluate("document.querySelector('[data-ea-selected-state=\"change\"]') !== null"));
+  await evaluate(`(() => {
+    const select = document.querySelector('#sim-target-label');
+    select.value = 'promotions';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    const note = document.querySelector('#sim-teach-note');
+    note.value = '';
+    note.dispatchEvent(new Event('input', { bubbles: true }));
+    document.querySelector('[data-action="preview-current-change"]').click();
+    return true;
+  })()`);
+  await waitFor(() => evaluate("document.querySelector('[data-ea-selected-state=\"preview\"]') !== null"));
+}
+
+function successPayload({ inboxRemoved, inboxFailed }) {
+  return {
+    acknowledgment: "Synthetic current-email outcome.",
+    outcome: {
+      state: "changed",
+      scope: "current-email",
+      current_email_changed_locally: true,
+      current_email_written_to_gmail: true,
+      matching_existing_changed_locally: 0,
+      future_rule_saved: false,
+      gmail_write_mode: inboxFailed ? "partial" : "applied",
+      gmail_label_write_failed: 0,
+    },
+    gmail_write_through: {
+      messages_written: 1,
+      inbox_removed: inboxRemoved,
+      inbox_remove_failed: inboxFailed,
+    },
+  };
+}
+
+async function installTeachApplyInterceptor() {
+  await evaluate(`(() => {
+    window.__twOriginalFetch = window.fetch.bind(window);
+    window.__twCapturedRequests = [];
+    window.__twPendingResponses = [];
+    window.__twProhibitedRequests = [];
+    window.fetch = (input, init = {}) => {
+      const url = String(input || '');
+      if (url.includes('/api/gmail-check-run')) {
+        window.__twProhibitedRequests.push(url);
+        return Promise.reject(new Error('Simulator attempted a prohibited Gmail sync request.'));
+      }
+      if (url.includes('/api/harness-state') && window.__twHoldNextHarnessRefresh) {
+        window.__twHoldNextHarnessRefresh = false;
+        return new Promise((resolve) => {
+          window.__twReleaseHarnessRefresh = () => {
+            window.__twReleaseHarnessRefresh = null;
+            window.__twOriginalFetch(input, init).then(resolve);
+          };
+        });
+      }
+      if (!url.includes('/api/teach-apply')) return window.__twOriginalFetch(input, init);
+      let body = {};
+      try { body = JSON.parse(init.body || '{}'); } catch (_error) { body = {}; }
+      window.__twCapturedRequests.push(body);
+      return new Promise((resolve, reject) => {
+        window.__twPendingResponses.push({
+          resolve: (payload) => resolve(new Response(JSON.stringify(payload), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' }
+          })),
+          reject,
+        });
+      });
+    };
+    return true;
+  })()`);
+}
+
+async function capturedRequests() {
+  return evaluate("window.__twCapturedRequests || []");
+}
+
+async function resolveNextApply(payload) {
+  const resolved = await evaluate(`(() => {
+    const pending = (window.__twPendingResponses || []).shift();
+    if (!pending) return false;
+    pending.resolve(${JSON.stringify(payload)});
+    return true;
+  })()`);
+  if (!resolved) throw new Error("No intercepted teach-apply request was pending");
+}
+
+async function rejectNextApply(message) {
+  const rejected = await evaluate(`(() => {
+    const pending = (window.__twPendingResponses || []).shift();
+    if (!pending) return false;
+    pending.reject(new Error(${JSON.stringify(message)}));
+    return true;
+  })()`);
+  if (!rejected) throw new Error("No intercepted teach-apply request was pending");
+}
+
+async function decisionSnapshot() {
+  return evaluate(`(() => {
+    const workspace = document.querySelector('#sim-workspace');
+    const state = workspace?.querySelector('[data-ea-selected-state]');
+    const visiblePrimaries = [...(workspace?.querySelectorAll('[data-tw-primary-action]') || [])]
+      .filter((node) => getComputedStyle(node).display !== 'none' && getComputedStyle(node).visibility !== 'hidden');
+    return {
+      mode: workspace?.dataset.eaWorkspaceMode || '',
+      bodyCount: workspace?.querySelectorAll(':scope > [data-ea-workspace-body]').length || 0,
+      state: state?.dataset.eaSelectedState || workspace?.dataset.eaSelectedState || '',
+      messageId: selectedEmail()?.message_id || '',
+      suggestion: state?.querySelector('[data-ea-review-suggestion]')?.textContent?.trim() || '',
+      heading: state?.querySelector('[data-ea-preview-heading]')?.textContent?.trim() || '',
+      effect: state?.querySelector('[data-ea-preview-effect]')?.textContent?.trim() || '',
+      conflict: state?.querySelector('[data-ea-label-conflict]')?.textContent?.trim() || '',
+      selectedLabel: state?.querySelector('#sim-target-label')?.value || '',
+      primaryActions: visiblePrimaries.map((node) => node.textContent.trim()),
+      hasDailySummary: !!workspace?.querySelector('#sim-daily-summary'),
+      hasUnsubscribeJob: !!workspace?.querySelector('[data-action="select-unsubscribe"], a[href^="/unsubscribe-review"]'),
+      hasSelectedEmail: !!workspace?.querySelector('#sim-selected-email'),
+      hasReceipt: !!workspace?.querySelector('[data-ea-selected-state="receipt"]'),
+      hasActivityRoute: !!workspace?.querySelector('a[href="/daily-dashboard"]'),
+      hasSubscriptionRoute: !!workspace?.querySelector('a[href="/unsubscribe-review"]'),
+    };
+  })()`);
+}
+
+async function receiptSnapshot() {
+  const base = await decisionSnapshot();
+  const details = await evaluate(`(() => {
+    const state = document.querySelector('[data-ea-selected-state="receipt"]');
+    return {
+      heading: state?.querySelector('[data-ea-receipt-heading]')?.textContent?.trim() || '',
+      outcomes: [...(state?.querySelectorAll('[data-ea-receipt-outcome]') || [])].map((node) => node.textContent.trim()),
+      followUps: [...(state?.querySelectorAll('[data-action="teach-future-after-receipt"]') || [])].map((node) => node.textContent.trim()),
+    };
+  })()`);
+  return { ...base, ...details };
+}
+
+function assertWorkspace(snapshot, expectedState, expectedMode) {
+  assertEqual(snapshot.bodyCount, 1, `${expectedState} has one workspace body`);
+  assertEqual(snapshot.mode, expectedMode, `${expectedState} workspace mode`);
+  assertEqual(snapshot.state, expectedState, `${expectedState} state marker`);
+  if (snapshot.primaryActions.length > 1) {
+    throw new Error(`${expectedState} exposed ${snapshot.primaryActions.length} primary actions`);
+  }
+}
+
+function assertEqual(actual, expected, label) {
+  if (actual !== expected) {
+    throw new Error(`${label}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`);
+  }
+}
+
+function assertNotEqual(actual, unexpected, label) {
+  if (actual === unexpected) {
+    throw new Error(`${label}: did not expect ${JSON.stringify(unexpected)}`);
+  }
 }
 
 async function createTarget(url) {
   const response = await fetch(`${cdpBase}/json/new?${encodeURIComponent(url)}`, { method: "PUT" });
-  if (!response.ok) {
-    throw new Error(`Could not create Chrome target: ${response.status}`);
-  }
+  if (!response.ok) throw new Error(`Could not create Chrome target: ${response.status}`);
   return response.json();
 }
 
 function send(method, params = {}) {
   const id = nextId++;
   socket.send(JSON.stringify({ id, method, params }));
-  return new Promise((resolve, reject) => {
-    pending.set(id, { resolve, reject });
-  });
+  return new Promise((resolve, reject) => pending.set(id, { resolve, reject }));
 }
 
 async function evaluate(expression) {
@@ -351,13 +521,12 @@ async function evaluate(expression) {
     returnByValue: true,
   });
   if (result.exceptionDetails) {
-    const details = result.exceptionDetails;
-    const exceptionText =
-      details.exception?.description ||
-      details.exception?.value ||
-      details.text ||
-      "Evaluation failed";
-    throw new Error(exceptionText);
+    throw new Error(
+      result.exceptionDetails.exception?.description ||
+      result.exceptionDetails.exception?.value ||
+      result.exceptionDetails.text ||
+      "Evaluation failed",
+    );
   }
   return result.result.value;
 }
@@ -365,16 +534,9 @@ async function evaluate(expression) {
 async function waitFor(fn, timeoutMs = 15000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (await fn()) {
-      return;
-    }
+    if (await fn()) return;
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
-  let pageState = "";
-  try {
-    pageState = await evaluate("document.body.innerText.slice(0, 2000)");
-  } catch (_error) {
-    pageState = "<page-state-unavailable>";
-  }
-  throw new Error(`Timed out waiting for browser state. Snapshot:\\n${pageState}`);
+  const pageState = await evaluate("document.body.innerText.slice(0, 2000)").catch(() => "<unavailable>");
+  throw new Error(`Timed out waiting for browser state. Snapshot:\n${pageState}`);
 }

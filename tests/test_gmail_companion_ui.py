@@ -9,6 +9,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from scripts.run_gmail_companion_simulator import main as run_simulator_main
+
 from src.attention_feedback import load_attention_feedback
 from src.attention_rules import attention_rules_path
 from src.candidate_change_store import CandidateChange, CandidateChangeStore
@@ -408,6 +410,30 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("safe local inbox simulator", result.stdout)
         self.assertNotIn("ModuleNotFoundError", result.stderr)
 
+    def test_simulator_launcher_disables_gmail_check_execution(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source_dir = root / "source"
+            simulator_dir = root / "simulator"
+            source_dir.mkdir()
+            with patch(
+                "scripts.run_gmail_companion_simulator.run_companion_main",
+                return_value=0,
+            ) as run_main:
+                exit_code = run_simulator_main(
+                    [
+                        "--source-storage-dir",
+                        str(source_dir),
+                        "--simulator-storage-dir",
+                        str(simulator_dir),
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        companion_args = run_main.call_args.args[0]
+        self.assertIn("--disable-gmail-write-through", companion_args)
+        self.assertIn("--disable-gmail-check", companion_args)
+
     def test_main_prints_local_url(self) -> None:
         stdout = io.StringIO()
         fake_server = _FakeServer(server_port=45123)
@@ -415,7 +441,7 @@ class GmailCompanionUiTests(unittest.TestCase):
         exit_code = main(
             ["--storage-dir", "/tmp/example"],
             stdout=stdout,
-            server_factory=lambda host, port, storage_dir, gmail_write_through_enabled=True: fake_server,
+            server_factory=lambda host, port, storage_dir, gmail_write_through_enabled=True, gmail_check_enabled=True: fake_server,
         )
 
         self.assertEqual(exit_code, 0)
@@ -472,8 +498,9 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("Simulated Inbox", page)
         self.assertIn("Load unsynced message", page)
         self.assertIn("Threadwise has not synced this email yet", page)
-        self.assertIn("Preview a synced email below", page)
-        self.assertIn("Run Gmail sync now", page)
+        self.assertIn("Pick a synced queue item below", page)
+        self.assertIn("Return to fixture list", page)
+        self.assertNotIn("/api/gmail-check-run", page)
         self.assertNotIn("Current category", page)
         self.assertNotIn("Handling status", page)
         self.assertNotIn("Short reason", page)
@@ -490,18 +517,43 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("Fix + inbox", page)
         self.assertIn("Apply to inbox?", page)
         self.assertIn("What changed", page)
-        self.assertIn("Review unsubscribe candidates", page)
-        self.assertIn("Report details", page)
-        self.assertIn("What Changed Today", page)
-        self.assertIn("Correct / Teach", page)
+        self.assertIn("Subscription cleanup", page)
+        self.assertNotIn("Report details", page)
+        self.assertNotIn("What Changed Today", page)
+        self.assertNotIn("Correct / Teach", page)
         self.assertIn("data-queue-message-id", page)
-        self.assertIn("Current Queue", page)
+        self.assertNotIn("Current Queue", page)
         self.assertIn("What to do now", page)
-        self.assertIn("Viewing", page)
+        self.assertNotIn("Viewing", page)
         self.assertIn("Rule applied", page)
         self.assertIn("Try fix again", page)
         self.assertIn("data-action=\"refresh-state\"", page)
         self.assertIn("overflow-wrap:anywhere", page)
+
+    def test_simulator_page_exposes_one_decision_copilot_workspace_contract(self) -> None:
+        app = GmailCompanionApp(Path("/tmp/example"), gmail_write_through_enabled=False)
+
+        page = app.render_simulator()
+
+        self.assertIn('id="sim-workspace"', page)
+        self.assertIn('data-ea-workspace-body="selected-email"', page)
+        self.assertIn('data-ea-workspace-body="home"', page)
+        self.assertIn('data-ea-selected-state="review"', page)
+        self.assertIn('data-ea-selected-state="change"', page)
+        self.assertIn('data-tw-primary-action', page)
+        self.assertIn("Threadwise suggests", page)
+        self.assertIn("Preview change", page)
+        self.assertIn("let applyInFlight = false", page)
+        self.assertIn("finally {", page)
+        self.assertIn("Future rule saved for review", page)
+        self.assertIn("Saved as a learning candidate. No Gmail messages were changed.", page)
+        self.assertIn("Inbox removal needs attention. Open Activity for details.", page)
+        self.assertIn('<option value="" selected disabled>Choose a label</option>', page)
+        self.assertIn('data-ea-handled-kind="${escapeHtml(handledKind)}"', page)
+        self.assertIn("Threadwise classified this email and kept it visible. Gmail label not confirmed.", page)
+        self.assertIn('"Gmail label applied. Kept in Inbox."', page)
+        self.assertIn('"Gmail label applied. Removed from Inbox."', page)
+        self.assertNotIn('<div class="eyebrow">Agent View</div>', page)
 
     def test_unsubscribe_review_page_lists_candidates(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -888,6 +940,19 @@ class GmailCompanionUiTests(unittest.TestCase):
 
             with self.assertRaises(ValueError):
                 app.trigger_gmail_check({"account_id": "founder-test"})
+
+    def test_disabled_gmail_check_fails_closed_without_calling_supplied_runner(self) -> None:
+        calls = []
+        app = GmailCompanionApp(
+            Path("/tmp/example"),
+            gmail_check_enabled=False,
+            gmail_run_runner=lambda payload: calls.append(payload),
+        )
+
+        with self.assertRaisesRegex(ValueError, "Gmail checks are disabled"):
+            app.trigger_gmail_check({"confirmed": "true", "account_id": "founder-test"})
+
+        self.assertEqual(calls, [])
 
     def test_dashboard_gmail_check_blocks_duplicate_active_run(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

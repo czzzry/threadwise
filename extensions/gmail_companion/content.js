@@ -38,6 +38,10 @@
   let autoHandledChangeOpen = false;
   let selectedDecisionMode = "review";
   let selectedDecisionConflict = "";
+  let futureLearningError = "";
+  let currentApplyError = "";
+  let applyInFlight = false;
+  let recordedSuggestionDecisions = { approve: false, edit: false };
   let lastSelectedMessageId = "";
   let affectedReviewOpen = false;
   let gmailCheckPending = false;
@@ -376,33 +380,17 @@
   }
 
   function renderLoadingState(message) {
-    const selectedEmailNode = document.getElementById("ea-selected-email");
-    const selectedEmailSecondaryNode = document.getElementById("ea-selected-email-secondary");
-    const teachPanelNode = document.getElementById("ea-teach-panel");
-    const dailySummaryNode = document.getElementById("ea-daily-summary");
     lastConnectionState = normalizeConnectionState({
       kind: "ready",
       label: "Ready",
       details: "Threadwise is responding at the local companion server.",
     });
-    if (selectedEmailNode) {
-      setHtml(selectedEmailNode, `
-        <div style="margin-top:10px;color:#0f766e;line-height:1.45;">${escapeHtml(message)}</div>
-        <div style="margin-top:10px;border-radius:14px;background:#d8f3ef;padding:12px;color:#0f766e;line-height:1.45;">
-          The helper is up. Threadwise is loading the inbox snapshot and queue state.
-        </div>
-      `);
-    }
-    if (teachPanelNode) {
-      setHtml(teachPanelNode, `<div style="color:#6b6255;line-height:1.45;">Loading the current inbox state before teaching corrections.</div>`);
-    }
-    if (selectedEmailSecondaryNode) {
-      setHtml(selectedEmailSecondaryNode, "");
-    }
-    if (dailySummaryNode) {
-      setHtml(dailySummaryNode, `<div style="margin-top:10px;color:#6b6255;line-height:1.45;">The local companion is reachable. Waiting for the inbox state payload.</div>`);
-    }
-    renderMinimized();
+    renderStandaloneWorkspace("loading", `
+      <div data-ea-selected-state="loading" role="status" aria-live="polite" aria-busy="true" style="display:grid;gap:12px;">
+        <h2 style="margin:0;font-size:1.3rem;line-height:1.2;">Loading Threadwise</h2>
+        <div style="border-radius:14px;background:#d8f3ef;padding:12px;color:#0f766e;line-height:1.45;">${escapeHtml(message)}</div>
+      </div>
+    `);
   }
 
   function chooseRefreshContext() {
@@ -596,16 +584,12 @@
 
   function renderError(message, connectionState) {
     lastConnectionState = normalizeConnectionState(connectionState || lastConnectionState);
-    const selectedEmailNode = document.getElementById("ea-selected-email");
-    const selectedEmailSecondaryNode = document.getElementById("ea-selected-email-secondary");
-    const teachPanelNode = document.getElementById("ea-teach-panel");
-    const dailySummaryNode = document.getElementById("ea-daily-summary");
     const statusCopy = connectionStatusCopy();
     const remediation = connectionRemediationCopy(lastConnectionState);
     const errorTitle = errorTitleForConnection(lastConnectionState);
     const friendlyMessage = friendlyErrorMessage(message);
-    if (selectedEmailNode) {
-      setHtml(selectedEmailNode, `
+    renderStandaloneWorkspace("error", `
+      <div data-ea-selected-state="error" role="alert" style="display:grid;gap:12px;">
         <div style="margin-top:10px;border:2px solid #241812;border-radius:14px;background:#fff4dd;padding:12px;color:#8a4b00;line-height:1.45;box-shadow:2px 2px 0 rgba(36,24,18,.18);">
           <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#8a4b00;font-weight:900;">${escapeHtml(statusCopy.label)}</div>
           <div style="margin-top:8px;font-size:1.05rem;font-weight:840;color:#241812;">${escapeHtml(errorTitle)}</div>
@@ -617,28 +601,18 @@
         </div>
         <div style="margin-top:10px;border-radius:14px;background:#fffdf7;padding:12px;color:#8a4b00;line-height:1.45;">
           <div style="font-weight:700;">What to do</div>
+          <div style="margin-top:6px;">Reconnect Threadwise before teaching corrections.</div>
           <ul style="margin:8px 0 0;padding-left:18px;">
             ${remediation.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
           </ul>
-          <button type="button" data-ea-action="force-refresh" style="margin-top:12px;border:2px solid #241812;background:#ffc64a;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Check again</button>
+          <button type="button" data-ea-action="force-refresh" data-tw-primary-action style="margin-top:12px;min-height:44px;border:2px solid #241812;background:#ffc64a;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Check again</button>
         </div>
-      `);
-    }
-    if (teachPanelNode) {
-      setHtml(teachPanelNode, `<div style="color:#8a4b00;line-height:1.45;">Reconnect Threadwise before teaching corrections.</div>`);
-    }
-    if (selectedEmailSecondaryNode) {
-      setHtml(selectedEmailSecondaryNode, "");
-    }
-    if (dailySummaryNode) {
-      setHtml(dailySummaryNode, `
         <details style="margin-top:10px;color:#6b6255;line-height:1.45;">
           <summary style="cursor:pointer;font-weight:800;color:#241812;">Connection details</summary>
           <div style="margin-top:8px;overflow-wrap:anywhere;">${escapeHtml(lastConnectionState.details || "Threadwise did not provide a connection detail.")}</div>
         </details>
-      `);
-    }
-    renderMinimized();
+      </div>
+    `);
   }
 
   function errorTitleForConnection(state) {
@@ -740,26 +714,121 @@
     });
   }
 
-  function renderWorkspaceShell(mode, selectedState = "") {
+  function selectedMessageIdentity(sidebarState, selected) {
+    const context = (sidebarState && sidebarState.selected_context) || lastLiveContext || {};
+    const provider = selected?.provider || context.provider || "gmail";
+    const messageId = selected?.message_id || context.message_id || "";
+    if (messageId) {
+      return `${provider}:${messageId}`;
+    }
+    const subject = selected?.subject || context.subject || "";
+    const sender = selected?.sender || context.sender || "";
+    if (subject && sender) {
+      return `${provider}:${normalizedSender(sender)}:${normalizedSubject(subject)}`;
+    }
+    return selected?.status === "idle" || !selected ? "home" : "";
+  }
+
+  function resetPerEmailInteraction() {
+    teachPreview = null;
+    previousTeachPreview = null;
+    teachResult = null;
+    teachFlowState = "teaching";
+    inboxApplyConfirmOpen = false;
+    teachOutcome = null;
+    teachWriteThrough = null;
+    unsubscribeResult = "";
+    detailsExpanded = false;
+    autoHandledChangeOpen = false;
+    selectedDecisionMode = "review";
+    selectedDecisionConflict = "";
+    futureLearningError = "";
+    currentApplyError = "";
+    recordedSuggestionDecisions = { approve: false, edit: false };
+    affectedReviewOpen = false;
+    teachDraft = { targetLabel: "", note: "" };
+  }
+
+  function hasFailedOrPendingHandling(selected) {
+    const details = (selected && selected.details) || {};
+    const statuses = [details.write_status, details.inbox_status]
+      .map((value) => String(value || "").toLowerCase())
+      .filter(Boolean);
+    return statuses.some((status) => /failed|error|pending|retry|partial/.test(status));
+  }
+
+  function isHandledSelection(selected) {
+    return ["auto-handled", "kept-visible", "auto-labeled"].includes(String(selected?.status || ""));
+  }
+
+  function isCurrentEmailResult() {
+    return teachFlowState === "result" && teachOutcome?.scope === "current-email";
+  }
+
+  function currentEmailResultIsPartial() {
+    if (!isCurrentEmailResult()) {
+      return false;
+    }
+    return !teachOutcome?.current_email_written_to_gmail
+      || Number(teachOutcome?.gmail_label_write_failed || 0) > 0
+      || Number(teachWriteThrough?.label_write_failed || 0) > 0
+      || Number(teachWriteThrough?.inbox_remove_failed || 0) > 0;
+  }
+
+  function resolveWorkspaceMode(sidebarState, selected) {
+    if (!selected || (selected.status === "idle" && !selectedMessageIdentity(sidebarState, selected))) {
+      return "home";
+    }
+    if (!selected.found) {
+      return selected.status === "idle" ? "home" : "blocked";
+    }
+    if (selectedUnderstandingActive(selected)) {
+      return "understanding";
+    }
+    if (selectedDecisionMode === "future-learning") {
+      if (teachFlowState === "applying") {
+        return "future-learning-applying";
+      }
+      if (teachFlowState === "result" && teachOutcome?.scope === "future-rule") {
+        return "future-learning-receipt";
+      }
+      return "future-learning";
+    }
+    if (currentApplyError) {
+      return "current-apply-error";
+    }
+    if (isCurrentEmailResult()) {
+      return currentEmailResultIsPartial() ? "partial-receipt" : "current-receipt";
+    }
+    if (teachFlowState === "applying") {
+      return "applying";
+    }
+    if (selectedDecisionMode === "teach-scope" && teachPreview && teachFlowState === "scope-confirmation") {
+      return "teach-scope";
+    }
+    if (selectedDecisionMode === "change" || autoHandledChangeOpen) {
+      return "change";
+    }
+    if (selectedDecisionMode === "preview") {
+      return "preview";
+    }
+    if (isHandledSelection(selected)) {
+      return hasFailedOrPendingHandling(selected) ? "blocked" : "handled-receipt";
+    }
+    return "review";
+  }
+
+  function renderWorkspaceShell(mode) {
     const workspace = document.getElementById("ea-workspace");
     if (!workspace) {
       return null;
     }
 
     workspace.dataset.eaWorkspaceMode = mode;
-    if (mode === "selected-email") {
-      const correctionPanel = selectedState === "auto-handled"
-        ? ""
-        : `
-          <div style="margin-top:14px;border:3px solid #241812;border-radius:18px;background:#ffe1a3;overflow:hidden;box-shadow:2px 2px 0 rgba(36,24,18,.18);">
-            <div style="min-height:40px;display:flex;align-items:center;padding:0 13px;border-bottom:3px solid #241812;background:#ffc64a;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.14em;color:#241812;font-weight:900;">Correct / Teach</div>
-            <div id="ea-teach-panel" style="display:grid;gap:12px;margin:12px;"></div>
-          </div>`;
+    if (mode !== "home") {
       setHtml(workspace, `
-        <section data-ea-workspace-body="selected-email" style="border:3px solid #241812;border-radius:18px;padding:16px;background:#fffdf7;box-shadow:2px 2px 0 rgba(36,24,18,.18);">
-          <div style="color:#6b6255;font-size:0.68rem;text-transform:uppercase;letter-spacing:0.14em;font-weight:820;">Agent View</div>
+        <section data-ea-workspace-body="${escapeHtml(mode)}" style="border:3px solid #241812;border-radius:18px;padding:16px;background:#fffdf7;box-shadow:2px 2px 0 rgba(36,24,18,.18);">
           <div id="ea-selected-email"></div>
-          ${correctionPanel}
           <div id="ea-selected-email-secondary"></div>
         </section>
       `);
@@ -775,34 +844,32 @@
     return {
       selectedEmailNode: document.getElementById("ea-selected-email") || document.createElement("div"),
       selectedEmailSecondaryNode: document.getElementById("ea-selected-email-secondary") || document.createElement("div"),
-      teachPanelNode: document.getElementById("ea-teach-panel") || document.createElement("div"),
-      dailySummaryNode: document.getElementById("ea-daily-summary") || document.createElement("div"),
+      teachPanelNode: document.getElementById("ea-teach-panel"),
+      dailySummaryNode: document.getElementById("ea-daily-summary"),
     };
+  }
+
+  function renderStandaloneWorkspace(mode, html) {
+    const nodes = renderWorkspaceShell(mode);
+    if (!nodes) {
+      return;
+    }
+    setHtml(nodes.selectedEmailNode, html);
+    setHtml(nodes.selectedEmailSecondaryNode, "");
+    renderMinimized();
   }
 
   function renderState(state) {
     lastHarnessState = normalizeHarnessState(state);
     lastSidebarState = lastHarnessState.sidebar_state;
     const selected = lastSidebarState.selected_email || null;
-    const selectedMessageId = selected?.found ? String(selected.message_id || "") : "";
+    const selectedMessageId = selectedMessageIdentity(lastSidebarState, selected);
     if (selectedMessageId !== lastSelectedMessageId) {
+      resetPerEmailInteraction();
       lastSelectedMessageId = selectedMessageId;
-      autoHandledChangeOpen = false;
-      selectedDecisionMode = "review";
-      selectedDecisionConflict = "";
-      detailsExpanded = false;
-      if (teachFlowState === "result" && teachOutcome?.scope === "current-email") {
-        teachFlowState = "teaching";
-        teachResult = null;
-        teachOutcome = null;
-        teachWriteThrough = null;
-        teachDraft = { targetLabel: "", note: "" };
-      }
     }
-    const selectedState = selected?.status === "auto-handled"
-      ? (autoHandledChangeOpen ? "change" : "auto-handled")
-      : (selected?.status || "");
-    const workspaceNodes = renderWorkspaceShell(selected?.found ? "selected-email" : "home", selectedState);
+    const workspaceMode = resolveWorkspaceMode(lastSidebarState, selected);
+    const workspaceNodes = renderWorkspaceShell(workspaceMode);
     if (!workspaceNodes) {
       return;
     }
@@ -831,7 +898,7 @@
       detailsExpanded = false;
     }
 
-    if (understandingActive) {
+    if (workspaceMode === "understanding") {
       const liveSubject = (selected && selected.subject) || (lastLiveContext && lastLiveContext.subject) || "(no subject)";
       const liveSender = (selected && selected.sender) || (lastLiveContext && lastLiveContext.sender) || "(unknown sender)";
       setHtml(selectedEmailNode, `
@@ -858,6 +925,29 @@
         <div style="margin-top:12px;border-radius:14px;background:#f5efe2;padding:12px;color:#1f1a14;line-height:1.45;">${escapeHtml(selectedUnderstandingMessage(selected))}</div>
         ${activityHtml}
       `);
+    } else if (workspaceMode === "home") {
+      setHtml(dailySummaryNode, "");
+    } else if (workspaceMode === "blocked") {
+      const hasSnapshotMiss = selected && selected.status === "not-in-snapshot";
+      const handlingFailed = selected?.found && hasFailedOrPendingHandling(selected);
+      const title = hasSnapshotMiss
+        ? "Threadwise has not synced this email yet."
+        : handlingFailed
+          ? "Threadwise could not finish handling this email."
+          : "Threadwise needs a fresh check before it can continue.";
+      const detail = hasSnapshotMiss
+        ? (selected.reason || "Run a Gmail sync to classify this email with the latest rules.")
+        : handlingFailed
+          ? "The label or Inbox step is still pending or failed. Threadwise will not describe it as handled until the recorded status is complete."
+          : (selected?.reason || "Refresh the current state and try again.");
+      setHtml(selectedEmailNode, `
+        <div data-ea-selected-state="blocked" role="status" style="display:grid;gap:12px;">
+          <h2 style="margin:0;font-size:1.3rem;line-height:1.2;">${escapeHtml(title)}</h2>
+          <div style="border-radius:14px;background:#fff4dd;padding:12px;color:#1f1a14;line-height:1.45;">${escapeHtml(detail)}</div>
+          <button type="button" data-ea-action="force-refresh" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#ffc64a;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Check again</button>
+        </div>
+      `);
+      setHtml(selectedEmailSecondaryNode, "");
     } else if (!selected || !selected.found) {
       const hasSnapshotMiss = selected && selected.status === "not-in-snapshot";
       const title = hasSnapshotMiss
@@ -930,74 +1020,132 @@
             : `<div style="color:#6b6255;line-height:1.45;">Select a synced email to preview or teach a correction.</div>`;
       setHtml(teachPanelNode, teachPanelHtml);
       setHtml(selectedEmailSecondaryNode, "");
-    } else if (selectedDecisionMode === "future-learning" && teachFlowState === "result" && teachOutcome?.scope === "current-email" && teachOutcome.current_email_written_to_gmail) {
-      const label = humanLabelNameFromId(teachDraft.targetLabel || selected.classification || "");
+    } else if (workspaceMode === "future-learning") {
+      const label = decisionLabelName(teachDraft.targetLabel || decisionSuggestedLabelId(selected) || selected.classification || "");
       setHtml(selectedEmailNode, `
         <div data-ea-selected-state="future-learning" style="display:grid;gap:12px;margin-top:10px;">
           <div>
             <div style="color:#8a4b00;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;font-weight:820;">Optional follow-up</div>
-            <div data-ea-preview-heading style="margin-top:6px;font-size:1.3rem;font-weight:840;line-height:1.15;overflow-wrap:anywhere;">Teach future emails</div>
+            <h2 data-ea-preview-heading style="margin:6px 0 0;font-size:1.3rem;font-weight:840;line-height:1.15;overflow-wrap:anywhere;">Teach future emails</h2>
           </div>
           <div style="border-radius:14px;background:#fff4dd;padding:12px;color:#1f1a14;line-height:1.45;">The current email is already changed to ${escapeHtml(label)}. Any lesson you create here applies to future emails only.</div>
           <label for="ea-future-note" style="display:grid;gap:7px;color:#241812;font-weight:760;">
             What should Threadwise remember?
-            <textarea id="ea-future-note" rows="4" placeholder="Describe which future emails should be ${escapeHtml(label)}" style="box-sizing:border-box;width:100%;padding:10px 12px;border-radius:11px;border:2px solid #241812;background:#fffdf7;color:#1f1a14;font:inherit;resize:vertical;box-shadow:2px 2px 0 rgba(36,24,18,.18);"></textarea>
+            <textarea id="ea-future-note" rows="4" placeholder="Describe which future emails should be ${escapeHtml(label)}" style="box-sizing:border-box;width:100%;padding:10px 12px;border-radius:11px;border:2px solid #241812;background:#fffdf7;color:#1f1a14;font:inherit;resize:vertical;">${escapeHtml(teachDraft.note)}</textarea>
           </label>
-          <button type="button" data-ea-action="back-to-current-receipt" style="justify-self:start;border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Back to receipt</button>
+          ${futureLearningError ? `<div role="alert" style="border-radius:14px;background:#fde8e6;padding:12px;color:#7f1d1d;line-height:1.45;">${escapeHtml(futureLearningError)}</div>` : ""}
+          <div style="display:grid;gap:9px;">
+            <button type="button" data-ea-action="save-future-rule" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Save future rule</button>
+            <button type="button" data-ea-action="back-to-current-receipt" style="justify-self:start;border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Not now</button>
+          </div>
         </div>
       `);
       setHtml(selectedEmailSecondaryNode, "");
       setHtml(teachPanelNode, "");
-    } else if (teachFlowState === "result" && teachOutcome?.scope === "current-email" && teachOutcome.current_email_written_to_gmail) {
+    } else if (workspaceMode === "future-learning-applying") {
+      setHtml(selectedEmailNode, `
+        <div data-ea-selected-state="future-learning-applying" aria-live="polite" aria-busy="true" style="display:grid;gap:12px;margin-top:10px;">
+          <h2 data-ea-preview-heading style="margin:0;font-size:1.3rem;line-height:1.2;">Saving future rule</h2>
+          <div style="border-radius:14px;background:#fff4dd;padding:12px;color:#1f1a14;line-height:1.45;">Saving this lesson for future emails. The current email and Gmail are not being changed.</div>
+        </div>
+      `);
+      setHtml(selectedEmailSecondaryNode, "");
+    } else if (workspaceMode === "future-learning-receipt") {
+      setHtml(selectedEmailNode, `
+        <div data-ea-selected-state="future-learning-receipt" role="status" style="display:grid;gap:12px;margin-top:10px;">
+          <h2 data-ea-receipt-heading style="margin:0;font-size:1.3rem;line-height:1.2;">Future rule saved</h2>
+          <div data-ea-receipt-outcome style="border-radius:14px;background:#eef7f5;padding:12px;color:#1f1a14;line-height:1.45;">Threadwise saved the lesson for future emails. No Gmail message was changed.</div>
+          <button type="button" data-ea-action="finish-future-learning" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Done</button>
+        </div>
+      `);
+      setHtml(selectedEmailSecondaryNode, "");
+    } else if (workspaceMode === "current-apply-error") {
+      const label = decisionLabelName(teachDraft.targetLabel || decisionSuggestedLabelId(selected) || selected.classification || "");
+      setHtml(selectedEmailNode, `
+        <div data-ea-selected-state="current-apply-error" role="alert" style="display:grid;gap:12px;margin-top:10px;">
+          <div>
+            <div style="color:#8a4b00;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;font-weight:820;">Blocked</div>
+            <h2 data-ea-preview-heading style="margin:6px 0 0;font-size:1.3rem;line-height:1.2;overflow-wrap:anywhere;">Couldn’t apply ${escapeHtml(label)}</h2>
+          </div>
+          <div data-ea-preview-effect style="border-radius:14px;background:#fde8e6;padding:12px;color:#7f1d1d;line-height:1.45;">${escapeHtml(currentApplyError)}</div>
+          <div style="display:grid;gap:9px;">
+            <button type="button" data-ea-action="retry-current-apply" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#ffc64a;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Retry</button>
+            <button type="button" data-ea-action="edit-current-apply" style="justify-self:start;border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Edit</button>
+          </div>
+        </div>
+      `);
+      setHtml(selectedEmailSecondaryNode, "");
+    } else if (workspaceMode === "current-receipt" || workspaceMode === "partial-receipt") {
       gmailCheckResult = null;
-      const label = humanLabelNameFromId(teachDraft.targetLabel || selected.classification || "");
+      const label = decisionLabelName(teachDraft.targetLabel || decisionSuggestedLabelId(selected) || selected.classification || "");
       const gmailLabelUpdated = Boolean(teachOutcome.current_email_written_to_gmail);
+      const labelWriteFailed = !gmailLabelUpdated
+        || Number(teachOutcome.gmail_label_write_failed || 0) > 0
+        || Number(teachWriteThrough?.label_write_failed || 0) > 0;
       const inboxFailed = Number(teachWriteThrough?.inbox_remove_failed || 0) > 0;
       const inboxRemoved = Number(teachWriteThrough?.inbox_removed || 0) > 0;
       const needsReviewCount = Number((lastSidebarState.daily_summary || {}).needs_attention_count || 0);
+      const successfulGmailChange = !labelWriteFailed && !inboxFailed;
+      const receiptHeading = labelWriteFailed
+        ? (teachOutcome.current_email_changed_locally ? `Saved locally as ${label}` : `Couldn’t change to ${label}`)
+        : `Changed to ${label}`;
+      const receiptOutcomes = labelWriteFailed
+        ? `
+            <div data-ea-receipt-outcome>${teachOutcome.current_email_changed_locally ? "Saved locally in Threadwise." : "No label change was confirmed."}</div>
+            <div data-ea-receipt-outcome>Gmail label not confirmed. Open Activity to review recovery.</div>
+          `
+        : `
+            <div data-ea-receipt-outcome>Gmail label updated.</div>
+            <div data-ea-receipt-outcome>${inboxFailed ? "Couldn’t remove from Inbox. Open Activity to review the failed step." : inboxRemoved ? "Removed from Inbox." : "Kept in Inbox."}</div>
+          `;
       setHtml(selectedEmailNode, `
         <div data-ea-selected-state="receipt" style="display:grid;gap:12px;margin-top:10px;">
           <div>
-            <div data-ea-receipt-heading style="font-size:1.3rem;font-weight:840;line-height:1.15;overflow-wrap:anywhere;">Changed to ${escapeHtml(label)}</div>
+            <div data-ea-receipt-heading style="font-size:1.3rem;font-weight:840;line-height:1.15;overflow-wrap:anywhere;">${escapeHtml(receiptHeading)}</div>
             <div style="margin-top:6px;color:#6b6255;font-size:0.88rem;overflow-wrap:anywhere;">${escapeHtml(selected.subject || "(no subject)")}</div>
           </div>
           <div style="display:grid;gap:8px;border-radius:14px;background:#eef7f5;padding:12px;color:#1f1a14;line-height:1.45;">
-            <div data-ea-receipt-outcome>${gmailLabelUpdated ? "Gmail label updated." : "Gmail label not confirmed."}</div>
-            <div data-ea-receipt-outcome>${inboxFailed ? "Couldn’t remove from Inbox. Retry is available in Activity." : inboxRemoved ? "Removed from Inbox." : "Kept in Inbox."}</div>
+            ${receiptOutcomes}
           </div>
-          ${needsReviewCount > 0 && !inboxFailed ? '<button type="button" data-ea-action="open-needs-attention" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Next email</button>' : ""}
-          ${!inboxFailed ? '<button type="button" data-ea-action="teach-future-after-receipt" style="justify-self:start;border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Teach Threadwise for future emails</button>' : ""}
+          ${needsReviewCount > 0 && successfulGmailChange ? '<button type="button" data-ea-action="open-needs-attention" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Next email</button>' : ""}
+          ${successfulGmailChange ? '<button type="button" data-ea-action="teach-future-after-receipt" style="justify-self:start;border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Teach Threadwise for future emails</button>' : ""}
+          ${labelWriteFailed || inboxFailed ? `<a href="${LOCAL_ORIGIN}/daily-dashboard" target="_blank" rel="noreferrer" style="color:#5d5342;font-weight:760;text-underline-offset:3px;">Open Activity</a>` : ""}
         </div>
       `);
       setHtml(selectedEmailSecondaryNode, "");
       setHtml(teachPanelNode, "");
-    } else if (selected.status === "auto-handled" && !autoHandledChangeOpen) {
+    } else if (workspaceMode === "handled-receipt") {
       gmailCheckResult = null;
-      const label = String(selected.classification || "Uncategorized").replace(/^EA\//, "");
+      const label = decisionLabelName(selected.internal_label || selected.classification || "Uncategorized");
+      const writeStatus = String((selected.details || {}).write_status || "").toLowerCase();
       const inboxStatus = String((selected.details || {}).inbox_status || "").toLowerCase();
-      const handling = inboxStatus === "applied" || inboxStatus.includes("removed")
-        ? "removed it from Inbox"
-        : "kept this email in Inbox";
+      const handlingReceipt = selected.status === "auto-handled" && writeStatus === "applied" && inboxStatus === "applied"
+        ? `Threadwise applied the ${label} Gmail label and removed this email from Inbox.`
+        : selected.status === "kept-visible" && writeStatus === "applied"
+          ? `Threadwise applied the ${label} Gmail label and kept this email in Inbox.`
+          : `Threadwise classified this email as ${label} and kept it visible. Gmail label write is not confirmed.`;
+      const handlingLabel = selected.status === "auto-handled" ? "Auto-handled" : (selected.status_label || "Handled");
       setHtml(selectedEmailNode, `
-        <div data-ea-selected-state="auto-handled" style="display:grid;gap:12px;margin-top:10px;">
+        <div data-ea-selected-state="handled-receipt" style="display:grid;gap:12px;margin-top:10px;">
           <div>
-            <div data-ea-auto-handled-heading style="font-size:1.3rem;font-weight:840;line-height:1.15;">${escapeHtml(label)} · Auto-handled</div>
+            <h2 data-ea-auto-handled-heading style="margin:0;font-size:1.3rem;font-weight:840;line-height:1.15;">${escapeHtml(label)} · ${escapeHtml(handlingLabel)}</h2>
             <div style="margin-top:6px;color:#6b6255;font-size:0.88rem;overflow-wrap:anywhere;">${escapeHtml(selected.subject || "(no subject)")} · ${escapeHtml(selected.sender || "(unknown sender)")}</div>
           </div>
-          <div data-ea-auto-handled-receipt style="border-radius:14px;background:#eef7f5;padding:12px;color:#1f1a14;line-height:1.45;">Threadwise applied ${escapeHtml(label)} and ${handling}.</div>
+          <div data-ea-auto-handled-receipt style="border-radius:14px;background:#eef7f5;padding:12px;color:#1f1a14;line-height:1.45;">${escapeHtml(handlingReceipt)}</div>
           <div style="display:flex;gap:12px;flex-wrap:wrap;">
             <button type="button" data-ea-action="change-auto-handled" style="border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Change</button>
-            <button type="button" data-ea-action="toggle-details" style="border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Why</button>
+            <button type="button" data-ea-action="toggle-details" aria-expanded="${detailsExpanded ? "true" : "false"}" aria-controls="ea-handled-why" style="border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">${detailsExpanded ? "Hide why" : "Why"}</button>
           </div>
         </div>
       `);
       setHtml(selectedEmailSecondaryNode, detailsExpanded
-        ? `<div style="margin-top:14px;border-radius:14px;background:#f5efe2;padding:12px;color:#1f1a14;line-height:1.45;">${escapeHtml(likelyReasonForSelected(selected))}</div>`
+        ? `<div id="ea-handled-why" style="margin-top:14px;border-radius:14px;background:#f5efe2;padding:12px;color:#1f1a14;line-height:1.45;">${escapeHtml(likelyReasonForSelected(selected))}</div>`
         : "");
       setHtml(teachPanelNode, "");
-    } else if (selected.status === "needs-attention" && selectedDecisionMode === "review") {
+    } else if (workspaceMode === "review") {
       gmailCheckResult = null;
-      const label = humanLabelNameFromId(selected.classification || "Uncategorized");
+      const suggestedLabelId = decisionSuggestedLabelId(selected);
+      const label = suggestedLabelId ? decisionLabelName(suggestedLabelId) : "";
       setHtml(selectedEmailNode, `
         <div data-ea-selected-state="review" style="display:grid;gap:12px;margin-top:10px;">
           <div style="color:#8a4b00;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;font-weight:820;">Needs your review</div>
@@ -1005,21 +1153,21 @@
             <div style="font-size:1.3rem;font-weight:840;line-height:1.15;overflow-wrap:anywhere;">${escapeHtml(selected.subject || "(no subject)")}</div>
             <div style="margin-top:6px;color:#6b6255;font-size:0.88rem;overflow-wrap:anywhere;">${escapeHtml(selected.sender || "(unknown sender)")}</div>
           </div>
-          <div data-ea-review-suggestion style="font-size:1.05rem;font-weight:760;line-height:1.4;">Threadwise suggests ${escapeHtml(label)}</div>
+          <div data-ea-review-suggestion style="font-size:1.05rem;font-weight:760;line-height:1.4;">${label ? `Threadwise suggests ${escapeHtml(label)}` : "Threadwise needs you to choose a label"}</div>
           <div style="border-radius:14px;background:#fff4dd;padding:12px;color:#1f1a14;line-height:1.45;">${escapeHtml(likelyReasonForSelected(selected).slice(0, 160))}</div>
           <div style="display:grid;gap:9px;">
-            <button type="button" data-ea-action="accept-suggestion" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Accept ${escapeHtml(label)}</button>
-            <button type="button" data-ea-action="change-suggestion" style="min-height:44px;border:1px solid rgba(36,24,18,.16);background:#f5efe2;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:760;">Change label</button>
+            ${label ? `<button type="button" data-ea-action="accept-suggestion" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Accept ${escapeHtml(label)}</button>` : ""}
+            <button type="button" data-ea-action="change-suggestion" ${label ? "" : "data-tw-primary-action"} style="min-height:44px;border:${label ? "1px solid rgba(36,24,18,.16)" : "2px solid #241812"};background:${label ? "#f5efe2" : "#2eb67d"};color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:760;${label ? "" : "box-shadow:3px 3px 0 #241812;"}">Change label</button>
           </div>
         </div>
       `);
       setHtml(selectedEmailSecondaryNode, "");
       setHtml(teachPanelNode, "");
-    } else if (selected.status === "needs-attention" && selectedDecisionMode === "change") {
+    } else if (workspaceMode === "change") {
       const allowedLabels = (((lastSidebarState.ui_state || {}).allowed_labels) || []);
-      const currentLabel = teachDraft.targetLabel || selected.classification || "";
+      const currentLabel = internalLabelId(teachDraft.targetLabel || decisionSuggestedLabelId(selected) || selected.internal_label || selected.classification || "");
       const labelOptions = allowedLabels.map((option) =>
-        `<option value="${escapeHtml(option.id)}"${option.id === currentLabel ? " selected" : ""}>${escapeHtml(option.name)}</option>`,
+        `<option value="${escapeHtml(option.id)}"${option.id === currentLabel ? " selected" : ""}>${escapeHtml(decisionLabelName(option.id))}</option>`,
       ).join("");
       setHtml(selectedEmailNode, `
         <div data-ea-selected-state="change" style="display:grid;gap:12px;margin-top:10px;">
@@ -1028,7 +1176,7 @@
             <div style="margin-top:6px;color:#6b6255;font-size:0.88rem;overflow-wrap:anywhere;">${escapeHtml(selected.subject || "(no subject)")}</div>
           </div>
           <label style="display:grid;gap:6px;font-weight:760;">Label
-            <select id="ea-target-label" style="box-sizing:border-box;width:100%;min-height:44px;padding:10px 12px;border-radius:10px;border:1px solid rgba(36,24,18,.32);background:#fffdf7;color:#241812;font:inherit;">${labelOptions}</select>
+            <select id="ea-target-label" style="box-sizing:border-box;width:100%;min-height:44px;padding:10px 12px;border-radius:10px;border:1px solid rgba(36,24,18,.32);background:#fffdf7;color:#241812;font:inherit;"><option value="">Choose label</option>${labelOptions}</select>
           </label>
           <label style="display:grid;gap:6px;font-weight:760;">Anything Threadwise should remember? (optional)
             <textarea id="ea-teach-note" rows="3" style="box-sizing:border-box;width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(36,24,18,.32);background:#fffdf7;color:#241812;font:inherit;resize:vertical;">${escapeHtml(teachDraft.note)}</textarea>
@@ -1042,8 +1190,15 @@
       `);
       setHtml(selectedEmailSecondaryNode, "");
       setHtml(teachPanelNode, "");
-    } else if (selected.status === "needs-attention" && selectedDecisionMode === "preview" && isTeachPending()) {
-      const label = humanLabelNameFromId(teachDraft.targetLabel || selected.classification || "");
+    } else if (workspaceMode === "teach-scope") {
+      setHtml(selectedEmailNode, `
+        <div data-ea-selected-state="teach-scope" style="display:grid;gap:12px;margin-top:10px;">
+          ${renderTeachScopeHtml(teachPreview)}
+        </div>
+      `);
+      setHtml(selectedEmailSecondaryNode, "");
+    } else if (workspaceMode === "applying") {
+      const label = decisionLabelName(teachDraft.targetLabel || decisionSuggestedLabelId(selected) || selected.classification || "");
       setHtml(selectedEmailNode, `
         <div data-ea-selected-state="applying" aria-live="polite" style="display:grid;gap:12px;margin-top:10px;">
           <div>
@@ -1055,8 +1210,8 @@
       `);
       setHtml(selectedEmailSecondaryNode, "");
       setHtml(teachPanelNode, "");
-    } else if (selected.status === "needs-attention" && selectedDecisionMode === "preview") {
-      const label = humanLabelNameFromId(teachDraft.targetLabel || selected.classification || "");
+    } else if (workspaceMode === "preview") {
+      const label = decisionLabelName(teachDraft.targetLabel || decisionSuggestedLabelId(selected) || selected.classification || "");
       setHtml(selectedEmailNode, `
         <div data-ea-selected-state="preview" style="display:grid;gap:12px;margin-top:10px;">
           <div>
@@ -1334,16 +1489,41 @@
   }
 
   function normalizeHarnessState(state) {
+    const previous = lastHarnessState || {};
     if (state && state.sidebar_state) {
-      return state;
+      return {
+        ...previous,
+        ...state,
+        selected_context: state.selected_context || state.sidebar_state.selected_context || previous.selected_context || {},
+        recent_items: Array.isArray(state.recent_items) ? state.recent_items : (previous.recent_items || []),
+        needs_attention_items: Array.isArray(state.needs_attention_items) ? state.needs_attention_items : (previous.needs_attention_items || []),
+        auto_handled_items: Array.isArray(state.auto_handled_items) ? state.auto_handled_items : (previous.auto_handled_items || []),
+        kept_visible_items: Array.isArray(state.kept_visible_items) ? state.kept_visible_items : (previous.kept_visible_items || []),
+      };
     }
     return {
-      selected_context: state?.selected_context || {},
-      sidebar_state: state || {},
-      recent_items: [],
-      needs_attention_items: [],
-      auto_handled_items: [],
-      kept_visible_items: [],
+      ...previous,
+      selected_context: state?.selected_context || previous.selected_context || {},
+      sidebar_state: state || previous.sidebar_state || {},
+      recent_items: previous.recent_items || [],
+      needs_attention_items: previous.needs_attention_items || [],
+      auto_handled_items: previous.auto_handled_items || [],
+      kept_visible_items: previous.kept_visible_items || [],
+    };
+  }
+
+  function preserveHarnessQueues(nextSidebarState) {
+    if (!nextSidebarState) {
+      return lastHarnessState || lastSidebarState || {};
+    }
+    if (nextSidebarState.sidebar_state) {
+      return nextSidebarState;
+    }
+    const previous = lastHarnessState || {};
+    return {
+      ...previous,
+      selected_context: nextSidebarState.selected_context || previous.selected_context || {},
+      sidebar_state: nextSidebarState,
     };
   }
 
@@ -2053,24 +2233,79 @@
     return match ? match.name : labelId;
   }
 
+  function allowedDecisionLabels() {
+    return ((((lastSidebarState || {}).ui_state || {}).allowed_labels) || []);
+  }
+
+  function normalizedLabelText(value) {
+    return String(value || "").trim().toLowerCase().replace(/^ea\//, "");
+  }
+
+  function internalLabelId(value) {
+    const normalized = normalizedLabelText(value);
+    if (!normalized || normalized === "uncategorized") {
+      return "";
+    }
+    const match = allowedDecisionLabels().find((item) => {
+      const id = normalizedLabelText(item.id);
+      const name = normalizedLabelText(item.name);
+      return normalized === id || normalized === name;
+    });
+    return match ? String(match.id || "") : "";
+  }
+
+  function decisionLabelName(value) {
+    const internalId = internalLabelId(value);
+    const match = allowedDecisionLabels().find((item) => item.id === internalId);
+    return String((match && match.name) || value || "Uncategorized").replace(/^EA\//i, "");
+  }
+
+  function decisionSuggestedLabelId(selected) {
+    if (!selected) {
+      return "";
+    }
+    return internalLabelId(selected.suggested_label || selected.internal_label || selected.classification || "");
+  }
+
+  function recordSuggestionDecisionOnce(decision) {
+    if (!recordedSuggestionDecisions.approve && !recordedSuggestionDecisions.edit) {
+      recordedSuggestionDecisions[decision] = true;
+      ANALYTICS?.decideSuggestion(decision);
+    }
+  }
+
+  function recordCommittedCurrentDecision() {
+    const selected = lastSidebarState?.selected_email;
+    if (selected?.status !== "needs-attention") {
+      return;
+    }
+    const suggestedLabel = decisionSuggestedLabelId(selected);
+    const targetLabel = internalLabelId(teachDraft.targetLabel);
+    recordSuggestionDecisionOnce(targetLabel && targetLabel === suggestedLabel ? "approve" : "edit");
+  }
+
   function labelConflictForDraft() {
     const note = String(teachDraft.note || "").trim().toLowerCase();
-    const selectedLabel = teachDraft.targetLabel || "";
+    const selectedLabel = internalLabelId(teachDraft.targetLabel || "");
     if (!note || !selectedLabel) {
       return "";
     }
-    const allowedLabels = ((((lastSidebarState || {}).ui_state || {}).allowed_labels) || []);
+    const allowedLabels = allowedDecisionLabels();
     const mentioned = allowedLabels.find((item) => {
-      const name = String(item.name || "").trim().toLowerCase();
-      if (!name || item.id === selectedLabel) {
+      const aliases = [
+        normalizedLabelText(item.name),
+        normalizedLabelText(item.id),
+        normalizedLabelText(item.id).replaceAll("-", " "),
+      ].filter(Boolean);
+      if (!aliases.length || item.id === selectedLabel) {
         return false;
       }
-      return new RegExp(`(^|[^a-z0-9])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^a-z0-9]|$)`, "i").test(note);
+      return aliases.some((alias) => new RegExp(`(^|[^a-z0-9])${alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^a-z0-9]|$)`, "i").test(note));
     });
     if (!mentioned) {
       return "";
     }
-    return `Your note sounds like ${mentioned.name}, but ${humanLabelNameFromId(selectedLabel)} is selected. Choose which one you mean.`;
+    return `Your note sounds like ${decisionLabelName(mentioned.id)}, but ${decisionLabelName(selectedLabel)} is selected. Choose which one you mean.`;
   }
 
   async function handlePanelClick(event) {
@@ -2162,15 +2397,49 @@
 
     const teachFutureAfterReceiptButton = event.target.closest("[data-ea-action='teach-future-after-receipt']");
     if (teachFutureAfterReceiptButton) {
+      event.preventDefault();
       selectedDecisionMode = "future-learning";
+      futureLearningError = "";
       renderState(lastHarnessState);
+      document.getElementById("ea-future-note")?.focus();
       return;
     }
 
     const backToCurrentReceiptButton = event.target.closest("[data-ea-action='back-to-current-receipt']");
     if (backToCurrentReceiptButton) {
+      event.preventDefault();
+      syncTeachDraftFromDom();
       selectedDecisionMode = "review";
+      futureLearningError = "";
       renderState(lastHarnessState);
+      return;
+    }
+
+    const saveFutureRuleButton = event.target.closest("[data-ea-action='save-future-rule']");
+    if (saveFutureRuleButton) {
+      event.preventDefault();
+      syncTeachDraftFromDom();
+      if (!String(teachDraft.note || "").trim()) {
+        futureLearningError = "Describe what Threadwise should remember before saving the rule.";
+        renderState(lastHarnessState);
+        document.getElementById("ea-future-note")?.focus();
+        return;
+      }
+      futureLearningError = "";
+      return startTeachApply("save-future-rule");
+    }
+
+    const finishFutureLearningButton = event.target.closest("[data-ea-action='finish-future-learning']");
+    if (finishFutureLearningButton) {
+      event.preventDefault();
+      selectedDecisionMode = "review";
+      teachFlowState = "teaching";
+      teachResult = null;
+      teachOutcome = null;
+      teachWriteThrough = null;
+      teachDraft = { targetLabel: "", note: "" };
+      previousPayload = "";
+      refreshSelection(true);
       return;
     }
     const openAffectedReviewButton = event.target.closest("[data-ea-action='open-affected-review']");
@@ -2220,16 +2489,44 @@
       }
       return previewTeach();
     }
+    const acceptSuggestionButton = event.target.closest("[data-ea-action='accept-suggestion']");
+    if (acceptSuggestionButton) {
+      event.preventDefault();
+      const suggestedLabel = decisionSuggestedLabelId(lastSidebarState?.selected_email);
+      if (!suggestedLabel) {
+        return;
+      }
+      teachDraft = { targetLabel: suggestedLabel, note: "" };
+      selectedDecisionMode = "preview";
+      return startTeachApply("current-only");
+    }
     const changeSuggestionButton = event.target.closest("[data-ea-action='change-suggestion']");
     if (changeSuggestionButton) {
       event.preventDefault();
-      ANALYTICS?.decideSuggestion("edit");
       selectedDecisionMode = "change";
       selectedDecisionConflict = "";
       teachDraft = {
-        targetLabel: lastSidebarState?.selected_email?.classification || "",
+        targetLabel: decisionSuggestedLabelId(lastSidebarState?.selected_email),
         note: "",
       };
+      if (lastSidebarState) renderState(lastSidebarState);
+      document.getElementById("ea-target-label")?.focus();
+      return;
+    }
+    const retryCurrentApplyButton = event.target.closest("[data-ea-action='retry-current-apply']");
+    if (retryCurrentApplyButton) {
+      event.preventDefault();
+      currentApplyError = "";
+      selectedDecisionMode = "preview";
+      return startTeachApply("current-only");
+    }
+    const editCurrentApplyButton = event.target.closest("[data-ea-action='edit-current-apply']");
+    if (editCurrentApplyButton) {
+      event.preventDefault();
+      currentApplyError = "";
+      teachFlowState = "teaching";
+      selectedDecisionMode = "change";
+      selectedDecisionConflict = "";
       if (lastSidebarState) renderState(lastSidebarState);
       document.getElementById("ea-target-label")?.focus();
       return;
@@ -2238,15 +2535,24 @@
     if (cancelCurrentChangeButton) {
       event.preventDefault();
       selectedDecisionMode = "review";
+      autoHandledChangeOpen = false;
       selectedDecisionConflict = "";
       teachDraft = { targetLabel: "", note: "" };
       if (lastSidebarState) renderState(lastSidebarState);
+      document.querySelector("[data-ea-action='change-suggestion'], [data-ea-action='change-auto-handled']")?.focus();
       return;
     }
     const previewCurrentChangeButton = event.target.closest("[data-ea-action='preview-current-change']");
     if (previewCurrentChangeButton) {
       event.preventDefault();
       syncTeachDraftFromDom();
+      teachDraft.targetLabel = internalLabelId(teachDraft.targetLabel);
+      if (!teachDraft.targetLabel) {
+        selectedDecisionConflict = "Choose a label before previewing the change.";
+        if (lastSidebarState) renderState(lastSidebarState);
+        document.getElementById("ea-target-label")?.focus();
+        return;
+      }
       selectedDecisionConflict = labelConflictForDraft();
       if (selectedDecisionConflict) {
         if (lastSidebarState) renderState(lastSidebarState);
@@ -2328,19 +2634,26 @@
     const changeAutoHandledButton = event.target.closest("[data-ea-action='change-auto-handled']");
     if (changeAutoHandledButton) {
       event.preventDefault();
-      ANALYTICS?.decideSuggestion("edit");
       autoHandledChangeOpen = true;
-      teachFlowState = "refining";
+      selectedDecisionMode = "change";
+      teachFlowState = "teaching";
+      teachDraft = {
+        targetLabel: internalLabelId(lastSidebarState?.selected_email?.internal_label || lastSidebarState?.selected_email?.classification || ""),
+        note: "",
+      };
       if (lastSidebarState) {
         renderState(lastSidebarState);
-        document.getElementById("ea-teach-note")?.focus();
+        document.getElementById("ea-target-label")?.focus();
       }
       return;
     }
     const confirmInboxApplyButton = event.target.closest("[data-ea-action='confirm-inbox-apply']");
     if (confirmInboxApplyButton) {
       event.preventDefault();
-      return applyTeach("apply-included");
+      if (!inboxApplyConfirmOpen || !teachPreview?.inbox_backfill?.requires_confirmation) {
+        return;
+      }
+      return startTeachApply("apply-included");
     }
     const cancelInboxApplyButton = event.target.closest("[data-ea-action='cancel-inbox-apply']");
     if (cancelInboxApplyButton) {
@@ -2358,19 +2671,16 @@
         return;
       }
       const mode = applyButton.getAttribute("data-ea-apply");
-      if (mode === "apply-included" && teachPreview?.inbox_backfill?.requires_confirmation && !inboxApplyConfirmOpen) {
-        inboxApplyConfirmOpen = true;
-        if (lastSidebarState) {
-          renderState(lastSidebarState);
+      if (mode === "apply-included" && teachPreview?.inbox_backfill?.requires_confirmation) {
+        if (!inboxApplyConfirmOpen) {
+          inboxApplyConfirmOpen = true;
+          if (lastSidebarState) {
+            renderState(lastSidebarState);
+          }
         }
         return;
       }
-      teachFlowState = "applying";
-      teachResult = teachPendingResult("apply", mode);
-      if (lastSidebarState) {
-        renderState(lastSidebarState);
-      }
-      return applyTeach(mode);
+      return startTeachApply(mode);
     }
     const detailsButton = event.target.closest("[data-ea-action='toggle-details']");
     if (detailsButton) {
@@ -2413,20 +2723,19 @@
       return;
     }
     const currentMessageId = ((lastSidebarState || {}).selected_email || {}).message_id || "";
-    if (manualPreviewContext && currentMessageId && items.some((item) => item.message_id === currentMessageId)) {
-      if (lastHarnessState) {
-        renderState(lastHarnessState);
-      }
+    const firstItem = items.find((item) => !currentMessageId || item.message_id !== currentMessageId) || items[0];
+    if (currentMessageId && firstItem?.message_id === currentMessageId) {
+      if (lastHarnessState) renderState(lastHarnessState);
       return;
     }
-    const firstItem = items[0];
     openItemPreview(firstItem);
   }
 
   function handlePanelInput(event) {
     if (
       event.target?.id === "ea-target-label" ||
-      event.target?.id === "ea-teach-note"
+      event.target?.id === "ea-teach-note" ||
+      event.target?.id === "ea-future-note"
     ) {
       syncTeachDraftFromDom();
     }
@@ -2489,11 +2798,28 @@
     });
   }
 
-  async function applyTeach(mode) {
-    if (!lastSidebarState || !lastSidebarState.selected_email || !lastSidebarState.selected_email.found) {
-      return;
+  function startTeachApply(mode) {
+    if (applyInFlight || !lastSidebarState?.selected_email?.found) {
+      return false;
     }
-    if (isTeachPending() && teachFlowState !== "applying") {
+    syncTeachDraftFromDom();
+    currentApplyError = "";
+    if (mode === "current-only") {
+      recordCommittedCurrentDecision();
+    }
+    applyInFlight = true;
+    teachFlowState = "applying";
+    teachResult = teachPendingResult("apply", mode);
+    if (lastHarnessState || lastSidebarState) {
+      renderState(lastHarnessState || lastSidebarState);
+    }
+    applyTeach(mode, lastSelectedMessageId);
+    return true;
+  }
+
+  async function applyTeach(mode, requestIdentity) {
+    if (!lastSidebarState || !lastSidebarState.selected_email || !lastSidebarState.selected_email.found) {
+      applyInFlight = false;
       return;
     }
     syncTeachDraftFromDom();
@@ -2504,7 +2830,9 @@
         : "current_email";
     const affectedCount = mode === "apply-included" || mode === "matching-existing"
       ? Number(teachPreview?.impact?.matching_existing_count || 0) + 1
-      : 1;
+      : mode === "save-future-rule"
+        ? 0
+        : 1;
     const previousQueueSize = Number((lastSidebarState.daily_summary || {}).needs_attention_count || 0);
     ANALYTICS?.confirmRule(ruleScope, affectedCount, false);
     const targetLabel = teachDraft.targetLabel;
@@ -2521,16 +2849,33 @@
         mode,
       },
     }, (response) => {
+      applyInFlight = false;
+      if (requestIdentity && requestIdentity !== lastSelectedMessageId) {
+        previousPayload = "";
+        refreshSelection(true);
+        return;
+      }
       if (chrome.runtime.lastError) {
         teachResult = teachErrorResult("apply", chrome.runtime.lastError.message || "Could not apply the lesson.");
-        teachFlowState = "scope-confirmation";
-        renderState(lastSidebarState);
+        teachFlowState = mode === "save-future-rule" || mode === "current-only" ? "teaching" : "scope-confirmation";
+        if (mode === "save-future-rule") {
+          futureLearningError = teachResult.message;
+        } else if (mode === "current-only") {
+          currentApplyError = `${friendlyErrorMessage(chrome.runtime.lastError.message || "Could not apply the change.")} Threadwise did not confirm that the change completed.`;
+        }
+        renderState(lastHarnessState || lastSidebarState);
         return;
       }
       if (!response || !response.ok) {
-        teachResult = teachErrorResult("apply", (response && (response.payload?.error || response.error)) || "Could not apply the lesson.");
-        teachFlowState = "scope-confirmation";
-        renderState(lastSidebarState);
+        const rawError = (response && (response.payload?.error || response.error)) || "Could not apply the lesson.";
+        teachResult = teachErrorResult("apply", rawError);
+        teachFlowState = mode === "save-future-rule" || mode === "current-only" ? "teaching" : "scope-confirmation";
+        if (mode === "save-future-rule") {
+          futureLearningError = teachResult.message;
+        } else if (mode === "current-only") {
+          currentApplyError = `${friendlyErrorMessage(rawError)} Threadwise did not confirm that the change completed.`;
+        }
+        renderState(lastHarnessState || lastSidebarState);
         return;
       }
       const payload = response.payload || {};
@@ -2544,6 +2889,8 @@
       teachFlowState = "result";
       teachOutcome = payload.outcome || null;
       teachWriteThrough = payload.gmail_write_through || null;
+      futureLearningError = "";
+      currentApplyError = "";
       inboxApplyConfirmOpen = false;
       affectedReviewOpen = false;
       unsubscribeResult = "";
@@ -2551,7 +2898,7 @@
       if (previousQueueSize > 0 && remainingQueueSize === 0) {
         ANALYTICS?.completeReviewBatch(previousQueueSize);
       }
-      renderState(payload.sidebar_state || lastSidebarState);
+      renderState(preserveHarnessQueues(payload.sidebar_state || lastSidebarState));
     });
   }
 
@@ -2716,9 +3063,10 @@
   function syncTeachDraftFromDom() {
     const selectNode = document.getElementById("ea-target-label");
     const noteNode = document.getElementById("ea-teach-note");
+    const futureNoteNode = document.getElementById("ea-future-note");
     teachDraft = {
       targetLabel: selectNode?.value || teachDraft.targetLabel || "",
-      note: noteNode?.value || "",
+      note: noteNode ? noteNode.value : futureNoteNode ? futureNoteNode.value : teachDraft.note || "",
     };
   }
 
@@ -2870,6 +3218,22 @@
       getDraft() {
         syncTeachDraftFromDom();
         return { ...teachDraft };
+      },
+      showTeachScope(preview) {
+        teachPreview = preview || null;
+        teachFlowState = teachPreview ? "scope-confirmation" : "teaching";
+        selectedDecisionMode = teachPreview ? "teach-scope" : "review";
+        inboxApplyConfirmOpen = false;
+        if (lastHarnessState || lastSidebarState) {
+          renderState(lastHarnessState || lastSidebarState);
+        }
+        return { ok: Boolean(teachPreview) };
+      },
+      startApply(mode) {
+        return { ok: startTeachApply(mode || "current-only"), mode: mode || "current-only" };
+      },
+      getApplyState() {
+        return { applyInFlight, teachFlowState, selectedDecisionMode };
       },
       forceRefresh() {
         syncTeachDraftFromDom();
