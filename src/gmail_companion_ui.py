@@ -35,6 +35,7 @@ from src.unsubscribe_inventory_store import UnsubscribeInventoryStore
 from src.unsubscribe_execution import UnsubscribeExecutor
 
 from src.gmail_companion_rendering import (
+    dashboard_item_identity,
     escape_html,
     render_dashboard_attention_cards,
     render_dashboard_candidate_cards,
@@ -3229,12 +3230,23 @@ class GmailCompanionApp:
         changed_today = summary.get("changed_today", {})
         selected_unsubscribe_examples = changed_today.get("selected_unsubscribe_examples", [])
         candidate_examples = changed_today.get("candidate_examples", [])
-        sections = [
-            (
-                "Needs Attention",
-                "The emails still waiting for a confident decision or explicit follow-up.",
-                render_dashboard_email_cards(payload.get("needs_attention_items", []), empty_label="No needs-attention emails in the current snapshot."),
-            ),
+        seen_review_items: set[str] = set()
+
+        def unique_review_items(items: list[dict]) -> list[dict]:
+            unique_items: list[dict] = []
+            for item in items:
+                identity = dashboard_item_identity(item)
+                if identity and identity in seen_review_items:
+                    continue
+                if identity:
+                    seen_review_items.add(identity)
+                unique_items.append(item)
+            return unique_items
+
+        attention_now_items = unique_review_items(attention_summary.get("now_items", []))
+        possible_attention_items = unique_review_items(attention_summary.get("possible_items", []))
+        classification_review_items = unique_review_items(payload.get("needs_attention_items", []))
+        diagnostic_sections = [
             (
                 "Kept Visible",
                 "Emails the agent understood but intentionally left easy to find in the inbox.",
@@ -3266,16 +3278,20 @@ class GmailCompanionApp:
         changed_items_html = render_dashboard_changed_cards(changed_today.get("items", []))
         unsubscribe_html = render_dashboard_unsubscribe_cards(selected_unsubscribe_examples)
         candidate_review_html = render_dashboard_candidate_cards(candidate_examples)
-        sections_html = "".join(
+        diagnostic_sections_html = "".join(
             render_dashboard_section(title, description, cards)
-            for title, description, cards in sections
+            for title, description, cards in diagnostic_sections
+        )
+        classification_review_html = render_dashboard_email_cards(
+            classification_review_items,
+            empty_label="No classification-review emails in the current snapshot.",
         )
         attention_now_html = render_dashboard_attention_cards(
-            attention_summary.get("now_items", []),
+            attention_now_items,
             empty_label="No attention-now items in the latest Gmail daily report.",
         )
         possible_attention_html = render_dashboard_attention_cards(
-            attention_summary.get("possible_items", []),
+            possible_attention_items,
             empty_label="No possible-attention items in the latest Gmail daily report.",
         )
         hidden_insufficient_context_count = attention_summary.get("hidden_insufficient_context_count", 0)
@@ -3298,8 +3314,8 @@ class GmailCompanionApp:
                     else ""
                 ),
                 f'<span class="pill">Evaluated: {attention_summary.get("evaluated_message_count", 0)}</span>',
-                f'<span class="pill">Now: {len(attention_summary.get("now_items", []))}</span>',
-                f'<span class="pill">Possible: {len(attention_summary.get("possible_items", []))}</span>',
+                f'<span class="pill">Now: {len(attention_now_items)}</span>',
+                f'<span class="pill">Possible: {len(possible_attention_items)}</span>',
             ]
         )
         run_result = run_status.get("result") or {}
@@ -3318,6 +3334,22 @@ class GmailCompanionApp:
                 ),
             ]
         )
+        gmail_check_html = (
+            f"""
+              <form class="gmail-check-form" method="post" action="/api/gmail-check-run">
+                <input type="hidden" name="account_id" value="{escape_html(inferred_account_id)}">
+                <input type="hidden" name="batch_size" value="50">
+                <div class="copy">This confirmed run may apply existing safe EA/ labels, remove INBOX only for approved low-value categories, and may call the LLM for attention detection. Attention detection itself does not mutate Gmail.</div>
+                <label class="copy">
+                  <input id="confirm-run-gmail-check" type="checkbox" name="confirmed" value="true" required>
+                  Confirm safe label/inbox boundaries and small LLM cost.
+                </label>
+                <button class="action" type="submit" {'disabled' if run_status_label == 'running' else ''}>Run Gmail check</button>
+              </form>
+            """
+            if self._gmail_check_enabled
+            else '<div class="copy" data-gmail-check-disabled>Gmail check is disabled for this server.</div>'
+        )
         return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -3329,7 +3361,9 @@ class GmailCompanionApp:
     main {{ max-width: 1180px; margin: 0 auto; padding: 34px; display:grid; gap:18px; }}
     .hero,.card {{ background:#fffdf7; border:3px solid #241812; border-radius:18px; padding:18px; box-shadow:5px 5px 0 #241812; }}
     .hero {{ background:#fff7e8; }}
-    .hero-heading {{ display:flex; align-items:center; gap:12px; }}
+    .hero-heading {{ display:flex; align-items:flex-start; justify-content:space-between; gap:18px; flex-wrap:wrap; }}
+    .hero-action-area {{ display:grid; justify-items:end; gap:8px; max-width:420px; }}
+    .gmail-check-form {{ display:grid; justify-items:end; gap:8px; }}
     .brand-mark {{ width:42px; height:42px; border-radius:12px; border:2px solid #241812; box-shadow:3px 3px 0 #241812; flex:0 0 auto; background:#fff8df; }}
     .grid {{ display:grid; grid-template-columns: repeat(auto-fit,minmax(260px,1fr)); gap:14px; }}
     .section {{ display:grid; gap:12px; }}
@@ -3349,6 +3383,8 @@ class GmailCompanionApp:
     .meta {{ margin-top:6px; color:#6b6255; font-size:0.84rem; overflow-wrap:anywhere; }}
     .copy {{ margin-top:8px; color:#1f1a14; line-height:1.45; }}
     .action {{ display:inline-flex; align-items:center; margin-top:10px; border:2px solid #241812; border-radius:11px; background:#2eb67d; color:#241812; padding:9px 12px; text-decoration:none; font-weight:800; box-shadow:3px 3px 0 #241812; }}
+    details[data-dashboard-diagnostics] > summary {{ cursor:pointer; font-weight:850; }}
+    .diagnostics-body {{ display:grid; gap:14px; margin-top:14px; }}
     @media (max-width: 820px) {{ .grid {{ grid-template-columns: 1fr; }} }}
   </style>
 </head>
@@ -3356,44 +3392,28 @@ class GmailCompanionApp:
   <main>
     <section class="hero">
       <div class="hero-heading">
-        <img class="brand-mark" src="/assets/brand/threadwise-app-icon.png" alt="" aria-hidden="true">
-        <div>
-          <div class="eyebrow">Daily Dashboard</div>
-          <h1>What Threadwise did today</h1>
+        <div class="hero-heading" style="justify-content:flex-start;">
+          <img class="brand-mark" src="/assets/brand/threadwise-app-icon.png" alt="" aria-hidden="true">
+          <div>
+            <div class="eyebrow">Daily Dashboard</div>
+            <h1>What Threadwise did today</h1>
+          </div>
+        </div>
+        <div class="hero-action-area">
+          {gmail_check_html}
+          <div class="pill-row">{run_status_pills}</div>
         </div>
       </div>
-      <p>This is the fuller secondary view behind the inbox sidebar: what came in, what the agent changed, what still needs attention, and what subscription cleanup is queued.</p>
       <div class="metric-grid">
         <div class="metric"><strong>{summary.get("processed_count", 0)}</strong><span>processed</span></div>
         <div class="metric"><strong>{summary.get("auto_handled_count", 0)}</strong><span>auto-handled</span></div>
         <div class="metric"><strong>{summary.get("needs_attention_count", 0)}</strong><span>need attention</span></div>
         <div class="metric"><strong>{len(payload.get("kept_visible_items", []))}</strong><span>kept visible</span></div>
       </div>
-      <div class="pill-row">
-        <span class="pill">Source: {escape_html(summary.get("source_label", "stored Gmail snapshot"))}</span>
-        {f'<span class="pill">Latest report: {escape_html(summary.get("report_date", ""))}</span>' if summary.get("report_date") else ""}
-        <span class="pill">Unsubscribe candidates: {summary.get("unsubscribe_candidate_count", 0)}</span>
-      </div>
-      {f'<div class="pill-row">{top_labels_html}</div>' if top_labels_html else ""}
     </section>
-    <section class="card">
-      <div class="eyebrow" id="run-gmail-check">Run Gmail Check</div>
-      <h2>Run Gmail check</h2>
-      <p>This confirmed run may apply existing safe EA/ labels, remove INBOX only for approved low-value categories, and may call the LLM for attention detection. Attention detection itself does not mutate Gmail.</p>
-      <div class="pill-row">{run_status_pills}</div>
-      <form method="post" action="/api/gmail-check-run">
-        <input type="hidden" name="account_id" value="{escape_html(inferred_account_id)}">
-        <input type="hidden" name="batch_size" value="50">
-        <label class="copy" style="display:block;">
-          <input id="confirm-run-gmail-check" type="checkbox" name="confirmed" value="true" required>
-          Confirm this Gmail check may use the existing safe mutation boundaries and small LLM cost.
-        </label>
-        <button class="action" type="submit" {'disabled' if run_status_label == 'running' else ''}>Run Gmail check</button>
-      </form>
-    </section>
-    <section class="card">
-      <div class="eyebrow">Needs Attention</div>
-      <h2>Needs attention from latest Gmail report</h2>
+    <section class="card" data-dashboard-section="needs-review">
+      <div class="eyebrow">Needs review</div>
+      <h2>Emails waiting for you</h2>
       <p>Attention detection is separate from classification and does not mutate Gmail. Strong signals and lower-confidence candidates are split so uncertainty does not swamp the daily view.</p>
       <div class="pill-row">{attention_report_pills}</div>
       {f'<div class="copy">{escape_html(attention_summary.get("empty_reason", ""))}</div>' if attention_summary.get("empty_reason") else ""}
@@ -3410,32 +3430,39 @@ class GmailCompanionApp:
           {hidden_insufficient_context_html}
         </article>
       </div>
+      <div class="stack" style="margin-top:12px;">{classification_review_html}</div>
     </section>
-    <section class="grid">
-      <article class="card">
-        <div class="eyebrow">What Changed Today</div>
-        <h2>Provider-side changes</h2>
-        <div class="metric-grid">
-          <div class="metric"><strong>{changed_today.get("label_writes_count", 0)}</strong><span>labels written</span></div>
-          <div class="metric"><strong>{changed_today.get("inbox_removed_count", 0)}</strong><span>removed from inbox</span></div>
-          <div class="metric"><strong>{changed_today.get("taught_count", 0)}</strong><span>teaching changes</span></div>
-          <div class="metric"><strong>{changed_today.get("selected_unsubscribe_count", 0)}</strong><span>unsubscribe queued</span></div>
-          <div class="metric"><strong>{changed_today.get("candidate_pending_count", 0)}</strong><span>candidate review</span></div>
+    <section class="card" data-dashboard-section="activity">
+      <div class="eyebrow">Activity</div>
+      <h2>What changed today</h2>
+      <div class="metric-grid">
+        <div class="metric"><strong>{changed_today.get("label_writes_count", 0)}</strong><span>labels written</span></div>
+        <div class="metric"><strong>{changed_today.get("inbox_removed_count", 0)}</strong><span>removed from inbox</span></div>
+        <div class="metric"><strong>{changed_today.get("taught_count", 0)}</strong><span>teaching changes</span></div>
+        <div class="metric"><strong>{changed_today.get("candidate_pending_count", 0)}</strong><span>candidate review</span></div>
+      </div>
+      <div class="stack" style="margin-top:12px;">{changed_items_html}</div>
+      <div class="stack" style="margin-top:12px;">{candidate_review_html}</div>
+    </section>
+    <section class="card" data-dashboard-section="subscriptions">
+      <div class="eyebrow">Subscriptions</div>
+      <h2>Queued unsubscribe review</h2>
+      <p>The inbox sidebar can queue subscriptions for later review. This page shows the currently queued families.</p>
+      <div class="stack">{unsubscribe_html}</div>
+      <a class="action" href="/unsubscribe-review" target="_blank" rel="noreferrer">Open unsubscribe review</a>
+    </section>
+    <details data-dashboard-diagnostics class="card">
+      <summary>Diagnostics and label distribution</summary>
+      <div class="diagnostics-body">
+        <div class="pill-row">
+          <span class="pill">Source: {escape_html(summary.get("source_label", "stored Gmail snapshot"))}</span>
+          {f'<span class="pill">Latest report: {escape_html(summary.get("report_date", ""))}</span>' if summary.get("report_date") else ""}
+          <span class="pill">Unsubscribe candidates: {summary.get("unsubscribe_candidate_count", 0)}</span>
+          {top_labels_html}
         </div>
-        <div class="stack" style="margin-top:12px;">{changed_items_html}</div>
-        <div class="stack" style="margin-top:12px;">{candidate_review_html}</div>
-      </article>
-      <article class="card">
-        <div class="eyebrow">Subscriptions</div>
-        <h2>Queued unsubscribe review</h2>
-        <p>The inbox sidebar can queue subscriptions for later review. This page shows the currently queued families.</p>
-        <div class="stack">{unsubscribe_html}</div>
-        <a class="action" href="/unsubscribe-review" target="_blank" rel="noreferrer">Open unsubscribe review</a>
-      </article>
-    </section>
-    <section class="section">
-      {sections_html}
-    </section>
+        {diagnostic_sections_html}
+      </div>
+    </details>
   </main>
 </body>
 </html>"""

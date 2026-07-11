@@ -3,6 +3,20 @@
 from urllib.parse import quote
 
 
+def dashboard_item_identity(item: dict) -> str:
+    message_id = str(item.get("message_id") or "").strip()
+    if message_id:
+        return f"message:{message_id}"
+    thread_id = str(item.get("thread_id") or "").strip()
+    if thread_id:
+        return f"thread:{thread_id}"
+    sender = " ".join(str(item.get("sender") or "").split()).casefold()
+    subject = " ".join(str(item.get("subject") or "").split()).casefold()
+    if sender or subject:
+        return f"sender-subject:{sender}|{subject}"
+    return ""
+
+
 def unsubscribe_section_key(detail: dict, preview: dict) -> str:
     if detail.get("decision_state") == "selected":
         return "selected"

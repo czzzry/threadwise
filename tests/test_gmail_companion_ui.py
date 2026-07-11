@@ -684,7 +684,7 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertNotIn("Open provider page manually", page)
             self.assertNotIn("Open unsubscribe link", page)
 
-    def test_daily_dashboard_page_lists_operational_sections(self) -> None:
+    def test_daily_dashboard_page_has_three_default_sections_in_operational_order(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
             self._write_batch(
@@ -763,10 +763,20 @@ class GmailCompanionUiTests(unittest.TestCase):
             page = GmailCompanionApp(storage_dir).render_daily_dashboard_page()
 
             self.assertIn("What Threadwise did today", page)
-            self.assertIn("Needs Attention", page)
-            self.assertIn("Kept Visible", page)
-            self.assertIn("Auto-Handled", page)
-            self.assertIn("Queued unsubscribe review", page)
+            section_markers = [
+                'data-dashboard-section="needs-review"',
+                'data-dashboard-section="activity"',
+                'data-dashboard-section="subscriptions"',
+            ]
+            self.assertEqual([page.count(marker) for marker in section_markers], [1, 1, 1])
+            self.assertEqual(
+                sorted(page.index(marker) for marker in section_markers),
+                [page.index(marker) for marker in section_markers],
+            )
+            self.assertNotIn('data-dashboard-section="kept-visible"', page)
+            self.assertNotIn('data-dashboard-section="auto-handled"', page)
+            self.assertNotIn('data-dashboard-section="recent-queue"', page)
+            self.assertEqual(page.count("<details data-dashboard-diagnostics"), 1)
             self.assertIn("Open unsubscribe review", page)
 
     def test_daily_dashboard_page_renders_attention_now_and_possible_from_daily_report(self) -> None:
@@ -849,6 +859,59 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertIn("Choose an interview slot", page)
             self.assertIn("job_opportunity", page)
 
+    def test_daily_dashboard_deduplicates_review_items_and_keeps_rich_attention_controls(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-duplicate",
+                        "thread_id": "thread-duplicate",
+                        "sender": "Airline <alerts@airline.example>",
+                        "subject": "Check in before tonight",
+                        "snippet": "Check in before 21:00.",
+                        "interpretation": "This email still needs a classification decision.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                ],
+            )
+            self._write_daily_report(
+                storage_dir,
+                "founder-test-batch-1",
+                attention_items=[
+                    {
+                        "message_id": "gmail-live-duplicate",
+                        "thread_id": "thread-duplicate",
+                        "level": "needs_attention_now",
+                        "category": "travel",
+                        "reason": "Check-in closes tonight.",
+                        "evidence": "The airline gives a 21:00 deadline.",
+                        "source": "compact_payload",
+                        "handled_state": "appears_unhandled",
+                        "feedback_state": "unset",
+                        "gmail_mutation": "none",
+                    }
+                ],
+            )
+
+            page = GmailCompanionApp(storage_dir).render_daily_dashboard_page()
+            needs_review = page.split('data-dashboard-section="needs-review"', 1)[1].split(
+                'data-dashboard-section="activity"', 1
+            )[0]
+
+            self.assertEqual(needs_review.count("<h3>Check in before tonight</h3>"), 1)
+            self.assertIn("Check-in closes tonight.", needs_review)
+            self.assertIn("The airline gives a 21:00 deadline.", needs_review)
+            self.assertIn("Good catch", needs_review)
+            self.assertIn("Not attention", needs_review)
+            self.assertIn("Wrong reason", needs_review)
+
     def test_daily_dashboard_page_surfaces_only_high_consequence_insufficient_context(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
@@ -912,7 +975,9 @@ class GmailCompanionUiTests(unittest.TestCase):
             )
 
             page = GmailCompanionApp(storage_dir).render_daily_dashboard_page()
-            attention_section = page.split('<div class="eyebrow">What Changed Today</div>', 1)[0]
+            attention_section = page.split('data-dashboard-section="needs-review"', 1)[1].split(
+                'data-dashboard-section="activity"', 1
+            )[0]
 
             self.assertIn("Confirm account activity", attention_section)
             self.assertIn("Insufficient context, high-consequence cue", attention_section)
@@ -939,12 +1004,23 @@ class GmailCompanionUiTests(unittest.TestCase):
             self._write_attention_fixture(storage_dir)
 
             page = GmailCompanionApp(storage_dir).render_daily_dashboard_page()
+            hero = page.split('<section class="hero">', 1)[1].split("</section>", 1)[0]
 
-            self.assertIn("Run Gmail check", page)
-            self.assertIn("confirm-run-gmail-check", page)
-            self.assertIn("may apply existing safe EA/ labels", page)
-            self.assertIn("remove INBOX only for approved low-value categories", page)
-            self.assertIn("may call the LLM for attention detection", page)
+            self.assertIn("Run Gmail check", hero)
+            self.assertIn("confirm-run-gmail-check", hero)
+            self.assertIn("may apply existing safe EA/ labels", hero)
+            self.assertIn("remove INBOX only for approved low-value categories", hero)
+            self.assertIn("may call the LLM for attention detection", hero)
+
+    def test_daily_dashboard_omits_gmail_check_form_when_disabled(self) -> None:
+        page = GmailCompanionApp(
+            Path("/tmp/example"),
+            gmail_check_enabled=False,
+        ).render_daily_dashboard_page()
+
+        self.assertIn("Gmail check is disabled for this server.", page)
+        self.assertNotIn('action="/api/gmail-check-run"', page)
+        self.assertNotIn('id="confirm-run-gmail-check"', page)
 
     def test_dashboard_gmail_check_requires_confirmation(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1170,7 +1246,9 @@ class GmailCompanionUiTests(unittest.TestCase):
                 }
             )
             page = GmailCompanionApp(storage_dir).render_daily_dashboard_page()
-            attention_section = page.split('<div class="eyebrow">What Changed Today</div>', 1)[0]
+            attention_section = page.split('data-dashboard-section="needs-review"', 1)[1].split(
+                'data-dashboard-section="activity"', 1
+            )[0]
 
             self.assertNotIn("Flight check-in closes tonight", attention_section)
             self.assertIn("No attention-now items in the latest Gmail daily report.", attention_section)
