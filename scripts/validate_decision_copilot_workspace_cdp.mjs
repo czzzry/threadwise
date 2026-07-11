@@ -41,7 +41,7 @@ try {
         reason: "Synthetic acceptance fixture",
         details: {}
       },
-      daily_summary: { processed_count: 12, auto_handled_count: 2, kept_visible_count: 7 },
+      daily_summary: { processed_count: 12, auto_handled_count: 2, kept_visible_count: 7, needs_attention_count: 2 },
       ui_state: { allowed_labels: [
         { id: "EA/Work", name: "Work" },
         { id: "EA/Promotions", name: "Promotions" }
@@ -76,6 +76,17 @@ try {
   await evaluate(`document.querySelector('#ea-target-label').value = 'EA/Promotions'; document.querySelector('#ea-target-label').dispatchEvent(new Event('change', { bubbles: true })); document.querySelector('[data-ea-action="preview-current-change"]').click()`);
   await waitFor(() => evaluate(`document.querySelector('[data-ea-selected-state="preview"]') !== null`));
   const preview = await decisionSnapshot();
+  await evaluate(`document.querySelector('[data-ea-action="edit-current-change"]').click()`);
+  await waitFor(() => evaluate(`document.querySelector('[data-ea-selected-state="change"]') !== null`));
+  const changeAfterEdit = await decisionSnapshot();
+  await evaluate(`document.querySelector('[data-ea-action="cancel-current-change"]').click()`);
+  await waitFor(() => evaluate(`document.querySelector('[data-ea-selected-state="review"]') !== null`));
+  const reviewAfterCancel = await decisionSnapshot();
+  await evaluate(`document.querySelector('[data-ea-action="change-suggestion"]').click()`);
+  await waitFor(() => evaluate(`document.querySelector('[data-ea-selected-state="change"]') !== null`));
+  await evaluate(`document.querySelector('#ea-target-label').value = 'EA/Promotions'; document.querySelector('#ea-target-label').dispatchEvent(new Event('change', { bubbles: true }))`);
+  await evaluate(`document.querySelector('[data-ea-action="preview-current-change"]').click()`);
+  await waitFor(() => evaluate(`document.querySelector('[data-ea-selected-state="preview"]') !== null`));
   await evaluate(`(() => {
     const apply = document.querySelector('[data-ea-apply="current-only"]');
     apply.click();
@@ -85,14 +96,26 @@ try {
   await waitFor(() => evaluate(`document.querySelector('[data-ea-selected-state="applying"]') !== null`));
   const applying = await decisionSnapshot();
   const teachApplyRequestCount = await evaluate(`window.__teachApplyRequestCount || 0`);
-  await evaluate(`window.__resolveTeachApply?.({ ok: false, error: 'Synthetic reset after applying assertion.' })`);
-  await waitFor(() => evaluate(`document.querySelector('[data-ea-selected-state="preview"]') !== null`));
-  await evaluate(`document.querySelector('[data-ea-action="edit-current-change"]').click()`);
-  await waitFor(() => evaluate(`document.querySelector('[data-ea-selected-state="change"]') !== null`));
-  const changeAfterEdit = await decisionSnapshot();
-  await evaluate(`document.querySelector('[data-ea-action="cancel-current-change"]').click()`);
-  await waitFor(() => evaluate(`document.querySelector('[data-ea-selected-state="review"]') !== null`));
-  const reviewAfterCancel = await decisionSnapshot();
+  await evaluate(`window.__resolveTeachApply?.({
+    ok: true,
+    payload: {
+      acknowledgment: 'Synthetic current-email change applied.',
+      outcome: {
+        state: 'changed',
+        scope: 'current-email',
+        current_email_changed_locally: true,
+        current_email_written_to_gmail: true,
+        matching_existing_changed_locally: 0,
+        future_rule_saved: false,
+        gmail_write_mode: 'applied',
+        gmail_label_write_failed: 0
+      },
+      gmail_write_through: { messages_written: 1, inbox_removed: 1, inbox_remove_failed: 0 },
+      sidebar_state: window.__workspaceState
+    }
+  })`);
+  await waitFor(() => evaluate(`document.querySelector('[data-ea-selected-state="receipt"]') !== null`));
+  const receipt = await receiptSnapshot();
 
   await evaluate(`(() => {
     window.__workspaceState = {
@@ -148,7 +171,7 @@ try {
   await waitFor(() => evaluate(`document.querySelector('[data-ea-workspace-body="home"]') !== null`));
   const home = await workspaceSnapshot();
 
-  const result = { selected, review, change, conflict, preview, applying, teachApplyRequestCount, changeAfterEdit, reviewAfterCancel, autoHandled, autoHandledWhy, autoHandledChangeOpened, autoHandledRemovedReceipt, home, uncaughtErrorCount: uncaughtErrors.length };
+  const result = { selected, review, change, conflict, preview, applying, receipt, teachApplyRequestCount, changeAfterEdit, reviewAfterCancel, autoHandled, autoHandledWhy, autoHandledChangeOpened, autoHandledRemovedReceipt, home, uncaughtErrorCount: uncaughtErrors.length };
   console.log(JSON.stringify(result, null, 2));
   if (
     selected.bodyCount !== 1 || selected.mode !== "selected-email" || selected.hasHome || selected.hasDailySummary ||
@@ -164,6 +187,9 @@ try {
     applying.state !== "applying" || applying.primaryActions.length !== 0 ||
     applying.heading !== "Applying Promotions" || applying.effect !== "Updating the current email only…" ||
     applying.hasLabelPicker || applying.hasNote || teachApplyRequestCount !== 1 ||
+    receipt.state !== "receipt" || receipt.heading !== "Changed to Promotions" ||
+    receipt.outcomes.join(",") !== "Gmail label updated.,Removed from Inbox." ||
+    receipt.primaryActions.join(",") !== "Next email" || receipt.hasLabelPicker || receipt.hasNote ||
     changeAfterEdit.state !== "change" || changeAfterEdit.selectedLabel !== "EA/Promotions" ||
     reviewAfterCancel.state !== "review" || reviewAfterCancel.primaryActions.length !== 1 ||
     autoHandled.heading !== "Newsletter · Auto-handled" ||
@@ -204,6 +230,20 @@ async function autoHandledSnapshot() {
       receipt: state?.querySelector('[data-ea-auto-handled-receipt]')?.textContent?.trim() || '',
       hasCorrectionForm: !!document.querySelector('#ea-teach-note, #ea-target-label'),
       actions: [...(state?.querySelectorAll('button') || [])].map((node) => node.textContent.trim())
+    };
+  })()`);
+}
+
+async function receiptSnapshot() {
+  return evaluate(`(() => {
+    const state = document.querySelector('[data-ea-selected-state="receipt"]');
+    return {
+      state: state?.dataset.eaSelectedState || '',
+      heading: state?.querySelector('[data-ea-receipt-heading]')?.textContent?.trim() || '',
+      outcomes: [...(state?.querySelectorAll('[data-ea-receipt-outcome]') || [])].map((node) => node.textContent.trim()),
+      primaryActions: [...(state?.querySelectorAll('[data-tw-primary-action]') || [])].map((node) => node.textContent.trim()),
+      hasLabelPicker: !!state?.querySelector('#ea-target-label'),
+      hasNote: !!state?.querySelector('#ea-teach-note')
     };
   })()`);
 }

@@ -28,6 +28,7 @@
   let teachFlowState = "teaching";
   let inboxApplyConfirmOpen = false;
   let teachOutcome = null;
+  let teachWriteThrough = null;
   let unsubscribeResult = "";
   let feedbackOpen = false;
   let feedbackDraft = "";
@@ -300,6 +301,7 @@
     teachFlowState = "teaching";
     inboxApplyConfirmOpen = false;
     teachOutcome = null;
+    teachWriteThrough = null;
     unsubscribeResult = "";
     affectedReviewOpen = false;
     if (options.clearDraft !== false) {
@@ -789,6 +791,13 @@
       selectedDecisionMode = "review";
       selectedDecisionConflict = "";
       detailsExpanded = false;
+      if (teachFlowState === "result" && teachOutcome?.scope === "current-email") {
+        teachFlowState = "teaching";
+        teachResult = null;
+        teachOutcome = null;
+        teachWriteThrough = null;
+        teachDraft = { targetLabel: "", note: "" };
+      }
     }
     const selectedState = selected?.status === "auto-handled"
       ? (autoHandledChangeOpen ? "change" : "auto-handled")
@@ -921,6 +930,28 @@
             : `<div style="color:#6b6255;line-height:1.45;">Select a synced email to preview or teach a correction.</div>`;
       setHtml(teachPanelNode, teachPanelHtml);
       setHtml(selectedEmailSecondaryNode, "");
+    } else if (teachFlowState === "result" && teachOutcome?.scope === "current-email" && teachOutcome.current_email_written_to_gmail) {
+      gmailCheckResult = null;
+      const label = humanLabelNameFromId(teachDraft.targetLabel || selected.classification || "");
+      const gmailLabelUpdated = Boolean(teachOutcome.current_email_written_to_gmail);
+      const inboxFailed = Number(teachWriteThrough?.inbox_remove_failed || 0) > 0;
+      const inboxRemoved = Number(teachWriteThrough?.inbox_removed || 0) > 0;
+      const needsReviewCount = Number((lastSidebarState.daily_summary || {}).needs_attention_count || 0);
+      setHtml(selectedEmailNode, `
+        <div data-ea-selected-state="receipt" style="display:grid;gap:12px;margin-top:10px;">
+          <div>
+            <div data-ea-receipt-heading style="font-size:1.3rem;font-weight:840;line-height:1.15;overflow-wrap:anywhere;">Changed to ${escapeHtml(label)}</div>
+            <div style="margin-top:6px;color:#6b6255;font-size:0.88rem;overflow-wrap:anywhere;">${escapeHtml(selected.subject || "(no subject)")}</div>
+          </div>
+          <div style="display:grid;gap:8px;border-radius:14px;background:#eef7f5;padding:12px;color:#1f1a14;line-height:1.45;">
+            <div data-ea-receipt-outcome>${gmailLabelUpdated ? "Gmail label updated." : "Gmail label not confirmed."}</div>
+            <div data-ea-receipt-outcome>${inboxFailed ? "Inbox removal failed." : inboxRemoved ? "Removed from Inbox." : "Kept in Inbox."}</div>
+          </div>
+          ${needsReviewCount > 0 ? '<button type="button" data-ea-action="open-needs-attention" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Next email</button>' : ""}
+        </div>
+      `);
+      setHtml(selectedEmailSecondaryNode, "");
+      setHtml(teachPanelNode, "");
     } else if (selected.status === "auto-handled" && !autoHandledChangeOpen) {
       gmailCheckResult = null;
       const label = String(selected.classification || "Uncategorized").replace(/^EA\//, "");
@@ -2218,6 +2249,7 @@
       teachFlowState = "teaching";
       inboxApplyConfirmOpen = false;
       teachOutcome = null;
+      teachWriteThrough = null;
       unsubscribeResult = "";
       affectedReviewOpen = false;
       teachDraft = { targetLabel: "", note: "" };
@@ -2247,6 +2279,7 @@
       teachFlowState = "refining";
       inboxApplyConfirmOpen = false;
       teachOutcome = null;
+      teachWriteThrough = null;
       affectedReviewOpen = false;
       if (previousTeachPreview && previousTeachPreview.plain_english_rule) {
         teachDraft = {
@@ -2384,6 +2417,7 @@
     teachPreview = null;
     inboxApplyConfirmOpen = false;
     teachOutcome = null;
+    teachWriteThrough = null;
     affectedReviewOpen = false;
     unsubscribeResult = "";
     renderState(lastSidebarState);
@@ -2414,6 +2448,7 @@
         teachFlowState = "rule-proposed";
         inboxApplyConfirmOpen = false;
         teachOutcome = null;
+        teachWriteThrough = null;
         affectedReviewOpen = false;
         unsubscribeResult = "";
       }
@@ -2475,6 +2510,7 @@
       };
       teachFlowState = "result";
       teachOutcome = payload.outcome || null;
+      teachWriteThrough = payload.gmail_write_through || null;
       inboxApplyConfirmOpen = false;
       affectedReviewOpen = false;
       unsubscribeResult = "";
