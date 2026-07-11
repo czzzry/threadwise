@@ -3139,6 +3139,7 @@ class GmailCompanionApp:
     let draftLabel = "";
     let draftNote = "";
     let affectedReviewOpen = false;
+    let detailsExpanded = false;
 
     function escapeHtml(value) {
       return String(value || "")
@@ -3147,6 +3148,40 @@ class GmailCompanionApp:
         .replaceAll(">", "&gt;")
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#39;");
+    }
+
+    function nextStepCopy(selectedEmail) {
+      if (!selectedEmail || !selectedEmail.found) {
+        return {
+          title: "What to do now",
+          body: "Preview a synced email below, or run a Gmail check from the dashboard to refresh what Threadwise knows.",
+        };
+      }
+      if (selectedEmail.status === "needs-attention") {
+        return {
+          title: "What to do now",
+          body: "This email still needs a decision. Teach the right label below or leave it visible for later.",
+        };
+      }
+      if (selectedEmail.unsubscribe_available) {
+        return {
+          title: "What to do now",
+          body: "The agent already understands this email. If it is recurring, you can queue it for unsubscribe review here.",
+        };
+      }
+      return {
+        title: "What to do now",
+        body: "The agent has already classified this email. You only need to step in if the label or handling looks wrong.",
+      };
+    }
+
+    function activeHarnessBucketDescription() {
+      return {
+        needs_attention_items: "Items still waiting for a confident decision or follow-up.",
+        recent_items: "Most recent synced emails across the current local snapshot.",
+        auto_handled_items: "Items the agent already handled automatically.",
+        kept_visible_items: "Items the agent understood but intentionally left visible.",
+      }[activeHarnessFilter] || "Current queue slice.";
     }
 
     function contextFromItem(item) {
