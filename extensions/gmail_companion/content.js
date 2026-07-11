@@ -34,6 +34,8 @@
   let feedbackResult = "";
   let activeSummaryFilter = "recent_items";
   let detailsExpanded = false;
+  let autoHandledChangeOpen = false;
+  let lastSelectedMessageId = "";
   let affectedReviewOpen = false;
   let gmailCheckPending = false;
   let gmailCheckResult = null;
@@ -734,7 +736,7 @@
     });
   }
 
-  function renderWorkspaceShell(mode) {
+  function renderWorkspaceShell(mode, selectedState = "") {
     const workspace = document.getElementById("ea-workspace");
     if (!workspace) {
       return null;
@@ -742,14 +744,18 @@
 
     workspace.dataset.eaWorkspaceMode = mode;
     if (mode === "selected-email") {
+      const correctionPanel = selectedState === "auto-handled"
+        ? ""
+        : `
+          <div style="margin-top:14px;border:3px solid #241812;border-radius:18px;background:#ffe1a3;overflow:hidden;box-shadow:2px 2px 0 rgba(36,24,18,.18);">
+            <div style="min-height:40px;display:flex;align-items:center;padding:0 13px;border-bottom:3px solid #241812;background:#ffc64a;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.14em;color:#241812;font-weight:900;">Correct / Teach</div>
+            <div id="ea-teach-panel" style="display:grid;gap:12px;margin:12px;"></div>
+          </div>`;
       setHtml(workspace, `
         <section data-ea-workspace-body="selected-email" style="border:3px solid #241812;border-radius:18px;padding:16px;background:#fffdf7;box-shadow:2px 2px 0 rgba(36,24,18,.18);">
           <div style="color:#6b6255;font-size:0.68rem;text-transform:uppercase;letter-spacing:0.14em;font-weight:820;">Agent View</div>
           <div id="ea-selected-email"></div>
-          <div style="margin-top:14px;border:3px solid #241812;border-radius:18px;background:#ffe1a3;overflow:hidden;box-shadow:2px 2px 0 rgba(36,24,18,.18);">
-            <div style="min-height:40px;display:flex;align-items:center;padding:0 13px;border-bottom:3px solid #241812;background:#ffc64a;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.14em;color:#241812;font-weight:900;">Correct / Teach</div>
-            <div id="ea-teach-panel" style="display:grid;gap:12px;margin:12px;"></div>
-          </div>
+          ${correctionPanel}
           <div id="ea-selected-email-secondary"></div>
         </section>
       `);
@@ -774,7 +780,16 @@
     lastHarnessState = normalizeHarnessState(state);
     lastSidebarState = lastHarnessState.sidebar_state;
     const selected = lastSidebarState.selected_email || null;
-    const workspaceNodes = renderWorkspaceShell(selected?.found ? "selected-email" : "home");
+    const selectedMessageId = selected?.found ? String(selected.message_id || "") : "";
+    if (selectedMessageId !== lastSelectedMessageId) {
+      lastSelectedMessageId = selectedMessageId;
+      autoHandledChangeOpen = false;
+      detailsExpanded = false;
+    }
+    const selectedState = selected?.status === "auto-handled"
+      ? (autoHandledChangeOpen ? "change" : "auto-handled")
+      : (selected?.status || "");
+    const workspaceNodes = renderWorkspaceShell(selected?.found ? "selected-email" : "home", selectedState);
     if (!workspaceNodes) {
       return;
     }
@@ -902,6 +917,30 @@
             : `<div style="color:#6b6255;line-height:1.45;">Select a synced email to preview or teach a correction.</div>`;
       setHtml(teachPanelNode, teachPanelHtml);
       setHtml(selectedEmailSecondaryNode, "");
+    } else if (selected.status === "auto-handled" && !autoHandledChangeOpen) {
+      gmailCheckResult = null;
+      const label = String(selected.classification || "Uncategorized").replace(/^EA\//, "");
+      const inboxStatus = String((selected.details || {}).inbox_status || "").toLowerCase();
+      const handling = inboxStatus === "applied" || inboxStatus.includes("removed")
+        ? "removed it from Inbox"
+        : "kept this email in Inbox";
+      setHtml(selectedEmailNode, `
+        <div data-ea-selected-state="auto-handled" style="display:grid;gap:12px;margin-top:10px;">
+          <div>
+            <div data-ea-auto-handled-heading style="font-size:1.3rem;font-weight:840;line-height:1.15;">${escapeHtml(label)} · Auto-handled</div>
+            <div style="margin-top:6px;color:#6b6255;font-size:0.88rem;overflow-wrap:anywhere;">${escapeHtml(selected.subject || "(no subject)")} · ${escapeHtml(selected.sender || "(unknown sender)")}</div>
+          </div>
+          <div data-ea-auto-handled-receipt style="border-radius:14px;background:#eef7f5;padding:12px;color:#1f1a14;line-height:1.45;">Threadwise applied ${escapeHtml(label)} and ${handling}.</div>
+          <div style="display:flex;gap:12px;flex-wrap:wrap;">
+            <button type="button" data-ea-action="change-auto-handled" style="border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Change</button>
+            <button type="button" data-ea-action="toggle-details" style="border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Why</button>
+          </div>
+        </div>
+      `);
+      setHtml(selectedEmailSecondaryNode, detailsExpanded
+        ? `<div style="margin-top:14px;border-radius:14px;background:#f5efe2;padding:12px;color:#1f1a14;line-height:1.45;">${escapeHtml(likelyReasonForSelected(selected))}</div>`
+        : "");
+      setHtml(teachPanelNode, "");
     } else {
       gmailCheckResult = null;
       const statusStyle =
@@ -2071,6 +2110,18 @@
       }
       if (lastSidebarState) {
         renderState(lastSidebarState);
+      }
+      return;
+    }
+    const changeAutoHandledButton = event.target.closest("[data-ea-action='change-auto-handled']");
+    if (changeAutoHandledButton) {
+      event.preventDefault();
+      ANALYTICS?.decideSuggestion("edit");
+      autoHandledChangeOpen = true;
+      teachFlowState = "refining";
+      if (lastSidebarState) {
+        renderState(lastSidebarState);
+        document.getElementById("ea-teach-note")?.focus();
       }
       return;
     }

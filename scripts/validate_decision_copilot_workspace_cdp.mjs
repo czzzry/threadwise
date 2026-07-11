@@ -60,6 +60,48 @@ try {
   await evaluate(`(() => {
     window.__workspaceState = {
       ...window.__workspaceState,
+      selected_email: {
+        found: true,
+        message_id: "synthetic-auto-1",
+        subject: "Synthetic handled email",
+        sender: "fixture@example.invalid",
+        classification: "EA/Newsletter",
+        status: "auto-handled",
+        status_label: "Auto-handled",
+        reason: "Matched the newsletter signals.",
+        details: { inbox_status: "kept" }
+      }
+    };
+    window.__eaTestHooks.forceRefresh();
+    return true;
+  })()`);
+  await waitFor(() => evaluate(`document.querySelector('[data-ea-selected-state="auto-handled"]') !== null`));
+  const autoHandled = await autoHandledSnapshot();
+  await evaluate(`document.querySelector('[data-ea-action="toggle-details"]').click()`);
+  await waitFor(() => evaluate(`document.querySelector('#ea-selected-email-secondary')?.textContent.includes('Matched the newsletter signals.')`));
+  const autoHandledWhy = await evaluate(`document.querySelector('#ea-selected-email-secondary')?.textContent.trim() || ''`);
+  await evaluate(`document.querySelector('[data-ea-action="change-auto-handled"]').click()`);
+  await waitFor(() => evaluate(`document.querySelector('#ea-teach-note') !== null`));
+  const autoHandledChangeOpened = await evaluate(`document.querySelector('#ea-teach-note') !== null`);
+
+  await evaluate(`(() => {
+    window.__workspaceState = {
+      ...window.__workspaceState,
+      selected_email: {
+        ...window.__workspaceState.selected_email,
+        message_id: "synthetic-auto-2",
+        details: { inbox_status: "applied" }
+      }
+    };
+    window.__eaTestHooks.forceRefresh();
+    return true;
+  })()`);
+  await waitFor(() => evaluate(`document.querySelector('[data-ea-auto-handled-receipt]')?.textContent.includes('removed it from Inbox')`));
+  const autoHandledRemovedReceipt = await evaluate(`document.querySelector('[data-ea-auto-handled-receipt]')?.textContent.trim() || ''`);
+
+  await evaluate(`(() => {
+    window.__workspaceState = {
+      ...window.__workspaceState,
       selected_email: { found: false },
       daily_summary: { processed_count: 12, auto_handled_count: 2, kept_visible_count: 7 }
     };
@@ -69,16 +111,33 @@ try {
   await waitFor(() => evaluate(`document.querySelector('[data-ea-workspace-body="home"]') !== null`));
   const home = await workspaceSnapshot();
 
-  const result = { selected, home, uncaughtErrorCount: uncaughtErrors.length };
+  const result = { selected, autoHandled, autoHandledWhy, autoHandledChangeOpened, autoHandledRemovedReceipt, home, uncaughtErrorCount: uncaughtErrors.length };
   console.log(JSON.stringify(result, null, 2));
   if (
     selected.bodyCount !== 1 || selected.mode !== "selected-email" || selected.hasHome || selected.hasDailySummary ||
+    autoHandled.heading !== "Newsletter · Auto-handled" ||
+    autoHandled.receipt !== "Threadwise applied Newsletter and kept this email in Inbox." ||
+    autoHandled.hasCorrectionForm || autoHandled.actions.join(",") !== "Change,Why" ||
+    !autoHandledWhy.includes("Matched the newsletter signals.") || !autoHandledChangeOpened ||
+    autoHandledRemovedReceipt !== "Threadwise applied Newsletter and removed it from Inbox." ||
     home.bodyCount !== 1 || home.mode !== "home" || home.hasSelectedEmail || !home.hasDailySummary ||
     uncaughtErrors.length
   ) process.exitCode = 1;
 } finally {
   socket.close();
   await fetch(`${cdpBase}/json/close/${target.id}`).catch(() => {});
+}
+
+async function autoHandledSnapshot() {
+  return evaluate(`(() => {
+    const state = document.querySelector('[data-ea-selected-state="auto-handled"]');
+    return {
+      heading: state?.querySelector('[data-ea-auto-handled-heading]')?.textContent?.trim() || '',
+      receipt: state?.querySelector('[data-ea-auto-handled-receipt]')?.textContent?.trim() || '',
+      hasCorrectionForm: !!document.querySelector('#ea-teach-note, #ea-target-label'),
+      actions: [...(state?.querySelectorAll('button') || [])].map((node) => node.textContent.trim())
+    };
+  })()`);
 }
 
 async function workspaceSnapshot() {
