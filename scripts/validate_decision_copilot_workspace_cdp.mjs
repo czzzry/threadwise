@@ -70,6 +70,9 @@ try {
   await evaluate(`document.querySelector('[data-ea-action="change-suggestion"]').click()`);
   await waitFor(() => evaluate(`document.querySelector('[data-ea-selected-state="change"]') !== null`));
   const change = await decisionSnapshot();
+  await evaluate(`document.querySelector('#ea-teach-note').value = 'This is promotions'; document.querySelector('[data-ea-action="preview-current-change"]').click()`);
+  await waitFor(() => evaluate(`document.querySelector('[data-ea-label-conflict]') !== null`));
+  const conflict = await decisionSnapshot();
   await evaluate(`document.querySelector('#ea-target-label').value = 'EA/Promotions'; document.querySelector('#ea-target-label').dispatchEvent(new Event('change', { bubbles: true })); document.querySelector('[data-ea-action="preview-current-change"]').click()`);
   await waitFor(() => evaluate(`document.querySelector('[data-ea-selected-state="preview"]') !== null`));
   const preview = await decisionSnapshot();
@@ -145,7 +148,7 @@ try {
   await waitFor(() => evaluate(`document.querySelector('[data-ea-workspace-body="home"]') !== null`));
   const home = await workspaceSnapshot();
 
-  const result = { selected, review, change, preview, applying, teachApplyRequestCount, changeAfterEdit, reviewAfterCancel, autoHandled, autoHandledWhy, autoHandledChangeOpened, autoHandledRemovedReceipt, home, uncaughtErrorCount: uncaughtErrors.length };
+  const result = { selected, review, change, conflict, preview, applying, teachApplyRequestCount, changeAfterEdit, reviewAfterCancel, autoHandled, autoHandledWhy, autoHandledChangeOpened, autoHandledRemovedReceipt, home, uncaughtErrorCount: uncaughtErrors.length };
   console.log(JSON.stringify(result, null, 2));
   if (
     selected.bodyCount !== 1 || selected.mode !== "selected-email" || selected.hasHome || selected.hasDailySummary ||
@@ -153,6 +156,8 @@ try {
     review.suggestion !== "Threadwise suggests Work" || review.hasLabelPicker || review.hasNote ||
     change.state !== "change" || change.primaryActions.join(",") !== "Preview change" ||
     change.selectedLabel !== "EA/Work" || !change.hasLabelPicker || !change.hasNote ||
+    conflict.state !== "change" || conflict.selectedLabel !== "EA/Work" ||
+    conflict.conflict !== "Your note sounds like Promotions, but Work is selected. Choose which one you mean." ||
     preview.state !== "preview" || preview.primaryActions.join(",") !== "Apply change" ||
     preview.heading !== "Change this email to Promotions" || preview.effect !== "This updates the current email only." ||
     preview.hasLabelPicker || preview.hasNote ||
@@ -185,7 +190,8 @@ async function decisionSnapshot() {
       selectedLabel: state?.querySelector('#ea-target-label')?.value || '',
       hasNote: !!state?.querySelector('#ea-teach-note'),
       heading: state?.querySelector('[data-ea-preview-heading]')?.textContent?.trim() || '',
-      effect: state?.querySelector('[data-ea-preview-effect]')?.textContent?.trim() || ''
+      effect: state?.querySelector('[data-ea-preview-effect]')?.textContent?.trim() || '',
+      conflict: state?.querySelector('[data-ea-label-conflict]')?.textContent?.trim() || ''
     };
   })()`);
 }

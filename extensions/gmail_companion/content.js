@@ -36,6 +36,7 @@
   let detailsExpanded = false;
   let autoHandledChangeOpen = false;
   let selectedDecisionMode = "review";
+  let selectedDecisionConflict = "";
   let lastSelectedMessageId = "";
   let affectedReviewOpen = false;
   let gmailCheckPending = false;
@@ -786,6 +787,7 @@
       lastSelectedMessageId = selectedMessageId;
       autoHandledChangeOpen = false;
       selectedDecisionMode = "review";
+      selectedDecisionConflict = "";
       detailsExpanded = false;
     }
     const selectedState = selected?.status === "auto-handled"
@@ -981,6 +983,7 @@
           <label style="display:grid;gap:6px;font-weight:760;">Anything Threadwise should remember? (optional)
             <textarea id="ea-teach-note" rows="3" style="box-sizing:border-box;width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(36,24,18,.32);background:#fffdf7;color:#241812;font:inherit;resize:vertical;">${escapeHtml(teachDraft.note)}</textarea>
           </label>
+          ${selectedDecisionConflict ? `<div data-ea-label-conflict role="alert" style="border-radius:14px;background:#fde8e6;padding:12px;color:#7f1d1d;line-height:1.45;">${escapeHtml(selectedDecisionConflict)}</div>` : ""}
           <div style="display:grid;gap:9px;">
             <button type="button" data-ea-action="preview-current-change" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Preview change</button>
             <button type="button" data-ea-action="cancel-current-change" style="border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Cancel</button>
@@ -2000,6 +2003,26 @@
     return match ? match.name : labelId;
   }
 
+  function labelConflictForDraft() {
+    const note = String(teachDraft.note || "").trim().toLowerCase();
+    const selectedLabel = teachDraft.targetLabel || "";
+    if (!note || !selectedLabel) {
+      return "";
+    }
+    const allowedLabels = ((((lastSidebarState || {}).ui_state || {}).allowed_labels) || []);
+    const mentioned = allowedLabels.find((item) => {
+      const name = String(item.name || "").trim().toLowerCase();
+      if (!name || item.id === selectedLabel) {
+        return false;
+      }
+      return new RegExp(`(^|[^a-z0-9])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^a-z0-9]|$)`, "i").test(note);
+    });
+    if (!mentioned) {
+      return "";
+    }
+    return `Your note sounds like ${mentioned.name}, but ${humanLabelNameFromId(selectedLabel)} is selected. Choose which one you mean.`;
+  }
+
   async function handlePanelClick(event) {
     const openFeedbackButton = event.target.closest("[data-ea-action='open-feedback']");
     if (openFeedbackButton) {
@@ -2138,6 +2161,7 @@
       event.preventDefault();
       ANALYTICS?.decideSuggestion("edit");
       selectedDecisionMode = "change";
+      selectedDecisionConflict = "";
       teachDraft = {
         targetLabel: lastSidebarState?.selected_email?.classification || "",
         note: "",
@@ -2150,6 +2174,7 @@
     if (cancelCurrentChangeButton) {
       event.preventDefault();
       selectedDecisionMode = "review";
+      selectedDecisionConflict = "";
       teachDraft = { targetLabel: "", note: "" };
       if (lastSidebarState) renderState(lastSidebarState);
       return;
@@ -2158,6 +2183,11 @@
     if (previewCurrentChangeButton) {
       event.preventDefault();
       syncTeachDraftFromDom();
+      selectedDecisionConflict = labelConflictForDraft();
+      if (selectedDecisionConflict) {
+        if (lastSidebarState) renderState(lastSidebarState);
+        return;
+      }
       selectedDecisionMode = "preview";
       if (lastSidebarState) renderState(lastSidebarState);
       return;
@@ -2166,6 +2196,7 @@
     if (editCurrentChangeButton) {
       event.preventDefault();
       selectedDecisionMode = "change";
+      selectedDecisionConflict = "";
       if (lastSidebarState) renderState(lastSidebarState);
       document.getElementById("ea-target-label")?.focus();
       return;
