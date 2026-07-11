@@ -52,7 +52,7 @@ The current repo state has completed the eval / promotion slices `129` through `
 - compact recent-activity and retry visibility
 - a founder-facing teaching pack for this async architecture
 
-There is no active bounded implementation PRD. The next slice should be selected explicitly rather than inferred from a historical issue map or completed PRD.
+The active product direction is the founder-approved Decision Copilot UI/UX redesign in `docs/ui-ux-audit/2026-07-11-decision-copilot-direction.md`. Its slices must be implemented sequentially and verified independently; do not infer additional scope from historical UI issues.
 
 The branch also now contains a bounded, privacy-first PostHog product analytics slice for the Gmail companion workflow. Its current source of truth is `docs/analytics/tracking-plan.md`; implementation and dashboard evidence is summarized in `docs/handoff/2026-07-10-posthog-analytics-integration.md`.
 
@@ -84,6 +84,12 @@ For broader product direction, use `docs/v2-alignment.md`.
 For the PostHog analytics boundary and event contract, use `docs/analytics/tracking-plan.md` and `docs/analytics/case-study.md`.
 
 For the latest Gmail mutation reliability evidence, use `docs/handoff/2026-07-11-gmail-mutation-boundary.md` and GitHub issue `#62`.
+
+For the active Decision Copilot UI/UX implementation, use:
+
+1. `docs/ui-ux-audit/2026-07-11-decision-copilot-direction.md`
+2. `docs/prd-async-threadwise-extension-2026-07-10.md` for async behavior that must be preserved
+3. the current implementation branch and its slice-by-slice verification evidence
 
 ## What Is Historical
 
