@@ -432,6 +432,8 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("Possible rule amendment", content_js)
         self.assertIn("Accept amendment", content_js)
         self.assertIn("Teach future rule", content_js)
+        self.assertIn('data-ea-apply="future-only"', content_js)
+        self.assertNotIn('data-ea-apply="save-future-rule"', content_js)
         self.assertIn("Keep discussing", content_js)
         self.assertIn("Fix this email only updates the message you are reviewing.", content_js)
         self.assertIn("Queue unsubscribe review", content_js)
@@ -3008,8 +3010,23 @@ class GmailCompanionUiTests(unittest.TestCase):
                 }
             )
 
+            batch = json.loads((storage_dir / "batches" / "founder-test-batch-1.json").read_text())
             self.assertIn("saved a future rule", result["acknowledgment"])
             self.assertIn("No other existing stored emails were rewritten", result["acknowledgment"])
+            self.assertEqual(batch["items"][0]["final_labels"], ["account-security"])
+            self.assertIn(
+                (
+                    "replace_threadwise_labels",
+                    "gmail-live-001",
+                    [gmail_client.labels["EA/Account"]],
+                    "EA/",
+                ),
+                gmail_client.calls,
+            )
+            self.assertEqual(result["matched_existing_count"], 0)
+            self.assertEqual(result["outcome"]["scope"], "current-email-and-future-rule")
+            self.assertTrue(result["outcome"]["current_email_written_to_gmail"])
+            self.assertTrue(result["outcome"]["future_rule_saved"])
 
     def test_teach_apply_returns_fast_sidebar_state_and_starts_follow_up_refresh(self) -> None:
         app = GmailCompanionApp(Path("/tmp/example"))

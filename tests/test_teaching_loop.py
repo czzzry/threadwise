@@ -193,6 +193,53 @@ class TeachingLoopTests(unittest.TestCase):
             self.assertIn("wealthsimple", preview["plain_english_rule"])
             self.assertNotIn("future messages from notifications@m.wealthsimple.com", preview["plain_english_rule"])
 
+    def test_preview_accepts_explicitly_narrowed_newsletter_boundary_without_reasking(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                [
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "zevi-001",
+                        "sender": "Zevi Arnovitz <zevi@example.com>",
+                        "subject": "The resource guide you requested",
+                        "snippet": "Here is this week's guide and digest.",
+                        "interpretation": "Looks promotional.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                ],
+            )
+
+            vague_preview = build_sidebar_teach_preview(
+                storage_dir,
+                selected_context={"provider": "gmail", "message_id": "zevi-001"},
+                target_label="newsletter",
+                note="Keep newsletters from Zevi as Newsletter.",
+                scope="sender",
+            )
+            narrowed_preview = build_sidebar_teach_preview(
+                storage_dir,
+                selected_context={"provider": "gmail", "message_id": "zevi-001"},
+                target_label="newsletter",
+                note=(
+                    "Only resource, guide, newsletter, or digest emails that I requested should be Newsletter. "
+                    "Exclude unrelated account or transactional mail. ReplyNeeded wins if a future message "
+                    "directly asks me to respond."
+                ),
+                scope="sender",
+            )
+
+            self.assertTrue(vague_preview["clarifying_question"])
+            self.assertEqual(narrowed_preview["selected_label_after"], ["newsletter"])
+            self.assertEqual(narrowed_preview["semantic_rule"]["semantic_pattern"], "newsletter or digest emails")
+            self.assertEqual(narrowed_preview["clarifying_question"], "")
+            self.assertEqual(narrowed_preview["rule_confidence"], "medium")
+
     def test_preview_interprets_rejection_note_as_account_correction_not_wrong_existing_labels(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
