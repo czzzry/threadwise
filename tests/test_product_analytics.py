@@ -1,4 +1,5 @@
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -182,6 +183,30 @@ class ProductAnalyticsTests(unittest.TestCase):
 
             with self.assertRaises(AnalyticsValidationError):
                 store.remember("person@example.com")
+
+    def test_anonymous_distinct_id_remember_tolerates_concurrent_writes(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = AnonymousDistinctIdStore(Path(temp_dir))
+            distinct_ids = [
+                "tw_anon_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                "tw_anon_bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+            ]
+            failures: list[Exception] = []
+
+            def remember(distinct_id: str) -> None:
+                try:
+                    store.remember(distinct_id)
+                except Exception as exc:  # pragma: no cover - captured for assertion
+                    failures.append(exc)
+
+            threads = [threading.Thread(target=remember, args=(distinct_id,)) for distinct_id in distinct_ids]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+
+            self.assertEqual(failures, [])
+            self.assertIn(store.get_or_create(), distinct_ids)
 
     def test_bucket_count_has_bounded_low_cardinality_values(self) -> None:
         self.assertEqual(bucket_count(0), "0")

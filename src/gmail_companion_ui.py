@@ -692,16 +692,6 @@ class GmailCompanionApp:
         runtime = self._cached_runtime_payload()
         items = runtime.get("items", [])
         selected_context = selected_context or {}
-        if not (selected_context.get("message_id") or selected_context.get("subject") or selected_context.get("sender")):
-            for item in items:
-                if item.get("status") == "needs-attention":
-                    selected_context = {
-                        "provider": "gmail",
-                        "message_id": item.get("message_id", ""),
-                        "subject": item.get("subject", ""),
-                        "sender": item.get("sender", ""),
-                    }
-                    break
         return {
             "selected_context": selected_context,
             "sidebar_state": self.sidebar_state(selected_context),
@@ -968,7 +958,9 @@ class GmailCompanionApp:
         payload = dict(payload)
         payload.setdefault("account_id", infer_gmail_account_id(self._storage_dir))
         runner = self._gmail_run_runner or self._run_daily_gmail_check
-        return trigger_dashboard_gmail_check(self._storage_dir, payload, runner)
+        response = trigger_dashboard_gmail_check(self._storage_dir, payload, runner)
+        self._invalidate_companion_caches()
+        return response
 
     def preview_attention_rule_proposal(self, payload: dict) -> dict:
         message_id = payload.get("message_id") or ""
@@ -1733,13 +1725,25 @@ class GmailCompanionApp:
         if (!name || item.id === draftLabel) {
           return false;
         }
-        const escaped = name.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&");
-        return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, "i").test(note);
+        return noteExplicitlyAssignsLabel(note, name);
       });
       if (!mentioned) {
         return "";
       }
       return `Your note sounds like ${humanLabelNameFromId(mentioned.id)}, but ${humanLabelNameFromId(draftLabel)} is selected. Choose which one you mean.`;
+    }
+
+    function noteExplicitlyAssignsLabel(note, alias) {
+      const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, "\\\\$&");
+      const clauses = String(note || "").split(/[.!?;]+/).map((part) => part.trim()).filter(Boolean);
+      return clauses.some((clause) => {
+        if (/^(if|unless|except|only when)\\b/i.test(clause)) return false;
+        if (new RegExp(`\\\\b(?:not|isn't|is not|aren't|are not|never)\\\\s+(?:an?\\\\s+)?${escaped}\\\\b`, "i").test(clause)) return false;
+        return [
+          `\\\\b(?:should be|belongs? (?:in|to)|label(?:ed)? (?:as|with)|categor(?:y|ize|ized) (?:as|with)|use)\\\\s+(?:an?\\\\s+)?${escaped}\\\\b`,
+          `\\\\b${escaped}\\\\s+(?:is|should be)\\\\s+(?:the )?(?:label|category)\\\\b`,
+        ].some((pattern) => new RegExp(pattern, "i").test(clause));
+      });
     }
 
     function activeHarnessBucketDescription() {

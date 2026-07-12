@@ -83,6 +83,7 @@ class GmailCompanionUiTests(unittest.TestCase):
                 "sender": ["Sender <sender@example.com>"],
                 "page_url": ["https://mail.google.com"],
                 "selected_at": ["2026-06-30T10:00:00Z"],
+                "gmail_labels": ["EA/Finance"],
             }
         )
 
@@ -96,6 +97,7 @@ class GmailCompanionUiTests(unittest.TestCase):
                 "sender": "Sender <sender@example.com>",
                 "page_url": "https://mail.google.com",
                 "selected_at": "2026-06-30T10:00:00Z",
+                "gmail_labels": "EA/Finance",
             },
         )
         self.assertEqual(selected_email_contract()["contract_version"], "gmail-companion-selected-email-v1")
@@ -306,6 +308,17 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn('let minimized = true;', content_js)
         self.assertIn('PANEL_WIDTH_MINIMIZED = "70px"', content_js)
         self.assertIn('id="ea-brand-toggle"', content_js)
+        self.assertIn('addEventListener("click", handleBrandToggle)', content_js)
+        self.assertIn("function handleBrandToggle", content_js)
+        self.assertIn("selected_at: previous.selected_at || nextContext.selected_at", content_js)
+        self.assertIn("function openThreadwiseHome", content_js)
+        self.assertIn("let forcedHome = false", content_js)
+        self.assertIn('return "home";', content_js)
+        self.assertIn("Review next", content_js)
+        self.assertIn("Review queue needs a refresh", content_js)
+        self.assertIn("function noteExplicitlyAssignsLabel", content_js)
+        self.assertIn("function defaultManualRuleNote", content_js)
+        self.assertIn("teachDraft.note = defaultManualRuleNote()", content_js)
         self.assertIn("data-ea-brand-img", content_js)
         self.assertIn('id="ea-editorial-utility-styles"', content_js)
         self.assertIn("#ea-panel [data-tw-primary-action]", content_js)
@@ -318,6 +331,10 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn('chrome.runtime.getURL("assets/brand/threadwise-app-icon.png")', content_js)
         self.assertIn("open Threadwise", content_js)
         self.assertIn("Check again", content_js)
+        self.assertIn("Running Gmail sync...", content_js)
+        background_js = (Path(__file__).parent.parent / "extensions/gmail_companion/background.js").read_text()
+        self.assertIn("const GMAIL_CHECK_TIMEOUT_MS = 180000", background_js)
+        self.assertIn('message.path === "/api/gmail-check-run" ? GMAIL_CHECK_TIMEOUT_MS', background_js)
         self.assertIn("data-ea-action=\"force-refresh\"", content_js)
         self.assertIn("friendlyErrorMessage", content_js)
         self.assertIn("Reading this email...", content_js)
@@ -1949,7 +1966,7 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertEqual(state["daily_summary"]["changed_today"]["label_writes_count"], 0)
             self.assertEqual(state["daily_summary"]["changed_today"]["inbox_removed_count"], 1)
 
-    def test_harness_state_defaults_to_a_needs_attention_email_and_exposes_buckets(self) -> None:
+    def test_harness_state_preserves_empty_context_for_home_and_exposes_buckets(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
             self._write_batch(
@@ -1990,10 +2007,9 @@ class GmailCompanionUiTests(unittest.TestCase):
 
             state = GmailCompanionApp(storage_dir).harness_state({})
 
-            self.assertEqual(state["selected_context"]["message_id"], "gmail-live-001")
-            self.assertTrue(state["sidebar_state"]["selected_email"]["found"])
-            self.assertEqual(state["sidebar_state"]["selected_email"]["status"], "needs-attention")
-            self.assertEqual(state["sidebar_state"]["selected_email"]["suggested_label"], "job-related")
+            self.assertEqual(state["selected_context"], {})
+            self.assertFalse(state["sidebar_state"]["selected_email"]["found"])
+            self.assertEqual(state["sidebar_state"]["selected_email"]["status"], "idle")
             self.assertEqual(len(state["needs_attention_items"]), 1)
             self.assertEqual(len(state["recent_items"]), 2)
             self.assertEqual(state["auto_handled_items"], [])
@@ -2035,6 +2051,36 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertFalse(state["selected_email"]["found"])
             self.assertEqual(state["selected_email"]["status"], "not-in-snapshot")
             self.assertIn("Run a fresh Gmail sync", state["selected_email"]["reason"])
+
+    def test_sidebar_state_prefers_visible_gmail_ea_label_over_stale_local_item(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[{
+                    "source": "gmail",
+                    "account_id": "founder-test",
+                    "message_id": "gmail-live-001",
+                    "sender": "Sun Life <sunlife@info.sunlife.ca>",
+                    "subject": "Your statement is ready",
+                    "review_state": "pending",
+                    "final_labels": [],
+                    "applied_labels": [],
+                }],
+            )
+
+            selected = GmailCompanionApp(storage_dir).sidebar_state({
+                "provider": "gmail",
+                "message_id": "gmail-live-001",
+                "subject": "Your statement is ready",
+                "sender": "sunlife@info.sunlife.ca",
+                "gmail_labels": "EA/Finance",
+            })["selected_email"]
+
+            self.assertEqual(selected["internal_label"], "financial-account")
+            self.assertEqual(selected["classification"], "EA/Finance")
+            self.assertEqual(selected["status"], "kept-visible")
 
     def test_daily_summary_rolls_up_recent_gmail_reports(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

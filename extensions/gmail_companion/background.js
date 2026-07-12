@@ -3,6 +3,8 @@ const HEALTH_PATH = "/api/health";
 const HEALTH_SERVICE_ID = "threadwise-gmail-companion";
 const HEALTH_TIMEOUT_MS = 5000;
 const HARNESS_STATE_TIMEOUT_MS = 30000;
+// A bounded live Gmail run can take longer than an ordinary state read.
+const GMAIL_CHECK_TIMEOUT_MS = 180000;
 const ANALYTICS_DISTINCT_ID_KEY = "threadwise_analytics_distinct_id";
 const ANONYMOUS_ID_PATTERN = /^tw_anon_[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -142,7 +144,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "email-agent:api") {
     fetchJson(message.path, {
       method: message.method || "GET",
-      timeoutMs: HARNESS_STATE_TIMEOUT_MS,
+      timeoutMs: message.path === "/api/gmail-check-run" ? GMAIL_CHECK_TIMEOUT_MS : HARNESS_STATE_TIMEOUT_MS,
       body: message.body ? JSON.stringify(message.body) : undefined,
     })
       .then(async (response) => {

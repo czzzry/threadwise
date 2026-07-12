@@ -234,7 +234,7 @@ class AnonymousDistinctIdStore:
     def remember(self, distinct_id: str) -> str:
         _validate_distinct_id(distinct_id)
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        temporary_path = self._path.with_suffix(".tmp")
+        temporary_path = self._path.with_name(f"{self._path.stem}.{uuid.uuid4().hex}.tmp")
         temporary_path.write_text(json.dumps({"distinct_id": distinct_id}, indent=2) + "\n")
         temporary_path.replace(self._path)
         return distinct_id

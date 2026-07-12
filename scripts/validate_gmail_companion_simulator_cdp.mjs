@@ -119,6 +119,17 @@ try {
   );
 
   await evaluate(`(() => {
+    const note = document.querySelector('#sim-teach-note');
+    note.value = "This should be Work, not Personal. These messages may look promotional, but they are formal work updates I need to keep visible. Only use ReplyNeeded if a later message explicitly asks me to act by a deadline.";
+    note.dispatchEvent(new Event('input', { bubbles: true }));
+    document.querySelector('[data-action="preview-current-change"]').click();
+    return true;
+  })()`);
+  await waitFor(() => evaluate("document.querySelector('[data-ea-selected-state=\"teach-preview\"]') !== null"));
+  const negatedAlternative = await decisionSnapshot();
+  assertEqual(negatedAlternative.conflict, "", "negated and conditional categories do not create false conflicts");
+
+  await evaluate(`(() => {
     const select = document.querySelector('#sim-target-label');
     select.value = 'promotions';
     select.dispatchEvent(new Event('change', { bubbles: true }));

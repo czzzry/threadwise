@@ -47,6 +47,8 @@
   let affectedReviewOpen = false;
   let gmailCheckPending = false;
   let gmailCheckResult = null;
+  let forcedHome = false;
+  let forcedHomeLiveContext = null;
   let teachDraft = {
     targetLabel: "",
     note: "",
@@ -245,10 +247,7 @@
       minimized = !minimized;
       renderMinimized();
     });
-    root.querySelector("#ea-brand-toggle").addEventListener("click", () => {
-      minimized = !minimized;
-      renderMinimized();
-    });
+    root.querySelector("#ea-brand-toggle").addEventListener("click", handleBrandToggle);
     root.querySelector("[data-ea-brand-img]")?.addEventListener("error", (event) => {
       event.target.style.display = "none";
       if (event.target.nextElementSibling) {
@@ -295,7 +294,7 @@
     if (headerCopy) {
       headerCopy.style.display = minimized ? "none" : "flex";
     }
-    brandButton.title = minimized ? `${statusCopy.label} - open Threadwise` : "Minimize Threadwise";
+    brandButton.title = minimized ? `${statusCopy.label} - open Threadwise Home` : "Threadwise Home";
     button.textContent = "Minimize";
     button.title = statusCopy.label;
     if (status) {
@@ -331,6 +330,9 @@
     const subject = firstText(["h2[data-thread-perm-id]", "h2.hP", "h2[role='heading']"]);
     const messageNode = subject ? selectedMessageNode() : null;
     const senderNode = selectedSenderNode(messageNode);
+    const gmailLabels = [...document.querySelectorAll('[aria-label^="Search for all messages with label EA/"]')]
+      .map((node) => (node.textContent || "").trim())
+      .filter(Boolean);
     return {
       provider: "gmail",
       message_id: messageNode
@@ -343,6 +345,7 @@
       sender: senderNode
         ? (senderNode.getAttribute("email") || senderNode.textContent || "").trim()
         : "",
+      gmail_labels: [...new Set(gmailLabels)].join(","),
       page_url: window.location.href,
       selected_at: new Date().toISOString(),
     };
@@ -412,6 +415,7 @@
     if (!item) {
       return false;
     }
+    forcedHome = false;
     manualPreviewContext = contextFromItem(item);
     teachPreview = null;
     previousTeachPreview = null;
@@ -446,6 +450,10 @@
 
   function refreshSelection(force = false) {
     lastLiveContext = stabilizedLiveContext(selectedContext());
+    if (forcedHome && isMeaningfulContext(lastLiveContext) && (!forcedHomeLiveContext || !contextsMatch(lastLiveContext, forcedHomeLiveContext))) {
+      forcedHome = false;
+      forcedHomeLiveContext = null;
+    }
     const context = chooseRefreshContext();
     const payload = JSON.stringify({
       provider: context.provider || "",
@@ -453,6 +461,7 @@
       thread_id: context.thread_id || "",
       subject: context.subject || "",
       sender: context.sender || "",
+      gmail_labels: context.gmail_labels || "",
       page_url: context.page_url || "",
     });
     if (!force && payload === previousPayload) {
@@ -508,6 +517,16 @@
   }
 
   function chooseRefreshContext() {
+    if (forcedHome) {
+      return {
+        provider: "gmail",
+        message_id: "",
+        thread_id: "",
+        subject: "",
+        sender: "",
+        page_url: window.location.href,
+      };
+    }
     if (manualPreviewContext) {
       return manualPreviewContext;
     }
@@ -524,6 +543,12 @@
     const previous = lastLiveContext || {};
     if (!isMeaningfulContext(nextContext)) {
       return previous;
+    }
+    if (contextsMatch(nextContext, previous)) {
+      return {
+        ...nextContext,
+        selected_at: previous.selected_at || nextContext.selected_at,
+      };
     }
     if (shouldPreferPreviousContext(nextContext, previous)) {
       return previous;
@@ -863,6 +888,47 @@
     teachDraft = { targetLabel: "", note: "" };
   }
 
+  function openThreadwiseHome(event) {
+    if (event) {
+      event.preventDefault();
+    }
+    minimized = false;
+    forcedHome = true;
+    forcedHomeLiveContext = lastLiveContext ? { ...lastLiveContext } : null;
+    manualPreviewContext = null;
+    gmailCheckResult = null;
+    resetPerEmailInteraction();
+    previousPayload = "";
+    if (lastHarnessState) {
+      renderState(lastHarnessState);
+    } else {
+      refreshSelection(true);
+    }
+    renderMinimized();
+  }
+
+  function handleBrandToggle(event) {
+    if (!minimized) {
+      openThreadwiseHome(event);
+      return;
+    }
+    if (event) {
+      event.preventDefault();
+    }
+    minimized = false;
+    forcedHome = false;
+    forcedHomeLiveContext = null;
+    lastLiveContext = stabilizedLiveContext(selectedContext());
+    if (isMeaningfulContext(lastLiveContext)) {
+      manualPreviewContext = null;
+      previousPayload = "";
+      refreshSelection(true);
+    } else if (lastHarnessState || lastSidebarState) {
+      renderState(lastHarnessState || lastSidebarState);
+    }
+    renderMinimized();
+  }
+
   function hasFailedOrPendingHandling(selected) {
     const details = (selected && selected.details) || {};
     const statuses = [details.write_status, details.inbox_status]
@@ -890,6 +956,9 @@
   }
 
   function resolveWorkspaceMode(sidebarState, selected) {
+    if (forcedHome) {
+      return "home";
+    }
     if (!selected || (selected.status === "idle" && !selectedMessageIdentity(sidebarState, selected))) {
       return "home";
     }
@@ -916,6 +985,9 @@
     }
     if (teachFlowState === "applying") {
       return "applying";
+    }
+    if (selectedDecisionMode === "teach-preview" && (teachPreview || teachResult || teachFlowState === "previewing")) {
+      return "teach-preview";
     }
     if (selectedDecisionMode === "teach-scope" && teachPreview && teachFlowState === "scope-confirmation") {
       return "teach-scope";
@@ -1058,7 +1130,8 @@
         <div data-ea-selected-state="blocked" role="status" style="display:grid;gap:12px;">
           <h2 style="margin:0;font-size:1.3rem;line-height:1.2;">${escapeHtml(title)}</h2>
           <div style="border-radius:14px;background:#fff4dd;padding:12px;color:#1f1a14;line-height:1.45;">${escapeHtml(detail)}</div>
-          <button type="button" data-ea-action="force-refresh" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#ffc64a;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Check again</button>
+          <button type="button" data-ea-action="${hasSnapshotMiss ? "run-gmail-sync" : "force-refresh"}" ${gmailCheckPending ? "disabled" : ""} data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:${gmailCheckPending ? "#c7d8cc" : "#ffc64a"};color:#241812;border-radius:11px;padding:9px 12px;cursor:${gmailCheckPending ? "wait" : "pointer"};font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">${gmailCheckPending ? "Running Gmail sync..." : hasSnapshotMiss ? "Run Gmail sync" : "Check again"}</button>
+          ${gmailCheckResult ? renderGmailCheckResultHtml(gmailCheckResult) : ""}
         </div>
       `);
       setHtml(selectedEmailSecondaryNode, "");
@@ -1304,6 +1377,26 @@
       `);
       setHtml(selectedEmailSecondaryNode, "");
       setHtml(teachPanelNode, "");
+    } else if (workspaceMode === "teach-preview") {
+      const label = decisionLabelName(teachDraft.targetLabel || decisionSuggestedLabelId(selected) || selected.classification || "");
+      const learningPreviewHtml = teachPreview
+        ? renderTeachPreviewHtml(teachPreview)
+        : teachResult
+          ? renderTeachResultHtml(teachResult)
+          : renderTeachResultHtml(teachPendingResult("preview"));
+      setHtml(selectedEmailNode, `
+        <div data-ea-selected-state="teach-preview" style="display:grid;gap:12px;margin-top:10px;">
+          <div>
+            <div style="font-size:1.3rem;font-weight:840;line-height:1.15;">Change this email to ${escapeHtml(label)}</div>
+            <div style="margin-top:6px;color:#6b6255;font-size:0.88rem;overflow-wrap:anywhere;">${escapeHtml(selected.subject || "(no subject)")}</div>
+          </div>
+          <div style="border-radius:14px;background:#f5efe2;padding:12px;color:#1f1a14;line-height:1.45;">This keeps the simple current-email change, and also lets you choose whether the lesson should apply to future or matching inbox emails.</div>
+          ${learningPreviewHtml}
+          <button type="button" data-ea-action="edit-current-change" style="justify-self:start;border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Edit</button>
+        </div>
+      `);
+      setHtml(selectedEmailSecondaryNode, "");
+      setHtml(teachPanelNode, "");
     } else if (workspaceMode === "teach-scope") {
       setHtml(selectedEmailNode, `
         <div data-ea-selected-state="teach-scope" style="display:grid;gap:12px;margin-top:10px;">
@@ -1513,6 +1606,25 @@
       const metricButtonStyle = (key) =>
       `border:2px solid #241812;border-radius:11px;background:${activeSummaryFilter === key ? "#dff8ed" : "#fffdf7"};box-shadow:2px 2px 0 rgba(36,24,18,.18);padding:12px;text-align:left;cursor:pointer;font:inherit;color:#241812;`;
     const keptVisibleCount = summary.kept_visible_count ?? countForFilter("kept_visible_items");
+    if (workspaceMode === "home") {
+      const reportedNeedsReviewCount = Number(summary.needs_attention_count || 0);
+      const needsReviewCount = countForFilter("needs_attention_items");
+      const queueNeedsRefresh = reportedNeedsReviewCount > 0 && needsReviewCount === 0;
+      setHtml(dailySummaryNode, `
+        <div data-ea-selected-state="home" style="display:grid;gap:12px;margin-top:10px;">
+          <div style="font-size:1.3rem;font-weight:840;line-height:1.15;overflow-wrap:anywhere;">${queueNeedsRefresh ? "Review queue needs a refresh" : needsReviewCount ? `${needsReviewCount} email${needsReviewCount === 1 ? "" : "s"} need your review` : "Your inbox is caught up"}</div>
+          <div style="color:#6b6255;line-height:1.45;">${Number(summary.processed_count || 0)} processed · ${Number(summary.auto_handled_count || 0)} auto-handled · ${Number(keptVisibleCount || 0)} kept visible</div>
+          ${queueNeedsRefresh ? '<button type="button" data-ea-action="run-gmail-sync" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#ffc64a;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Run Gmail sync</button>' : needsReviewCount ? '<button type="button" data-ea-action="open-needs-attention" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Review next</button>' : ""}
+          <div style="display:flex;flex-wrap:wrap;gap:12px;">
+            <a href="${LOCAL_ORIGIN}/daily-dashboard" target="_blank" rel="noreferrer" style="border:0;background:transparent;color:#5d5342;border-radius:0;padding:7px 2px;display:inline-flex;align-items:center;text-decoration:underline;text-underline-offset:3px;font:inherit;font-weight:760;box-shadow:none;">Activity</a>
+            <a href="${LOCAL_ORIGIN}/unsubscribe-review" target="_blank" rel="noreferrer" style="border:0;background:transparent;color:#5d5342;border-radius:0;padding:7px 2px;display:inline-flex;align-items:center;text-decoration:underline;text-underline-offset:3px;font:inherit;font-weight:760;box-shadow:none;">Subscription cleanup</a>
+          </div>
+          ${gmailCheckResult ? renderGmailCheckResultHtml(gmailCheckResult) : ""}
+          ${activityHtml}
+        </div>
+      `);
+      return;
+    }
     setHtml(dailySummaryNode, `
       ${activityHtml}
       <div style="margin-top:10px;color:#6b6255;line-height:1.45;">${summary.run_count > 1 ? `Rolling view across the last ${summary.run_count} Gmail runs` : "Latest run snapshot"}</div>
@@ -2414,12 +2526,40 @@
       if (!aliases.length || item.id === selectedLabel) {
         return false;
       }
-      return aliases.some((alias) => new RegExp(`(^|[^a-z0-9])${alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^a-z0-9]|$)`, "i").test(note));
+      return aliases.some((alias) => noteExplicitlyAssignsLabel(note, alias));
     });
     if (!mentioned) {
       return "";
     }
     return `Your note sounds like ${decisionLabelName(mentioned.id)}, but ${decisionLabelName(selectedLabel)} is selected. Choose which one you mean.`;
+  }
+
+  function noteExplicitlyAssignsLabel(note, alias) {
+    const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const clauses = String(note || "").split(/[.!?;]+/).map((part) => part.trim()).filter(Boolean);
+    return clauses.some((clause) => {
+      if (/^(if|unless|except|only when)\b/i.test(clause)) {
+        return false;
+      }
+      if (new RegExp(`\\b(?:not|isn't|is not|aren't|are not|never)\\s+(?:an?\\s+)?${escaped}\\b`, "i").test(clause)) {
+        return false;
+      }
+      if (new RegExp(`\\b${escaped}\\b[^.!?;]*\\b(?:if|when|unless)\\b`, "i").test(clause)) {
+        return false;
+      }
+      return [
+        `\\b(?:should be|belongs? (?:in|to)|label(?:ed)? (?:as|with)|categor(?:y|ize|ized) (?:as|with)|use)\\s+(?:an?\\s+)?${escaped}\\b`,
+        `\\b${escaped}\\s+(?:is|should be)\\s+(?:the )?(?:label|category)\\b`,
+      ].some((pattern) => new RegExp(pattern, "i").test(clause));
+    });
+  }
+
+  function defaultManualRuleNote() {
+    const selected = lastSidebarState?.selected_email || {};
+    const context = lastSidebarState?.selected_context || {};
+    const sender = selected.sender || context.sender || "this sender";
+    const label = decisionLabelName(teachDraft.targetLabel);
+    return `Messages from ${sender} like this should be labeled ${label}.`;
   }
 
   async function handlePanelClick(event) {
@@ -2503,6 +2643,8 @@
     const queueButton = event.target.closest("[data-ea-action='open-needs-attention']");
     if (queueButton) {
       event.preventDefault();
+      forcedHome = false;
+      forcedHomeLiveContext = null;
       activeSummaryFilter = "needs_attention_items";
       ANALYTICS?.openReviewQueue(Number((lastSidebarState?.daily_summary || {}).needs_attention_count || 0));
       openFirstSummaryItemIfHelpful(activeSummaryFilter);
@@ -2601,6 +2743,7 @@
       if (isTeachPending()) {
         return;
       }
+      selectedDecisionMode = "teach-preview";
       return previewTeach();
     }
     const acceptSuggestionButton = event.target.closest("[data-ea-action='accept-suggestion']");
@@ -2672,15 +2815,22 @@
         if (lastSidebarState) renderState(lastSidebarState);
         return;
       }
-      selectedDecisionMode = "preview";
-      if (lastSidebarState) renderState(lastSidebarState);
-      return;
+      if (!String(teachDraft.note || "").trim()) {
+        teachDraft.note = defaultManualRuleNote();
+      }
+      selectedDecisionMode = "teach-preview";
+      return previewTeach();
     }
     const editCurrentChangeButton = event.target.closest("[data-ea-action='edit-current-change']");
     if (editCurrentChangeButton) {
       event.preventDefault();
       selectedDecisionMode = "change";
       selectedDecisionConflict = "";
+      teachPreview = null;
+      teachResult = null;
+      teachFlowState = "teaching";
+      inboxApplyConfirmOpen = false;
+      affectedReviewOpen = false;
       if (lastSidebarState) renderState(lastSidebarState);
       document.getElementById("ea-target-label")?.focus();
       return;
@@ -2730,6 +2880,7 @@
       teachPreview = null;
       teachResult = null;
       teachFlowState = "refining";
+      selectedDecisionMode = "change";
       inboxApplyConfirmOpen = false;
       teachOutcome = null;
       teachWriteThrough = null;
@@ -2814,6 +2965,8 @@
     if (returnButton) {
       event.preventDefault();
       manualPreviewContext = null;
+      forcedHome = false;
+      forcedHomeLiveContext = null;
       teachPreview = null;
       previousTeachPreview = null;
       teachResult = null;
@@ -2876,7 +3029,7 @@
     teachWriteThrough = null;
     affectedReviewOpen = false;
     unsubscribeResult = "";
-    renderState(lastSidebarState);
+    renderState(lastHarnessState || lastSidebarState);
     chrome.runtime.sendMessage({
       type: "email-agent:api",
       path: "/api/teach-preview",
@@ -2891,12 +3044,12 @@
       if (chrome.runtime.lastError) {
         teachResult = teachErrorResult("preview", chrome.runtime.lastError.message || "Could not preview the lesson.");
         teachPreview = null;
-        teachFlowState = "teaching";
+        teachFlowState = "preview-error";
         affectedReviewOpen = false;
       } else if (!response || !response.ok) {
         teachResult = teachErrorResult("preview", (response && (response.payload?.error || response.error)) || "Could not preview the lesson.");
         teachPreview = null;
-        teachFlowState = "teaching";
+        teachFlowState = "preview-error";
         affectedReviewOpen = false;
       } else {
         teachResult = null;
@@ -2908,7 +3061,7 @@
         affectedReviewOpen = false;
         unsubscribeResult = "";
       }
-      renderState(lastSidebarState);
+      renderState(lastHarnessState || lastSidebarState);
     });
   }
 
@@ -3022,8 +3175,8 @@
     }
     gmailCheckPending = true;
     gmailCheckResult = null;
-    if (lastSidebarState) {
-      renderState(lastSidebarState);
+    if (lastHarnessState) {
+      renderState(lastHarnessState);
     }
     chrome.runtime.sendMessage({
       type: "email-agent:api",
@@ -3040,8 +3193,8 @@
           title: "Gmail sync did not start",
           message: chrome.runtime.lastError.message || "Could not start a Gmail sync.",
         };
-        if (lastSidebarState) {
-          renderState(lastSidebarState);
+        if (lastHarnessState) {
+          renderState(lastHarnessState);
         }
         return;
       }
@@ -3051,8 +3204,8 @@
           title: "Gmail sync did not start",
           message: (response && (response.payload?.error || response.error)) || "Could not start a Gmail sync.",
         };
-        if (lastSidebarState) {
-          renderState(lastSidebarState);
+        if (lastHarnessState) {
+          renderState(lastHarnessState);
         }
         return;
       }
@@ -3287,11 +3440,12 @@
         return {
           previousPayload,
           activeSummaryFilter,
-        manualPreviewContext,
-        detailsExpanded,
-        lastLiveContext,
-        selectedContext: lastSidebarState?.selected_context || {},
-        selectedEmail: lastSidebarState?.selected_email || null,
+          manualPreviewContext,
+          forcedHome,
+          detailsExpanded,
+          lastLiveContext,
+          selectedContext: lastSidebarState?.selected_context || {},
+          selectedEmail: lastSidebarState?.selected_email || null,
           recentCount: (lastHarnessState?.recent_items || []).length,
           needsAttentionCount: (lastHarnessState?.needs_attention_items || []).length,
         };
@@ -3388,11 +3542,17 @@
       },
       returnToLive() {
         manualPreviewContext = null;
+        forcedHome = false;
+        forcedHomeLiveContext = null;
         teachPreview = null;
         previousTeachPreview = null;
         teachResult = null;
         unsubscribeResult = "";
         refreshSelection(true);
+        return { ok: true };
+      },
+      openHome() {
+        openThreadwiseHome();
         return { ok: true };
       },
     };
