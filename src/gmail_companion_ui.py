@@ -9,6 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import sys
 from urllib.parse import parse_qs, urlparse
+from uuid import uuid4
 
 from src.attention_feedback import record_attention_feedback
 from src.gmail_automation import run_daily_gmail_automation
@@ -23,10 +24,18 @@ from src.attention_rules import (
 from src.gmail_writer import MockGmailLabelWriter
 from src.label_taxonomy import CANONICAL_LABEL_ORDER, gmail_label_name
 from src.live_gmail_client import GMAIL_MODIFY_SCOPE
+from src.local_artifacts import write_json_artifact
+from src.product_analytics import (
+    ANALYTICS_WORKFLOW_VERSION,
+    AnonymousDistinctIdStore,
+    ProductAnalytics,
+    bucket_count,
+)
 from src.unsubscribe_inventory_store import UnsubscribeInventoryStore
 from src.unsubscribe_execution import UnsubscribeExecutor
 
 from src.gmail_companion_rendering import (
+    dashboard_item_identity,
     escape_html,
     render_dashboard_attention_cards,
     render_dashboard_candidate_cards,
@@ -34,6 +43,7 @@ from src.gmail_companion_rendering import (
     render_dashboard_email_cards,
     render_dashboard_section,
     render_dashboard_unsubscribe_cards,
+    render_unsubscribe_row,
     render_unsubscribe_section,
     server_origin,
     unsubscribe_section_key,
@@ -74,6 +84,16 @@ HEALTH_STATUS_CACHE_SECONDS = 5.0
 COMPANION_DATA_CACHE_SECONDS = 120.0
 INBOX_BACKFILL_CONFIRM_THRESHOLD = 200
 INBOX_BACKFILL_ESTIMATE_CAP = 250
+THREADWISE_APP_VERSION = "0.1.0"
+
+
+def script_safe_json(value: object) -> str:
+    return (
+        json.dumps(value)
+        .replace("&", "\\u0026")
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+    )
 
 
 def infer_gmail_account_id(storage_dir: Path) -> str:
@@ -98,6 +118,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Keep all teaching/apply behavior local-only and do not write label changes back to Gmail.",
     )
+    parser.add_argument(
+        "--disable-gmail-check",
+        action="store_true",
+        help="Disable Gmail check execution for synthetic-only server configurations.",
+    )
     return parser
 
 
@@ -111,6 +136,7 @@ def main(argv: list[str] | None = None, stdout=None, server_factory=None) -> int
         args.port,
         args.storage_dir,
         gmail_write_through_enabled=not args.disable_gmail_write_through,
+        gmail_check_enabled=not args.disable_gmail_check,
     )
     try:
         output.write(f"Serving Gmail companion sidebar at http://{args.host}:{server.server_port}\n")
@@ -129,10 +155,12 @@ def create_server(
     storage_dir: Path,
     *,
     gmail_write_through_enabled: bool = True,
+    gmail_check_enabled: bool = True,
 ) -> ThreadingHTTPServer:
     app = GmailCompanionApp(
         storage_dir=storage_dir,
         gmail_write_through_enabled=gmail_write_through_enabled,
+        gmail_check_enabled=gmail_check_enabled,
     )
 
     class Handler(BaseHTTPRequestHandler):
@@ -160,16 +188,21 @@ class GmailCompanionApp:
         client_secret_path: Path | None = None,
         gmail_client_factory=None,
         gmail_write_through_enabled: bool = True,
+        gmail_check_enabled: bool = True,
         gmail_run_runner=None,
         attention_model_client: object | None = None,
+        analytics: ProductAnalytics | None = None,
     ) -> None:
         self._storage_dir = storage_dir
         self._credentials_dir = credentials_dir
         self._client_secret_path = client_secret_path
         self._gmail_client_factory = gmail_client_factory or default_gmail_client_factory
         self._gmail_write_through_enabled = gmail_write_through_enabled
+        self._gmail_check_enabled = gmail_check_enabled
         self._gmail_run_runner = gmail_run_runner
         self._attention_model_client = attention_model_client
+        self._analytics = analytics or ProductAnalytics.from_environment()
+        self._analytics_distinct_ids = AnonymousDistinctIdStore(storage_dir)
         self._unsubscribe_store = UnsubscribeInventoryStore(storage_dir)
         self._harness_state_cache: dict[str, tuple[float, dict]] = {}
         self._harness_state_lock = threading.Lock()
@@ -304,8 +337,23 @@ class GmailCompanionApp:
         if handler.command == "POST" and parsed.path == "/api/teach-apply":
             try:
                 payload = self._read_json_body(handler)
-                response = self.teach_apply(payload)
+                response = self.teach_apply(
+                    payload,
+                    analytics_distinct_id=self._analytics_distinct_id_from_request(handler),
+                )
                 return self._write_json(handler, HTTPStatus.OK, response)
+            except (KeyError, ValueError, HTTPException) as exc:
+                return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+
+        if handler.command == "POST" and parsed.path == "/api/analytics/capture":
+            try:
+                payload = self._read_json_body(handler)
+                captured = self._analytics.capture(
+                    distinct_id=self._analytics_distinct_id_from_request(handler),
+                    event=payload["event"],
+                    properties=payload["properties"],
+                )
+                return self._write_json(handler, HTTPStatus.ACCEPTED, {"captured": captured})
             except (KeyError, ValueError, HTTPException) as exc:
                 return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
 
@@ -329,6 +377,14 @@ class GmailCompanionApp:
             try:
                 payload = self._read_json_body(handler)
                 response = self.unsubscribe_select_current(payload)
+                return self._write_json(handler, HTTPStatus.OK, response)
+            except (KeyError, ValueError, HTTPException) as exc:
+                return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+
+        if handler.command == "POST" and parsed.path == "/api/unsubscribe-candidates/selections":
+            try:
+                payload = self._read_json_body(handler)
+                response = self.save_unsubscribe_selections(payload)
                 return self._write_json(handler, HTTPStatus.OK, response)
             except (KeyError, ValueError, HTTPException) as exc:
                 return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
@@ -397,6 +453,12 @@ class GmailCompanionApp:
             raise ValueError("Request body must be an object.")
         return payload
 
+    def _analytics_distinct_id_from_request(self, handler: BaseHTTPRequestHandler) -> str:
+        supplied = (handler.headers.get("X-PostHog-Distinct-Id") or "").strip()
+        if supplied:
+            return self._analytics_distinct_ids.remember(supplied)
+        return self._analytics_distinct_ids.get_or_create()
+
     def _write_json(self, handler: BaseHTTPRequestHandler, status: HTTPStatus, payload: dict) -> None:
         encoded = json.dumps(payload).encode("utf-8")
         handler.send_response(status)
@@ -409,7 +471,7 @@ class GmailCompanionApp:
     def _write_cors_headers(self, handler: BaseHTTPRequestHandler) -> None:
         handler.send_header("Access-Control-Allow-Origin", "*")
         handler.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        handler.send_header("Access-Control-Allow-Headers", "Content-Type")
+        handler.send_header("Access-Control-Allow-Headers", "Content-Type, X-PostHog-Distinct-Id")
         handler.send_header("Access-Control-Allow-Private-Network", "true")
 
     def _write_cors_preflight(self, handler: BaseHTTPRequestHandler) -> None:
@@ -630,16 +692,6 @@ class GmailCompanionApp:
         runtime = self._cached_runtime_payload()
         items = runtime.get("items", [])
         selected_context = selected_context or {}
-        if not (selected_context.get("message_id") or selected_context.get("subject") or selected_context.get("sender")):
-            for item in items:
-                if item.get("status") == "needs-attention":
-                    selected_context = {
-                        "provider": "gmail",
-                        "message_id": item.get("message_id", ""),
-                        "subject": item.get("subject", ""),
-                        "sender": item.get("sender", ""),
-                    }
-                    break
         return {
             "selected_context": selected_context,
             "sidebar_state": self.sidebar_state(selected_context),
@@ -675,7 +727,7 @@ class GmailCompanionApp:
         preview["inbox_backfill"] = self._build_inbox_backfill_preview(preview)
         return preview
 
-    def teach_apply(self, payload: dict) -> dict:
+    def teach_apply(self, payload: dict, *, analytics_distinct_id: str | None = None) -> dict:
         selected_context = payload.get("selected_context") or {}
         target_label = payload["target_label"]
         note = (payload.get("note") or "").strip()
@@ -701,6 +753,11 @@ class GmailCompanionApp:
             current_subject=teaching_result["current"].get("subject") or "",
             current_sender=teaching_result["current"].get("sender") or "",
         )
+        self._capture_label_write_outcomes(
+            analytics_distinct_id or self._analytics_distinct_ids.get_or_create(),
+            teaching_result["mode"],
+            write_through_summary,
+        )
         self._start_teach_apply_follow_up_refresh(selected_context)
         refreshed = self._fast_sidebar_state(selected_context)
         return {
@@ -712,6 +769,48 @@ class GmailCompanionApp:
             "outcome": self._teach_apply_outcome(teaching_result, write_through_summary),
             "sidebar_state": refreshed,
         }
+
+    def _capture_label_write_outcomes(
+        self,
+        distinct_id: str,
+        mode: str,
+        write_summary: dict,
+    ) -> None:
+        if write_summary.get("mode") in {"disabled", "no-gmail-write-future-rule-only"}:
+            return
+        rule_scope = {
+            "current-only": "current_email",
+            "matching-existing": "included_existing",
+            "apply-included": "included_existing",
+            "save-future-rule": "future_email",
+            "future-only": "future_email",
+        }.get(mode, "current_email")
+        common = {
+            "app_version": THREADWISE_APP_VERSION,
+            "workflow_version": ANALYTICS_WORKFLOW_VERSION,
+            "source": "companion_service",
+            "rule_scope": rule_scope,
+            "retry_count": 0,
+        }
+        messages_written = int(write_summary.get("messages_written") or 0)
+        failed_count = int(write_summary.get("label_write_failed") or 0)
+        if messages_written:
+            self._analytics.capture(
+                distinct_id=distinct_id,
+                event="label write completed",
+                properties={**common, "write_count_bucket": bucket_count(messages_written)},
+            )
+        if failed_count or write_summary.get("mode") == "gmail-write-failed":
+            error_category = (
+                "gmail_client_initialization"
+                if write_summary.get("mode") == "gmail-write-failed"
+                else "provider_write_error"
+            )
+            self._analytics.capture(
+                distinct_id=distinct_id,
+                event="label write failed",
+                properties={**common, "error_category": error_category},
+            )
 
     def teach_exclude(self, payload: dict) -> dict:
         selected_context = payload.get("selected_context") or {}
@@ -797,6 +896,43 @@ class GmailCompanionApp:
             "sidebar_state": refreshed,
         }
 
+    def save_unsubscribe_selections(self, payload: dict) -> dict:
+        candidate_keys = payload.get("candidate_keys")
+        selected_candidate_keys = payload.get("selected_candidate_keys")
+        if not isinstance(candidate_keys, list) or not isinstance(selected_candidate_keys, list):
+            raise ValueError("candidate_keys and selected_candidate_keys must be lists.")
+        if any(not isinstance(key, str) or not key.strip() for key in candidate_keys):
+            raise ValueError("candidate_keys must contain non-empty strings.")
+        if any(not isinstance(key, str) or not key.strip() for key in selected_candidate_keys):
+            raise ValueError("selected_candidate_keys must contain non-empty strings.")
+        candidate_keys = list(dict.fromkeys(key.strip() for key in candidate_keys))
+        selected_candidate_keys = list(dict.fromkeys(key.strip() for key in selected_candidate_keys))
+        if not set(selected_candidate_keys).issubset(candidate_keys):
+            raise ValueError("selected_candidate_keys must be a subset of candidate_keys.")
+        known_keys = {
+            candidate.get("list_key")
+            for candidate in self._unsubscribe_store.list_candidates()
+            if candidate.get("list_key")
+        }
+        unknown_keys = set(candidate_keys).difference(known_keys)
+        if unknown_keys:
+            raise ValueError("candidate_keys contains an unknown unsubscribe candidate.")
+
+        saved = self._unsubscribe_store.save_selection_states(candidate_keys, selected_candidate_keys)
+        self._invalidate_companion_caches()
+        selected_count = sum(1 for candidate in saved if candidate.get("decision_state") == "selected")
+        return {
+            "acknowledgment": (
+                f"Saved {selected_count} queued selection{'s' if selected_count != 1 else ''}. "
+                "Nothing was unsubscribed."
+            ),
+            "candidate_count": len(saved),
+            "selected_count": selected_count,
+            "selected_candidate_keys": selected_candidate_keys,
+            "gmail_mutation": "none",
+            "execution": "none",
+        }
+
     def attention_feedback(self, payload: dict) -> dict:
         feedback = record_attention_feedback(self._storage_dir, payload)
         return {
@@ -817,10 +953,14 @@ class GmailCompanionApp:
         }
 
     def trigger_gmail_check(self, payload: dict) -> dict:
+        if not self._gmail_check_enabled:
+            raise ValueError("Gmail checks are disabled for this server.")
         payload = dict(payload)
         payload.setdefault("account_id", infer_gmail_account_id(self._storage_dir))
         runner = self._gmail_run_runner or self._run_daily_gmail_check
-        return trigger_dashboard_gmail_check(self._storage_dir, payload, runner)
+        response = trigger_dashboard_gmail_check(self._storage_dir, payload, runner)
+        self._invalidate_companion_caches()
+        return response
 
     def preview_attention_rule_proposal(self, payload: dict) -> dict:
         message_id = payload.get("message_id") or ""
@@ -942,8 +1082,9 @@ class GmailCompanionApp:
         inbox_skipped = 0
         inbox_ineligible = 0
         for batch_id, items in batch_items.items():
-            write_summary = writer.write_reviewed_labels(batch_id, items)
-            inbox_summary = writer.remove_inbox_for_low_value_messages(batch_id, items)
+            mutation = writer.apply_reviewed_mutations(batch_id, items)
+            write_summary = mutation["write_summary"]
+            inbox_summary = mutation["inbox_summary"]
             write_applied += write_summary["applied_count"]
             write_failed += write_summary["failed_count"]
             write_skipped += write_summary["skipped_count"]
@@ -955,6 +1096,11 @@ class GmailCompanionApp:
         remote_applied = 0
         remote_failed = 0
         remote_skipped = 0
+        remote_batch_id = ""
+        remote_inbox_removed = 0
+        remote_inbox_failed = 0
+        remote_inbox_skipped = 0
+        remote_inbox_ineligible = 0
         if mode == "apply-included":
             local_ids = {
                 item.get("message_id")
@@ -964,6 +1110,7 @@ class GmailCompanionApp:
             }
             remote_summary = self._apply_rule_to_matching_inbox_messages(
                 gmail_client,
+                account_id=account_id,
                 semantic_rule=semantic_rule or {},
                 current_subject=current_subject,
                 current_sender=current_sender,
@@ -973,9 +1120,18 @@ class GmailCompanionApp:
             remote_applied = remote_summary["applied_count"]
             remote_failed = remote_summary["failed_count"]
             remote_skipped = remote_summary["skipped_count"]
+            remote_batch_id = remote_summary["batch_id"]
+            remote_inbox_removed = remote_summary["inbox_removed_count"]
+            remote_inbox_failed = remote_summary["inbox_failed_count"]
+            remote_inbox_skipped = remote_summary["inbox_skipped_count"]
+            remote_inbox_ineligible = remote_summary["inbox_ineligible_count"]
             write_applied += remote_applied
             write_failed += remote_failed
             write_skipped += remote_skipped
+            inbox_removed += remote_inbox_removed
+            inbox_failed += remote_inbox_failed
+            inbox_skipped += remote_inbox_skipped
+            inbox_ineligible += remote_inbox_ineligible
         return {
             "messages_written": write_applied,
             "inbox_removed": inbox_removed,
@@ -988,6 +1144,11 @@ class GmailCompanionApp:
             "remote_applied_count": remote_applied,
             "remote_failed_count": remote_failed,
             "remote_skipped_count": remote_skipped,
+            "remote_batch_id": remote_batch_id,
+            "remote_inbox_removed_count": remote_inbox_removed,
+            "remote_inbox_failed_count": remote_inbox_failed,
+            "remote_inbox_skipped_count": remote_inbox_skipped,
+            "remote_inbox_ineligible_count": remote_inbox_ineligible,
             "mode": "applied",
         }
 
@@ -1043,6 +1204,7 @@ class GmailCompanionApp:
         self,
         gmail_client,
         *,
+        account_id: str,
         semantic_rule: dict,
         current_subject: str,
         current_sender: str,
@@ -1054,31 +1216,73 @@ class GmailCompanionApp:
             current_sender=current_sender,
         )
         if not query:
-            return {"matched_count": 0, "applied_count": 0, "failed_count": 0, "skipped_count": 0}
+            return self._empty_remote_mutation_summary()
         message_ids = gmail_client.search_message_ids(query, 1000)
         filtered_ids = [message_id for message_id in message_ids if message_id and message_id not in excluded_message_ids]
-        label_name = gmail_label_name((semantic_rule or {}).get("target_label") or "")
-        if not label_name:
-            return {"matched_count": len(filtered_ids), "applied_count": 0, "failed_count": 0, "skipped_count": len(filtered_ids)}
-        label_id = gmail_client.get_or_create_label(label_name)
-        applied_count = 0
-        failed_count = 0
-        for message_id in filtered_ids:
-            try:
-                if hasattr(gmail_client, "replace_threadwise_labels"):
-                    gmail_client.replace_threadwise_labels(message_id, [label_id], "EA/")
-                else:
-                    gmail_client.apply_labels(message_id, [label_id])
-                if self._is_inbox_removal_label_eligible((semantic_rule or {}).get("target_label") or ""):
-                    gmail_client.remove_inbox_label(message_id)
-                applied_count += 1
-            except Exception:
-                failed_count += 1
+        target_label = (semantic_rule or {}).get("target_label") or ""
+        if not gmail_label_name(target_label):
+            return {
+                **self._empty_remote_mutation_summary(),
+                "matched_count": len(filtered_ids),
+                "skipped_count": len(filtered_ids),
+            }
+        if not filtered_ids:
+            return self._empty_remote_mutation_summary()
+        batch_id = f"gmail-companion-backfill-{uuid4().hex}"
+        reviewed_items = [
+            {
+                "source": "gmail",
+                "account_id": account_id,
+                "message_id": message_id,
+                "review_state": "reviewed",
+                "review_action": "sidebar-remote-backfill",
+                "applied_labels": [target_label],
+                "final_labels": [target_label],
+            }
+            for message_id in filtered_ids
+        ]
+        write_json_artifact(
+            "gmail_mutation_batch",
+            self._storage_dir,
+            {
+                "batch_id": batch_id,
+                "provider": "gmail",
+                "account_id": account_id,
+                "items": reviewed_items,
+            },
+            batch_id,
+        )
+        writer = MockGmailLabelWriter(
+            gmail_client=gmail_client,
+            storage_dir=self._storage_dir,
+            label_name_resolver=gmail_label_name,
+        )
+        mutation = writer.apply_reviewed_mutations(batch_id, reviewed_items)
+        write_summary = mutation["write_summary"]
+        inbox_summary = mutation["inbox_summary"]
         return {
             "matched_count": len(filtered_ids),
-            "applied_count": applied_count,
-            "failed_count": failed_count,
+            "applied_count": write_summary["applied_count"],
+            "failed_count": write_summary["failed_count"],
+            "skipped_count": write_summary["skipped_count"],
+            "batch_id": batch_id,
+            "inbox_removed_count": inbox_summary["applied_count"],
+            "inbox_failed_count": inbox_summary["failed_count"],
+            "inbox_skipped_count": inbox_summary["skipped_count"],
+            "inbox_ineligible_count": inbox_summary["ineligible_count"],
+        }
+
+    def _empty_remote_mutation_summary(self) -> dict:
+        return {
+            "matched_count": 0,
+            "applied_count": 0,
+            "failed_count": 0,
             "skipped_count": 0,
+            "batch_id": "",
+            "inbox_removed_count": 0,
+            "inbox_failed_count": 0,
+            "inbox_skipped_count": 0,
+            "inbox_ineligible_count": 0,
         }
 
     def _build_gmail_backfill_query(self, *, semantic_rule: dict, current_subject: str, current_sender: str) -> str:
@@ -1122,9 +1326,6 @@ class GmailCompanionApp:
             if len(words) == 3:
                 break
         return words
-
-    def _is_inbox_removal_label_eligible(self, target_label: str) -> bool:
-        return target_label in {"promotions", "spam-low-value"}
 
     def _teach_apply_acknowledgment(self, teaching_result: dict, write_through_summary: dict) -> str:
         base = teaching_result["acknowledgment"]
@@ -1216,13 +1417,13 @@ class GmailCompanionApp:
     }
     * { box-sizing: border-box; }
     body { margin: 0; min-height: 100vh; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: radial-gradient(circle at 18px 18px, rgba(36,24,18,.05) 2px, transparent 2px) 0 0 / 36px 36px, linear-gradient(135deg,#f7efe0 0%,#fdfaf2 52%,#e7f3ee 100%); color: var(--ink); }
-    main { min-height: 100vh; padding: 34px; display: grid; place-items: center; }
+    main { min-height: 100vh; padding: clamp(8px, 3vw, 34px); display: grid; place-items: center; }
     .hero { display: none; }
     .eyebrow { color: var(--muted); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.14em; font-weight: 820; }
     .hero h1 { margin: 6px 0 0; font-size: 1.6rem; }
     .hero p { margin: 6px 0 0; color: var(--muted); line-height: 1.45; max-width: 58rem; }
     .hero-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-    .button { border: 2px solid #241812; border-radius: 11px; padding: 10px 14px; cursor: pointer; font: inherit; font-weight: 760; box-shadow: 2px 2px 0 #241812; }
+    .button { border: 1px solid rgba(36,24,18,.36); border-radius: 11px; padding: 10px 14px; cursor: pointer; font: inherit; font-weight: 760; box-shadow: none; }
     .button.primary { background: #2eb67d; color: #241812; }
     .button.secondary { background: #e9efe2; color: var(--ink); }
     .layout { width: min(1180px, 100%); min-height: 690px; display: grid; grid-template-columns: 1fr 420px; gap: 28px; align-items: stretch; transition: grid-template-columns .16s ease; }
@@ -1252,10 +1453,10 @@ class GmailCompanionApp:
     .list-item-subject { font-size: 0.84rem; font-weight: 800; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .list-item-meta { margin-top: 0; color: #5f6368; font-size: 0.82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .card .list-item .label-row { display:none; }
-    .field-stack .list-item { display:block;min-height:auto;border:2px solid #241812;border-radius:12px;background:#fffdf7;padding:9px 10px;box-shadow:2px 2px 0 rgba(36,24,18,.18); }
+    .field-stack .list-item { display:block;min-height:auto;border:1px solid rgba(36,24,18,.28);border-radius:12px;background:#fffdf7;padding:9px 10px;box-shadow:none; }
     .field-stack .list-item::before, .field-stack .list-item::after { content:none; }
     .field-stack .list-item .label-row { display:flex;margin-top:8px;gap:6px; }
-    .field-stack .list-item .pill { font-size:0.68rem;padding:4px 7px;box-shadow:1px 1px 0 rgba(36,24,18,.22); }
+    .field-stack .list-item .pill { font-size:0.68rem;padding:4px 7px;box-shadow:none; }
     .field-stack .list-item-subject, .field-stack .list-item-meta { white-space:normal; }
     .message-title { margin-top: 8px; font-size: 1.25rem; font-weight: 700; line-height: 1.2; }
     .message-meta { margin-top: 8px; color: var(--muted); line-height: 1.45; overflow-wrap: anywhere; }
@@ -1264,64 +1465,77 @@ class GmailCompanionApp:
     .summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
     .summary-grid--three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .metric-button { border: 0; border-radius: 14px; background: var(--soft); padding: 12px; text-align: left; cursor: pointer; font: inherit; color: var(--ink); }
-    .metric-button { border: 2px solid #241812; box-shadow: 2px 2px 0 rgba(36,24,18,.18); background: #fffdf7; }
+    .metric-button { border: 1px solid rgba(36,24,18,.28); box-shadow: none; background: #fffdf7; }
     .metric-button.active { background: #e7f6f4; box-shadow: inset 0 0 0 1px rgba(15,118,110,0.22); }
     .metric-button strong { display:block;font-size:1.15rem;line-height:1; }
     .metric-button span { display:block;margin-top:3px; }
-    .teach-card { border: 3px solid #241812; border-radius:18px; background: #ffe1a3; padding: 0; overflow: hidden; box-shadow:2px 2px 0 rgba(36,24,18,.18); }
-    .teach-card > .reason-label { display: flex; align-items: center; min-height: 40px; padding: 0 13px; border-bottom: 3px solid #241812; background: #ffc64a; color: #241812; font-weight: 900; }
+    .teach-card { border: 1px solid rgba(36,24,18,.32); border-radius:18px; background: #ffe1a3; padding: 0; overflow: hidden; box-shadow:none; }
+    .teach-card > .reason-label { display: flex; align-items: center; min-height: 40px; padding: 0 13px; border-bottom: 1px solid rgba(36,24,18,.28); background: #ffc64a; color: #241812; font-weight: 900; }
     .teach-panel { margin: 12px; display: grid; gap: 12px; }
     .teach-panel .field-stack { margin-top: 0; }
     .teach-card > .field-stack, .teach-card > .preview-card, .teach-card > .success-card, .teach-card > .error-card, .teach-card > .note { margin: 12px; }
     .empty { color: var(--muted); line-height: 1.45; }
-    .panel { background: var(--paper); border: 3px solid #241812; border-radius: 18px; box-shadow: 6px 6px 0 #241812; overflow: hidden; align-self: start; }
+    .panel { width:100%; min-width:0; background: #fff7e8; border: 2px solid #241812; border-radius: 18px; box-shadow: 0 14px 34px rgba(36,24,18,.14); overflow: hidden; align-self: start; }
     .panel.minimized .content { display: none; }
-    .header { display:flex;align-items:center;justify-content:space-between;gap:12px;padding:17px 18px;border-bottom:3px solid #241812;background:#fff4d7; }
+    .header { display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;border-bottom:1px solid rgba(36,24,18,.28);background:#fff4d7; }
     .header-copy { display:grid;gap:6px;min-width:0; }
     .header-top { display:flex;align-items:center;gap:8px; }
     .brand-lockup { display:flex;align-items:center;gap:10px;min-width:0; }
-    .brand-mark { width:42px;height:42px;border-radius:12px;border:2px solid #241812;box-shadow:3px 3px 0 #241812;flex:0 0 auto;background:#fff8df; }
-    .brand-kicker { color:#ad6400;font-family:ui-serif,Georgia,"Times New Roman",serif;font-size:0.58rem;font-weight:900;letter-spacing:0.08em;text-transform:uppercase;white-space:nowrap;line-height:1.05; }
+    .brand-mark { width:42px;height:42px;border-radius:12px;border:1px solid rgba(36,24,18,.34);box-shadow:none;flex:0 0 auto;background:#fff8df; }
+    .brand-kicker { display:none; color:#ad6400;font-family:ui-serif,Georgia,"Times New Roman",serif;font-size:0.58rem;font-weight:900;letter-spacing:0.08em;text-transform:uppercase;white-space:nowrap;line-height:1.05; }
     .dot { width:10px;height:10px;border-radius:999px;background:var(--accent);box-shadow:0 0 0 4px rgba(15,118,110,0.12); }
     .title { font-size:1.35rem;font-weight:840;letter-spacing:-0.04em;line-height:1; }
     .subtitle { color: var(--muted); font-size:0.88rem; line-height:1.35; }
-    .minimize { border:2px solid #241812;background:#e9efe2;color:var(--ink);border-radius:11px;font-weight:760;padding:9px 12px;box-shadow:2px 2px 0 #241812;cursor:pointer;font:inherit; }
-    .content { padding:14px; display:grid; gap:13px; }
-    .hero-card { border:3px solid #241812;border-radius:18px;padding:16px;background:#fffdf7;box-shadow:2px 2px 0 rgba(36,24,18,.18); }
-    .secondary-card { border:3px solid #241812;border-radius:18px;padding:16px;background:#e9efe2;box-shadow:2px 2px 0 rgba(36,24,18,.18); }
+    .minimize { border:1px solid rgba(36,24,18,.36);background:#e9efe2;color:var(--ink);border-radius:11px;font-weight:760;padding:9px 12px;box-shadow:none;cursor:pointer;font:inherit; }
+    .content { padding:12px; display:grid; gap:13px; }
+    .hero-card { border:1px solid rgba(36,24,18,.28);border-radius:18px;padding:16px;background:#fffdf7;box-shadow:none; }
+    .secondary-card { border:1px solid rgba(36,24,18,.28);border-radius:18px;padding:16px;background:#e9efe2;box-shadow:none; }
     .subject { margin-top: 7px; font-size: 1.3rem; font-weight: 840; line-height: 1.04; letter-spacing: -0.015em; }
     .sender { margin-top: 6px; color: var(--muted); font-size: 0.88rem; overflow-wrap: anywhere; }
     .pill-row { display:flex;flex-wrap:wrap;gap:8px;margin-top:12px; }
-    .pill { display:inline-flex;align-items:center;padding:7px 10px;font-size:0.78rem;border:2px solid #241812;border-radius:999px;background:#f1eadf;color:#241812;font-weight:760;box-shadow:2px 2px 0 rgba(36,24,18,.28); }
+    .pill { display:inline-flex;align-items:center;padding:7px 10px;font-size:0.78rem;border:1px solid rgba(36,24,18,.28);border-radius:999px;background:#f1eadf;color:#241812;font-weight:760;box-shadow:none; }
     .classification-pill { background:#f1eadf;color:#241812; }
     .status-pill { background:#dff8ed;color:#09633c; }
     .warn-pill { background:var(--warn-soft);color:var(--warn-ink); }
     .agent-copy { margin-top:10px;color:#6f5e4c;line-height:1.36;font-weight:720; }
-    .reason-wrap { margin-top:12px;border:2px solid #241812;border-radius:14px;background:#fffdf7;padding:12px; }
+    .reason-wrap { margin-top:12px;border:1px solid rgba(36,24,18,.28);border-radius:14px;background:#fffdf7;padding:12px; }
     .reason-label { font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted); }
     .reason { margin-top:8px;color:var(--ink);line-height:1.45; }
     .field-stack { display:grid;gap:8px;margin-top:10px; }
-    .select, .textarea { width:100%;border-radius:11px;border:2px solid #241812;background:#fffdf7;color:var(--ink);font:inherit;box-shadow:2px 2px 0 rgba(36,24,18,.18); }
+    .select, .textarea { width:100%;border-radius:11px;border:1px solid rgba(36,24,18,.38);background:#fffdf7;color:var(--ink);font:inherit;box-shadow:none; }
     .select { padding:10px 12px; }
     .textarea { min-height:84px;padding:10px 12px;resize:vertical; }
     .button-row { display:flex;flex-wrap:wrap;gap:8px; }
-    .action-button { border:2px solid #241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812; }
+    .action-button { border:1px solid rgba(36,24,18,.38);border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:none; }
     .action-button.primary { background:#2eb67d;color:#241812; }
     .action-button.secondary { background:#fffdf7;color:var(--ink); }
     .action-button.info { background:#3d6df2;color:#fff; }
     .action-button.future { background:#ffc64a;color:#241812; }
     .action-button.quiet { border:0;background:transparent;color:#5d5342;border-radius:0;padding:7px 2px;box-shadow:none;text-decoration:underline;text-underline-offset:3px;font-weight:760; }
+    .action-button.info, .action-button.future:not([data-tw-primary-action]) { background:#fffdf7;color:var(--ink); }
+    [data-tw-primary-action] { border:2px solid #241812;box-shadow:3px 3px 0 #241812; }
     .preview-card, .success-card, .error-card, .note { box-sizing:border-box;width:100%;min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word; }
-    .preview-card { margin-top:12px;border:2px solid #241812;border-radius:14px;background:#fffdf7;padding:12px;color:var(--ink);line-height:1.45; }
+    .preview-card { margin-top:12px;border:1px solid rgba(36,24,18,.28);border-radius:14px;background:#fffdf7;padding:12px;color:var(--ink);line-height:1.45; }
     .success-card { margin-top:12px;border-radius:14px;background:var(--accent-soft);padding:12px;color:var(--accent);line-height:1.45; }
     .error-card { margin-top:12px;border-radius:14px;background:var(--warn-soft);padding:12px;color:var(--warn-ink);line-height:1.45; }
-    .affected-review { margin-top:12px;border:3px solid #241812;border-radius:14px;background:#fffdf7;overflow:hidden;box-shadow:3px 3px 0 rgba(36,24,18,.22); }
-    .affected-review-header { display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-bottom:3px solid #241812;background:#fff4d7; }
+    .affected-review { margin-top:12px;border:1px solid rgba(36,24,18,.28);border-radius:14px;background:#fffdf7;overflow:hidden;box-shadow:none; }
+    .affected-review-header { display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-bottom:1px solid rgba(36,24,18,.28);background:#fff4d7; }
     .affected-review-table-wrap { overflow:auto;max-height:360px; }
     .affected-review table { width:100%;border-collapse:collapse;font-size:.86rem;line-height:1.35; }
     .affected-review th { padding:8px;text-align:left;background:#f5efe2;color:var(--muted); }
     .affected-review td { padding:9px 8px;vertical-align:top;border-top:1px solid #e2d8c6;overflow-wrap:anywhere; }
-    @media (max-width: 1200px) { .layout { grid-template-columns: 1fr; } }
+    :where(button, a, input, select, textarea, summary, [tabindex]):focus-visible { outline:3px solid #3d6df2;outline-offset:2px; }
+    @media (max-width: 1200px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+    @media (max-width: 480px) {
+      .layout { min-width:0;gap:12px; }
+      .header { gap:8px;padding:10px; }
+      .brand-lockup { gap:8px;overflow:hidden; }
+      .brand-mark { width:34px;height:34px;border-radius:10px; }
+      .title { min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:1.08rem; }
+      .minimize { min-width:0;padding:7px 8px;font-size:.78rem; }
+      .content { padding:10px; }
+      .hero-card, .secondary-card { padding:14px; }
+    }
   </style>
 </head>
 <body>
@@ -1334,6 +1548,7 @@ class GmailCompanionApp:
       </div>
       <div class="hero-actions">
         <button id="sim-refresh" class="button secondary" type="button">Refresh snapshot</button>
+        <button id="sim-home" class="button secondary" type="button">Open Home</button>
         <button id="sim-unsynced" class="button primary" type="button">Load unsynced message</button>
       </div>
     </section>
@@ -1355,25 +1570,14 @@ class GmailCompanionApp:
               <img class="brand-mark" src="/assets/brand/threadwise-app-icon.png" alt="" aria-hidden="true">
               <div>
                 <div class="title">Threadwise</div>
-                <div class="brand-kicker">CLEAR THREADS. BETTER INBOX.</div>
+                <div class="brand-kicker" aria-hidden="true">CLEAR THREADS. BETTER INBOX.</div>
               </div>
             </div>
           </div>
           <button id="sim-minimize" class="minimize" type="button">Minimize</button>
         </header>
         <div class="content">
-          <section class="hero-card">
-            <div class="eyebrow">Agent View</div>
-            <div id="sim-selected-email"></div>
-          </section>
-          <section class="teach-card">
-            <div class="reason-label">Correct / Teach</div>
-            <div id="sim-teach-panel" class="teach-panel"></div>
-          </section>
-          <section class="secondary-card">
-            <div class="eyebrow">Today</div>
-            <div id="sim-daily-summary"></div>
-          </section>
+          <div id="sim-workspace"></div>
         </div>
       </section>
     </section>
@@ -1382,10 +1586,13 @@ class GmailCompanionApp:
     const filterNode = document.getElementById("sim-filter-pills");
     const listNode = document.getElementById("sim-list");
     const messageNode = document.getElementById("sim-message");
-    const selectedEmailNode = document.getElementById("sim-selected-email");
-    const teachPanelNode = document.getElementById("sim-teach-panel");
-    const dailySummaryNode = document.getElementById("sim-daily-summary");
+    const workspaceNode = document.getElementById("sim-workspace");
+    let selectedEmailNode = null;
+    let selectedEmailSecondaryNode = null;
+    let teachPanelNode = null;
+    let dailySummaryNode = null;
     const refreshButton = document.getElementById("sim-refresh");
+    const homeButton = document.getElementById("sim-home");
     const unsyncedButton = document.getElementById("sim-unsynced");
     const layoutNode = document.querySelector(".layout");
     const panelNode = document.querySelector('.panel');
@@ -1401,13 +1608,20 @@ class GmailCompanionApp:
     let teachFlowState = "teaching";
     let inboxApplyConfirmOpen = false;
     let teachOutcome = null;
+    let teachWriteThrough = null;
     let unsubscribeResult = "";
     let detailsExpanded = false;
+    let autoHandledChangeOpen = false;
+    let lastSelectedMessageId = "";
     let affectedReviewOpen = false;
-    let gmailCheckPending = false;
-    let gmailCheckResult = null;
+    let applyInFlight = false;
+    let lastApplyMode = "";
+    let futureLearningSaved = false;
     let draftLabel = "";
     let draftNote = "";
+    let selectedDecisionMode = "review";
+    let selectedDecisionConflict = "";
+    let forceHome = false;
     const unsyncedContext = {
       provider: "gmail",
       message_id: "simulated-unsynced-001",
@@ -1424,29 +1638,112 @@ class GmailCompanionApp:
         .replaceAll("'", "&#39;");
     }
 
-    function nextStepCopy(selectedEmail) {
-      if (!selectedEmail || !selectedEmail.found) {
-        return {
-          title: "What to do now",
-          body: "Preview a synced email below, or run a Gmail check from the dashboard to refresh what Threadwise knows.",
-        };
+    function renderWorkspaceShell(mode, selectedState = "") {
+      workspaceNode.dataset.eaWorkspaceMode = mode;
+      workspaceNode.dataset.eaSelectedState = selectedState;
+      if (mode === "home") {
+        workspaceNode.innerHTML = `
+          <section data-ea-workspace-body="home" class="secondary-card">
+            <div class="eyebrow">Home</div>
+            <div id="sim-daily-summary"></div>
+          </section>
+        `;
+      } else {
+        workspaceNode.innerHTML = `
+          <section data-ea-workspace-body="selected-email" class="hero-card">
+            <div id="sim-selected-email"></div>
+            <div id="sim-teach-panel" class="teach-panel"></div>
+            <div id="sim-selected-email-secondary"></div>
+          </section>
+        `;
       }
-      if (selectedEmail.status === "needs-attention") {
-        return {
-          title: "What to do now",
-          body: "This email still needs a decision. Teach the right label below or leave it visible for later.",
-        };
+      selectedEmailNode = document.getElementById("sim-selected-email");
+      selectedEmailSecondaryNode = document.getElementById("sim-selected-email-secondary");
+      teachPanelNode = document.getElementById("sim-teach-panel");
+      dailySummaryNode = document.getElementById("sim-daily-summary");
+    }
+
+    function renderLoadingWorkspace() {
+      renderWorkspaceShell("selected-email", "loading");
+      selectedEmailNode.innerHTML = `
+        <div data-ea-selected-state="loading" aria-live="polite" style="display:grid;gap:12px;margin-top:10px;">
+          <div class="subject">Loading Threadwise…</div>
+          <div class="preview-card">Refreshing the selected email and its current decision state.</div>
+        </div>
+      `;
+    }
+
+    function humanLabelNameFromId(labelId) {
+      if (!labelId) {
+        return "Uncategorized";
       }
-      if (selectedEmail.unsubscribe_available) {
-        return {
-          title: "What to do now",
-          body: "The agent already understands this email. If it is recurring, you can queue it for unsubscribe review here.",
-        };
+      const allowedLabels = ((((harnessState || {}).sidebar_state || {}).ui_state || {}).allowed_labels) || [];
+      const match = allowedLabels.find((item) => item.id === labelId || item.name === labelId);
+      return match ? String(match.name || "").replace(/^EA\\//, "") : String(labelId).replace(/^EA\\//, "");
+    }
+
+    function internalLabelId(value) {
+      if (!value) {
+        return "";
       }
-      return {
-        title: "What to do now",
-        body: "The agent has already classified this email. You only need to step in if the label or handling looks wrong.",
-      };
+      const allowedLabels = ((((harnessState || {}).sidebar_state || {}).ui_state || {}).allowed_labels) || [];
+      const match = allowedLabels.find((item) => item.id === value || item.name === value);
+      return match ? String(match.id || "") : "";
+    }
+
+    function handledReceiptKind(selected) {
+      const status = String((selected || {}).status || "").toLowerCase();
+      const details = (selected || {}).details || {};
+      const writeStatus = String(details.write_status || "").toLowerCase();
+      const inboxStatus = String(details.inbox_status || "").toLowerCase();
+      const incomplete = [writeStatus, inboxStatus].some((value) =>
+        value && (value.includes("fail") || value.includes("pending") || value.includes("error"))
+      );
+      if (incomplete) {
+        return "";
+      }
+      if (status === "auto-handled" && writeStatus === "applied" && inboxStatus === "applied") {
+        return "auto-handled";
+      }
+      if (status === "kept-visible" && writeStatus === "applied") {
+        return "kept-visible";
+      }
+      if (status === "auto-labeled") {
+        return "auto-labeled";
+      }
+      return "";
+    }
+
+    function labelConflictForDraft() {
+      const note = String(draftNote || "").trim().toLowerCase();
+      if (!note || !draftLabel) {
+        return "";
+      }
+      const allowedLabels = ((((harnessState || {}).sidebar_state || {}).ui_state || {}).allowed_labels) || [];
+      const mentioned = allowedLabels.find((item) => {
+        const name = String(item.name || "").replace(/^EA\\//, "").trim().toLowerCase();
+        if (!name || item.id === draftLabel) {
+          return false;
+        }
+        return noteExplicitlyAssignsLabel(note, name);
+      });
+      if (!mentioned) {
+        return "";
+      }
+      return `Your note sounds like ${humanLabelNameFromId(mentioned.id)}, but ${humanLabelNameFromId(draftLabel)} is selected. Choose which one you mean.`;
+    }
+
+    function noteExplicitlyAssignsLabel(note, alias) {
+      const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, "\\\\$&");
+      const clauses = String(note || "").split(/[.!?;]+/).map((part) => part.trim()).filter(Boolean);
+      return clauses.some((clause) => {
+        if (/^(if|unless|except|only when)\\b/i.test(clause)) return false;
+        if (new RegExp(`\\\\b(?:not|isn't|is not|aren't|are not|never)\\\\s+(?:an?\\\\s+)?${escaped}\\\\b`, "i").test(clause)) return false;
+        return [
+          `\\\\b(?:should be|belongs? (?:in|to)|label(?:ed)? (?:as|with)|categor(?:y|ize|ized) (?:as|with)|use)\\\\s+(?:an?\\\\s+)?${escaped}\\\\b`,
+          `\\\\b${escaped}\\\\s+(?:is|should be)\\\\s+(?:the )?(?:label|category)\\\\b`,
+        ].some((pattern) => new RegExp(pattern, "i").test(clause));
+      });
     }
 
     function activeHarnessBucketDescription() {
@@ -1475,6 +1772,9 @@ class GmailCompanionApp:
       if (!item) {
         return;
       }
+      forceHome = false;
+      selectedDecisionMode = "review";
+      selectedDecisionConflict = "";
       currentContext = {
         provider: "gmail",
         message_id: item.message_id || "",
@@ -1787,19 +2087,6 @@ class GmailCompanionApp:
       `;
     }
 
-    function renderGmailCheckResult() {
-      if (!gmailCheckResult) {
-        return "";
-      }
-      const isError = String(gmailCheckResult.kind || "").endsWith("-error");
-      return `
-        <div class="${isError ? "error-card" : "success-card"}">
-          <div style="font-weight:800;">${escapeHtml(gmailCheckResult.title || "Gmail sync")}</div>
-          <div style="margin-top:8px;">${escapeHtml(gmailCheckResult.message || "")}</div>
-        </div>
-      `;
-    }
-
     function renderTeachProposal(preview) {
       return `
         <div class="preview-card" data-teach-state="rule-proposed">
@@ -1864,42 +2151,310 @@ class GmailCompanionApp:
     function renderSelectedPanel() {
       const selected = selectedEmail();
       const stepCopy = nextStepCopy(selected);
+      const selectedMessageId = selected && selected.found ? String(selected.message_id || "") : "";
+      if (selectedMessageId !== lastSelectedMessageId) {
+        lastSelectedMessageId = selectedMessageId;
+        selectedDecisionMode = "review";
+        selectedDecisionConflict = "";
+        autoHandledChangeOpen = false;
+        detailsExpanded = false;
+        futureLearningSaved = false;
+        if (teachFlowState === "result" && teachOutcome && teachOutcome.scope === "current-email") {
+          teachFlowState = "teaching";
+          teachResult = null;
+          teachOutcome = null;
+          teachWriteThrough = null;
+          draftLabel = "";
+          draftNote = "";
+        }
+      }
+
+      if (forceHome) {
+        renderWorkspaceShell("home", "home");
+        return;
+      }
+
+      const hasSelectedContext = Boolean(
+        currentContext.message_id || currentContext.subject || currentContext.sender
+      );
+      if ((!selected || !selected.found) && !hasSelectedContext) {
+        renderWorkspaceShell("home", "home");
+        return;
+      }
+
+      const understandingActive = Boolean(
+        selected && ["reading", "understanding"].includes(selected.understanding_state)
+      );
+      const handledKind = handledReceiptKind(selected);
+      const decisionState = selectedDecisionMode === "future-learning"
+        ? teachFlowState === "applying"
+          ? "applying"
+          : teachFlowState === "apply-error"
+            ? "blocked"
+            : futureLearningSaved
+              ? "receipt"
+              : "future-learning"
+        : selectedDecisionMode === "preview" && teachFlowState === "applying"
+          ? "applying"
+          : selectedDecisionMode === "preview" && teachFlowState === "apply-error"
+            ? "blocked"
+            : selectedDecisionMode;
+      const selectedState = understandingActive
+        ? "understanding"
+        : (!selected || !selected.found)
+          ? "blocked"
+          : selected.status === "needs-attention"
+            ? decisionState
+            : handledKind && !autoHandledChangeOpen
+              ? "receipt"
+              : handledKind
+                ? "change"
+                : "blocked";
+      renderWorkspaceShell("selected-email", selectedState);
+
+      if (understandingActive) {
+        selectedEmailNode.innerHTML = `
+          <div data-ea-selected-state="understanding" style="display:grid;gap:12px;margin-top:10px;">
+            <div class="subject">${escapeHtml(selected.subject || currentContext.subject || "(no subject)")}</div>
+            <div class="sender">${escapeHtml(selected.sender || currentContext.sender || "(unknown sender)")}</div>
+            <div class="preview-card" aria-live="polite">
+              <div class="reason-label">${escapeHtml(selected.understanding_label || "Understanding")}</div>
+              <div class="reason">${escapeHtml(selected.understanding_message || "Understanding this email...")}</div>
+            </div>
+          </div>
+        `;
+        return;
+      }
+
       if (!selected || !selected.found) {
         affectedReviewOpen = false;
         syncAffectedReviewLayout();
-        const queueItems = (((harnessState || {}).needs_attention_items) || []).slice(0, 4);
-        const syncButtonDisabled = gmailCheckPending ? "disabled" : "";
-        const syncButtonLabel = gmailCheckPending ? "Running Gmail sync..." : "Run Gmail sync now";
         selectedEmailNode.innerHTML = `
+          <div data-ea-selected-state="blocked" style="display:grid;gap:12px;margin-top:10px;">
           <div class="empty">Threadwise has not synced this email yet.</div>
-          <div class="error-card">This simulated fresh email lets you test the pre-sync state safely.</div>
+          <div class="error-card">${escapeHtml(selected && selected.reason ? selected.reason : "This simulated fresh email lets you test the pre-sync state safely.")}</div>
           <div class="reason-wrap">
             <div class="reason-label">${escapeHtml(stepCopy.title)}</div>
             <div class="reason">${escapeHtml(stepCopy.body)}</div>
           </div>
           <div class="button-row" style="margin-top:12px;">
-            <button type="button" class="action-button future" data-action="run-gmail-sync" ${syncButtonDisabled}>${syncButtonLabel}</button>
+            <button type="button" class="action-button future" data-action="return-to-fixture-list" data-tw-primary-action>Return to fixture list</button>
           </div>
-          <div style="margin-top:14px;border-top:1px solid #e5dccb;padding-top:14px;">
-            <div class="reason-label">Current Queue</div>
-            <div class="field-stack">${renderQueueCards(queueItems)}</div>
           </div>
         `;
-        teachPanelNode.innerHTML = teachFlowState === "result" && teachResult
-          ? renderTeachReceipt()
-          : teachError
-            ? renderTeachError(teachError)
-            : gmailCheckResult
-              ? renderGmailCheckResult()
-              : '<div class="empty">Select a synced email to preview or teach a correction.</div>';
         return;
       }
-      gmailCheckResult = null;
+
       const allowedLabels = ((((harnessState || {}).sidebar_state || {}).ui_state || {}).allowed_labels) || [];
+      const defaultLabel = internalLabelId(draftLabel)
+        || internalLabelId(selected.internal_label)
+        || internalLabelId(selected.suggested_label)
+        || internalLabelId(selected.classification);
       const labelOptions = allowedLabels.map((option) => {
-        const selectedAttr = (draftLabel || selected.internal_label || selected.suggested_label || "") === option.id ? " selected" : "";
+        const selectedAttr = defaultLabel === option.id ? " selected" : "";
         return `<option value="${escapeHtml(option.id)}"${selectedAttr}>${escapeHtml(option.name)}</option>`;
       }).join("");
+
+      if (selectedDecisionMode === "future-learning" && teachOutcome && teachOutcome.scope === "current-email" && teachOutcome.current_email_written_to_gmail) {
+        const label = humanLabelNameFromId(draftLabel || selected.internal_label || selected.classification || "");
+        if (teachFlowState === "applying") {
+          selectedEmailNode.innerHTML = `
+            <div data-ea-selected-state="applying" aria-live="polite" style="display:grid;gap:12px;margin-top:10px;">
+              <div class="subject">Saving future rule</div>
+              <div class="preview-card">Creating a reviewable learning candidate without changing Gmail…</div>
+            </div>
+          `;
+          return;
+        }
+        if (teachFlowState === "apply-error") {
+          selectedEmailNode.innerHTML = `
+            <div data-ea-selected-state="blocked" style="display:grid;gap:12px;margin-top:10px;">
+              <div class="subject">Couldn’t save the future rule</div>
+              <div class="error-card">${escapeHtml(teachError || "The learning candidate was not saved.")}</div>
+              <button type="button" class="action-button primary" data-action="retry-future-learning" data-tw-primary-action>Try save again</button>
+              <button type="button" class="action-button quiet" data-action="back-to-current-receipt">Not now</button>
+            </div>
+          `;
+          return;
+        }
+        if (futureLearningSaved) {
+          selectedEmailNode.innerHTML = `
+            <div data-ea-selected-state="receipt" style="display:grid;gap:12px;margin-top:10px;">
+              <div class="subject">Future rule saved for review</div>
+              <div class="success-card">Saved as a learning candidate. No Gmail messages were changed.</div>
+              <button type="button" class="action-button quiet" data-action="back-to-current-receipt">Not now</button>
+            </div>
+          `;
+          return;
+        }
+        selectedEmailNode.innerHTML = `
+          <div data-ea-selected-state="future-learning" style="display:grid;gap:12px;margin-top:10px;">
+            <div class="eyebrow">Optional follow-up</div>
+            <div data-ea-preview-heading class="subject">Teach future emails</div>
+            <div class="preview-card">The current email is already changed to ${escapeHtml(label)}. Any lesson you create here applies to future emails only.</div>
+            <label class="field-stack">What should Threadwise remember?
+              <textarea id="sim-future-note" class="textarea" placeholder="Describe which future emails should be ${escapeHtml(label)}">${escapeHtml(draftNote)}</textarea>
+            </label>
+            <button type="button" class="action-button primary" data-action="save-future-learning" data-tw-primary-action>Save future rule</button>
+            <button type="button" class="action-button quiet" data-action="back-to-current-receipt">Not now</button>
+          </div>
+        `;
+        return;
+      }
+
+      if (teachFlowState === "result" && teachOutcome && teachOutcome.scope === "current-email" && teachOutcome.current_email_written_to_gmail) {
+        const label = humanLabelNameFromId(draftLabel || selected.internal_label || selected.classification || "");
+        const inboxFailed = Number((teachWriteThrough || {}).inbox_remove_failed || 0) > 0;
+        const inboxRemoved = Number((teachWriteThrough || {}).inbox_removed || 0) > 0;
+        const needsReviewCount = Number(((((harnessState || {}).sidebar_state || {}).daily_summary || {}).needs_attention_count) || 0);
+        selectedEmailNode.innerHTML = `
+          <div data-ea-selected-state="receipt" style="display:grid;gap:12px;margin-top:10px;">
+            <div data-ea-receipt-heading class="subject">Changed to ${escapeHtml(label)}</div>
+            <div class="sender">${escapeHtml(selected.subject || "(no subject)")}</div>
+            <div class="success-card" style="display:grid;gap:8px;">
+              <div data-ea-receipt-outcome>Gmail label updated.</div>
+              <div data-ea-receipt-outcome>${inboxFailed ? "Inbox removal needs attention. Open Activity for details." : inboxRemoved ? "Removed from Inbox." : "Kept in Inbox."}</div>
+            </div>
+            ${inboxFailed ? '<a class="action-button quiet" data-ea-partial-recovery href="/daily-dashboard" target="_blank" rel="noreferrer">Open Activity</a>' : ""}
+            ${needsReviewCount > 0 && !inboxFailed ? '<button type="button" class="action-button primary" data-action="open-needs-attention" data-tw-primary-action>Next email</button>' : ""}
+            ${!inboxFailed ? '<button type="button" class="action-button quiet" data-action="teach-future-after-receipt">Teach Threadwise for future emails</button>' : ""}
+          </div>
+        `;
+        return;
+      }
+
+      if (handledKind && !autoHandledChangeOpen) {
+        const label = humanLabelNameFromId(selected.internal_label || selected.classification || "");
+        const heading = handledKind === "auto-handled"
+          ? `${label} · Auto-handled`
+          : handledKind === "auto-labeled"
+            ? `${label} · Auto-labeled`
+            : `Labeled ${label}`;
+        const receipt = handledKind === "auto-handled"
+          ? "Gmail label applied. Removed from Inbox."
+          : handledKind === "auto-labeled"
+            ? "Threadwise classified this email and kept it visible. Gmail label not confirmed."
+            : "Gmail label applied. Kept in Inbox.";
+        selectedEmailNode.innerHTML = `
+          <div data-ea-selected-state="receipt" data-ea-handled-kind="${escapeHtml(handledKind)}" style="display:grid;gap:12px;margin-top:10px;">
+            <div data-ea-auto-handled-heading class="subject">${escapeHtml(heading)}</div>
+            <div class="sender">${escapeHtml(selected.subject || "(no subject)")} · ${escapeHtml(selected.sender || "(unknown sender)")}</div>
+            <div data-ea-auto-handled-receipt class="success-card">${escapeHtml(receipt)}</div>
+            <div class="button-row">
+              <button type="button" class="action-button quiet" data-action="change-auto-handled">Change</button>
+              <button type="button" class="action-button quiet" data-action="toggle-details">Why</button>
+            </div>
+          </div>
+        `;
+        selectedEmailSecondaryNode.innerHTML = detailsExpanded
+          ? `<div class="preview-card">${escapeHtml(selected.reason || "No reason recorded.")}</div>`
+          : "";
+        return;
+      }
+
+      if (selected.status !== "needs-attention" && !handledKind) {
+        selectedEmailNode.innerHTML = `
+          <div data-ea-selected-state="blocked" style="display:grid;gap:12px;margin-top:10px;">
+            <div class="subject">Handling is not complete</div>
+            <div class="sender">${escapeHtml(selected.subject || "(no subject)")}</div>
+            <div class="error-card">Threadwise has not recorded a completed label and inbox action for this fixture.</div>
+            <a class="action-button quiet" href="/daily-dashboard" target="_blank" rel="noreferrer">Open Activity for details</a>
+          </div>
+        `;
+        return;
+      }
+
+      if (selected.status === "needs-attention" && selectedDecisionMode === "review") {
+        const labelId = internalLabelId(selected.internal_label)
+          || internalLabelId(selected.suggested_label)
+          || internalLabelId(draftLabel)
+          || internalLabelId(selected.classification);
+        const label = humanLabelNameFromId(labelId || selected.classification || "");
+        selectedEmailNode.innerHTML = `
+          <div data-ea-selected-state="review" style="display:grid;gap:12px;margin-top:10px;">
+            <div class="eyebrow">Needs your review</div>
+            <div class="subject">${escapeHtml(selected.subject || "(no subject)")}</div>
+            <div class="sender">${escapeHtml(selected.sender || "(unknown sender)")}</div>
+            <div data-ea-review-suggestion class="agent-copy">${labelId ? `Threadwise suggests ${escapeHtml(label)}` : "Threadwise needs a label"}</div>
+            <div class="preview-card">${escapeHtml(String(selected.reason || stepCopy.body || "").slice(0, 160))}</div>
+            ${labelId ? `<button type="button" class="action-button primary" data-action="accept-suggestion" data-tw-primary-action>Accept ${escapeHtml(label)}</button>` : ""}
+            <button type="button" class="action-button secondary" data-action="change-suggestion">Change label</button>
+          </div>
+        `;
+        return;
+      }
+
+      if (selected.status === "needs-attention" && selectedDecisionMode === "change") {
+        const placeholder = defaultLabel ? "" : '<option value="" selected disabled>Choose a label</option>';
+        selectedEmailNode.innerHTML = `
+          <div data-ea-selected-state="change" style="display:grid;gap:12px;margin-top:10px;">
+            <div class="subject">What should this email be?</div>
+            <div class="sender">${escapeHtml(selected.subject || "(no subject)")}</div>
+            <label class="field-stack">Label
+              <select id="sim-target-label" class="select">${placeholder}${labelOptions}</select>
+            </label>
+            <label class="field-stack">Anything Threadwise should remember? (optional)
+              <textarea id="sim-teach-note" class="textarea">${escapeHtml(draftNote)}</textarea>
+            </label>
+            ${selectedDecisionConflict ? `<div data-ea-label-conflict class="error-card">${escapeHtml(selectedDecisionConflict)}</div>` : ""}
+            <button type="button" class="action-button primary" data-action="preview-current-change" data-tw-primary-action ${defaultLabel ? "" : "disabled"}>Preview change</button>
+            <button type="button" class="action-button quiet" data-action="cancel-current-change">Cancel</button>
+          </div>
+        `;
+        bindDraftInputs();
+        return;
+      }
+
+      if (selected.status === "needs-attention" && selectedDecisionMode === "preview" && teachFlowState === "apply-error") {
+        const label = humanLabelNameFromId(draftLabel || defaultLabel);
+        selectedEmailNode.innerHTML = `
+          <div data-ea-selected-state="blocked" style="display:grid;gap:12px;margin-top:10px;">
+            <div data-ea-preview-heading class="subject">Couldn’t apply ${escapeHtml(label)}</div>
+            <div class="error-card">${escapeHtml(teachError || "Nothing was stored or changed. The preview is still here so you can retry.")}</div>
+            <button type="button" class="action-button primary" data-action="retry-current-change" data-tw-primary-action>Try fix again</button>
+            <button type="button" class="action-button quiet" data-action="edit-current-change">Edit</button>
+          </div>
+        `;
+        return;
+      }
+
+      if (selected.status === "needs-attention" && selectedDecisionMode === "preview" && teachFlowState === "applying") {
+        const label = humanLabelNameFromId(draftLabel || defaultLabel);
+        selectedEmailNode.innerHTML = `
+          <div data-ea-selected-state="applying" aria-live="polite" style="display:grid;gap:12px;margin-top:10px;">
+            <div data-ea-preview-heading class="subject">Applying ${escapeHtml(label)}</div>
+            <div data-ea-preview-effect class="preview-card">Updating the current email only…</div>
+          </div>
+        `;
+        return;
+      }
+
+      if (selected.status === "needs-attention" && selectedDecisionMode === "preview") {
+        const label = humanLabelNameFromId(draftLabel || defaultLabel);
+        selectedEmailNode.innerHTML = `
+          <div data-ea-selected-state="preview" style="display:grid;gap:12px;margin-top:10px;">
+            <div data-ea-preview-heading class="subject">Change this email to ${escapeHtml(label)}</div>
+            <div data-ea-preview-effect class="preview-card">This updates the current email only.</div>
+            <button type="button" class="action-button primary" data-apply-mode="current-only" data-tw-primary-action>Apply change</button>
+            <button type="button" class="action-button quiet" data-action="edit-current-change">Edit</button>
+          </div>
+        `;
+        return;
+      }
+
+      if (teachFlowState === "apply-error") {
+        renderWorkspaceShell("selected-email", "blocked");
+        selectedEmailNode.innerHTML = `
+          <div data-ea-selected-state="blocked" style="display:grid;gap:12px;margin-top:10px;">
+            <div class="subject">Couldn’t complete the simulated update</div>
+            <div class="error-card">${escapeHtml(teachError || "Nothing was stored or changed.")}</div>
+            <button type="button" class="action-button primary" data-action="retry-broad-apply" data-tw-primary-action>Try again</button>
+            <button type="button" class="action-button quiet" data-action="refine-teach">Edit</button>
+          </div>
+        `;
+        return;
+      }
+
       const unsubscribe = selected.unsubscribe || null;
       const unsubscribePreview = (unsubscribe && unsubscribe.preview) || null;
       const canOpenUnsubscribeUrl = unsubscribePreview
@@ -1964,6 +2519,10 @@ class GmailCompanionApp:
       if (labelNode) {
         labelNode.addEventListener("change", () => {
           draftLabel = labelNode.value;
+          const previewButton = document.querySelector('[data-action="preview-current-change"]');
+          if (previewButton) {
+            previewButton.disabled = !internalLabelId(draftLabel);
+          }
         });
       }
       if (noteNode) {
@@ -1974,71 +2533,45 @@ class GmailCompanionApp:
       syncAffectedReviewLayout();
     }
 
+    function bindDraftInputs() {
+      const labelNode = document.getElementById("sim-target-label");
+      const noteNode = document.getElementById("sim-teach-note");
+      if (labelNode) {
+        labelNode.addEventListener("change", () => {
+          draftLabel = labelNode.value;
+          const previewButton = document.querySelector('[data-action="preview-current-change"]');
+          if (previewButton) {
+            previewButton.disabled = !internalLabelId(draftLabel);
+          }
+        });
+      }
+      if (noteNode) {
+        noteNode.addEventListener("input", () => {
+          draftNote = noteNode.value;
+        });
+      }
+    }
+
     function renderSummary() {
+      if (!dailySummaryNode) {
+        return;
+      }
       const summary = (((harnessState || {}).sidebar_state) || {}).daily_summary || {};
-      const changedToday = summary.changed_today || {};
-      const candidateExamples = changedToday.candidate_examples || [];
-      const bucketLabel = activeBucketLabel();
-      const topLabels = (summary.top_labels || []).map((label) =>
-        `<span class="pill">${escapeHtml(label.label)} · ${label.count}</span>`
-      ).join("");
-      const changedItemsHtml = (changedToday.items || []).length
-        ? (changedToday.items || []).map((item) => `
-            <div class="note">
-              <strong>${escapeHtml(item.subject || "(no subject)")}</strong><br>
-              ${escapeHtml(item.sender || "(unknown sender)")}<br>
-              ${escapeHtml(item.change_summary || "")}
-            </div>
-          `).join("")
-        : '<div class="empty">No tracked agent changes in this stored batch yet.</div>';
-      const candidateReviewHtml = candidateExamples.length
-        ? candidateExamples.map((item) => `
-            <div class="note">
-              <strong>${escapeHtml(item.title || "(untitled candidate)")}</strong><br>
-              ${escapeHtml(item.status || "pending")}${item.latest_recommendation ? ` · ${escapeHtml(item.latest_recommendation)}` : ""}
-            </div>
-          `).join("")
-        : '<div class="empty">No candidate changes are waiting in the evaluation lane.</div>';
+      const needsReviewCount = Number(summary.needs_attention_count || 0);
+      const keptVisibleCount = Number(
+        summary.kept_visible_count
+        ?? (((harnessState || {}).kept_visible_items || []).length)
+      );
       dailySummaryNode.innerHTML = `
-        <div class="empty">${summary.run_count > 1 ? `Rolling view across the last ${summary.run_count} Gmail runs` : "Latest run snapshot"}</div>
-        <div class="summary-grid summary-grid--three">
-          <button class="metric-button ${activeFilter === "recent_items" ? "active" : ""}" data-filter="recent_items"><strong>${summary.processed_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">processed</span></button>
-          <button class="metric-button ${activeFilter === "auto_handled_items" ? "active" : ""}" data-filter="auto_handled_items"><strong>${summary.auto_handled_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">auto-handled</span></button>
-          <button class="metric-button ${activeFilter === "kept_visible_items" ? "active" : ""}" data-filter="kept_visible_items"><strong>${summary.unlabeled_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">unlabeled</span></button>
-        </div>
-        <div class="label-row">
-          <span class="pill">Unsubscribe candidates · ${summary.unsubscribe_candidate_count || 0}</span>
-          ${summary.report_date ? `<span class="pill">Latest report · ${escapeHtml(summary.report_date)}</span>` : ""}
-        </div>
-        <div class="button-row" style="margin-top:12px;">
-          <a class="action-button quiet" style="display:inline-flex;align-items:center;" href="/daily-dashboard" target="_blank" rel="noreferrer">Open daily dashboard</a>
-          <a class="action-button quiet" style="display:inline-flex;align-items:center;" href="/unsubscribe-review" target="_blank" rel="noreferrer">Review unsubscribe candidates</a>
-        </div>
-        <details class="reason-wrap" style="margin-top:12px;">
-          <summary style="cursor:pointer;font-weight:800;color:#241812;">Report details</summary>
-          <div class="reason-wrap" style="margin-top:12px;background:#eef7f5;">
-            <div class="reason-label">Viewing</div>
-            <div class="reason"><strong>${escapeHtml(bucketLabel)}</strong> · ${itemsForActiveFilter().length}</div>
-            <div class="empty">${escapeHtml(bucketDescription())}</div>
+        <div data-ea-selected-state="home" style="display:grid;gap:12px;margin-top:10px;">
+          <div class="subject">${needsReviewCount ? `${needsReviewCount} email${needsReviewCount === 1 ? "" : "s"} need your review` : "Your inbox is caught up"}</div>
+          <div class="empty">${Number(summary.processed_count || 0)} processed · ${Number(summary.auto_handled_count || 0)} auto-handled · ${keptVisibleCount} kept visible</div>
+          ${needsReviewCount ? '<button type="button" class="action-button primary" data-action="open-needs-attention" data-tw-primary-action>Review next</button>' : ""}
+          <div class="button-row">
+            <a class="action-button quiet" href="/daily-dashboard" target="_blank" rel="noreferrer">Activity</a>
+            <a class="action-button quiet" href="/unsubscribe-review" target="_blank" rel="noreferrer">Subscription cleanup</a>
           </div>
-          <div class="reason-wrap" style="margin-top:12px;">
-            <div class="reason-label">What Changed Today</div>
-            <div class="summary-grid" style="margin-top:10px;">
-              <div class="metric-button"><strong>${changedToday.label_writes_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">labels written</span></div>
-              <div class="metric-button"><strong>${changedToday.inbox_removed_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">removed from inbox</span></div>
-              <div class="metric-button"><strong>${changedToday.taught_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">teaching changes</span></div>
-              <div class="metric-button"><strong>${changedToday.selected_unsubscribe_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">unsubscribe queued</span></div>
-              <div class="metric-button"><strong>${changedToday.candidate_pending_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">candidate review</span></div>
-            </div>
-            <div class="field-stack" style="margin-top:12px;">${changedItemsHtml}</div>
-            <div class="reason-label" style="margin-top:12px;">Candidate review lane</div>
-            <div class="field-stack" style="margin-top:12px;">${candidateReviewHtml}</div>
-          </div>
-          ${topLabels ? `<div class="label-row">${topLabels}</div>` : '<p class="empty" style="margin-top:12px;">No stored label mix yet.</p>'}
-          <p class="empty" style="margin-top:12px;">Source: ${escapeHtml(summary.source_label || "stored Gmail snapshot")}${summary.batch_id ? ` · ${escapeHtml(summary.batch_id)}` : ""}</p>
-          <div class="reason-label" style="margin-top:12px;">${escapeHtml(bucketLabel)}</div>
-          <div class="field-stack" style="margin-top:12px;">${renderQueueCards(itemsForActiveFilter().slice(0, 5))}</div>
-        </details>
+        </div>
       `;
     }
 
@@ -2052,13 +2585,18 @@ class GmailCompanionApp:
     }
 
     async function refreshState() {
+      if (!forceHome) {
+        renderLoadingWorkspace();
+      }
       const query = new URLSearchParams(currentContext);
       const response = await fetch(`/api/harness-state?${query.toString()}`);
       harnessState = await response.json();
       currentContext = harnessState.selected_context || currentContext;
       const selected = selectedEmail();
       if (selected && selected.found && !draftLabel) {
-        draftLabel = selected.internal_label || selected.suggested_label || "";
+        draftLabel = internalLabelId(selected.internal_label)
+          || internalLabelId(selected.suggested_label)
+          || internalLabelId(selected.classification);
       }
       if (!(selected && selected.found)) {
         previousTeachPreview = null;
@@ -2079,8 +2617,14 @@ class GmailCompanionApp:
       teachFlowState = "teaching";
       inboxApplyConfirmOpen = false;
       teachOutcome = null;
+      teachWriteThrough = null;
       unsubscribeResult = "";
       affectedReviewOpen = false;
+      selectedDecisionMode = "review";
+      selectedDecisionConflict = "";
+      autoHandledChangeOpen = false;
+      futureLearningSaved = false;
+      lastApplyMode = "";
       syncAffectedReviewLayout();
       if (clearDraft) {
         draftLabel = "";
@@ -2116,64 +2660,53 @@ class GmailCompanionApp:
     }
 
     async function applyTeach(mode) {
-      if (!selectedFound()) {
+      if (!selectedFound() || applyInFlight) {
         return;
       }
+      applyInFlight = true;
+      lastApplyMode = mode;
       const labelNode = document.getElementById("sim-target-label");
       const noteNode = document.getElementById("sim-teach-note");
       draftLabel = labelNode ? labelNode.value : draftLabel;
       draftNote = noteNode ? noteNode.value : draftNote;
-      const payload = await postApi("/api/teach-apply", {
-        selected_context: currentContext,
-        target_label: draftLabel,
-        note: draftNote,
-        scope: "sender",
-        mode,
-      });
-      if (payload.error) {
-        teachError = payload.error;
-        teachResult = null;
-        teachFlowState = "scope-confirmation";
-        renderSelectedPanel();
-        return;
-      } else {
+      teachError = "";
+      teachFlowState = "applying";
+      renderSelectedPanel();
+      try {
+        const payload = await postApi("/api/teach-apply", {
+          selected_context: currentContext,
+          target_label: draftLabel,
+          note: draftNote,
+          scope: "sender",
+          mode,
+        });
+        if (payload.error) {
+          throw new Error(payload.error);
+        }
         teachPreview = null;
         previousTeachPreview = null;
         teachError = "";
         teachResult = payload.acknowledgment || "Lesson applied.";
-        teachOutcome = payload.outcome || null;
+        if (mode === "save-future-rule") {
+          futureLearningSaved = true;
+        } else {
+          teachOutcome = payload.outcome || null;
+          teachWriteThrough = payload.gmail_write_through || null;
+        }
         teachFlowState = "result";
         unsubscribeResult = "";
         affectedReviewOpen = false;
-      }
-      await refreshState();
-      renderSelectedPanel();
-    }
-
-    async function runGmailSync() {
-      if (gmailCheckPending) {
-        return;
-      }
-      gmailCheckPending = true;
-      gmailCheckResult = null;
-      renderSelectedPanel();
-      const payload = await postApi("/api/gmail-check-run", { confirmed: "true" });
-      gmailCheckPending = false;
-      if (payload.error) {
-        gmailCheckResult = {
-          kind: "gmail-sync-error",
-          title: "Gmail sync did not start",
-          message: payload.error,
-        };
-      } else {
-        gmailCheckResult = {
-          kind: "gmail-sync-success",
-          title: "Gmail sync finished",
-          message: "Threadwise ran a Gmail sync. Checking this email again now.",
-        };
         await refreshState();
+      } catch (error) {
+        teachError = error && error.message
+          ? error.message
+          : "Threadwise could not complete this simulated update. Nothing else was attempted.";
+        teachResult = null;
+        teachFlowState = "apply-error";
+        renderSelectedPanel();
+      } finally {
+        applyInFlight = false;
       }
-      renderSelectedPanel();
     }
 
     async function excludeAffectedMatch(messageId, reason) {
@@ -2253,6 +2786,142 @@ class GmailCompanionApp:
         setContextFromItem(item);
         return;
       }
+      const acceptSuggestionButton = event.target.closest("[data-action='accept-suggestion']");
+      if (acceptSuggestionButton) {
+        const selected = selectedEmail();
+        draftLabel = selected && (
+          internalLabelId(selected.internal_label)
+          || internalLabelId(selected.suggested_label)
+          || internalLabelId(selected.classification)
+        ) || "";
+        if (!draftLabel) {
+          return;
+        }
+        draftNote = "";
+        selectedDecisionMode = "preview";
+        applyTeach("current-only");
+        return;
+      }
+      const changeSuggestionButton = event.target.closest("[data-action='change-suggestion']");
+      if (changeSuggestionButton) {
+        const selected = selectedEmail();
+        selectedDecisionMode = "change";
+        selectedDecisionConflict = "";
+        draftLabel = selected && (
+          internalLabelId(selected.internal_label)
+          || internalLabelId(selected.suggested_label)
+          || internalLabelId(selected.classification)
+        ) || "";
+        draftNote = "";
+        renderSelectedPanel();
+        document.getElementById("sim-target-label")?.focus();
+        return;
+      }
+      const cancelCurrentChangeButton = event.target.closest("[data-action='cancel-current-change']");
+      if (cancelCurrentChangeButton) {
+        selectedDecisionMode = "review";
+        selectedDecisionConflict = "";
+        draftLabel = "";
+        draftNote = "";
+        renderSelectedPanel();
+        return;
+      }
+      const previewCurrentChangeButton = event.target.closest("[data-action='preview-current-change']");
+      if (previewCurrentChangeButton) {
+        const labelNode = document.getElementById("sim-target-label");
+        const noteNode = document.getElementById("sim-teach-note");
+        draftLabel = labelNode ? labelNode.value : draftLabel;
+        draftNote = noteNode ? noteNode.value : draftNote;
+        if (!internalLabelId(draftLabel)) {
+          return;
+        }
+        selectedDecisionConflict = labelConflictForDraft();
+        if (selectedDecisionConflict) {
+          renderSelectedPanel();
+          return;
+        }
+        selectedDecisionMode = "preview";
+        renderSelectedPanel();
+        return;
+      }
+      const editCurrentChangeButton = event.target.closest("[data-action='edit-current-change']");
+      if (editCurrentChangeButton) {
+        selectedDecisionMode = "change";
+        selectedDecisionConflict = "";
+        teachFlowState = "teaching";
+        renderSelectedPanel();
+        return;
+      }
+      const retryCurrentChangeButton = event.target.closest("[data-action='retry-current-change']");
+      if (retryCurrentChangeButton) {
+        teachError = "";
+        applyTeach("current-only");
+        return;
+      }
+      const teachFutureAfterReceiptButton = event.target.closest("[data-action='teach-future-after-receipt']");
+      if (teachFutureAfterReceiptButton) {
+        selectedDecisionMode = "future-learning";
+        renderSelectedPanel();
+        return;
+      }
+      const backToCurrentReceiptButton = event.target.closest("[data-action='back-to-current-receipt']");
+      if (backToCurrentReceiptButton) {
+        selectedDecisionMode = "review";
+        teachFlowState = "result";
+        teachError = "";
+        renderSelectedPanel();
+        return;
+      }
+      const saveFutureLearningButton = event.target.closest("[data-action='save-future-learning']");
+      if (saveFutureLearningButton) {
+        const noteNode = document.getElementById("sim-future-note");
+        draftNote = noteNode ? noteNode.value : draftNote;
+        if (!draftNote.trim()) {
+          return;
+        }
+        applyTeach("save-future-rule");
+        return;
+      }
+      const retryFutureLearningButton = event.target.closest("[data-action='retry-future-learning']");
+      if (retryFutureLearningButton) {
+        applyTeach("save-future-rule");
+        return;
+      }
+      const retryBroadApplyButton = event.target.closest("[data-action='retry-broad-apply']");
+      if (retryBroadApplyButton) {
+        applyTeach(lastApplyMode || "apply-included");
+        return;
+      }
+      const changeAutoHandledButton = event.target.closest("[data-action='change-auto-handled']");
+      if (changeAutoHandledButton) {
+        const selected = selectedEmail();
+        autoHandledChangeOpen = true;
+        draftLabel = selected && (
+          internalLabelId(selected.internal_label)
+          || internalLabelId(selected.suggested_label)
+          || internalLabelId(selected.classification)
+        ) || "";
+        draftNote = "";
+        renderSelectedPanel();
+        return;
+      }
+      const toggleDetailsButton = event.target.closest("[data-action='toggle-details']");
+      if (toggleDetailsButton) {
+        detailsExpanded = !detailsExpanded;
+        renderSelectedPanel();
+        return;
+      }
+      const openNeedsAttentionButton = event.target.closest("[data-action='open-needs-attention']");
+      if (openNeedsAttentionButton) {
+        activeFilter = "needs_attention_items";
+        const currentMessageId = (selectedEmail() || {}).message_id || "";
+        const queue = (((harnessState || {}).needs_attention_items) || []);
+        const first = queue.find((item) => item.message_id && item.message_id !== currentMessageId) || queue[0];
+        if (first) {
+          setContextFromItem(first);
+        }
+        return;
+      }
       const previewButton = event.target.closest("[data-action='preview-teach']");
       if (previewButton) {
         previewTeach();
@@ -2270,9 +2939,13 @@ class GmailCompanionApp:
         refreshState();
         return;
       }
-      const runGmailSyncButton = event.target.closest("[data-action='run-gmail-sync']");
-      if (runGmailSyncButton) {
-        runGmailSync();
+      const returnToFixtureListButton = event.target.closest("[data-action='return-to-fixture-list']");
+      if (returnToFixtureListButton) {
+        forceHome = true;
+        currentContext = {};
+        resetTeachState(true);
+        renderSelectedPanel();
+        renderSummary();
         return;
       }
       const openAffectedReviewButton = event.target.closest("[data-action='open-affected-review']");
@@ -2344,8 +3017,6 @@ class GmailCompanionApp:
           renderSelectedPanel();
           return;
         }
-        teachFlowState = "applying";
-        renderSelectedPanel();
         applyTeach(mode);
         return;
       }
@@ -2356,8 +3027,15 @@ class GmailCompanionApp:
     });
 
     refreshButton.addEventListener("click", () => {
+      forceHome = false;
       resetTeachState(false);
       refreshState();
+    });
+    homeButton.addEventListener("click", () => {
+      forceHome = true;
+      resetTeachState(true);
+      renderSelectedPanel();
+      renderSummary();
     });
     minimizeButton.addEventListener("click", () => {
       minimized = !minimized;
@@ -2365,6 +3043,7 @@ class GmailCompanionApp:
       minimizeButton.textContent = minimized ? "Open" : "Minimize";
     });
     unsyncedButton.addEventListener("click", () => {
+      forceHome = false;
       currentContext = { ...unsyncedContext };
       resetTeachState(true);
       fetch(`/api/harness-state?${new URLSearchParams(currentContext).toString()}`)
@@ -2482,70 +3161,53 @@ class GmailCompanionApp:
         query = query or {}
         focus_list_key = first_query_value(query, "list_key")
         candidates = self._unsubscribe_store.list_candidates()
-        executor = UnsubscribeExecutor(self._storage_dir)
-        preview = executor.preview_selected_candidates()
-        cards_by_section = {
-            "selected": [],
+        rows_by_section = {
             "ready": [],
+            "queued": [],
             "manual": [],
-            "other": [],
         }
         for candidate in candidates:
             detail = build_unsubscribe_detail(candidate, self._storage_dir)
             candidate_preview = detail["preview"]
-            latest_execution = detail.get("latest_execution") or {}
             is_focused = bool(focus_list_key and detail.get("list_key") == focus_list_key)
             action_html = ""
             preview_url = candidate_preview.get("url") or ""
             if preview_url.startswith("mailto:"):
-                action_html = f'<a class="action" href="{escape_html(preview_url)}">Open mail unsubscribe</a>'
+                action_html = f'<a class="row-link" href="{escape_html(preview_url)}">Open mail app · does not execute here</a>'
             elif preview_url.startswith("http") and candidate_preview.get("status") == "ready":
-                action_html = (
-                    '<p class="safety-note"><strong>Audited action only:</strong> '
-                    'Threadwise will not open this one-click HTTPS unsubscribe as a raw browser link. '
-                    'Queue it for review and execute supported unsubscribes only after explicit confirmation.</p>'
-                )
+                action_html = '<span class="row-note">Ready for a separately confirmed action</span>'
             elif preview_url.startswith("http"):
                 action_html = (
-                    f'<p class="safety-note"><strong>Manual provider page:</strong> '
-                    'This link may require a signed-in provider session or may show a provider error page. '
-                    'Opening it does not execute a Threadwise unsubscribe.</p>'
-                    f'<a class="action secondary" href="{escape_html(preview_url)}" target="_blank" rel="noreferrer">Open provider page manually</a>'
+                    f'<a class="row-link" href="{escape_html(preview_url)}" target="_blank" rel="noreferrer">'
+                    'Open provider page · does not execute here</a>'
                 )
-            focus_html = '<div class="focus-note">Opened from inbox</div>' if is_focused else ""
-            latest_execution_html = (
-                f'<p><strong>Latest attempt:</strong> {escape_html(latest_execution.get("status") or "none")} - {escape_html(latest_execution.get("notes") or "No recorded execution yet.")}</p>'
-                if latest_execution
-                else '<p><strong>Latest attempt:</strong> none</p>'
-            )
-            card_html = (
-                f'<article class="card{" focused" if is_focused else ""}">'
-                f'{focus_html}'
-                f'<div class="eyebrow">Unsubscribe</div>'
-                f'<h2>{escape_html(detail.get("display_name") or "(unknown list)")}</h2>'
-                f'<p><strong>Sender:</strong> {escape_html(detail.get("sender") or "(unknown sender)")}</p>'
-                f'<p><strong>Status:</strong> {escape_html(candidate_preview.get("notes") or "(none)")}</p>'
-                f'<p><strong>Selection:</strong> {escape_html(detail.get("decision_state") or "undecided")}</p>'
-                f'<p><strong>Evidence:</strong> {detail.get("evidence_count", 0)} messages</p>'
-                f'{latest_execution_html}'
-                f'{action_html}'
-                '</article>'
-            )
             section_key = unsubscribe_section_key(detail, candidate_preview)
-            cards_by_section[section_key].append(card_html)
-
-        if not any(cards_by_section.values()):
-            cards_by_section["other"].append('<article class="card"><h2>No unsubscribe candidates</h2><p>No unsubscribe candidates are stored yet.</p></article>')
+            rows_by_section[section_key].append(
+                render_unsubscribe_row(
+                    detail,
+                    candidate_preview,
+                    action_html=action_html,
+                    focused=is_focused,
+                )
+            )
 
         sections_html = "".join(
-            render_unsubscribe_section(title, description, cards_by_section[key])
+            render_unsubscribe_section(key, title, description, rows_by_section[key])
             for key, title, description in [
-                ("selected", "Queued From Inbox", "These are the subscriptions you already queued for later review from the inbox."),
-                ("ready", "Ready Now", "These have a supported unsubscribe path and are not queued yet."),
-                ("manual", "Manual Follow-Up", "These look like subscriptions, but the unsubscribe path still needs a manual step."),
-                ("other", "All Other Candidates", "Everything else the agent thinks may be a subscription family."),
+                ("ready", "Ready now", "Supported one-click paths that are not queued yet."),
+                ("queued", "Queued", "Subscriptions selected for later review."),
+                ("manual", "Manual follow-up", "Subscriptions whose provider or mail flow needs a manual step."),
             ]
-            if cards_by_section[key]
+            if rows_by_section[key]
+        )
+        empty_html = (
+            '<div class="empty-state">No unsubscribe candidates are stored yet.</div>'
+            if not candidates
+            else ""
+        )
+        group_counts = {key: len(rows) for key, rows in rows_by_section.items()}
+        candidate_keys_json = script_safe_json(
+            [candidate.get("list_key") for candidate in candidates if candidate.get("list_key")]
         )
         return f"""<!doctype html>
 <html lang="en">
@@ -2556,23 +3218,37 @@ class GmailCompanionApp:
   <style>
     body {{ margin:0; min-height:100vh; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: radial-gradient(circle at 18px 18px, rgba(36,24,18,.05) 2px, transparent 2px) 0 0 / 36px 36px, linear-gradient(135deg,#f7efe0 0%,#fdfaf2 52%,#e7f3ee 100%); color:#241812; }}
     main {{ max-width: 1180px; margin: 0 auto; padding: 34px; display:grid; gap:18px; }}
-    .hero,.card {{ background:#fffdf7; border:3px solid #241812; border-radius:18px; padding:18px; box-shadow:5px 5px 0 #241812; }}
-    .hero {{ background:#fff7e8; }}
+    .hero {{ background:#fff7e8; border:2px solid #241812; border-radius:18px; padding:18px; }}
     .hero-heading {{ display:flex; align-items:center; gap:12px; }}
-    .brand-mark {{ width:42px; height:42px; border-radius:12px; border:2px solid #241812; box-shadow:3px 3px 0 #241812; flex:0 0 auto; background:#fff8df; }}
-    .grid {{ display:grid; grid-template-columns: repeat(auto-fit,minmax(260px,1fr)); gap:14px; }}
-    .section {{ display:grid; gap:12px; }}
+    .brand-mark {{ width:42px; height:42px; border-radius:12px; border:1px solid #9e9486; flex:0 0 auto; background:#fff8df; }}
+    .review-form,.section {{ display:grid; gap:18px; }}
+    .unsubscribe-group {{ background:#fffdf7; border:1px solid #9e9486; border-radius:14px; padding:16px; }}
+    .unsubscribe-list {{ display:grid; border-top:1px solid #d7cfbf; }}
+    .unsubscribe-row {{ display:grid; grid-template-columns:32px minmax(190px,1.4fr) minmax(72px,.45fr) minmax(190px,1.2fr) minmax(170px,1fr) minmax(150px,.9fr); gap:12px; align-items:center; padding:12px 4px; border-bottom:1px solid #d7cfbf; }}
+    .unsubscribe-row h3 {{ margin:0; font-size:.98rem; }}
+    .identity-cell,.readiness-cell,.attempt-cell,.evidence-cell {{ min-width:0; display:grid; gap:4px; }}
+    .address,.readiness-cell span,.attempt-cell span,.row-note,.row-link {{ color:#6b6255; font-size:.82rem; line-height:1.35; overflow-wrap:anywhere; word-break:break-word; }}
+    .evidence-cell span {{ color:#6b6255; font-size:.76rem; }}
+    .row-link {{ color:#315f55; font-weight:760; }}
     .eyebrow {{ color:#6b6255; font-size:0.72rem; text-transform:uppercase; letter-spacing:0.14em; font-weight:820; }}
     h1,h2 {{ margin:8px 0 10px; }}
     h1 {{ font-size:2rem; line-height:1.05; }}
     p {{ line-height:1.45; }}
-    .action {{ display:inline-block; margin-top:10px; border:2px solid #241812; border-radius:11px; background:#2eb67d; color:#241812; padding:9px 12px; text-decoration:none; font-weight:800; box-shadow:3px 3px 0 #241812; }}
-    .action.secondary {{ background:#fffdf7; color:#5d5342; }}
-    .safety-note {{ border:2px solid #241812; border-radius:12px; background:#fff7e8; padding:10px 12px; color:#4d4134; }}
+    .safety-note {{ border:1px solid #9e9486; border-radius:12px; background:#fffdf7; padding:10px 12px; color:#4d4134; }}
     .pill-row {{ display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }}
-    .pill {{ border:2px solid #241812; border-radius:999px; padding:6px 10px; background:#f1eadf; color:#241812; font-size:0.8rem; font-weight:760; box-shadow:2px 2px 0 rgba(36,24,18,.28); }}
+    .pill {{ border:1px solid #9e9486; border-radius:999px; padding:6px 10px; background:#f1eadf; color:#241812; font-size:0.8rem; font-weight:760; }}
     .focused {{ border-color:#2eb67d; background:#f5fbfa; }}
     .focus-note {{ display:inline-flex; align-items:center; padding:6px 10px; border:2px solid #241812; border-radius:999px; background:#dff8ed; color:#09633c; font-size:0.82rem; font-weight:760; }}
+    .batch-bar {{ position:sticky; bottom:12px; z-index:2; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 14px; border:1px solid #241812; border-radius:14px; background:#fffdf7; box-shadow:0 8px 24px rgba(36,24,18,.14); }}
+    .batch-bar[hidden] {{ display:none; }}
+    .save-selection {{ border:2px solid #241812; border-radius:10px; background:#2eb67d; color:#241812; padding:9px 12px; font-weight:800; box-shadow:3px 3px 0 #241812; }}
+    .clear-selection {{ border:0; background:transparent; color:#5d5342; text-decoration:underline; font-weight:760; }}
+    @media (max-width: 880px) {{
+      main {{ padding:18px; }}
+      .unsubscribe-row {{ grid-template-columns:28px minmax(0,1fr); align-items:start; }}
+      .evidence-cell,.readiness-cell,.attempt-cell,.row-action-cell {{ grid-column:2; }}
+      .batch-bar {{ flex-wrap:wrap; }}
+    }}
   </style>
 </head>
 <body>
@@ -2585,18 +3261,100 @@ class GmailCompanionApp:
           <h1>Subscription cleanup</h1>
         </div>
       </div>
-      <p>Selected for later unsubscribe: {preview.get("selected_count", 0)}. Ready now: {preview.get("ready_count", 0)}. Manual follow-up needed: {preview.get("unsupported_count", 0)}.</p>
+      <p>Review subscription families and choose which ones to queue. Selection never executes an unsubscribe.</p>
       <div class="pill-row">
-        <span class="pill">Queued: {preview.get("selected_count", 0)}</span>
-        <span class="pill">Ready now: {preview.get("ready_count", 0)}</span>
-        <span class="pill">Manual follow-up: {preview.get("unsupported_count", 0)}</span>
+        <span class="pill">Ready now: {group_counts["ready"]}</span>
+        <span class="pill">Queued: {group_counts["queued"]}</span>
+        <span class="pill">Manual follow-up: {group_counts["manual"]}</span>
         <span class="pill">All candidates: {len(candidates)}</span>
       </div>
     </section>
-    <section class="section">
-      {sections_html}
-    </section>
+    <aside class="safety-note" data-unsubscribe-safety-note>
+      Queueing or clearing a selection does not execute an unsubscribe. Ready one-click HTTPS actions require a separate explicit confirmation. Manual mail or provider links leave Threadwise and do not count as execution.
+    </aside>
+    <form class="review-form" id="unsubscribe-selection-form">
+      <section class="section">
+        {sections_html}
+        {empty_html}
+      </section>
+      <div class="batch-bar" data-unsubscribe-batch-bar {'hidden' if group_counts["queued"] < 1 else ''}>
+        <strong><span data-unsubscribe-selected-count>{group_counts["queued"]}</span> selected</strong>
+        <div>
+          <button class="clear-selection" type="button" data-clear-unsubscribe-selection>Clear queued selections</button>
+          <button class="save-selection" type="button" data-save-unsubscribe-selection>Save selection</button>
+        </div>
+        <span class="row-note" data-unsubscribe-selection-status aria-live="polite"></span>
+      </div>
+    </form>
   </main>
+  <script>
+    const candidateKeys = {candidate_keys_json};
+    const selectionInputs = [...document.querySelectorAll('[data-unsubscribe-selection]')];
+    const batchBar = document.querySelector('[data-unsubscribe-batch-bar]');
+    const selectedCount = document.querySelector('[data-unsubscribe-selected-count]');
+    const selectionStatus = document.querySelector('[data-unsubscribe-selection-status]');
+    const saveSelectionButton = document.querySelector('[data-save-unsubscribe-selection]');
+    const clearSelectionButton = document.querySelector('[data-clear-unsubscribe-selection]');
+    let selectionSaveInFlight = false;
+    let reloadScheduled = false;
+
+    function selectedKeys() {{
+      return selectionInputs.filter((input) => input.checked).map((input) => input.value);
+    }}
+
+    function updateBatchBar() {{
+      const count = selectedKeys().length;
+      selectedCount.textContent = String(count);
+      batchBar.hidden = count < 1;
+    }}
+
+    async function persistSelection(keys) {{
+      if (selectionSaveInFlight) {{
+        return;
+      }}
+      selectionSaveInFlight = true;
+      saveSelectionButton.disabled = true;
+      clearSelectionButton.disabled = true;
+      selectionStatus.textContent = 'Saving selection…';
+      try {{
+        const response = await fetch('/api/unsubscribe-candidates/selections', {{
+          method: 'POST',
+          headers: {{ 'Content-Type': 'application/json' }},
+          body: JSON.stringify({{
+            candidate_keys: candidateKeys,
+            selected_candidate_keys: keys,
+          }}),
+        }});
+        const payload = await response.json();
+        if (!response.ok) {{
+          selectionStatus.textContent = payload.error || 'Could not save selection.';
+          return;
+        }}
+        selectionStatus.textContent = payload.acknowledgment;
+        updateBatchBar();
+        reloadScheduled = true;
+        window.setTimeout(() => window.location.reload(), 350);
+      }} catch (_error) {{
+        selectionStatus.textContent = 'Could not reach Threadwise. Selection was not saved.';
+      }} finally {{
+        if (!reloadScheduled) {{
+          selectionSaveInFlight = false;
+          saveSelectionButton.disabled = false;
+          clearSelectionButton.disabled = false;
+        }}
+      }}
+    }}
+
+    selectionInputs.forEach((input) => input.addEventListener('change', updateBatchBar));
+    saveSelectionButton.addEventListener('click', () => {{
+      persistSelection(selectedKeys());
+    }});
+    clearSelectionButton.addEventListener('click', () => {{
+      selectionInputs.forEach((input) => {{ input.checked = false; }});
+      persistSelection([]);
+    }});
+    updateBatchBar();
+  </script>
 </body>
 </html>"""
 
@@ -2610,12 +3368,23 @@ class GmailCompanionApp:
         changed_today = summary.get("changed_today", {})
         selected_unsubscribe_examples = changed_today.get("selected_unsubscribe_examples", [])
         candidate_examples = changed_today.get("candidate_examples", [])
-        sections = [
-            (
-                "Needs Attention",
-                "The emails still waiting for a confident decision or explicit follow-up.",
-                render_dashboard_email_cards(payload.get("needs_attention_items", []), empty_label="No needs-attention emails in the current snapshot."),
-            ),
+        seen_review_items: set[str] = set()
+
+        def unique_review_items(items: list[dict]) -> list[dict]:
+            unique_items: list[dict] = []
+            for item in items:
+                identity = dashboard_item_identity(item)
+                if identity and identity in seen_review_items:
+                    continue
+                if identity:
+                    seen_review_items.add(identity)
+                unique_items.append(item)
+            return unique_items
+
+        attention_now_items = unique_review_items(attention_summary.get("now_items", []))
+        possible_attention_items = unique_review_items(attention_summary.get("possible_items", []))
+        classification_review_items = unique_review_items(payload.get("needs_attention_items", []))
+        diagnostic_sections = [
             (
                 "Kept Visible",
                 "Emails the agent understood but intentionally left easy to find in the inbox.",
@@ -2647,17 +3416,33 @@ class GmailCompanionApp:
         changed_items_html = render_dashboard_changed_cards(changed_today.get("items", []))
         unsubscribe_html = render_dashboard_unsubscribe_cards(selected_unsubscribe_examples)
         candidate_review_html = render_dashboard_candidate_cards(candidate_examples)
-        sections_html = "".join(
+        diagnostic_sections_html = "".join(
             render_dashboard_section(title, description, cards)
-            for title, description, cards in sections
+            for title, description, cards in diagnostic_sections
         )
-        attention_now_html = render_dashboard_attention_cards(
-            attention_summary.get("now_items", []),
-            empty_label="No attention-now items in the latest Gmail daily report.",
+        classification_review_html = (
+            render_dashboard_email_cards(
+                classification_review_items,
+                empty_label="No classification-review emails in the current snapshot.",
+            )
+            if classification_review_items
+            else ""
         )
-        possible_attention_html = render_dashboard_attention_cards(
-            attention_summary.get("possible_items", []),
-            empty_label="No possible-attention items in the latest Gmail daily report.",
+        attention_now_html = (
+            render_dashboard_attention_cards(
+                attention_now_items,
+                empty_label="No attention-now items in the latest Gmail daily report.",
+            )
+            if attention_now_items
+            else ""
+        )
+        possible_attention_html = (
+            render_dashboard_attention_cards(
+                possible_attention_items,
+                empty_label="No possible-attention items in the latest Gmail daily report.",
+            )
+            if possible_attention_items
+            else ""
         )
         hidden_insufficient_context_count = attention_summary.get("hidden_insufficient_context_count", 0)
         hidden_insufficient_context_html = (
@@ -2671,17 +3456,83 @@ class GmailCompanionApp:
                 else ""
             )
         )
-        attention_report_pills = "".join(
+        has_attention_contract = bool(attention_summary.get("has_attention_contract"))
+        has_rich_attention_items = bool(attention_now_items or possible_attention_items)
+        attention_report_pills = (
+            "".join(
+                [
+                    (
+                        f'<span class="pill">Latest attention report: {escape_html(attention_summary.get("report_date", ""))}</span>'
+                        if attention_summary.get("report_date")
+                        else ""
+                    ),
+                    f'<span class="pill">Evaluated: {attention_summary.get("evaluated_message_count", 0)}</span>',
+                    (f'<span class="pill">Now: {len(attention_now_items)}</span>' if attention_now_items else ""),
+                    (f'<span class="pill">Possible: {len(possible_attention_items)}</span>' if possible_attention_items else ""),
+                ]
+            )
+            if has_attention_contract
+            else ""
+        )
+        attention_lanes_html = "".join(
             [
                 (
-                    f'<span class="pill">Latest attention report: {escape_html(attention_summary.get("report_date", ""))}</span>'
-                    if attention_summary.get("report_date")
+                    '<section class="review-lane" data-dashboard-attention-lane="now">'
+                    '<div class="eyebrow">Strong Signals</div>'
+                    '<h2>Needs Attention Now</h2>'
+                    f'<div class="stack">{attention_now_html}</div>'
+                    '</section>'
+                    if attention_now_items
                     else ""
                 ),
-                f'<span class="pill">Evaluated: {attention_summary.get("evaluated_message_count", 0)}</span>',
-                f'<span class="pill">Now: {len(attention_summary.get("now_items", []))}</span>',
-                f'<span class="pill">Possible: {len(attention_summary.get("possible_items", []))}</span>',
+                (
+                    '<section class="review-lane" data-dashboard-attention-lane="possible">'
+                    '<div class="eyebrow">Lower Confidence</div>'
+                    '<h2>Possible Attention</h2>'
+                    f'<div class="stack">{possible_attention_html}</div>'
+                    f'{hidden_insufficient_context_html}'
+                    '</section>'
+                    if possible_attention_items
+                    else ""
+                ),
             ]
+        )
+        classification_lane_html = (
+            '<section class="review-lane" data-dashboard-classification-review>'
+            '<div class="eyebrow">Classification review</div>'
+            '<h2>Needs a label decision</h2>'
+            f'<div class="stack">{classification_review_html}</div>'
+            '</section>'
+            if classification_review_items
+            else ""
+        )
+        attention_status_html = ""
+        if not has_rich_attention_items:
+            if has_attention_contract:
+                attention_status_html = (
+                    '<div class="attention-status" data-dashboard-attention-status="clear">'
+                    '<strong>Attention pass clear</strong>'
+                    '<div>Latest attention pass found no attention-now or possible-attention items.</div>'
+                    f'{hidden_insufficient_context_html}'
+                    '</div>'
+                )
+            else:
+                attention_status_html = (
+                    '<div class="attention-status" data-dashboard-attention-status="unavailable">'
+                    '<strong>No attention report yet</strong>'
+                    f'<div>{escape_html(attention_summary.get("empty_reason", ""))}</div>'
+                    '</div>'
+                )
+        hidden_insufficient_context_after_lanes_html = (
+            hidden_insufficient_context_html
+            if has_rich_attention_items and not possible_attention_items
+            else ""
+        )
+        review_lanes_html = (
+            f'<div class="review-grid">{attention_lanes_html}</div>'
+            f'{hidden_insufficient_context_after_lanes_html}{classification_lane_html}'
+            if has_rich_attention_items
+            else f'{classification_lane_html}{attention_status_html}'
         )
         run_result = run_status.get("result") or {}
         run_status_pills = "".join(
@@ -2699,6 +3550,22 @@ class GmailCompanionApp:
                 ),
             ]
         )
+        gmail_check_html = (
+            f"""
+              <form class="gmail-check-form" method="post" action="/api/gmail-check-run">
+                <input type="hidden" name="account_id" value="{escape_html(inferred_account_id)}">
+                <input type="hidden" name="batch_size" value="50">
+                <div class="copy">This confirmed run may apply existing safe EA/ labels, remove INBOX only for approved low-value categories, and may call the LLM for attention detection. Attention detection itself does not mutate Gmail.</div>
+                <label class="copy">
+                  <input id="confirm-run-gmail-check" type="checkbox" name="confirmed" value="true" required>
+                  Confirm safe label/inbox boundaries and small LLM cost.
+                </label>
+                <button class="action action--primary" data-dashboard-primary-action type="submit" {'disabled' if run_status_label == 'running' else ''}>Run Gmail check</button>
+              </form>
+            """
+            if self._gmail_check_enabled
+            else '<div class="copy" data-gmail-check-disabled>Gmail check is disabled for this server.</div>'
+        )
         return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -2706,12 +3573,16 @@ class GmailCompanionApp:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Threadwise Daily Dashboard</title>
   <style>
-    body {{ margin:0; min-height:100vh; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: radial-gradient(circle at 18px 18px, rgba(36,24,18,.05) 2px, transparent 2px) 0 0 / 36px 36px, linear-gradient(135deg,#f7efe0 0%,#fdfaf2 52%,#e7f3ee 100%); color:#241812; }}
-    main {{ max-width: 1180px; margin: 0 auto; padding: 34px; display:grid; gap:18px; }}
-    .hero,.card {{ background:#fffdf7; border:3px solid #241812; border-radius:18px; padding:18px; box-shadow:5px 5px 0 #241812; }}
+    * {{ box-sizing:border-box; }}
+    body {{ margin:0; min-height:100vh; padding:clamp(8px,3vw,28px); font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: radial-gradient(circle at 18px 18px, rgba(36,24,18,.05) 2px, transparent 2px) 0 0 / 36px 36px, linear-gradient(135deg,#f7efe0 0%,#fdfaf2 52%,#e7f3ee 100%); color:#241812; }}
+    main {{ width:min(1180px,100%); margin:0 auto; padding:0; display:grid; gap:0; overflow:hidden; background:#fff7e8; border:2px solid #241812; border-radius:20px; box-shadow:0 16px 40px rgba(36,24,18,.14); }}
+    .hero,.card {{ background:#fffdf7; border:0; border-radius:0; padding:clamp(16px,2.5vw,24px); box-shadow:none; }}
     .hero {{ background:#fff7e8; }}
-    .hero-heading {{ display:flex; align-items:center; gap:12px; }}
-    .brand-mark {{ width:42px; height:42px; border-radius:12px; border:2px solid #241812; box-shadow:3px 3px 0 #241812; flex:0 0 auto; background:#fff8df; }}
+    main > .card {{ border-top:1px solid rgba(36,24,18,.28); }}
+    .hero-heading {{ display:flex; align-items:flex-start; justify-content:space-between; gap:18px; flex-wrap:wrap; }}
+    .hero-action-area {{ display:grid; justify-items:end; gap:8px; max-width:420px; }}
+    .gmail-check-form {{ display:grid; justify-items:end; gap:8px; }}
+    .brand-mark {{ width:42px; height:42px; border-radius:12px; border:1px solid rgba(36,24,18,.34); box-shadow:none; flex:0 0 auto; background:#fff8df; }}
     .grid {{ display:grid; grid-template-columns: repeat(auto-fit,minmax(260px,1fr)); gap:14px; }}
     .section {{ display:grid; gap:12px; }}
     .eyebrow {{ color:#6b6255; font-size:0.72rem; text-transform:uppercase; letter-spacing:0.14em; font-weight:820; }}
@@ -2719,104 +3590,102 @@ class GmailCompanionApp:
     h1 {{ font-size:2rem; line-height:1.05; }}
     p {{ line-height:1.45; }}
     .pill-row {{ display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }}
-    .pill {{ border:2px solid #241812; border-radius:999px; padding:6px 10px; background:#f1eadf; color:#241812; font-size:0.8rem; font-weight:760; box-shadow:2px 2px 0 rgba(36,24,18,.28); }}
+    .pill {{ border:1px solid rgba(36,24,18,.28); border-radius:999px; padding:6px 10px; background:#f1eadf; color:#241812; font-size:0.8rem; font-weight:760; box-shadow:none; }}
     .metric-grid {{ display:grid; grid-template-columns: repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin-top:14px; }}
-    .metric {{ border:2px solid #241812; border-radius:11px; background:#fffdf7; padding:12px; box-shadow:2px 2px 0 rgba(36,24,18,.18); }}
+    .metric {{ border:1px solid rgba(36,24,18,.28); border-radius:11px; background:#fffdf7; padding:12px; box-shadow:none; }}
     .metric strong {{ display:block; font-size:1.15rem; }}
     .stack {{ display:grid; gap:10px; }}
-    .email-card {{ border:2px solid #241812; border-radius:11px; background:#fffdf7; padding:12px; box-shadow:2px 2px 0 rgba(36,24,18,.18); }}
+    .email-card,.review-lane {{ border:1px solid rgba(36,24,18,.28); border-radius:12px; background:#fffdf7; padding:14px; box-shadow:none; }}
     .attention-card {{ background:#fffaf0; }}
     .email-card h3 {{ margin:0; font-size:0.98rem; line-height:1.3; }}
     .meta {{ margin-top:6px; color:#6b6255; font-size:0.84rem; overflow-wrap:anywhere; }}
     .copy {{ margin-top:8px; color:#1f1a14; line-height:1.45; }}
-    .action {{ display:inline-flex; align-items:center; margin-top:10px; border:2px solid #241812; border-radius:11px; background:#2eb67d; color:#241812; padding:9px 12px; text-decoration:none; font-weight:800; box-shadow:3px 3px 0 #241812; }}
-    @media (max-width: 820px) {{ .grid {{ grid-template-columns: 1fr; }} }}
+    .review-lanes,.review-grid {{ display:grid; gap:12px; margin-top:12px; }}
+    .review-grid {{ grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); margin-top:0; }}
+    .attention-status,.empty-state {{ border:1px solid rgba(36,24,18,.24); border-radius:11px; background:#f5efe2; padding:12px; color:#5d5342; line-height:1.45; }}
+    .attention-status strong {{ display:block; color:#241812; margin-bottom:4px; }}
+    .action {{ display:inline-flex; align-items:center; margin-top:10px; border:1px solid rgba(36,24,18,.38); border-radius:11px; background:#fffdf7; color:#241812; padding:9px 12px; text-decoration:none; font:inherit; font-weight:800; box-shadow:none; cursor:pointer; }}
+    .action--primary {{ border:2px solid #241812; background:#2eb67d; box-shadow:3px 3px 0 #241812; }}
+    .action--feedback {{ padding:7px 10px; }}
+    .subscription-row {{ display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:14px; }}
+    .subscription-identity .pill {{ margin-bottom:8px; }}
+    .subscription-row .action {{ margin-top:0; }}
+    details[data-dashboard-diagnostics] > summary {{ cursor:pointer; font-weight:850; }}
+    .diagnostics-body {{ display:grid; gap:14px; margin-top:14px; }}
+    .diagnostics-body > .card {{ border:1px solid rgba(36,24,18,.24); border-radius:12px; }}
+    :where(button,a,input,summary):focus-visible {{ outline:3px solid #3d6df2; outline-offset:2px; }}
+    @media (max-width: 820px) {{
+      .grid,.review-grid {{ grid-template-columns:1fr; }}
+      .hero-action-area,.gmail-check-form {{ justify-items:start; max-width:none; }}
+    }}
+    @media (max-width: 560px) {{
+      body {{ padding:8px; }}
+      .subscription-row {{ grid-template-columns:1fr; }}
+      .subscription-row .action {{ justify-self:start; }}
+    }}
   </style>
 </head>
 <body>
-  <main>
+  <main data-dashboard-shell>
     <section class="hero">
       <div class="hero-heading">
-        <img class="brand-mark" src="/assets/brand/threadwise-app-icon.png" alt="" aria-hidden="true">
-        <div>
-          <div class="eyebrow">Daily Dashboard</div>
-          <h1>What Threadwise did today</h1>
+        <div class="hero-heading" style="justify-content:flex-start;">
+          <img class="brand-mark" src="/assets/brand/threadwise-app-icon.png" alt="" aria-hidden="true">
+          <div>
+            <div class="eyebrow">Daily Dashboard</div>
+            <h1>What Threadwise did today</h1>
+          </div>
+        </div>
+        <div class="hero-action-area">
+          {gmail_check_html}
+          <div class="pill-row">{run_status_pills}</div>
         </div>
       </div>
-      <p>This is the fuller secondary view behind the inbox sidebar: what came in, what the agent changed, what still needs attention, and what subscription cleanup is queued.</p>
       <div class="metric-grid">
         <div class="metric"><strong>{summary.get("processed_count", 0)}</strong><span>processed</span></div>
         <div class="metric"><strong>{summary.get("auto_handled_count", 0)}</strong><span>auto-handled</span></div>
         <div class="metric"><strong>{summary.get("needs_attention_count", 0)}</strong><span>need attention</span></div>
         <div class="metric"><strong>{len(payload.get("kept_visible_items", []))}</strong><span>kept visible</span></div>
       </div>
-      <div class="pill-row">
-        <span class="pill">Source: {escape_html(summary.get("source_label", "stored Gmail snapshot"))}</span>
-        {f'<span class="pill">Latest report: {escape_html(summary.get("report_date", ""))}</span>' if summary.get("report_date") else ""}
-        <span class="pill">Unsubscribe candidates: {summary.get("unsubscribe_candidate_count", 0)}</span>
-      </div>
-      {f'<div class="pill-row">{top_labels_html}</div>' if top_labels_html else ""}
     </section>
-    <section class="card">
-      <div class="eyebrow" id="run-gmail-check">Run Gmail Check</div>
-      <h2>Run Gmail check</h2>
-      <p>This confirmed run may apply existing safe EA/ labels, remove INBOX only for approved low-value categories, and may call the LLM for attention detection. Attention detection itself does not mutate Gmail.</p>
-      <div class="pill-row">{run_status_pills}</div>
-      <form method="post" action="/api/gmail-check-run">
-        <input type="hidden" name="account_id" value="{escape_html(inferred_account_id)}">
-        <input type="hidden" name="batch_size" value="50">
-        <label class="copy" style="display:block;">
-          <input id="confirm-run-gmail-check" type="checkbox" name="confirmed" value="true" required>
-          Confirm this Gmail check may use the existing safe mutation boundaries and small LLM cost.
-        </label>
-        <button class="action" type="submit" {'disabled' if run_status_label == 'running' else ''}>Run Gmail check</button>
-      </form>
-    </section>
-    <section class="card">
-      <div class="eyebrow">Needs Attention</div>
-      <h2>Needs attention from latest Gmail report</h2>
+    <section class="card" data-dashboard-section="needs-review">
+      <div class="eyebrow">Needs review</div>
+      <h2>Emails waiting for you</h2>
       <p>Attention detection is separate from classification and does not mutate Gmail. Strong signals and lower-confidence candidates are split so uncertainty does not swamp the daily view.</p>
-      <div class="pill-row">{attention_report_pills}</div>
-      {f'<div class="copy">{escape_html(attention_summary.get("empty_reason", ""))}</div>' if attention_summary.get("empty_reason") else ""}
-      <div class="grid" style="margin-top:12px;">
-        <article class="email-card">
-          <div class="eyebrow">Strong Signals</div>
-          <h2>Needs Attention Now</h2>
-          <div class="stack">{attention_now_html}</div>
-        </article>
-        <article class="email-card">
-          <div class="eyebrow">Lower Confidence</div>
-          <h2>Possible Attention</h2>
-          <div class="stack">{possible_attention_html}</div>
-          {hidden_insufficient_context_html}
-        </article>
+      {f'<div class="pill-row">{attention_report_pills}</div>' if attention_report_pills else ""}
+      <div class="review-lanes">{review_lanes_html}</div>
+    </section>
+    <section class="card" data-dashboard-section="activity">
+      <div class="eyebrow">Activity</div>
+      <h2>What changed today</h2>
+      <div class="metric-grid">
+        <div class="metric"><strong>{changed_today.get("label_writes_count", 0)}</strong><span>labels written</span></div>
+        <div class="metric"><strong>{changed_today.get("inbox_removed_count", 0)}</strong><span>removed from inbox</span></div>
+        <div class="metric"><strong>{changed_today.get("taught_count", 0)}</strong><span>teaching changes</span></div>
+        <div class="metric"><strong>{changed_today.get("candidate_pending_count", 0)}</strong><span>candidate review</span></div>
       </div>
+      <div class="stack" style="margin-top:12px;">{changed_items_html}</div>
+      <div class="stack" style="margin-top:12px;">{candidate_review_html}</div>
     </section>
-    <section class="grid">
-      <article class="card">
-        <div class="eyebrow">What Changed Today</div>
-        <h2>Provider-side changes</h2>
-        <div class="metric-grid">
-          <div class="metric"><strong>{changed_today.get("label_writes_count", 0)}</strong><span>labels written</span></div>
-          <div class="metric"><strong>{changed_today.get("inbox_removed_count", 0)}</strong><span>removed from inbox</span></div>
-          <div class="metric"><strong>{changed_today.get("taught_count", 0)}</strong><span>teaching changes</span></div>
-          <div class="metric"><strong>{changed_today.get("selected_unsubscribe_count", 0)}</strong><span>unsubscribe queued</span></div>
-          <div class="metric"><strong>{changed_today.get("candidate_pending_count", 0)}</strong><span>candidate review</span></div>
+    <section class="card" data-dashboard-section="subscriptions">
+      <div class="eyebrow">Subscriptions</div>
+      <h2>Queued unsubscribe review</h2>
+      <p>The inbox sidebar can queue subscriptions for later review. This page shows the currently queued families.</p>
+      <div class="stack">{unsubscribe_html}</div>
+      <a class="action action--primary" data-dashboard-primary-action href="/unsubscribe-review" target="_blank" rel="noreferrer">Open unsubscribe review</a>
+    </section>
+    <details data-dashboard-diagnostics class="card">
+      <summary>Diagnostics and label distribution</summary>
+      <div class="diagnostics-body">
+        <div class="pill-row">
+          <span class="pill">Source: {escape_html(summary.get("source_label", "stored Gmail snapshot"))}</span>
+          {f'<span class="pill">Latest report: {escape_html(summary.get("report_date", ""))}</span>' if summary.get("report_date") else ""}
+          <span class="pill">Unsubscribe candidates: {summary.get("unsubscribe_candidate_count", 0)}</span>
+          {top_labels_html}
         </div>
-        <div class="stack" style="margin-top:12px;">{changed_items_html}</div>
-        <div class="stack" style="margin-top:12px;">{candidate_review_html}</div>
-      </article>
-      <article class="card">
-        <div class="eyebrow">Subscriptions</div>
-        <h2>Queued unsubscribe review</h2>
-        <p>The inbox sidebar can queue subscriptions for later review. This page shows the currently queued families.</p>
-        <div class="stack">{unsubscribe_html}</div>
-        <a class="action" href="/unsubscribe-review" target="_blank" rel="noreferrer">Open unsubscribe review</a>
-      </article>
-    </section>
-    <section class="section">
-      {sections_html}
-    </section>
+        {diagnostic_sections_html}
+      </div>
+    </details>
   </main>
 </body>
 </html>"""
@@ -2998,6 +3867,7 @@ class GmailCompanionApp:
     let draftLabel = "";
     let draftNote = "";
     let affectedReviewOpen = false;
+    let detailsExpanded = false;
 
     function escapeHtml(value) {
       return String(value || "")
@@ -3006,6 +3876,40 @@ class GmailCompanionApp:
         .replaceAll(">", "&gt;")
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#39;");
+    }
+
+    function nextStepCopy(selectedEmail) {
+      if (!selectedEmail || !selectedEmail.found) {
+        return {
+          title: "What to do now",
+          body: "Preview a synced email below, or run a Gmail check from the dashboard to refresh what Threadwise knows.",
+        };
+      }
+      if (selectedEmail.status === "needs-attention") {
+        return {
+          title: "What to do now",
+          body: "This email still needs a decision. Teach the right label below or leave it visible for later.",
+        };
+      }
+      if (selectedEmail.unsubscribe_available) {
+        return {
+          title: "What to do now",
+          body: "The agent already understands this email. If it is recurring, you can queue it for unsubscribe review here.",
+        };
+      }
+      return {
+        title: "What to do now",
+        body: "The agent has already classified this email. You only need to step in if the label or handling looks wrong.",
+      };
+    }
+
+    function activeHarnessBucketDescription() {
+      return {
+        needs_attention_items: "Items still waiting for a confident decision or follow-up.",
+        recent_items: "Most recent synced emails across the current local snapshot.",
+        auto_handled_items: "Items the agent already handled automatically.",
+        kept_visible_items: "Items the agent understood but intentionally left visible.",
+      }[activeHarnessFilter] || "Current queue slice.";
     }
 
     function contextFromItem(item) {
@@ -3262,6 +4166,7 @@ class GmailCompanionApp:
           draftNote = noteNode.value;
         });
       }
+      syncAffectedReviewLayout();
     }
 
     function renderPreviousTeachPreview(previousPreview) {

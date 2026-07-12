@@ -27,6 +27,11 @@ def _build_registry() -> dict[str, ArtifactDescriptor]:
             lambda storage_dir, batch_id: storage_dir / "batches" / f"{batch_id}.json",
             required_fields=("batch_id", "account_id", "items"),
         ),
+        "gmail_mutation_batch": ArtifactDescriptor(
+            "gmail_mutation_batch",
+            lambda storage_dir, batch_id: storage_dir / "gmail_mutation_batches" / f"{batch_id}.json",
+            required_fields=("batch_id", "account_id", "items"),
+        ),
         "reports_dir": ArtifactDescriptor("reports_dir", lambda storage_dir: storage_dir / "reports", kind="directory"),
         "daily_report": ArtifactDescriptor(
             "daily_report",
@@ -100,6 +105,7 @@ ARTIFACT_REGISTRY = _build_registry()
 
 CORE_VALIDATED_ARTIFACTS = {
     "batch",
+    "gmail_mutation_batch",
     "daily_report",
     "weekly_report",
     "write_status",
@@ -165,6 +171,10 @@ def validate_json_artifact(name: str, payload: Any) -> None:
 
 def batch_path(storage_dir: Path, batch_id: str) -> Path:
     return artifact_path("batch", storage_dir, batch_id)
+
+
+def gmail_mutation_batch_path(storage_dir: Path, batch_id: str) -> Path:
+    return artifact_path("gmail_mutation_batch", storage_dir, batch_id)
 
 
 def reports_dir(storage_dir: Path) -> Path:

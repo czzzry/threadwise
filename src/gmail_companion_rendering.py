@@ -3,23 +3,69 @@
 from urllib.parse import quote
 
 
+def dashboard_item_identity(item: dict) -> str:
+    message_id = str(item.get("message_id") or "").strip()
+    if message_id:
+        return f"message:{message_id}"
+    thread_id = str(item.get("thread_id") or "").strip()
+    if thread_id:
+        return f"thread:{thread_id}"
+    sender = " ".join(str(item.get("sender") or "").split()).casefold()
+    subject = " ".join(str(item.get("subject") or "").split()).casefold()
+    if sender or subject:
+        return f"sender-subject:{sender}|{subject}"
+    return ""
+
+
 def unsubscribe_section_key(detail: dict, preview: dict) -> str:
     if detail.get("decision_state") == "selected":
-        return "selected"
+        return "queued"
     if preview.get("status") == "ready":
         return "ready"
-    if preview.get("status") == "unsupported":
-        return "manual"
-    return "other"
+    return "manual"
 
-def render_unsubscribe_section(title: str, description: str, cards: list[str]) -> str:
+
+def render_unsubscribe_section(key: str, title: str, description: str, rows: list[str]) -> str:
     return (
-        '<section class="hero">'
+        f'<section class="unsubscribe-group" data-unsubscribe-group="{escape_html(key)}">'
         f'<div class="eyebrow">{escape_html(title)}</div>'
         f'<h2>{escape_html(title)}</h2>'
         f'<p>{escape_html(description)}</p>'
-        f'<div class="grid">{"".join(cards)}</div>'
+        f'<div class="unsubscribe-list">{"".join(rows)}</div>'
         '</section>'
+    )
+
+
+def render_unsubscribe_row(
+    detail: dict,
+    preview: dict,
+    *,
+    action_html: str = "",
+    focused: bool = False,
+) -> str:
+    latest_execution = detail.get("latest_execution") or {}
+    decision_state = detail.get("decision_state") or "undecided"
+    checked = " checked" if decision_state == "selected" else ""
+    focus_html = '<div class="focus-note">Opened from inbox</div>' if focused else ""
+    latest_status = latest_execution.get("status") or "none"
+    latest_notes = latest_execution.get("notes") or "No recorded execution yet."
+    return (
+        f'<article class="unsubscribe-row{" focused" if focused else ""}" data-unsubscribe-row '
+        f'data-unsubscribe-candidate="{escape_html(detail.get("list_key") or "")}">'
+        '<div class="selection-cell">'
+        f'<input type="checkbox" data-unsubscribe-selection value="{escape_html(detail.get("list_key") or "")}"{checked} '
+        f'aria-label="Queue {escape_html(detail.get("display_name") or "subscription")}">'
+        '</div>'
+        f'<div class="identity-cell">{focus_html}<h3>{escape_html(detail.get("display_name") or "(unknown list)")}</h3>'
+        f'<div class="address">{escape_html(detail.get("sender") or "(unknown sender)")}</div></div>'
+        f'<div class="evidence-cell"><strong>{detail.get("evidence_count", 0)}</strong><span>messages</span></div>'
+        '<div class="readiness-cell">'
+        f'<strong>{escape_html(preview.get("notes") or "Manual follow-up")}</strong>'
+        f'<span>{escape_html(preview.get("method") or "unsupported")}</span></div>'
+        '<div class="attempt-cell"><strong>Latest attempt</strong>'
+        f'<span>{escape_html(latest_status)} · {escape_html(latest_notes)}</span></div>'
+        f'<div class="row-action-cell">{action_html}</div>'
+        '</article>'
     )
 
 def render_dashboard_section(title: str, description: str, cards_html: str) -> str:
@@ -34,7 +80,7 @@ def render_dashboard_section(title: str, description: str, cards_html: str) -> s
 
 def render_dashboard_email_cards(items: list[dict], empty_label: str, *, allow_attention_feedback: bool = False) -> str:
     if not items:
-        return f'<div class="email-card"><div class="copy">{escape_html(empty_label)}</div></div>'
+        return f'<div class="empty-state">{escape_html(empty_label)}</div>'
     cards = []
     for item in items[:10]:
         attention_action = ""
@@ -43,7 +89,7 @@ def render_dashboard_email_cards(items: list[dict], empty_label: str, *, allow_a
                 '<form method="post" action="/api/attention-feedback">'
                 f'{attention_feedback_hidden_fields(item)}'
                 '<input type="hidden" name="action" value="mark_needs_attention">'
-                '<button class="action" type="submit">Mark needs attention</button>'
+                '<button class="action action--secondary" type="submit">Mark needs attention</button>'
                 '</form>'
             )
         cards.append(
@@ -54,7 +100,7 @@ def render_dashboard_email_cards(items: list[dict], empty_label: str, *, allow_a
             f'<span class="pill">{escape_html(item.get("classification") or "Uncategorized")}</span>'
             f'<span class="pill">{escape_html(item.get("status_label") or item.get("status") or "")}</span>'
             '</div>'
-            f'<a class="action" href="{escape_html(gmail_search_url(item))}" target="_blank" rel="noreferrer">Open in Gmail</a>'
+            f'<a class="action action--secondary" href="{escape_html(gmail_search_url(item))}" target="_blank" rel="noreferrer">Open in Gmail</a>'
             f'{attention_action}'
             '</article>'
         )
@@ -62,7 +108,7 @@ def render_dashboard_email_cards(items: list[dict], empty_label: str, *, allow_a
 
 def render_dashboard_attention_cards(items: list[dict], empty_label: str) -> str:
     if not items:
-        return f'<div class="email-card"><div class="copy">{escape_html(empty_label)}</div></div>'
+        return f'<div class="empty-state">{escape_html(empty_label)}</div>'
     cards = []
     for item in items[:10]:
         mutation_label = "Attention pass: no Gmail changes" if item.get("gmail_mutation") == "none" else f'Gmail mutation: {item.get("gmail_mutation")}'
@@ -115,7 +161,7 @@ def attention_feedback_form(item: dict, action: str, label: str) -> str:
         f'{attention_feedback_hidden_fields(item)}'
         f'<input type="hidden" name="action" value="{escape_html(action)}">'
         f'{corrected_reason_input}'
-        f'<button class="action" type="submit">{escape_html(label)}</button>'
+        f'<button class="action action--secondary action--feedback" type="submit">{escape_html(label)}</button>'
         '</form>'
     )
 
@@ -137,13 +183,13 @@ def attention_rule_proposal_form(item: dict) -> str:
     return (
         '<form method="post" action="/api/attention-rule-proposal/preview">'
         f'{attention_feedback_hidden_fields(item)}'
-        '<button class="action" type="submit">Preview attention rule</button>'
+        '<button class="action action--secondary action--feedback" type="submit">Preview attention rule</button>'
         '</form>'
     )
 
 def render_dashboard_changed_cards(items: list[dict]) -> str:
     if not items:
-        return '<div class="email-card"><div class="copy">No tracked agent changes in this stored batch yet.</div></div>'
+        return '<div class="empty-state">No tracked agent changes in this stored batch yet.</div>'
     cards = []
     for item in items:
         cards.append(
@@ -152,29 +198,32 @@ def render_dashboard_changed_cards(items: list[dict]) -> str:
             f'<div class="meta">{escape_html(item.get("sender") or "(unknown sender)")}</div>'
             f'<div class="pill-row"><span class="pill">{escape_html(item.get("change_group") or "Change")}</span></div>'
             f'<div class="copy">{escape_html(item.get("change_summary") or "")}</div>'
-            f'<a class="action" href="{escape_html(gmail_search_url(item))}" target="_blank" rel="noreferrer">Open in Gmail</a>'
+            f'<a class="action action--secondary" href="{escape_html(gmail_search_url(item))}" target="_blank" rel="noreferrer">Open in Gmail</a>'
             '</article>'
         )
     return "".join(cards)
 
 def render_dashboard_unsubscribe_cards(items: list[dict]) -> str:
     if not items:
-        return '<div class="email-card"><div class="copy">No subscriptions are queued yet.</div></div>'
+        return '<div class="empty-state">No subscriptions are queued yet.</div>'
     cards = []
     for item in items:
         handoff_path = item.get("handoff_path") or "/unsubscribe-review"
         cards.append(
-            '<article class="email-card">'
+            '<article class="email-card subscription-row">'
+            '<div class="subscription-identity">'
+            '<span class="pill">Queued</span>'
             f'<h3>{escape_html(item.get("display_name") or "(unknown list)")}</h3>'
             f'<div class="meta">{escape_html(item.get("sender") or "(unknown sender)")}</div>'
-            f'<a class="action" href="{escape_html(handoff_path)}" target="_blank" rel="noreferrer">Open focused review</a>'
+            '</div>'
+            f'<a class="action action--secondary" href="{escape_html(handoff_path)}" target="_blank" rel="noreferrer">Open focused review</a>'
             '</article>'
         )
     return "".join(cards)
 
 def render_dashboard_candidate_cards(items: list[dict]) -> str:
     if not items:
-        return '<div class="email-card"><div class="copy">No candidate changes are waiting for review.</div></div>'
+        return '<div class="empty-state">No candidate changes are waiting for review.</div>'
     cards = []
     for item in items:
         recommendation = item.get("latest_recommendation") or "Not yet evaluated"
