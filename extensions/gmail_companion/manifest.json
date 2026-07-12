@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "description": "Shows the Email Agent companion sidebar inside Gmail using the local companion server.",
   "permissions": [
-    "tabs"
+    "tabs",
+    "storage"
   ],
   "host_permissions": [
     "https://mail.google.com/*",
@@ -19,6 +20,7 @@
         "https://mail.google.com/*"
       ],
       "js": [
+        "analytics.js",
         "content.js"
       ],
       "run_at": "document_idle"

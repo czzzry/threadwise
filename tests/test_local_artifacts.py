@@ -32,6 +32,7 @@ from src.local_artifacts import (
     founder_question_packs_dir,
     frontier_plan_path,
     frontier_plans_dir,
+    gmail_mutation_batch_path,
     inbox_removal_attempts_path,
     inbox_removal_status_path,
     latest_safety_triage_manifest_path,
@@ -69,6 +70,7 @@ class LocalArtifactsRegistryTests(unittest.TestCase):
     def test_registry_covers_current_helper_surface(self) -> None:
         expected_names = {
             "batch",
+            "gmail_mutation_batch",
             "reports_dir",
             "daily_report",
             "weekly_report",
@@ -127,6 +129,7 @@ class LocalArtifactsRegistryTests(unittest.TestCase):
 
         expectations = {
             "batch": (batch_path(storage_dir, "batch-1"), ("batch-1",)),
+            "gmail_mutation_batch": (gmail_mutation_batch_path(storage_dir, "batch-1"), ("batch-1",)),
             "reports_dir": (reports_dir(storage_dir), ()),
             "daily_report": (daily_report_path(storage_dir, "batch-1"), ("batch-1",)),
             "weekly_report": (weekly_report_path(storage_dir, "acct", "2026-06-24", "2026-06-30"), ("acct", "2026-06-24", "2026-06-30")),
@@ -202,6 +205,7 @@ class LocalArtifactsRegistryTests(unittest.TestCase):
             CORE_VALIDATED_ARTIFACTS,
             {
                 "batch",
+                "gmail_mutation_batch",
                 "daily_report",
                 "weekly_report",
                 "write_status",

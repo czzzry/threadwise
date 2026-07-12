@@ -16,7 +16,7 @@ from src.local_artifacts import (
 )
 from src.sender_utils import normalized_sender_email
 from src.unsubscribe_execution import UnsubscribeExecutor
-from src.unsubscribe_inventory_store import UnsubscribeInventoryStore
+from src.unsubscribe_inventory_store import UnsubscribeInventoryStore, candidate_from_message
 
 
 HIGH_CONSEQUENCE_ATTENTION_CATEGORIES = {
@@ -40,6 +40,7 @@ def selected_context_from_query(query: dict[str, list[str]]) -> dict:
         "thread_id": first_query_value(query, "thread_id"),
         "subject": first_query_value(query, "subject"),
         "sender": first_query_value(query, "sender"),
+        "gmail_labels": first_query_value(query, "gmail_labels"),
         "page_url": first_query_value(query, "page_url"),
         "selected_at": first_query_value(query, "selected_at"),
     }
@@ -49,9 +50,24 @@ def first_query_value(query: dict[str, list[str]], key: str) -> str:
     return values[0]
 
 def build_selected_email_state(storage_dir: Path, unsubscribe_candidates: list[dict], selected_context: dict) -> dict:
+    has_context = bool(selected_context.get("message_id") or selected_context.get("subject") or selected_context.get("sender"))
+    if not has_context:
+        return {
+            "found": False,
+            "internal_label": None,
+            "suggested_label": None,
+            "classification": None,
+            "status": "idle",
+            "status_label": "Waiting for message selection",
+            "reason": None,
+            "subject": "",
+            "sender": "",
+            "unsubscribe_available": False,
+            "unsubscribe": None,
+            **selected_email_understanding_state(selected_context),
+        }
     matched = find_matching_item(storage_dir, selected_context)
     if matched is None:
-        has_context = bool(selected_context.get("message_id") or selected_context.get("subject") or selected_context.get("sender"))
         return {
             "found": False,
             "internal_label": None,
@@ -73,13 +89,31 @@ def build_selected_email_state(storage_dir: Path, unsubscribe_candidates: list[d
 
     item = matched["item"]
     batch = matched["batch"]
-    labels = list(item.get("final_labels") or item.get("applied_labels") or [])
+    raw_message = matched.get("raw_message") or {}
+    visible_gmail_label_names = {
+        value.strip()
+        for value in str(selected_context.get("gmail_labels") or "").split(",")
+        if value.strip()
+    }
+    visible_gmail_labels = [
+        label for label in CANONICAL_LABEL_ORDER if gmail_label_name(label) in visible_gmail_label_names
+    ]
+    labels = visible_gmail_labels or list(item.get("final_labels") or item.get("applied_labels") or [])
     label_names = [gmail_label_name(label) for label in labels]
     classification = label_names[0] if label_names else "Uncategorized"
     write_status = load_json_or_default(write_status_path(storage_dir, batch["batch_id"]), {}).get(item["message_id"])
     inbox_status = load_json_or_default(inbox_removal_status_path(storage_dir, batch["batch_id"]), {}).get(item["message_id"])
-    status, status_label = classify_handling_status(item, write_status, inbox_status)
-    candidate = find_unsubscribe_candidate(unsubscribe_candidates, item.get("sender") or selected_context.get("sender") or "")
+    if visible_gmail_labels:
+        write_status = "applied"
+        status, status_label = "kept-visible", "Kept visible"
+    else:
+        status, status_label = classify_handling_status(item, write_status, inbox_status)
+    candidate = candidate_from_message(
+        batch.get("provider", "gmail"),
+        batch.get("account_id", ""),
+        item,
+        raw_message,
+    ) or find_unsubscribe_candidate(unsubscribe_candidates, item.get("sender") or selected_context.get("sender") or "")
     unsubscribe_available = candidate is not None
     return {
         "found": True,
@@ -217,6 +251,7 @@ def build_selected_email_details(
     }
 
 def build_daily_summary(storage_dir: Path) -> dict:
+    unsubscribe_store = UnsubscribeInventoryStore(storage_dir)
     recent_reports = load_recent_reports(storage_dir, limit=5, provider="gmail")
     if recent_reports:
         label_counts = Counter()
@@ -233,7 +268,7 @@ def build_daily_summary(storage_dir: Path) -> dict:
             {"label": label, "count": count}
             for label, count in sorted(label_counts.items(), key=lambda item: (-item[1], item[0]))[:5]
         ]
-        unsubscribe_count = len(UnsubscribeInventoryStore(storage_dir).list_candidates())
+        unsubscribe_count = len(unsubscribe_store.selected_candidate_map())
         changed_today = build_changed_today_summary(storage_dir, latest_report.get("batch_id") or "")
         return {
             "source_label": f"last {len(recent_reports)} Gmail runs",
@@ -291,7 +326,7 @@ def build_daily_summary(storage_dir: Path) -> dict:
             for label, count in sorted(label_counts.items(), key=lambda item: (-item[1], item[0]))[:5]
         ],
         "run_count": 1,
-        "unsubscribe_candidate_count": len(UnsubscribeInventoryStore(storage_dir).list_candidates()),
+        "unsubscribe_candidate_count": len(unsubscribe_store.selected_candidate_map()),
         "changed_today": build_changed_today_summary(storage_dir, latest_batch.get("batch_id") or ""),
     }
 
@@ -542,9 +577,7 @@ def build_changed_today_summary(storage_dir: Path, batch_id: str) -> dict:
             }
         )
     selected_candidates = [
-        candidate
-        for candidate in UnsubscribeInventoryStore(storage_dir).list_candidates()
-        if candidate.get("decision_state") == "selected"
+        candidate for candidate in _selected_unsubscribe_candidates_for_batch(storage_dir, batch)
     ]
     selected_unsubscribe_count = len(selected_candidates)
     selected_unsubscribe_examples = [
@@ -597,12 +630,6 @@ def group_changed_today_items(items: list[dict]) -> list[dict]:
 def build_companion_runtime_payload(storage_dir: Path) -> dict:
     items = []
     batches_dir = storage_dir / "batches"
-    unsubscribe_candidates = UnsubscribeInventoryStore(storage_dir).list_candidates()
-    unsubscribe_addresses = {
-        candidate.get("sender_address")
-        for candidate in unsubscribe_candidates
-        if candidate.get("sender_address")
-    }
     if batches_dir.exists():
         recent_batch_paths = sorted(batches_dir.glob("*.json"), reverse=True)[:4]
         for batch_path in recent_batch_paths:
@@ -610,10 +637,17 @@ def build_companion_runtime_payload(storage_dir: Path) -> dict:
             batch_id = batch.get("batch_id", "")
             write_status_map = load_json_or_default(write_status_path(storage_dir, batch_id), {})
             inbox_status_map = load_json_or_default(inbox_removal_status_path(storage_dir, batch_id), {})
+            raw_messages = {message.get("id"): message for message in batch.get("raw_messages", [])}
             for item in batch.get("items", [])[:25]:
                 labels = list(item.get("final_labels") or item.get("applied_labels") or [])
                 classification = gmail_label_name(labels[0]) if labels else "Uncategorized"
                 sender_address = normalized_sender_email(item.get("sender") or "")
+                unsubscribe_candidate = candidate_from_message(
+                    batch.get("provider", "gmail"),
+                    batch.get("account_id", ""),
+                    item,
+                    raw_messages.get(item.get("message_id"), {}),
+                )
                 status, status_label = classify_handling_status(
                     item,
                     write_status_map.get(item.get("message_id", "")),
@@ -635,7 +669,7 @@ def build_companion_runtime_payload(storage_dir: Path) -> dict:
                         "status": status,
                         "status_label": status_label,
                         "reason": item.get("interpretation") or item.get("snippet") or "",
-                        "unsubscribe_available": sender_address in unsubscribe_addresses,
+                        "unsubscribe_available": unsubscribe_candidate is not None,
                     }
                 )
             if len(items) >= 80:
@@ -684,15 +718,49 @@ def find_matching_item(storage_dir: Path, selected_context: dict) -> dict | None
         return None
     for batch_path in sorted(batches_dir.glob("*.json"), reverse=True):
         batch = load_json(batch_path)
+        raw_messages = {message.get("id"): message for message in batch.get("raw_messages", [])}
         for item in batch.get("items", []):
             if message_id and item.get("message_id") == message_id:
-                return {"batch": batch, "item": item}
+                return {"batch": batch, "item": item, "raw_message": raw_messages.get(item.get("message_id"), {})}
             if normalized_subject and normalized_selected_sender:
                 sender = normalized_sender_email(item.get("sender") or "")
                 subject = (item.get("subject") or "").strip().lower()
                 if sender == normalized_selected_sender and subject == normalized_subject:
-                    return {"batch": batch, "item": item}
+                    return {"batch": batch, "item": item, "raw_message": raw_messages.get(item.get("message_id"), {})}
     return None
+
+
+def _selected_unsubscribe_candidates_for_batch(storage_dir: Path, batch: dict) -> list[dict]:
+    selected_map = UnsubscribeInventoryStore(storage_dir).selected_candidate_map()
+    if not selected_map:
+        return []
+    provider = batch.get("provider") or "gmail"
+    account_id = batch.get("account_id") or ""
+    raw_messages = {message.get("id"): message for message in batch.get("raw_messages", [])}
+    matched: dict[str, dict] = {}
+    for item in batch.get("items", []):
+        candidate = candidate_from_message(provider, account_id, item, raw_messages.get(item.get("message_id"), {}))
+        if candidate is None:
+            continue
+        list_key = candidate.get("list_key")
+        if list_key not in selected_map:
+            continue
+        saved = selected_map[list_key]
+        matched[list_key] = {
+            **candidate,
+            **saved,
+            "list_key": list_key,
+        }
+    for list_key, saved in selected_map.items():
+        matched.setdefault(
+            list_key,
+            {
+                "display_name": saved.get("display_name") or "(unknown list)",
+                "sender": saved.get("sender") or "",
+                "list_key": list_key,
+            },
+        )
+    return list(matched.values())
 
 def selected_email_contract() -> dict:
     return {

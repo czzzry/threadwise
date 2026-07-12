@@ -162,6 +162,46 @@ class MockGmailLabelWriterTests(unittest.TestCase):
         self.assertEqual(summary["skipped_count"], 1)
         self.assertEqual(summary["ineligible_count"], 1)
 
+    def test_retry_failed_inbox_removal_does_not_repeat_successful_label_write(self) -> None:
+        class FailInboxOnceClient(MockGmailLabelClient):
+            def __init__(self) -> None:
+                super().__init__()
+                self.fail_inbox_once = True
+
+            def remove_inbox_label(self, message_id: str) -> None:
+                self.calls.append(("remove_inbox_label", message_id))
+                if self.fail_inbox_once:
+                    self.fail_inbox_once = False
+                    raise RuntimeError("Temporary INBOX removal failure")
+
+        client = FailInboxOnceClient()
+        writer = MockGmailLabelWriter(client, Path(self.temp_dir.name))
+        item = {
+            "message_id": "gmail-remote-003",
+            "review_state": "reviewed",
+            "review_action": "sidebar-remote-backfill",
+            "final_labels": ["promotions"],
+        }
+        writer.write_reviewed_labels("companion-backfill-1", [item])
+        writer.remove_inbox_for_low_value_messages("companion-backfill-1", [item])
+
+        summary = writer.retry_failed_inbox_removal("companion-backfill-1", item)
+
+        self.assertEqual(summary["retried_count"], 1)
+        self.assertEqual(writer.get_write_status("companion-backfill-1", "gmail-remote-003"), "applied")
+        self.assertEqual(writer.get_inbox_removal_status("companion-backfill-1", "gmail-remote-003"), "applied")
+        self.assertEqual(
+            writer.get_inbox_removal_attempt_history("companion-backfill-1", "gmail-remote-003"),
+            [
+                {"status": "failed", "final_labels": ["promotions"]},
+                {"status": "applied", "final_labels": ["promotions"]},
+            ],
+        )
+        self.assertEqual(
+            len([call for call in client.calls if call[0] == "replace_threadwise_labels"]),
+            1,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

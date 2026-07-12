@@ -45,6 +45,7 @@ def main(argv: list[str] | None = None) -> int:
             "--port",
             str(args.port),
             "--disable-gmail-write-through",
+            "--disable-gmail-check",
         ]
     )
 

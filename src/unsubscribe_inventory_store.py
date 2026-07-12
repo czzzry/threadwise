@@ -71,6 +71,16 @@ class UnsubscribeInventoryStore:
         candidates.sort(key=lambda item: _decision_rank(item["decision_state"]), reverse=True)
         return candidates
 
+    def selected_candidate_map(self) -> dict[str, dict]:
+        candidates = {}
+        for list_key, saved in self._load_selection_map().items():
+            if saved.get("decision_state") != "selected":
+                continue
+            restored = dict(saved)
+            restored["list_key"] = list_key
+            candidates[list_key] = restored
+        return candidates
+
     def save_selection_states(self, candidate_keys: list[str], selected_candidate_keys: list[str]) -> list[dict]:
         selected_set = set(selected_candidate_keys)
         candidate_map = {candidate["list_key"]: candidate for candidate in self.list_candidates()}
@@ -105,6 +115,22 @@ class UnsubscribeInventoryStore:
         return saved_candidates
 
     def _candidate_from_message(self, provider: str, account_id: str, item: dict, raw_message: dict) -> dict | None:
+        return candidate_from_message(provider, account_id, item, raw_message)
+
+    def _load_selections(self) -> dict:
+        selection_path = self._selection_path()
+        if not selection_path.exists():
+            return {"candidates": {}}
+        return load_json(selection_path)
+
+    def _load_selection_map(self) -> dict[str, dict]:
+        return self._load_selections().get("candidates", {})
+
+    def _selection_path(self) -> Path:
+        return unsubscribe_selections_path(self._storage_dir)
+
+
+def candidate_from_message(provider: str, account_id: str, item: dict, raw_message: dict) -> dict | None:
         labels = set(item.get("final_labels") or item.get("applied_labels") or [])
         if labels.intersection({"account-security", "receipt-billing", "shopping-order", "calendar-event", "personal", "job-related"}):
             return None
@@ -152,18 +178,6 @@ class UnsubscribeInventoryStore:
             "list_unsubscribe_post": list_unsubscribe_post,
             "message_ids": [item.get("message_id")],
         }
-
-    def _load_selections(self) -> dict:
-        selection_path = self._selection_path()
-        if not selection_path.exists():
-            return {"candidates": {}}
-        return load_json(selection_path)
-
-    def _load_selection_map(self) -> dict[str, dict]:
-        return self._load_selections().get("candidates", {})
-
-    def _selection_path(self) -> Path:
-        return unsubscribe_selections_path(self._storage_dir)
 
 
 def _display_name(sender: str) -> str:
