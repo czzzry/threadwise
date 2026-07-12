@@ -1,0 +1,350 @@
+{
+  "batch_id": "demo-inbox-batch",
+  "account_id": "demo-account",
+  "provider": "gmail",
+  "raw_messages": [
+    {
+      "id": "demo-001",
+      "labelIds": ["INBOX"],
+      "snippet": "Senior AI product roles this week from companies hiring now.",
+      "payload": {
+        "headers": [
+          {"name": "From", "value": "LinkedIn Jobs <jobalerts-noreply@linkedin.com>"},
+          {"name": "Subject", "value": "Senior AI product roles this week"},
+          {"name": "Date", "value": "Tue, 30 Jun 2026 09:18:00 +0000"}
+        ]
+      }
+    },
+    {
+      "id": "demo-002",
+      "labelIds": ["INBOX"],
+      "snippet": "Monthly invoice available for your cloud workspace.",
+      "payload": {
+        "headers": [
+          {"name": "From", "value": "Cloud Billing <billing@cloudledger.example>"},
+          {"name": "Subject", "value": "Monthly invoice available"},
+          {"name": "Date", "value": "Tue, 30 Jun 2026 08:44:00 +0000"}
+        ]
+      }
+    },
+    {
+      "id": "demo-003",
+      "labelIds": ["INBOX"],
+      "snippet": "Please confirm whether Thursday still works for the review.",
+      "payload": {
+        "headers": [
+          {"name": "From", "value": "Maya Chen <maya@northstar.example>"},
+          {"name": "Subject", "value": "Confirm Thursday review"},
+          {"name": "Date", "value": "Tue, 30 Jun 2026 08:12:00 +0000"}
+        ]
+      }
+    },
+    {
+      "id": "demo-004",
+      "labelIds": ["CATEGORY_PROMOTIONS"],
+      "snippet": "New templates for product planning and team updates.",
+      "payload": {
+        "headers": [
+          {"name": "From", "value": "Workspace Weekly <newsletter@workspaceweekly.example>"},
+          {"name": "Subject", "value": "New planning templates for product teams"},
+          {"name": "Date", "value": "Tue, 30 Jun 2026 07:52:00 +0000"},
+          {"name": "List-Unsubscribe", "value": "<https://workspaceweekly.example/unsubscribe/demo>"},
+          {"name": "List-Unsubscribe-Post", "value": "List-Unsubscribe=One-Click"}
+        ]
+      }
+    },
+    {
+      "id": "demo-005",
+      "labelIds": ["CATEGORY_PROMOTIONS"],
+      "snippet": "Your weekly digest of jobs, funding, and product launches.",
+      "payload": {
+        "headers": [
+          {"name": "From", "value": "Founder Digest <digest@founderdigest.example>"},
+          {"name": "Subject", "value": "This week's founder digest"},
+          {"name": "Date", "value": "Tue, 30 Jun 2026 07:30:00 +0000"},
+          {"name": "List-Unsubscribe", "value": "<https://founderdigest.example/unsubscribe/demo>"},
+          {"name": "List-Unsubscribe-Post", "value": "List-Unsubscribe=One-Click"}
+        ]
+      }
+    },
+    {
+      "id": "demo-006",
+      "labelIds": ["INBOX"],
+      "snippet": "Your trip receipt and itinerary are ready.",
+      "payload": {
+        "headers": [
+          {"name": "From", "value": "Railway <receipts@railway.example>"},
+          {"name": "Subject", "value": "Your trip receipt"},
+          {"name": "Date", "value": "Tue, 30 Jun 2026 07:06:00 +0000"}
+        ]
+      }
+    },
+    {
+      "id": "demo-007",
+      "labelIds": ["CATEGORY_UPDATES"],
+      "snippet": "Dependabot closed the security alert after the package update.",
+      "payload": {
+        "headers": [
+          {"name": "From", "value": "GitHub <noreply@github.example>"},
+          {"name": "Subject", "value": "Security alert resolved"},
+          {"name": "Date", "value": "Tue, 30 Jun 2026 06:45:00 +0000"}
+        ]
+      }
+    },
+    {
+      "id": "demo-008",
+      "labelIds": ["CATEGORY_PROMOTIONS"],
+      "snippet": "A concise roundup of AI research worth reading.",
+      "payload": {
+        "headers": [
+          {"name": "From", "value": "AI Research Brief <brief@airesearch.example>"},
+          {"name": "Subject", "value": "Five papers worth reading"},
+          {"name": "Date", "value": "Tue, 30 Jun 2026 06:12:00 +0000"},
+          {"name": "List-Unsubscribe", "value": "<https://airesearch.example/unsubscribe/demo>"},
+          {"name": "List-Unsubscribe-Post", "value": "List-Unsubscribe=One-Click"}
+        ]
+      }
+    },
+    {
+      "id": "demo-009",
+      "labelIds": ["CATEGORY_PROMOTIONS"],
+      "snippet": "Save on team swag before the end of the week.",
+      "payload": {
+        "headers": [
+          {"name": "From", "value": "Brand Supply <hello@brandsupply.example>"},
+          {"name": "Subject", "value": "Team swag sale ends Friday"},
+          {"name": "Date", "value": "Tue, 30 Jun 2026 05:55:00 +0000"},
+          {"name": "List-Unsubscribe", "value": "<https://brandsupply.example/unsubscribe/demo>"},
+          {"name": "List-Unsubscribe-Post", "value": "List-Unsubscribe=One-Click"}
+        ]
+      }
+    },
+    {
+      "id": "demo-010",
+      "labelIds": ["INBOX"],
+      "snippet": "Your order shipped and tracking is available.",
+      "payload": {
+        "headers": [
+          {"name": "From", "value": "Northstar Store <orders@northstarstore.example>"},
+          {"name": "Subject", "value": "Your order has shipped"},
+          {"name": "Date", "value": "Tue, 30 Jun 2026 05:22:00 +0000"}
+        ]
+      }
+    },
+    {
+      "id": "demo-011",
+      "labelIds": ["INBOX"],
+      "snippet": "Calendar invite for the product sync.",
+      "payload": {
+        "headers": [
+          {"name": "From", "value": "Calendar <calendar@threadwise.example>"},
+          {"name": "Subject", "value": "Product sync moved to 3 PM"},
+          {"name": "Date", "value": "Tue, 30 Jun 2026 05:00:00 +0000"}
+        ]
+      }
+    },
+    {
+      "id": "demo-012",
+      "labelIds": ["CATEGORY_PROMOTIONS"],
+      "snippet": "Weekly product management roles matching your alerts.",
+      "payload": {
+        "headers": [
+          {"name": "From", "value": "LinkedIn Jobs <jobalerts-noreply@linkedin.com>"},
+          {"name": "Subject", "value": "Product leadership roles matching your alerts"},
+          {"name": "Date", "value": "Tue, 30 Jun 2026 04:40:00 +0000"},
+          {"name": "List-Unsubscribe", "value": "<https://linkedin.example/unsubscribe/demo>"},
+          {"name": "List-Unsubscribe-Post", "value": "List-Unsubscribe=One-Click"}
+        ]
+      }
+    }
+  ],
+  "fetch_failures": [],
+  "items": [
+    {
+      "source": "gmail",
+      "account_id": "demo-account",
+      "message_id": "demo-001",
+      "sender": "LinkedIn Jobs <jobalerts-noreply@linkedin.com>",
+      "subject": "Senior AI product roles this week",
+      "date": "2026-06-30T09:18:00Z",
+      "snippet": "Senior AI product roles this week from companies hiring now.",
+      "body": "Senior AI product roles this week from companies hiring now.",
+      "interpretation": "Job recommendations look work-adjacent, but the agent wants approval before treating the sender as Work.",
+      "applied_labels": [],
+      "near_misses": ["job-related", "promotions"],
+      "confidence_band": "low"
+    },
+    {
+      "source": "gmail",
+      "account_id": "demo-account",
+      "message_id": "demo-002",
+      "sender": "Cloud Billing <billing@cloudledger.example>",
+      "subject": "Monthly invoice available",
+      "date": "2026-06-30T08:44:00Z",
+      "snippet": "Monthly invoice available for your cloud workspace.",
+      "body": "Monthly invoice available for your cloud workspace.",
+      "interpretation": "Possible receipt or finance email, but the agent needs confirmation before filing it.",
+      "applied_labels": [],
+      "near_misses": ["receipt-billing", "financial-account"],
+      "confidence_band": "low"
+    },
+    {
+      "source": "gmail",
+      "account_id": "demo-account",
+      "message_id": "demo-003",
+      "sender": "Maya Chen <maya@northstar.example>",
+      "subject": "Confirm Thursday review",
+      "date": "2026-06-30T08:12:00Z",
+      "snippet": "Please confirm whether Thursday still works for the review.",
+      "body": "Please confirm whether Thursday still works for the review.",
+      "interpretation": "Looks like a direct reply-needed message from a person.",
+      "applied_labels": [],
+      "near_misses": ["reply-needed", "personal"],
+      "confidence_band": "low"
+    },
+    {
+      "source": "gmail",
+      "account_id": "demo-account",
+      "message_id": "demo-004",
+      "sender": "Workspace Weekly <newsletter@workspaceweekly.example>",
+      "subject": "New planning templates for product teams",
+      "date": "2026-06-30T07:52:00Z",
+      "snippet": "New templates for product planning and team updates.",
+      "body": "New templates for product planning and team updates.",
+      "interpretation": "Recurring product newsletter with a supported unsubscribe path.",
+      "review_state": "reviewed",
+      "review_action": "auto-approve",
+      "final_labels": ["newsletter"],
+      "applied_labels": ["newsletter"],
+      "confidence_band": "high"
+    },
+    {
+      "source": "gmail",
+      "account_id": "demo-account",
+      "message_id": "demo-005",
+      "sender": "Founder Digest <digest@founderdigest.example>",
+      "subject": "This week's founder digest",
+      "date": "2026-06-30T07:30:00Z",
+      "snippet": "Your weekly digest of jobs, funding, and product launches.",
+      "body": "Your weekly digest of jobs, funding, and product launches.",
+      "interpretation": "Newsletter content kept visible because it may be useful.",
+      "review_state": "reviewed",
+      "review_action": "auto-approve",
+      "final_labels": ["newsletter"],
+      "applied_labels": ["newsletter"],
+      "confidence_band": "high"
+    },
+    {
+      "source": "gmail",
+      "account_id": "demo-account",
+      "message_id": "demo-006",
+      "sender": "Railway <receipts@railway.example>",
+      "subject": "Your trip receipt",
+      "date": "2026-06-30T07:06:00Z",
+      "snippet": "Your trip receipt and itinerary are ready.",
+      "body": "Your trip receipt and itinerary are ready.",
+      "interpretation": "Travel receipt and itinerary.",
+      "review_state": "reviewed",
+      "review_action": "auto-approve",
+      "final_labels": ["travel"],
+      "applied_labels": ["travel"],
+      "confidence_band": "high"
+    },
+    {
+      "source": "gmail",
+      "account_id": "demo-account",
+      "message_id": "demo-007",
+      "sender": "GitHub <noreply@github.example>",
+      "subject": "Security alert resolved",
+      "date": "2026-06-30T06:45:00Z",
+      "snippet": "Dependabot closed the security alert after the package update.",
+      "body": "Dependabot closed the security alert after the package update.",
+      "interpretation": "Account/security update from a developer tool.",
+      "review_state": "reviewed",
+      "review_action": "auto-approve",
+      "final_labels": ["account-security"],
+      "applied_labels": ["account-security"],
+      "confidence_band": "high"
+    },
+    {
+      "source": "gmail",
+      "account_id": "demo-account",
+      "message_id": "demo-008",
+      "sender": "AI Research Brief <brief@airesearch.example>",
+      "subject": "Five papers worth reading",
+      "date": "2026-06-30T06:12:00Z",
+      "snippet": "A concise roundup of AI research worth reading.",
+      "body": "A concise roundup of AI research worth reading.",
+      "interpretation": "Newsletter the agent can auto-handle as low-priority reading.",
+      "review_state": "reviewed",
+      "review_action": "auto-approve",
+      "final_labels": ["newsletter"],
+      "applied_labels": ["newsletter"],
+      "confidence_band": "high"
+    },
+    {
+      "source": "gmail",
+      "account_id": "demo-account",
+      "message_id": "demo-009",
+      "sender": "Brand Supply <hello@brandsupply.example>",
+      "subject": "Team swag sale ends Friday",
+      "date": "2026-06-30T05:55:00Z",
+      "snippet": "Save on team swag before the end of the week.",
+      "body": "Save on team swag before the end of the week.",
+      "interpretation": "Promotional sale email from a recurring sender.",
+      "review_state": "reviewed",
+      "review_action": "auto-approve",
+      "final_labels": ["promotions"],
+      "applied_labels": ["promotions"],
+      "confidence_band": "high"
+    },
+    {
+      "source": "gmail",
+      "account_id": "demo-account",
+      "message_id": "demo-010",
+      "sender": "Northstar Store <orders@northstarstore.example>",
+      "subject": "Your order has shipped",
+      "date": "2026-06-30T05:22:00Z",
+      "snippet": "Your order shipped and tracking is available.",
+      "body": "Your order shipped and tracking is available.",
+      "interpretation": "Shopping order update.",
+      "review_state": "reviewed",
+      "review_action": "auto-approve",
+      "final_labels": ["shopping-order"],
+      "applied_labels": ["shopping-order"],
+      "confidence_band": "high"
+    },
+    {
+      "source": "gmail",
+      "account_id": "demo-account",
+      "message_id": "demo-011",
+      "sender": "Calendar <calendar@threadwise.example>",
+      "subject": "Product sync moved to 3 PM",
+      "date": "2026-06-30T05:00:00Z",
+      "snippet": "Calendar invite for the product sync.",
+      "body": "Calendar invite for the product sync.",
+      "interpretation": "Calendar update for a work meeting.",
+      "review_state": "reviewed",
+      "review_action": "auto-approve",
+      "final_labels": ["calendar-event"],
+      "applied_labels": ["calendar-event"],
+      "confidence_band": "high"
+    },
+    {
+      "source": "gmail",
+      "account_id": "demo-account",
+      "message_id": "demo-012",
+      "sender": "LinkedIn Jobs <jobalerts-noreply@linkedin.com>",
+      "subject": "Product leadership roles matching your alerts",
+      "date": "2026-06-30T04:40:00Z",
+      "snippet": "Weekly product management roles matching your alerts.",
+      "body": "Weekly product management roles matching your alerts.",
+      "interpretation": "LinkedIn job alert that can be treated as work-adjacent after teaching.",
+      "review_state": "reviewed",
+      "review_action": "auto-approve",
+      "final_labels": ["promotions"],
+      "applied_labels": ["promotions"],
+      "confidence_band": "medium"
+    }
+  ]
+}

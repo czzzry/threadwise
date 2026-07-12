@@ -1,0 +1,48 @@
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+
+# JavaScript / TypeScript
+node_modules/
+dist/
+build/
+coverage/
+
+# Data and local outputs
+tmp/
+.cache/
+.lavish/*.html
+.lavish/*.png
+.lavish/current-ui-*.html
+.lavish/demo-ui-storage/
+data/gmail_companion_simulator/
+data/gmail_fetch/
+data/gmail_credentials/
+data/classifier_eval/
+data/outlookmail_browser_profile*/
+data/outlookmail_fetch/
+data/outlookmail_credentials/
+data/protonmail_fetch/
+data/protonmail_credentials/
+data/private/
+outputs/private/
+*.db
+*.sqlite
+*.sqlite3

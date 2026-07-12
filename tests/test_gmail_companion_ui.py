@@ -1,0 +1,2661 @@
+import io
+import json
+import subprocess
+import sys
+import tempfile
+import unittest
+from datetime import UTC, datetime
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+
+from src.attention_feedback import load_attention_feedback
+from src.attention_rules import attention_rules_path
+from src.candidate_change_store import CandidateChange, CandidateChangeStore
+from src.founder_feedback import load_founder_feedback
+from src.gmail_run_control import load_gmail_dashboard_run_status, write_gmail_dashboard_run_status
+from src.gmail_companion_rendering import (
+    escape_html,
+    render_dashboard_email_cards,
+    server_origin,
+    unsubscribe_section_key,
+)
+from src.gmail_companion_state import (
+    build_selected_email_state,
+    classify_handling_status,
+    selected_email_understanding_state,
+    selected_context_from_query,
+    selected_email_contract,
+)
+from src.gmail_companion_ui import GmailCompanionApp, main
+from src.gmail_writer import MockGmailLabelClient
+from src.local_artifacts import candidate_changes_path
+
+
+class GmailCompanionUiTests(unittest.TestCase):
+    def test_companion_state_module_preserves_selected_context_contract(self) -> None:
+        context = selected_context_from_query(
+            {
+                "provider": ["gmail"],
+                "message_id": ["msg-1"],
+                "thread_id": ["thread-1"],
+                "subject": ["Subject"],
+                "sender": ["Sender <sender@example.com>"],
+                "page_url": ["https://mail.google.com"],
+                "selected_at": ["2026-06-30T10:00:00Z"],
+            }
+        )
+
+        self.assertEqual(
+            context,
+            {
+                "provider": "gmail",
+                "message_id": "msg-1",
+                "thread_id": "thread-1",
+                "subject": "Subject",
+                "sender": "Sender <sender@example.com>",
+                "page_url": "https://mail.google.com",
+                "selected_at": "2026-06-30T10:00:00Z",
+            },
+        )
+        self.assertEqual(selected_email_contract()["contract_version"], "gmail-companion-selected-email-v1")
+
+    def test_companion_state_module_preserves_selected_email_status_rules(self) -> None:
+        self.assertEqual(
+            classify_handling_status({"review_state": "pending", "applied_labels": []}, None, None),
+            ("needs-attention", "Needs attention"),
+        )
+        self.assertEqual(
+            classify_handling_status({"review_state": "reviewed", "final_labels": ["promotions"]}, "applied", "applied"),
+            ("auto-handled", "Auto-handled"),
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            selected = build_selected_email_state(
+                Path(temp_dir),
+                [],
+                {"message_id": "missing-1", "subject": "Fresh email", "sender": "New <new@example.com>"},
+            )
+
+        self.assertFalse(selected["found"])
+        self.assertEqual(selected["status"], "not-in-snapshot")
+        self.assertEqual(selected["status_label"], "Not in local snapshot")
+
+    def test_selected_email_understanding_state_progresses_from_reading_to_ready(self) -> None:
+        context = {
+            "message_id": "gmail-live-001",
+            "subject": "Interview update",
+            "sender": "notifications@example.com",
+            "selected_at": "2026-07-10T10:00:00Z",
+        }
+
+        reading = selected_email_understanding_state(
+            context,
+            now=datetime.fromisoformat("2026-07-10T10:00:00+00:00"),
+        )
+        understanding = selected_email_understanding_state(
+            context,
+            now=datetime.fromisoformat("2026-07-10T10:00:01+00:00"),
+        )
+        ready = selected_email_understanding_state(
+            context,
+            now=datetime.fromisoformat("2026-07-10T10:00:02+00:00"),
+        )
+
+        self.assertEqual(reading["understanding_state"], "reading")
+        self.assertEqual(understanding["understanding_state"], "understanding")
+        self.assertEqual(ready["understanding_state"], "ready")
+
+    def test_companion_state_exposes_all_classifications_when_message_has_multiple_labels(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            batch_dir = storage_dir / "batches"
+            batch_dir.mkdir(parents=True, exist_ok=True)
+            (batch_dir / "founder-test-batch-1.json").write_text(
+                json.dumps(
+                    {
+                        "batch_id": "founder-test-batch-1",
+                        "provider": "gmail",
+                        "account_id": "founder-test",
+                        "items": [
+                            {
+                                "message_id": "gmail-live-001",
+                                "sender": "Emma from Alltricks <contact@alltricks.com>",
+                                "subject": "Welcome on Alltricks 👋",
+                                "review_state": "reviewed",
+                                "review_action": "auto-approve",
+                                "final_labels": ["newsletter", "travel", "personal"],
+                                "applied_labels": ["newsletter", "travel", "personal"],
+                            }
+                        ],
+                    }
+                )
+            )
+
+            selected = build_selected_email_state(
+                storage_dir,
+                [],
+                {
+                    "message_id": "gmail-live-001",
+                    "subject": "Welcome on Alltricks 👋",
+                    "sender": "Emma from Alltricks <contact@alltricks.com>",
+                },
+            )
+
+        self.assertEqual(selected["classification"], "EA/Newsletter")
+        self.assertEqual(selected["all_classifications"], ["EA/Newsletter", "EA/Travel", "EA/Personal"])
+
+    def test_companion_rendering_module_preserves_shared_helpers(self) -> None:
+        self.assertEqual(escape_html('<a href="x">Tom & Jerry</a>'), "&lt;a href=&quot;x&quot;&gt;Tom &amp; Jerry&lt;/a&gt;")
+        self.assertEqual(server_origin("127.0.0.1:8021"), "http://127.0.0.1:8021")
+        self.assertEqual(server_origin("https://example.test"), "https://example.test")
+        self.assertEqual(unsubscribe_section_key({"decision_state": "selected"}, {"status": "ready"}), "selected")
+        self.assertIn(
+            "No recent mail",
+            render_dashboard_email_cards([], empty_label="No recent mail"),
+        )
+        rendered_card = render_dashboard_email_cards(
+            [
+                {
+                    "subject": "Google Account Closure Notice",
+                    "sender": "Google <accounts@example.com>",
+                    "classification": "EA/LowValue",
+                    "status_label": "Kept visible",
+                }
+            ],
+            empty_label="No recent mail",
+        )
+        self.assertIn("Open in Gmail", rendered_card)
+        self.assertIn("https://mail.google.com/mail/u/0/#search/", rendered_card)
+
+    def test_extension_assets_have_valid_javascript_and_manifest(self) -> None:
+        repo_root = Path(__file__).resolve().parent.parent
+
+        manifest_result = subprocess.run(
+            [sys.executable, "-m", "json.tool", "extensions/gmail_companion/manifest.json"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        content_result = subprocess.run(
+            ["node", "--check", "extensions/gmail_companion/content.js"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        background_result = subprocess.run(
+            ["node", "--check", "extensions/gmail_companion/background.js"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(manifest_result.returncode, 0, manifest_result.stderr)
+        self.assertEqual(content_result.returncode, 0, content_result.stderr)
+        self.assertEqual(background_result.returncode, 0, background_result.stderr)
+
+    def test_extension_uses_harness_state_and_clickable_summary_filters(self) -> None:
+        repo_root = Path(__file__).resolve().parent.parent
+        background_js = (repo_root / "extensions" / "gmail_companion" / "background.js").read_text()
+        content_js = (repo_root / "extensions" / "gmail_companion" / "content.js").read_text()
+
+        self.assertIn("/api/harness-state", background_js)
+        self.assertIn("/api/health", background_js)
+        self.assertIn("Helper unreachable", background_js)
+        self.assertIn("Wrong service on port", background_js)
+        self.assertIn("HARNESS_STATE_TIMEOUT_MS", background_js)
+        self.assertIn("data-ea-summary-filter", content_js)
+        self.assertIn('previousPayload = "";', content_js)
+        self.assertIn("refreshInFlight", content_js)
+        self.assertIn("REFRESH_INTERVAL_MS = 5000", content_js)
+        self.assertIn("Threadwise is connected but the inbox state is still loading.", content_js)
+        self.assertIn("/api/founder-feedback", content_js)
+        self.assertIn("data-ea-action=\"open-feedback\"", content_js)
+        self.assertIn("overflow-y:auto", content_js)
+        self.assertIn("flex:0 0 auto", content_js)
+        self.assertIn("What should Threadwise do better here?", content_js)
+        self.assertIn("ea-selected-email-secondary", content_js)
+        self.assertIn("Open an email to inspect or teach Threadwise.", content_js)
+        self.assertIn("Gmail label", content_js)
+        self.assertIn("Human meaning", content_js)
+        self.assertIn("Likely why", content_js)
+        self.assertIn("likelyReasonForSelected", content_js)
+        self.assertIn("humanMeaningForSelected", content_js)
+        self.assertIn("renderChangedTodayGroups", content_js)
+        self.assertIn("Future rule", content_js)
+        self.assertIn("rule_type_label", content_js)
+        self.assertIn("rule_confidence_label", content_js)
+        self.assertIn("Structured rule", content_js)
+        self.assertIn("Similar emails found", content_js)
+        self.assertIn("Similar candidates:", content_js)
+        self.assertIn("Exact sender matches:", content_js)
+        self.assertIn("Broader rule candidate:", content_js)
+        self.assertIn("Saved locally for review.", content_js)
+        self.assertIn('let minimized = true;', content_js)
+        self.assertIn('PANEL_WIDTH_MINIMIZED = "70px"', content_js)
+        self.assertIn('id="ea-brand-toggle"', content_js)
+        self.assertIn("data-ea-brand-img", content_js)
+        self.assertIn('chrome.runtime.getURL("assets/brand/threadwise-app-icon.png")', content_js)
+        self.assertIn("open Threadwise", content_js)
+        self.assertIn("Check again", content_js)
+        self.assertIn("data-ea-action=\"force-refresh\"", content_js)
+        self.assertIn("friendlyErrorMessage", content_js)
+        self.assertIn("Reading this email...", content_js)
+        self.assertIn("Understanding this email...", content_js)
+        self.assertIn("Threadwise is still understanding this email. Teaching controls will appear when the email is ready.", content_js)
+        self.assertIn('id="ea-status"', content_js)
+        self.assertIn("Needs attention", content_js)
+        self.assertIn("Health check failed", content_js)
+        self.assertIn("Wrong service on port", content_js)
+        self.assertIn("Reconnect Threadwise before teaching corrections.", content_js)
+        self.assertIn("Threadwise has not synced this email yet.", content_js)
+        self.assertIn("Threadwise can explain emails it has already synced.", content_js)
+        self.assertIn("Run Gmail sync now", content_js)
+        self.assertIn("/api/gmail-check-run", content_js)
+        self.assertIn("Connection details", content_js)
+        self.assertNotIn("This email is not in the current local sync.", content_js)
+        self.assertIn("Current Queue", content_js)
+        self.assertIn("Previous interpretation", content_js)
+        self.assertIn("data-ea-previous-preview", content_js)
+        self.assertIn("Review unsubscribe candidates", content_js)
+        self.assertIn("select-unsubscribe", content_js)
+        self.assertIn("Report details", content_js)
+        self.assertIn("What Changed Today", content_js)
+        self.assertIn("Decision source", content_js)
+        self.assertIn("All labels:", content_js)
+        self.assertNotIn("Live Gmail sidebar mode is using the same stored inbox snapshot and queue buckets as the local harness.", content_js)
+        self.assertIn("data-ea-summary-item", content_js)
+        self.assertIn("data-ea-action=\"open-selected-gmail\"", content_js)
+        self.assertIn("Open this email in Gmail", content_js)
+        self.assertIn("data-ea-open-changed-gmail", content_js)
+        self.assertIn("Preview in Threadwise", content_js)
+        self.assertIn("findChangedTodayItem", content_js)
+        self.assertIn("openSelectedEmailInGmail", content_js)
+        self.assertIn("window.location.href = gmailSearchUrl(item)", content_js)
+        self.assertIn("const messageNode = subject ? selectedMessageNode() : null;", content_js)
+        self.assertIn("box-sizing:border-box;width:100%", content_js)
+        self.assertIn("teachErrorResult", content_js)
+        self.assertIn("renderTeachResultHtml", content_js)
+        self.assertIn("Preview blocked", content_js)
+        self.assertIn("Lesson blocked", content_js)
+        self.assertIn("Retry available", content_js)
+        self.assertIn("Preview accepted", content_js)
+        self.assertIn("Fix accepted", content_js)
+        self.assertIn("Fix + future accepted", content_js)
+        self.assertIn("Fix + inbox accepted", content_js)
+        self.assertIn("Working", content_js)
+        self.assertIn("Done", content_js)
+        self.assertIn("Preparing rule...", content_js)
+        self.assertIn("renderAsyncFollowUpHtml", content_js)
+        self.assertIn("renderRecentActivityHtml", content_js)
+        self.assertIn("recentActivityItems", content_js)
+        self.assertIn("Recent activity", content_js)
+        self.assertIn("data-ea-activity-item", content_js)
+        self.assertIn("teach-apply-refresh", content_js)
+        self.assertIn("Background refresh", content_js)
+        self.assertIn("Nothing was stored or changed. The preview is still here", content_js)
+        self.assertIn("Try fix again", content_js)
+        self.assertIn("data-ea-action=\"retry-preview-teach\"", content_js)
+        self.assertIn("max-width:100%;overflow-wrap:anywhere;word-break:break-word", content_js)
+        self.assertIn("Nothing was changed. Check the local companion connection and try Preview again.", content_js)
+        self.assertNotIn("No confirmed lesson was applied from this failed request", content_js)
+        self.assertIn("isTeachPending()", content_js)
+        self.assertIn('teachFlowState = "previewing"', content_js)
+        self.assertIn('teachResult = teachPendingResult("preview")', content_js)
+        self.assertIn('teachResult = teachPendingResult("apply", mode)', content_js)
+        self.assertIn("response.payload?.error", background_js)
+        self.assertIn("status: response.status", background_js)
+        self.assertIn("Queue preview", content_js)
+        self.assertNotIn("Back to inbox email", content_js)
+        self.assertIn("Close preview", content_js)
+        self.assertIn("Choose label manually", content_js)
+        self.assertIn("Infer from note", content_js)
+        self.assertIn("What should Threadwise understand?", content_js)
+        self.assertIn("gmailSearchUrl", content_js)
+        self.assertIn("data-ea-open-gmail", content_js)
+        self.assertIn("What to do now", content_js)
+        self.assertIn("Viewing", content_js)
+        self.assertIn("Closest synced emails", content_js)
+        self.assertIn("kept visible", content_js)
+        self.assertIn("selectedMessageNode", content_js)
+        self.assertIn("Fix this email", content_js)
+        self.assertIn("Affected existing emails", content_js)
+        self.assertIn("Show affected emails", content_js)
+        self.assertIn('PANEL_WIDTH_EXPANDED', content_js)
+        self.assertIn('data-ea-action="open-affected-review"', content_js)
+        self.assertIn('data-ea-affected-review="true"', content_js)
+        self.assertIn("Reviewing affected emails", content_js)
+        self.assertIn("data-ea-open-affected-gmail", content_js)
+        self.assertIn("/api/teach-exclude", content_js)
+        self.assertIn("data-ea-exclude-affected", content_js)
+        self.assertIn("Exception saved", content_js)
+        self.assertIn('data-ea-apply="apply-included"', content_js)
+        self.assertIn("Apply to included", content_js)
+        self.assertIn("/api/teach-amendment", content_js)
+        self.assertIn("Possible rule amendment", content_js)
+        self.assertIn("Accept amendment", content_js)
+        self.assertIn("Teach future rule", content_js)
+        self.assertIn("Keep discussing", content_js)
+        self.assertIn("Fix this email only updates the message you are reviewing.", content_js)
+        self.assertIn("Queue unsubscribe review", content_js)
+        self.assertIn("Clear draft", content_js)
+        self.assertIn("box-shadow:none", content_js)
+        self.assertIn("Open queued review", content_js)
+        self.assertIn('data-ea-unsubscribe-card="true"', content_js)
+        self.assertIn('data-ea-unsubscribe-action="queue"', content_js)
+        self.assertIn('data-ea-unsubscribe-action="review"', content_js)
+        self.assertIn("const canOpenUnsubscribeUrl = unsubscribePreview", content_js)
+        self.assertIn('unsubscribePreview.status !== "ready"', content_js)
+        self.assertIn('unsubscribePreview.url.startsWith("mailto:")', content_js)
+        self.assertIn("data-ea-changed-item", content_js)
+        self.assertIn("Queued subscriptions", content_js)
+        self.assertIn("Preview closest synced match", content_js)
+        self.assertIn("data-ea-related-item", content_js)
+        self.assertIn("open-needs-attention", content_js)
+        self.assertIn("selectSummaryFilter", content_js)
+        self.assertIn("setDraft", content_js)
+        self.assertIn("forceRefresh", content_js)
+        self.assertIn("Show technical details", content_js)
+        self.assertIn("Technical details", content_js)
+        self.assertIn("toggle-details", content_js)
+        self.assertIn("Open daily dashboard", content_js)
+        manifest = json.loads((repo_root / "extensions" / "gmail_companion" / "manifest.json").read_text())
+        self.assertIn("web_accessible_resources", manifest)
+        self.assertIn("assets/brand/threadwise-app-icon.png", manifest["web_accessible_resources"][0]["resources"])
+
+    def test_companion_script_runs_from_repo_root_without_pythonpath(self) -> None:
+        repo_root = Path(__file__).resolve().parent.parent
+        result = subprocess.run(
+            [sys.executable, "scripts/run_gmail_companion.py", "--help"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("Serve the Gmail companion sidebar prototype", result.stdout)
+        self.assertNotIn("ModuleNotFoundError", result.stderr)
+
+    def test_simulator_script_runs_from_repo_root_without_pythonpath(self) -> None:
+        repo_root = Path(__file__).resolve().parent.parent
+        result = subprocess.run(
+            [sys.executable, "scripts/run_gmail_companion_simulator.py", "--help"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("safe local inbox simulator", result.stdout)
+        self.assertNotIn("ModuleNotFoundError", result.stderr)
+
+    def test_main_prints_local_url(self) -> None:
+        stdout = io.StringIO()
+        fake_server = _FakeServer(server_port=45123)
+
+        exit_code = main(
+            ["--storage-dir", "/tmp/example"],
+            stdout=stdout,
+            server_factory=lambda host, port, storage_dir, gmail_write_through_enabled=True: fake_server,
+        )
+
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(fake_server.served)
+        self.assertTrue(fake_server.closed)
+        self.assertIn("http://127.0.0.1:45123", stdout.getvalue())
+
+    def test_panel_html_is_minimizable_and_contains_local_harness_controls(self) -> None:
+        app = GmailCompanionApp(Path("/tmp/example"))
+        page = app.render_panel()
+
+        self.assertIn("Minimize", page)
+        self.assertIn("CLEAR THREADS. BETTER INBOX.", page)
+        self.assertIn("Agent View", page)
+        self.assertIn("Today", page)
+        self.assertIn("Synced Inbox Fixtures", page)
+        self.assertIn("Preview", page)
+        self.assertIn("Clear draft", page)
+        self.assertIn("action-button quiet", page)
+        self.assertIn("Fix this email", page)
+        self.assertIn("Affected existing emails", page)
+        self.assertIn("Show affected emails", page)
+        self.assertIn("expanded-review", page)
+        self.assertIn("open-affected-review", page)
+        self.assertIn("Reviewing affected emails", page)
+        self.assertIn("data-affected-open-gmail", page)
+        self.assertIn("data-affected-exclude", page)
+        self.assertIn("/api/teach-exclude", page)
+        self.assertIn("data-apply-mode=\"apply-included\"", page)
+        self.assertIn("Apply to included", page)
+        self.assertIn("/api/teach-amendment", page)
+        self.assertIn("Possible rule amendment", page)
+        self.assertIn("Previous interpretation", page)
+        self.assertIn("data-previous-preview", page)
+        self.assertIn("Review unsubscribe candidates", page)
+        self.assertIn("Report details", page)
+        self.assertIn("What Changed Today", page)
+        self.assertIn("Correct / Teach", page)
+        self.assertIn("Local harness mode is backed by real synced inbox artifacts", page)
+        self.assertIn("Queued subscriptions", page)
+        self.assertIn("Preview closest synced match", page)
+        self.assertIn("Show details", page)
+        self.assertIn("Open daily dashboard", page)
+        self.assertIn("Nothing was stored or changed. The preview is still here", page)
+        self.assertIn("Try fix again", page)
+        self.assertIn("data-action=\"refresh-state\"", page)
+        self.assertIn("overflow-wrap: anywhere", page)
+
+    def test_simulator_page_contains_inbox_and_safe_local_only_language(self) -> None:
+        app = GmailCompanionApp(Path("/tmp/example"), gmail_write_through_enabled=False)
+        page = app.render_simulator()
+
+        self.assertIn("Threadwise Inbox Simulator", page)
+        self.assertIn("Simulated Inbox", page)
+        self.assertIn("Load unsynced message", page)
+        self.assertIn("Threadwise has not synced this email yet", page)
+        self.assertIn("Preview a synced email below", page)
+        self.assertIn("Run Gmail sync now", page)
+        self.assertNotIn("Current category", page)
+        self.assertNotIn("Handling status", page)
+        self.assertNotIn("Short reason", page)
+        self.assertIn("disables Gmail write-through", page)
+        self.assertIn("Minimize", page)
+        self.assertIn("Previous interpretation", page)
+        self.assertIn("data-previous-preview", page)
+        self.assertIn("Proposed rule:", page)
+        self.assertIn("Looks right", page)
+        self.assertIn("Choose how broadly to apply this rule.", page)
+        self.assertIn("Propose rule", page)
+        self.assertIn("data-apply-mode=\"apply-included\"", page)
+        self.assertIn("future-only", page)
+        self.assertIn("Fix + inbox", page)
+        self.assertIn("Apply to inbox?", page)
+        self.assertIn("What changed", page)
+        self.assertIn("Review unsubscribe candidates", page)
+        self.assertIn("Report details", page)
+        self.assertIn("What Changed Today", page)
+        self.assertIn("Correct / Teach", page)
+        self.assertIn("data-queue-message-id", page)
+        self.assertIn("Current Queue", page)
+        self.assertIn("What to do now", page)
+        self.assertIn("Viewing", page)
+        self.assertIn("Rule applied", page)
+        self.assertIn("Try fix again", page)
+        self.assertIn("data-action=\"refresh-state\"", page)
+        self.assertIn("overflow-wrap:anywhere", page)
+
+    def test_unsubscribe_review_page_lists_candidates(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": "Store <news@example.com>",
+                        "subject": "Big sale this week",
+                        "snippet": "Save 20% today",
+                        "interpretation": "Promotional mail from a recurring sender.",
+                        "review_state": "reviewed",
+                        "review_action": "auto-approve",
+                        "final_labels": ["promotions"],
+                        "applied_labels": ["promotions"],
+                        "list_unsubscribe": "<https://example.com/unsub>",
+                    },
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-002",
+                        "sender": "Digest <digest@example.com>",
+                        "subject": "Weekly digest",
+                        "snippet": "News roundup",
+                        "interpretation": "Promotional mail from a recurring sender.",
+                        "review_state": "reviewed",
+                        "review_action": "auto-approve",
+                        "final_labels": ["newsletter"],
+                        "applied_labels": ["newsletter"],
+                    }
+                ],
+                raw_messages=[
+                    {
+                        "id": "gmail-live-001",
+                        "payload": {
+                            "headers": [
+                                {"name": "From", "value": "Store <news@example.com>"},
+                                {"name": "List-Unsubscribe", "value": "<https://example.com/unsub>"},
+                            ]
+                        },
+                        "labelIds": ["CATEGORY_PROMOTIONS"],
+                    },
+                    {
+                        "id": "gmail-live-002",
+                        "payload": {
+                            "headers": [
+                                {"name": "From", "value": "Digest <digest@example.com>"},
+                                {"name": "Precedence", "value": "bulk"},
+                            ]
+                        },
+                        "labelIds": ["CATEGORY_PROMOTIONS"],
+                    }
+                ],
+            )
+
+            page = GmailCompanionApp(storage_dir).render_unsubscribe_review_page()
+
+            self.assertIn("Subscription cleanup", page)
+            self.assertIn("Store", page)
+            self.assertIn("Manual provider page", page)
+            self.assertIn("Open provider page manually", page)
+            self.assertIn("Opening it does not execute a Threadwise unsubscribe.", page)
+            self.assertNotIn("Open unsubscribe link", page)
+            self.assertIn("Manual Follow-Up", page)
+            self.assertIn("All candidates: 2", page)
+
+    def test_unsubscribe_review_page_does_not_open_one_click_https_directly(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": "Store <news@example.com>",
+                        "subject": "Big sale this week",
+                        "snippet": "Save 20% today",
+                        "interpretation": "Promotional mail from a recurring sender.",
+                        "review_state": "reviewed",
+                        "review_action": "auto-approve",
+                        "final_labels": ["promotions"],
+                        "applied_labels": ["promotions"],
+                        "list_unsubscribe": "<https://example.com/unsub>",
+                    }
+                ],
+                raw_messages=[
+                    {
+                        "id": "gmail-live-001",
+                        "payload": {
+                            "headers": [
+                                {"name": "From", "value": "Store <news@example.com>"},
+                                {"name": "List-Unsubscribe", "value": "<https://example.com/unsub>"},
+                                {"name": "List-Unsubscribe-Post", "value": "List-Unsubscribe=One-Click"},
+                            ]
+                        },
+                        "labelIds": ["CATEGORY_PROMOTIONS"],
+                    }
+                ],
+            )
+
+            page = GmailCompanionApp(storage_dir).render_unsubscribe_review_page()
+
+            self.assertIn("Ready Now", page)
+            self.assertIn("Audited action only", page)
+            self.assertIn("explicit confirmation", page)
+            self.assertNotIn("Open provider page manually", page)
+            self.assertNotIn("Open unsubscribe link", page)
+
+    def test_daily_dashboard_page_lists_operational_sections(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": "Store <news@example.com>",
+                        "subject": "Big sale this week",
+                        "snippet": "Save 20% today",
+                        "interpretation": "Promotional mail from a recurring sender.",
+                        "review_state": "reviewed",
+                        "review_action": "auto-approve",
+                        "final_labels": ["promotions"],
+                        "applied_labels": ["promotions"],
+                        "list_unsubscribe": "<https://example.com/unsub>",
+                    },
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-002",
+                        "sender": "Founder <person@example.com>",
+                        "subject": "Planning for Finland 2027",
+                        "snippet": "Trip planning",
+                        "interpretation": "Personal planning email that should stay visible.",
+                        "review_state": "reviewed",
+                        "review_action": "approve",
+                        "final_labels": ["personal"],
+                        "applied_labels": ["personal"],
+                    },
+                ],
+                raw_messages=[
+                    {
+                        "id": "gmail-live-001",
+                        "payload": {
+                            "headers": [
+                                {"name": "From", "value": "Store <news@example.com>"},
+                                {"name": "List-Unsubscribe", "value": "<https://example.com/unsub>"},
+                            ]
+                        },
+                        "labelIds": ["CATEGORY_PROMOTIONS"],
+                    },
+                    {
+                        "id": "gmail-live-002",
+                        "payload": {
+                            "headers": [
+                                {"name": "From", "value": "Founder <person@example.com>"},
+                            ]
+                        },
+                        "labelIds": ["INBOX"],
+                    },
+                ],
+            )
+            reports_dir = storage_dir / "reports"
+            reports_dir.mkdir(parents=True, exist_ok=True)
+            (reports_dir / "founder-test-batch-1_daily_report.json").write_text(
+                json.dumps(
+                    {
+                        "provider": "gmail",
+                        "account_id": "founder-test",
+                        "batch_id": "founder-test-batch-1",
+                        "report_date": "2026-06-29",
+                        "processed_count": 2,
+                        "inbox_removed_count": 1,
+                        "unlabeled_count": 0,
+                        "label_counts": {
+                            "EA/Promotions": 1,
+                            "EA/Personal": 1,
+                        },
+                    }
+                )
+            )
+            page = GmailCompanionApp(storage_dir).render_daily_dashboard_page()
+
+            self.assertIn("What Threadwise did today", page)
+            self.assertIn("Needs Attention", page)
+            self.assertIn("Kept Visible", page)
+            self.assertIn("Auto-Handled", page)
+            self.assertIn("Queued unsubscribe review", page)
+            self.assertIn("Open unsubscribe review", page)
+
+    def test_daily_dashboard_page_renders_attention_now_and_possible_from_daily_report(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "thread_id": "thread-001",
+                        "sender": "Airline <alerts@airline.example>",
+                        "subject": "Flight check-in closes tonight",
+                        "snippet": "Check in before 21:00.",
+                        "interpretation": "Travel reminder.",
+                        "review_state": "reviewed",
+                        "final_labels": ["travel"],
+                        "applied_labels": ["travel"],
+                    },
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-002",
+                        "thread_id": "thread-002",
+                        "sender": "Recruiter <recruiter@example.com>",
+                        "subject": "Choose an interview slot",
+                        "snippet": "Please book a time next week.",
+                        "interpretation": "Hiring workflow.",
+                        "review_state": "reviewed",
+                        "final_labels": ["job-related"],
+                        "applied_labels": ["job-related"],
+                    },
+                ],
+            )
+            self._write_daily_report(
+                storage_dir,
+                "founder-test-batch-1",
+                attention_items=[
+                    {
+                        "message_id": "gmail-live-001",
+                        "thread_id": "thread-001",
+                        "level": "needs_attention_now",
+                        "category": "travel",
+                        "reason": "Check-in closes tonight.",
+                        "evidence": "Email says check-in closes at 21:00.",
+                        "source": "compact_payload",
+                        "handled_state": "appears_unhandled",
+                        "feedback_state": "unset",
+                        "gmail_mutation": "none",
+                    },
+                    {
+                        "message_id": "gmail-live-002",
+                        "thread_id": "thread-002",
+                        "level": "possible_attention",
+                        "category": "job_opportunity",
+                        "reason": "Recruiter scheduling link may need action.",
+                        "evidence": "Message asks the founder to book an interview slot.",
+                        "source": "compact_payload",
+                        "handled_state": "unknown",
+                        "feedback_state": "unset",
+                        "gmail_mutation": "none",
+                    },
+                ],
+            )
+
+            page = GmailCompanionApp(storage_dir).render_daily_dashboard_page()
+
+            self.assertIn("Needs Attention Now", page)
+            self.assertIn("Possible Attention", page)
+            self.assertIn("Flight check-in closes tonight", page)
+            self.assertIn("Airline &lt;alerts@airline.example&gt;", page)
+            self.assertIn("travel", page)
+            self.assertIn("Check-in closes tonight.", page)
+            self.assertIn("Email says check-in closes at 21:00.", page)
+            self.assertIn("compact_payload | Gmail message gmail-live-001 | thread thread-001 | batch founder-test-batch-1", page)
+            self.assertIn("Attention pass: no Gmail changes", page)
+            self.assertIn("Choose an interview slot", page)
+            self.assertIn("job_opportunity", page)
+
+    def test_daily_dashboard_page_surfaces_only_high_consequence_insufficient_context(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "thread_id": "thread-001",
+                        "sender": "Bank <security@bank.example>",
+                        "subject": "Confirm account activity",
+                        "snippet": "We noticed a sign-in.",
+                        "interpretation": "Account security notice.",
+                        "review_state": "reviewed",
+                        "final_labels": ["account-security"],
+                        "applied_labels": ["account-security"],
+                    },
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-002",
+                        "thread_id": "thread-002",
+                        "sender": "News <news@example.com>",
+                        "subject": "Weekly reading list",
+                        "snippet": "Links for later.",
+                        "interpretation": "Newsletter.",
+                        "review_state": "reviewed",
+                        "final_labels": ["newsletter"],
+                        "applied_labels": ["newsletter"],
+                    },
+                ],
+            )
+            self._write_daily_report(
+                storage_dir,
+                "founder-test-batch-1",
+                attention_items=[
+                    {
+                        "message_id": "gmail-live-001",
+                        "thread_id": "thread-001",
+                        "level": "insufficient_context",
+                        "category": "security",
+                        "reason": "Could be account-risk mail, but compact context is not enough.",
+                        "evidence": "Mentions new sign-in and account activity.",
+                        "source": "compact_payload",
+                        "gmail_mutation": "none",
+                    },
+                    {
+                        "message_id": "gmail-live-002",
+                        "thread_id": "thread-002",
+                        "level": "insufficient_context",
+                        "category": "",
+                        "reason": "Not enough context to classify the reading list.",
+                        "evidence": "Newsletter snippet is vague.",
+                        "source": "compact_payload",
+                        "gmail_mutation": "none",
+                    },
+                ],
+            )
+
+            page = GmailCompanionApp(storage_dir).render_daily_dashboard_page()
+            attention_section = page.split('<div class="eyebrow">What Changed Today</div>', 1)[0]
+
+            self.assertIn("Confirm account activity", attention_section)
+            self.assertIn("Insufficient context, high-consequence cue", attention_section)
+            self.assertIn("Could be account-risk mail, but compact context is not enough.", attention_section)
+            self.assertIn("1 lower-risk insufficient-context item kept out of this daily attention view.", attention_section)
+            self.assertNotIn("Weekly reading list", attention_section)
+
+    def test_daily_dashboard_page_has_useful_empty_attention_state(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_daily_report(storage_dir, "founder-test-batch-1", attention_items=[])
+
+            page = GmailCompanionApp(storage_dir).render_daily_dashboard_page()
+
+            self.assertIn("Needs Attention Now", page)
+            self.assertIn("No attention-now items in the latest Gmail daily report.", page)
+            self.assertIn("Possible Attention", page)
+            self.assertIn("No possible-attention items in the latest Gmail daily report.", page)
+            self.assertIn("Latest attention report: 2026-07-01", page)
+
+    def test_daily_dashboard_exposes_confirmed_run_gmail_check_flow(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_attention_fixture(storage_dir)
+
+            page = GmailCompanionApp(storage_dir).render_daily_dashboard_page()
+
+            self.assertIn("Run Gmail check", page)
+            self.assertIn("confirm-run-gmail-check", page)
+            self.assertIn("may apply existing safe EA/ labels", page)
+            self.assertIn("remove INBOX only for approved low-value categories", page)
+            self.assertIn("may call the LLM for attention detection", page)
+
+    def test_dashboard_gmail_check_requires_confirmation(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_attention_fixture(storage_dir)
+            app = GmailCompanionApp(storage_dir, gmail_run_runner=lambda _payload: None)
+
+            with self.assertRaises(ValueError):
+                app.trigger_gmail_check({"account_id": "founder-test"})
+
+    def test_dashboard_gmail_check_blocks_duplicate_active_run(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_attention_fixture(storage_dir)
+            write_gmail_dashboard_run_status(
+                storage_dir,
+                {"status": "running", "run_id": "existing-run", "started_at": "2026-07-01T10:00:00Z"},
+            )
+            app = GmailCompanionApp(storage_dir, gmail_run_runner=lambda _payload: None)
+
+            with self.assertRaises(ValueError):
+                app.trigger_gmail_check({"confirmed": "true", "account_id": "founder-test"})
+
+            self.assertEqual(load_gmail_dashboard_run_status(storage_dir)["run_id"], "existing-run")
+
+    def test_dashboard_gmail_check_persists_success_status_with_safe_boundaries(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_attention_fixture(storage_dir)
+            calls = []
+
+            def runner(payload: dict):
+                calls.append(payload)
+                return SimpleNamespace(
+                    batch_id="founder-test-batch-2",
+                    fetched_count=3,
+                    label_write_count=2,
+                    inbox_removal_count=1,
+                    unlabeled_exceptions=[],
+                )
+
+            result = GmailCompanionApp(storage_dir, gmail_run_runner=runner).trigger_gmail_check(
+                {"confirmed": "true", "account_id": "founder-test", "batch_size": "7"}
+            )
+            saved = load_gmail_dashboard_run_status(storage_dir)
+
+            self.assertEqual(calls[0]["account_id"], "founder-test")
+            self.assertEqual(calls[0]["batch_size"], 7)
+            self.assertEqual(calls[0]["safety_boundaries"]["label_writes"], "existing_safe_ea_labels_only")
+            self.assertEqual(calls[0]["safety_boundaries"]["attention_gmail_mutation"], "none")
+            self.assertEqual(result["status"], "succeeded")
+            self.assertEqual(saved["status"], "succeeded")
+            self.assertEqual(saved["result"]["batch_id"], "founder-test-batch-2")
+
+    def test_dashboard_gmail_check_persists_failure_status(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_attention_fixture(storage_dir)
+
+            def runner(_payload: dict):
+                raise RuntimeError("gmail unavailable")
+
+            with self.assertRaises(RuntimeError):
+                GmailCompanionApp(storage_dir, gmail_run_runner=runner).trigger_gmail_check(
+                    {"confirmed": "true", "account_id": "founder-test"}
+                )
+            saved = load_gmail_dashboard_run_status(storage_dir)
+
+            self.assertEqual(saved["status"], "failed")
+            self.assertIn("gmail unavailable", saved["error"])
+
+    def test_gmail_check_endpoint_and_sidebar_expose_run_status(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_attention_fixture(storage_dir)
+            app = GmailCompanionApp(storage_dir, gmail_run_runner=lambda _payload: None)
+            handler = _FakeRequestHandler(
+                "/api/gmail-check-run",
+                method="POST",
+                json_body={"confirmed": "true", "account_id": "founder-test"},
+            )
+
+            app.handle_request(handler)
+            payload = json.loads(handler.wfile.value.decode("utf-8"))
+            sidebar = app.sidebar_state({})
+
+            self.assertEqual(handler.code, 200)
+            self.assertEqual(payload["status"], "succeeded")
+            self.assertEqual(sidebar["run_status"]["status"], "succeeded")
+            self.assertEqual(sidebar["run_status"]["dashboard_path"], "/daily-dashboard#run-gmail-check")
+
+    def test_attention_rule_proposal_endpoints_preview_and_approve_without_gmail_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_attention_fixture(storage_dir)
+            app = GmailCompanionApp(storage_dir)
+            app.attention_feedback(
+                {
+                    "action": "mark_needs_attention",
+                    "message_id": "gmail-live-002",
+                    "thread_id": "thread-002",
+                    "batch_id": "founder-test-batch-1",
+                    "subject": "Choose an interview slot",
+                    "sender": "Recruiter <recruiter@example.com>",
+                    "note": "Recruiter scheduling emails should stay visible.",
+                    "corrected_category": "job_opportunity",
+                }
+            )
+            preview_handler = _FakeRequestHandler(
+                "/api/attention-rule-proposal/preview",
+                method="POST",
+                json_body={"message_id": "gmail-live-002"},
+            )
+
+            app.handle_request(preview_handler)
+            preview = json.loads(preview_handler.wfile.value.decode("utf-8"))
+            proposal_id = preview["proposal"]["id"]
+            review_handler = _FakeRequestHandler(
+                "/api/attention-rule-proposal/review",
+                method="POST",
+                json_body={
+                    "decision": "approve",
+                    "proposal_id": proposal_id,
+                    "application_mode": "future_only",
+                },
+            )
+            app.handle_request(review_handler)
+            reviewed = json.loads(review_handler.wfile.value.decode("utf-8"))
+
+            self.assertEqual(preview_handler.code, 200)
+            self.assertEqual(preview["gmail_mutation"], "none")
+            self.assertEqual(preview["proposal"]["rule_type"], "attention_promotion")
+            self.assertNotIn("label", preview["proposal"])
+            self.assertEqual(review_handler.code, 200)
+            self.assertEqual(reviewed["proposal"]["status"], "approved")
+            self.assertEqual(reviewed["gmail_mutation"], "none")
+            self.assertTrue(attention_rules_path(storage_dir).exists())
+
+    def test_attention_rule_proposal_endpoint_can_reject(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_attention_fixture(storage_dir)
+            app = GmailCompanionApp(storage_dir)
+            app.attention_feedback(
+                {
+                    "action": "mark_needs_attention",
+                    "message_id": "gmail-live-002",
+                    "thread_id": "thread-002",
+                    "batch_id": "founder-test-batch-1",
+                    "subject": "Choose an interview slot",
+                    "sender": "Recruiter <recruiter@example.com>",
+                    "note": "Recruiter scheduling emails should stay visible.",
+                    "corrected_category": "job_opportunity",
+                }
+            )
+            proposal = app.preview_attention_rule_proposal({"message_id": "gmail-live-002"})["proposal"]
+            handler = _FakeRequestHandler(
+                "/api/attention-rule-proposal/review",
+                method="POST",
+                json_body={"decision": "reject", "proposal_id": proposal["id"], "notes": "Too broad."},
+            )
+
+            app.handle_request(handler)
+            reviewed = json.loads(handler.wfile.value.decode("utf-8"))
+
+            self.assertEqual(handler.code, 200)
+            self.assertEqual(reviewed["proposal"]["status"], "rejected")
+            self.assertEqual(reviewed["proposal"]["review_notes"], "Too broad.")
+            self.assertFalse(attention_rules_path(storage_dir).exists())
+
+    def test_attention_feedback_good_catch_persists_and_reflects_in_dashboard(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_attention_fixture(storage_dir)
+
+            result = GmailCompanionApp(storage_dir).attention_feedback(
+                {
+                    "action": "good_catch",
+                    "message_id": "gmail-live-001",
+                    "thread_id": "thread-001",
+                    "batch_id": "founder-test-batch-1",
+                    "subject": "Flight check-in closes tonight",
+                    "sender": "Airline <alerts@airline.example>",
+                    "note": "Good catch for a same-day travel reminder.",
+                }
+            )
+            saved = load_attention_feedback(storage_dir)
+            page = GmailCompanionApp(storage_dir).render_daily_dashboard_page()
+
+            self.assertIn("Recorded attention feedback.", result["acknowledgment"])
+            self.assertEqual(saved["entries"]["gmail-live-001"]["latest_action"], "good_catch")
+            self.assertFalse(saved["entries"]["gmail-live-001"]["creates_broader_rule"])
+            self.assertIn("Feedback: good_catch", page)
+            self.assertIn("Good catch for a same-day travel reminder.", page)
+
+    def test_attention_feedback_not_attention_hides_item_from_attention_panel(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_attention_fixture(storage_dir)
+
+            GmailCompanionApp(storage_dir).attention_feedback(
+                {
+                    "action": "not_attention",
+                    "message_id": "gmail-live-001",
+                    "thread_id": "thread-001",
+                    "batch_id": "founder-test-batch-1",
+                    "subject": "Flight check-in closes tonight",
+                    "sender": "Airline <alerts@airline.example>",
+                    "note": "This was already handled elsewhere.",
+                }
+            )
+            page = GmailCompanionApp(storage_dir).render_daily_dashboard_page()
+            attention_section = page.split('<div class="eyebrow">What Changed Today</div>', 1)[0]
+
+            self.assertNotIn("Flight check-in closes tonight", attention_section)
+            self.assertIn("No attention-now items in the latest Gmail daily report.", attention_section)
+
+    def test_attention_feedback_wrong_reason_captures_correction_without_gmail_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_attention_fixture(storage_dir)
+
+            result = GmailCompanionApp(storage_dir).attention_feedback(
+                {
+                    "action": "wrong_reason",
+                    "message_id": "gmail-live-001",
+                    "thread_id": "thread-001",
+                    "batch_id": "founder-test-batch-1",
+                    "subject": "Flight check-in closes tonight",
+                    "sender": "Airline <alerts@airline.example>",
+                    "corrected_reason": "This matters because check-in closes today, not because of general travel.",
+                    "corrected_category": "travel",
+                }
+            )
+            saved = load_attention_feedback(storage_dir)
+            page = GmailCompanionApp(storage_dir).render_daily_dashboard_page()
+
+            self.assertEqual(result["gmail_mutation"], "none")
+            self.assertEqual(saved["entries"]["gmail-live-001"]["corrected_reason"], "This matters because check-in closes today, not because of general travel.")
+            self.assertIn("Feedback: wrong_reason", page)
+            self.assertIn("<strong>Corrected:</strong> travel", page)
+            self.assertIn("This matters because check-in closes today, not because of general travel.", page)
+
+    def test_attention_feedback_can_mark_non_surfaced_email_as_needs_attention(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_attention_fixture(storage_dir)
+
+            result = GmailCompanionApp(storage_dir).attention_feedback(
+                {
+                    "action": "mark_needs_attention",
+                    "message_id": "gmail-live-002",
+                    "thread_id": "thread-002",
+                    "batch_id": "founder-test-batch-1",
+                    "subject": "Choose an interview slot",
+                    "sender": "Recruiter <recruiter@example.com>",
+                    "note": "Recruiter scheduling emails should be visible until I book.",
+                    "corrected_category": "job_opportunity",
+                }
+            )
+            page = GmailCompanionApp(storage_dir).render_daily_dashboard_page()
+
+            self.assertEqual(result["feedback"]["latest_action"], "mark_needs_attention")
+            self.assertIn("Choose an interview slot", page)
+            self.assertIn("founder_marked", page)
+            self.assertIn("Recruiter scheduling emails should be visible until I book.", page)
+
+    def test_attention_feedback_endpoint_accepts_json_post(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_attention_fixture(storage_dir)
+            app = GmailCompanionApp(storage_dir)
+            handler = _FakeRequestHandler(
+                "/api/attention-feedback",
+                method="POST",
+                json_body={
+                    "action": "good_catch",
+                    "message_id": "gmail-live-001",
+                    "thread_id": "thread-001",
+                    "batch_id": "founder-test-batch-1",
+                    "subject": "Flight check-in closes tonight",
+                    "sender": "Airline <alerts@airline.example>",
+                },
+            )
+
+            app.handle_request(handler)
+            payload = json.loads(handler.wfile.value.decode("utf-8"))
+
+            self.assertEqual(handler.code, 200)
+            self.assertEqual(payload["feedback"]["latest_action"], "good_catch")
+            self.assertEqual(payload["gmail_mutation"], "none")
+
+    def test_attention_feedback_endpoint_accepts_dashboard_form_post(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_attention_fixture(storage_dir)
+            app = GmailCompanionApp(storage_dir)
+            handler = _FakeRequestHandler(
+                "/api/attention-feedback",
+                method="POST",
+                form_body={
+                    "action": "wrong_reason",
+                    "message_id": "gmail-live-001",
+                    "thread_id": "thread-001",
+                    "batch_id": "founder-test-batch-1",
+                    "subject": "Flight check-in closes tonight",
+                    "sender": "Airline <alerts@airline.example>",
+                    "corrected_reason": "The concrete deadline is the important part.",
+                    "corrected_category": "travel",
+                },
+            )
+
+            app.handle_request(handler)
+            payload = json.loads(handler.wfile.value.decode("utf-8"))
+
+            self.assertEqual(handler.code, 200)
+            self.assertEqual(payload["feedback"]["latest_action"], "wrong_reason")
+            self.assertEqual(payload["feedback"]["corrected_reason"], "The concrete deadline is the important part.")
+
+    def test_founder_feedback_endpoint_persists_note_with_minimal_context(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            app = GmailCompanionApp(storage_dir)
+            handler = _FakeRequestHandler(
+                "/api/founder-feedback",
+                method="POST",
+                json_body={
+                    "source": "gmail_companion_extension",
+                    "note": "The attention badge should be more visible here.",
+                    "context": {
+                        "surface": "gmail_companion_extension",
+                        "page_url": "https://mail.google.com/mail/u/0/#inbox",
+                        "connection_kind": "ready",
+                        "active_summary_filter": "needs_attention_items",
+                        "selected_context": {
+                            "provider": "gmail",
+                            "message_id": "msg-urgent-1",
+                            "thread_id": "thread-urgent-1",
+                            "subject": "Flight tomorrow",
+                            "sender": "Airline <alerts@example.com>",
+                        },
+                        "selected_email": {
+                            "found": True,
+                            "status": "needs-attention",
+                            "status_label": "Needs attention",
+                            "classification": "EA/Travel",
+                            "unsubscribe_available": False,
+                            "body": "Do not persist full email body.",
+                        },
+                    },
+                },
+            )
+
+            app.handle_request(handler)
+            payload = json.loads(handler.wfile.value.decode("utf-8"))
+            saved = load_founder_feedback(storage_dir)
+
+            self.assertEqual(handler.code, 200)
+            self.assertEqual(payload["acknowledgment"], "Saved feedback locally for later product review.")
+            self.assertEqual(len(saved), 1)
+            self.assertEqual(saved[0]["note"], "The attention badge should be more visible here.")
+            self.assertEqual(saved[0]["surface"], "gmail_companion_extension")
+            self.assertEqual(saved[0]["selected_context"]["message_id"], "msg-urgent-1")
+            self.assertEqual(saved[0]["selected_email"]["status"], "needs-attention")
+            self.assertNotIn("body", saved[0]["selected_email"])
+
+    def test_unsubscribe_review_page_can_focus_candidate_opened_from_inbox(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": "Store <news@example.com>",
+                        "subject": "Big sale this week",
+                        "snippet": "Save 20% today",
+                        "interpretation": "Promotional mail from a recurring sender.",
+                        "review_state": "reviewed",
+                        "review_action": "auto-approve",
+                        "final_labels": ["promotions"],
+                        "applied_labels": ["promotions"],
+                        "list_unsubscribe": "<https://example.com/unsub>",
+                    }
+                ],
+                raw_messages=[
+                    {
+                        "id": "gmail-live-001",
+                        "payload": {
+                            "headers": [
+                                {"name": "From", "value": "Store <news@example.com>"},
+                                {"name": "List-Unsubscribe", "value": "<https://example.com/unsub>"},
+                            ]
+                        },
+                        "labelIds": ["CATEGORY_PROMOTIONS"],
+                    }
+                ],
+            )
+
+            page = GmailCompanionApp(storage_dir).render_unsubscribe_review_page(
+                {"list_key": ["gmail:founder-test:news@example.com"]}
+            )
+
+            self.assertIn("Opened from inbox", page)
+            self.assertIn("focused", page)
+
+    def test_sidebar_state_returns_selected_email_and_daily_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": "Store <news@example.com>",
+                        "subject": "Big sale this week",
+                        "snippet": "Save 20% today",
+                        "interpretation": "Promotional mail from a recurring sender.",
+                        "review_state": "reviewed",
+                        "review_action": "auto-approve",
+                        "final_labels": ["promotions"],
+                        "applied_labels": ["promotions"],
+                        "list_unsubscribe": "<https://example.com/unsub>",
+                    }
+                ],
+                raw_messages=[
+                    {
+                        "id": "gmail-live-001",
+                        "payload": {
+                            "headers": [
+                                {"name": "From", "value": "Store <news@example.com>"},
+                                {"name": "List-Unsubscribe", "value": "<https://example.com/unsub>"},
+                            ]
+                        },
+                        "labelIds": ["CATEGORY_PROMOTIONS"],
+                    }
+                ],
+            )
+            (storage_dir / "founder-test-batch-1_write_status.json").write_text(
+                json.dumps({"gmail-live-001": "applied"}, indent=2)
+            )
+            (storage_dir / "founder-test-batch-1_inbox_removal_status.json").write_text(
+                json.dumps({"gmail-live-001": "applied"}, indent=2)
+            )
+            reports_dir = storage_dir / "reports"
+            reports_dir.mkdir(parents=True, exist_ok=True)
+            (reports_dir / "founder-test-batch-1_daily_report.json").write_text(
+                json.dumps(
+                    {
+                        "provider": "gmail",
+                        "account_id": "founder-test",
+                        "batch_id": "founder-test-batch-1",
+                        "report_date": "2026-06-29",
+                        "processed_count": 6,
+                        "inbox_removed_count": 2,
+                        "unlabeled_count": 1,
+                        "label_counts": {
+                            "EA/Promotions": 3,
+                            "EA/Orders": 2,
+                            "EA/Personal": 1,
+                        },
+                    },
+                    indent=2,
+                )
+            )
+
+            app = GmailCompanionApp(storage_dir)
+            state = app.sidebar_state(
+                {
+                    "provider": "gmail",
+                    "message_id": "gmail-live-001",
+                    "subject": "Big sale this week",
+                    "sender": "news@example.com",
+                    "selected_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+                }
+            )
+
+            self.assertEqual(state["contract_version"], "gmail-companion-sidebar-v1")
+            self.assertTrue(state["selected_email"]["found"])
+            self.assertEqual(state["selected_email"]["classification"], "EA/Promotions")
+            self.assertEqual(state["selected_email"]["status"], "auto-handled")
+            self.assertEqual(state["selected_email"]["status_label"], "Auto-handled")
+            self.assertEqual(state["selected_email"]["reason"], "Promotional mail from a recurring sender.")
+            self.assertTrue(state["selected_email"]["unsubscribe_available"])
+            self.assertEqual(state["selected_email"]["unsubscribe"]["display_name"], "Store")
+            self.assertIn("list_key=gmail%3Afounder-test%3Anews%40example.com", state["selected_email"]["unsubscribe"]["handoff_path"])
+            self.assertEqual(state["selected_email"]["details"]["write_status"], "applied")
+            self.assertEqual(state["selected_email"]["details"]["inbox_status"], "applied")
+            self.assertIn(state["selected_email"]["understanding_state"], {"reading", "understanding"})
+            self.assertEqual(state["daily_summary"]["processed_count"], 6)
+            self.assertEqual(state["daily_summary"]["auto_handled_count"], 2)
+            self.assertEqual(state["daily_summary"]["needs_attention_count"], 1)
+            self.assertEqual(state["daily_summary"]["top_labels"][0]["label"], "EA/Promotions")
+            self.assertEqual(state["daily_summary"]["run_count"], 1)
+            self.assertEqual(state["daily_summary"]["report_date"], "2026-06-29")
+            self.assertEqual(state["daily_summary"]["changed_today"]["label_writes_count"], 0)
+            self.assertEqual(state["daily_summary"]["changed_today"]["inbox_removed_count"], 1)
+
+    def test_harness_state_defaults_to_a_needs_attention_email_and_exposes_buckets(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": "Friend <friend@example.com>",
+                        "subject": "Trip planning",
+                        "snippet": "Need your input",
+                        "interpretation": "Informational message with no confident category.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                        "near_misses": ["job-related", "promotions"],
+                    },
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-002",
+                        "sender": "Store <news@example.com>",
+                        "subject": "Big sale this week",
+                        "snippet": "Save 20% today",
+                        "interpretation": "Promotional mail from a recurring sender.",
+                        "review_state": "reviewed",
+                        "review_action": "auto-approve",
+                        "final_labels": ["promotions"],
+                        "applied_labels": ["promotions"],
+                    },
+                ],
+            )
+            (storage_dir / "founder-test-batch-1_write_status.json").write_text(
+                json.dumps({"gmail-live-002": "applied"}, indent=2)
+            )
+
+            state = GmailCompanionApp(storage_dir).harness_state({})
+
+            self.assertEqual(state["selected_context"]["message_id"], "gmail-live-001")
+            self.assertTrue(state["sidebar_state"]["selected_email"]["found"])
+            self.assertEqual(state["sidebar_state"]["selected_email"]["status"], "needs-attention")
+            self.assertEqual(state["sidebar_state"]["selected_email"]["suggested_label"], "job-related")
+            self.assertEqual(len(state["needs_attention_items"]), 1)
+            self.assertEqual(len(state["recent_items"]), 2)
+            self.assertEqual(state["auto_handled_items"], [])
+            self.assertEqual(len(state["kept_visible_items"]), 1)
+
+    def test_sidebar_state_has_safe_empty_selected_email_when_message_not_found(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            app = GmailCompanionApp(storage_dir)
+
+            state = app.sidebar_state(
+                {
+                    "provider": "gmail",
+                    "message_id": "missing-id",
+                    "subject": "Unknown",
+                    "sender": "nobody@example.com",
+                }
+            )
+
+            self.assertFalse(state["selected_email"]["found"])
+            self.assertEqual(state["selected_email"]["status"], "not-in-snapshot")
+            self.assertEqual(state["daily_summary"]["processed_count"], 0)
+            self.assertTrue(state["ui_state"]["can_minimize"])
+
+    def test_sidebar_state_explains_when_selected_email_is_not_in_local_snapshot(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            app = GmailCompanionApp(storage_dir)
+
+            state = app.sidebar_state(
+                {
+                    "provider": "gmail",
+                    "message_id": "gmail-live-999",
+                    "subject": "Fresh message",
+                    "sender": "person@example.com",
+                }
+            )
+
+            self.assertFalse(state["selected_email"]["found"])
+            self.assertEqual(state["selected_email"]["status"], "not-in-snapshot")
+            self.assertIn("Run a fresh Gmail sync", state["selected_email"]["reason"])
+
+    def test_daily_summary_rolls_up_recent_gmail_reports(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            reports_dir = storage_dir / "reports"
+            reports_dir.mkdir(parents=True, exist_ok=True)
+            reports = [
+                {
+                    "provider": "gmail",
+                    "account_id": "founder-test",
+                    "batch_id": "founder-test-batch-1",
+                    "report_date": "2026-06-27",
+                    "processed_count": 6,
+                    "inbox_removed_count": 2,
+                    "unlabeled_count": 1,
+                    "label_counts": {"EA/Promotions": 3, "EA/Orders": 2},
+                },
+                {
+                    "provider": "gmail",
+                    "account_id": "founder-test",
+                    "batch_id": "founder-test-batch-2",
+                    "report_date": "2026-06-28",
+                    "processed_count": 4,
+                    "inbox_removed_count": 1,
+                    "unlabeled_count": 2,
+                    "label_counts": {"EA/LowValue": 2, "EA/Promotions": 1},
+                },
+                {
+                    "provider": "protonmail",
+                    "account_id": "founder-proton",
+                    "batch_id": "founder-proton-batch-1",
+                    "report_date": "2026-06-28",
+                    "processed_count": 99,
+                    "inbox_removed_count": 0,
+                    "unlabeled_count": 99,
+                    "label_counts": {"EA/Other": 99},
+                },
+            ]
+            for report in reports:
+                (reports_dir / f"{report['batch_id']}_daily_report.json").write_text(json.dumps(report, indent=2))
+
+            summary = GmailCompanionApp(storage_dir).sidebar_state({})["daily_summary"]
+
+            self.assertEqual(summary["source_label"], "last 2 Gmail runs")
+            self.assertEqual(summary["processed_count"], 10)
+            self.assertEqual(summary["auto_handled_count"], 3)
+            self.assertEqual(summary["needs_attention_count"], 3)
+            self.assertEqual(summary["run_count"], 2)
+            self.assertEqual(summary["report_date"], "2026-06-28")
+            self.assertEqual(summary["top_labels"][0]["label"], "EA/Promotions")
+
+    def test_teach_preview_reports_existing_match_impact(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": "LinkedIn <messages-noreply@linkedin.com>",
+                        "subject": "Sophie Friend sent you a message",
+                        "snippet": "Let's catch up",
+                        "interpretation": "Informational message with no confident category.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                ],
+            )
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-2",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-002",
+                        "sender": "LinkedIn <messages-noreply@linkedin.com>",
+                        "subject": "Sean commented on a post",
+                        "snippet": "New activity",
+                        "interpretation": "Informational message with no confident category.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                ],
+            )
+
+            preview = GmailCompanionApp(storage_dir).teach_preview(
+                {
+                    "selected_context": {
+                        "provider": "gmail",
+                        "message_id": "gmail-live-001",
+                        "subject": "Sophie Friend sent you a message",
+                        "sender": "messages-noreply@linkedin.com",
+                    },
+                    "target_label": "personal",
+                    "note": "LinkedIn direct messages from real people should be personal.",
+                }
+            )
+
+            self.assertIn("I can relabel this email to EA/Personal.", preview["acknowledgment"])
+            self.assertEqual(preview["impact"]["matching_existing_count"], 1)
+            self.assertEqual(preview["selected_label_after"], ["personal"])
+            self.assertEqual(preview["current_label_name"], "Uncategorized")
+            self.assertEqual(preview["target_label_name"], "EA/Personal")
+            self.assertIn("Treat future messages from messages-noreply@linkedin.com as EA/Personal.", preview["plain_english_rule"])
+            self.assertEqual(preview["rule_type"], "sender")
+            self.assertEqual(preview["rule_type_label"], "Sender rule")
+            self.assertEqual(preview["structured_rule"]["to_label"], "EA/Personal")
+            self.assertEqual(preview["structured_rule"]["applies_to_existing_count"], 1)
+            self.assertEqual(preview["impact"]["matching_existing_examples"][0]["labels_after"], ["personal"])
+
+    def test_unsubscribe_select_current_queues_candidate(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": "Store <news@example.com>",
+                        "subject": "Big sale this week",
+                        "snippet": "Save 20% today",
+                        "interpretation": "Promotional mail from a recurring sender.",
+                        "review_state": "reviewed",
+                        "review_action": "auto-approve",
+                        "final_labels": ["promotions"],
+                        "applied_labels": ["promotions"],
+                    }
+                ],
+                raw_messages=[
+                    {
+                        "id": "gmail-live-001",
+                        "payload": {
+                            "headers": [
+                                {"name": "From", "value": "Store <news@example.com>"},
+                                {"name": "List-Unsubscribe", "value": "<https://example.com/unsub>"},
+                                {"name": "List-Unsubscribe-Post", "value": "List-Unsubscribe=One-Click"},
+                            ]
+                        },
+                        "labelIds": ["CATEGORY_PROMOTIONS"],
+                    }
+                ],
+            )
+
+            result = GmailCompanionApp(storage_dir).unsubscribe_select_current(
+                {
+                    "selected_context": {
+                        "provider": "gmail",
+                        "message_id": "gmail-live-001",
+                        "subject": "Big sale this week",
+                        "sender": "news@example.com",
+                    }
+                }
+            )
+
+            saved = json.loads((storage_dir / "unsubscribe_selections.json").read_text())
+            candidate = next(iter(saved["candidates"].values()))
+            self.assertEqual(candidate["decision_state"], "selected")
+            self.assertIn("Queued Store for unsubscribe review.", result["acknowledgment"])
+            self.assertIn("Nothing has been unsubscribed yet.", result["acknowledgment"])
+
+    def test_daily_summary_reports_changed_today_counts_and_items(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": "Store <news@example.com>",
+                        "subject": "Big sale this week",
+                        "snippet": "Save 20% today",
+                        "interpretation": "Promotional mail from a recurring sender.",
+                        "review_state": "reviewed",
+                        "review_action": "sidebar-current-only",
+                        "final_labels": ["promotions"],
+                        "applied_labels": ["promotions"],
+                    },
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-002",
+                        "sender": "Shop <shop@example.com>",
+                        "subject": "Shipping update",
+                        "snippet": "Out for delivery",
+                        "interpretation": "Shipping confirmation for a recent online purchase.",
+                        "review_state": "reviewed",
+                        "review_action": "approve",
+                        "final_labels": ["shopping-order"],
+                        "applied_labels": ["shopping-order"],
+                    },
+                ],
+            )
+            (storage_dir / "founder-test-batch-1_write_status.json").write_text(
+                json.dumps({"gmail-live-001": "applied"}, indent=2)
+            )
+            (storage_dir / "founder-test-batch-1_inbox_removal_status.json").write_text(
+                json.dumps({"gmail-live-002": "applied"}, indent=2)
+            )
+            (storage_dir / "unsubscribe_selections.json").write_text(
+                json.dumps(
+                    {
+                        "candidates": {
+                            "gmail:founder-test:news@example.com": {
+                                "decision_state": "selected"
+                            }
+                        }
+                    },
+                    indent=2,
+                )
+            )
+            CandidateChangeStore(candidate_changes_path(storage_dir)).save_candidate(
+                CandidateChange(
+                    id="candidate-future-rule-001",
+                    kind="future-rule",
+                    source="sidebar-teach",
+                    title="Teach vendor digest as newsletter",
+                    description="Future rule candidate from inbox teaching.",
+                    affected_scope_summary="vendor digest family",
+                    latest_recommendation="Review",
+                    status="recommended-review",
+                )
+            )
+            CandidateChangeStore(candidate_changes_path(storage_dir)).save_candidate(
+                CandidateChange(
+                    id="candidate-future-rule-002",
+                    kind="future-rule",
+                    source="sidebar-teach",
+                    title="Teach another sender family",
+                    description="Promoted future rule.",
+                    affected_scope_summary="sender family",
+                    latest_recommendation="Promote",
+                    status="promoted",
+                )
+            )
+
+            summary = GmailCompanionApp(storage_dir).sidebar_state({})["daily_summary"]["changed_today"]
+
+            self.assertEqual(summary["label_writes_count"], 1)
+            self.assertEqual(summary["inbox_removed_count"], 1)
+            self.assertEqual(summary["selected_unsubscribe_count"], 1)
+            self.assertEqual(summary["candidate_pending_count"], 1)
+            self.assertEqual(summary["candidate_promoted_count"], 1)
+            self.assertEqual(len(summary["items"]), 2)
+            self.assertEqual(summary["items"][0]["change_group"], "Labels written")
+            self.assertEqual(summary["items"][1]["change_group"], "Removed from inbox")
+            self.assertEqual(summary["groups"][0]["label"], "Labels written")
+            self.assertEqual(summary["groups"][1]["label"], "Removed from inbox")
+            self.assertEqual(summary["selected_unsubscribe_examples"][0]["display_name"], "Store")
+            self.assertEqual(summary["candidate_examples"][0]["title"], "Teach another sender family")
+            self.assertIn("list_key=gmail%3Afounder-test%3Anews%40example.com", summary["selected_unsubscribe_examples"][0]["handoff_path"])
+
+    def test_teach_apply_matching_existing_relabels_current_without_saving_rule(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            gmail_client = MockGmailLabelClient()
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": "Ashby <notifications@ashbyhq.com>",
+                        "subject": "Interview update",
+                        "snippet": "Status changed",
+                        "interpretation": "Informational message with no confident category.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                ],
+            )
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-2",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-002",
+                        "sender": "Ashby <notifications@ashbyhq.com>",
+                        "subject": "Application portal reminder",
+                        "snippet": "Reminder",
+                        "interpretation": "Informational message with no confident category.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                ],
+            )
+
+            result = GmailCompanionApp(
+                storage_dir,
+                gmail_client_factory=lambda account_id, credentials_dir, client_secret_path, required_scope: gmail_client,
+            ).teach_apply(
+                {
+                    "selected_context": {
+                        "provider": "gmail",
+                        "message_id": "gmail-live-001",
+                        "subject": "Interview update",
+                        "sender": "notifications@ashbyhq.com",
+                    },
+                    "target_label": "job-related",
+                    "note": "Ashby interview workflow messages should be job-related and kept visible.",
+                    "mode": "matching-existing",
+                }
+            )
+
+            batch_one = json.loads((storage_dir / "batches" / "founder-test-batch-1.json").read_text())
+            batch_two = json.loads((storage_dir / "batches" / "founder-test-batch-2.json").read_text())
+
+            self.assertIn("rewrote 1 matching stored emails", result["acknowledgment"])
+            self.assertIn("did not save a future rule", result["acknowledgment"])
+            self.assertEqual(result["matched_existing_count"], 1)
+            self.assertEqual(batch_one["items"][0]["final_labels"], ["job-related"])
+            self.assertEqual(batch_two["items"][0]["final_labels"], ["job-related"])
+            self.assertFalse((storage_dir / "teachable_classification_rules.json").exists())
+            self.assertIn(("replace_threadwise_labels", "gmail-live-001", [gmail_client.labels["EA/Work"]], "EA/"), gmail_client.calls)
+            self.assertIn(("replace_threadwise_labels", "gmail-live-002", [gmail_client.labels["EA/Work"]], "EA/"), gmail_client.calls)
+            self.assertEqual(result["gmail_write_through"]["messages_written"], 2)
+
+    def test_teach_exclude_saves_exception_and_refreshes_preview(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": "Ashby <notifications@ashbyhq.com>",
+                        "subject": "Interview update",
+                        "snippet": "Status changed",
+                        "interpretation": "Informational message with no confident category.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                ],
+            )
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-2",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-002",
+                        "sender": "Ashby <notifications@ashbyhq.com>",
+                        "subject": "Application portal reminder",
+                        "snippet": "Reminder",
+                        "interpretation": "Informational message with no confident category.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                ],
+            )
+
+            result = GmailCompanionApp(storage_dir).teach_exclude(
+                {
+                    "selected_context": {
+                        "provider": "gmail",
+                        "message_id": "gmail-live-001",
+                        "subject": "Interview update",
+                        "sender": "notifications@ashbyhq.com",
+                    },
+                    "target_label": "job-related",
+                    "note": "Ashby interview workflow messages should be job-related and kept visible.",
+                    "excluded_message_id": "gmail-live-002",
+                    "reason": "",
+                }
+            )
+
+            saved = json.loads((storage_dir / "teaching_exclusions.json").read_text())
+            self.assertIn("Exception saved", result["acknowledgment"])
+            self.assertEqual(saved["exclusions"][0]["message_id"], "gmail-live-002")
+            self.assertEqual(result["preview"]["impact"]["matching_existing_count"], 0)
+
+    def test_teach_amendment_accepts_proposed_boundary(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": "Ashby <notifications@ashbyhq.com>",
+                        "subject": "Interview update",
+                        "snippet": "Status changed",
+                        "interpretation": "Informational message with no confident category.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    },
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-002",
+                        "sender": "Ashby <notifications@ashbyhq.com>",
+                        "subject": "Marketing newsletter from Ashby",
+                        "snippet": "Product updates",
+                        "interpretation": "Informational message with no confident category.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    },
+                ],
+            )
+            app = GmailCompanionApp(storage_dir)
+            exclusion = app.teach_exclude(
+                {
+                    "selected_context": {
+                        "provider": "gmail",
+                        "message_id": "gmail-live-001",
+                        "subject": "Interview update",
+                        "sender": "notifications@ashbyhq.com",
+                    },
+                    "target_label": "job-related",
+                    "note": "Ashby interview workflow messages should be job-related and kept visible.",
+                    "excluded_message_id": "gmail-live-002",
+                    "reason": "This one is a marketing newsletter, not an interview or recruiter message.",
+                }
+            )
+            result = app.teach_amendment(
+                {
+                    "selected_context": {
+                        "provider": "gmail",
+                        "message_id": "gmail-live-001",
+                        "subject": "Interview update",
+                        "sender": "notifications@ashbyhq.com",
+                    },
+                    "target_label": "job-related",
+                    "note": "Ashby interview workflow messages should be job-related and kept visible.",
+                    "amendment": exclusion["amendment_proposal"],
+                    "decision": "accept",
+                }
+            )
+
+            self.assertEqual(result["amendment_status"], "accepted")
+            self.assertIn("Updated the proposed rule boundary", result["acknowledgment"])
+            self.assertIn("except", result["preview"]["plain_english_rule"])
+            self.assertEqual(result["preview"]["impact"]["matching_existing_count"], 0)
+
+    def test_teach_apply_save_future_rule_only_does_not_write_gmail_or_relabel_existing(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            gmail_client = MockGmailLabelClient()
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": "Ashby <notifications@ashbyhq.com>",
+                        "subject": "Interview update",
+                        "snippet": "Status changed",
+                        "interpretation": "Informational message with no confident category.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                ],
+            )
+
+            result = GmailCompanionApp(
+                storage_dir,
+                gmail_client_factory=lambda account_id, credentials_dir, client_secret_path, required_scope: gmail_client,
+            ).teach_apply(
+                {
+                    "selected_context": {
+                        "provider": "gmail",
+                        "message_id": "gmail-live-001",
+                        "subject": "Interview update",
+                        "sender": "notifications@ashbyhq.com",
+                    },
+                    "target_label": "job-related",
+                    "note": "Ashby interview workflow messages should be job-related and kept visible.",
+                    "mode": "save-future-rule",
+                }
+            )
+
+            candidate_payload = json.loads((storage_dir / "candidate_changes.json").read_text())
+            batch_one = json.loads((storage_dir / "batches" / "founder-test-batch-1.json").read_text())
+
+            self.assertIn("saved a future rule", result["acknowledgment"])
+            self.assertEqual(candidate_payload["candidates"][0]["kind"], "future-rule")
+            self.assertEqual(candidate_payload["candidates"][0]["metadata"]["rules"][0]["label"], "job-related")
+            self.assertEqual(batch_one["items"][0]["final_labels"], [])
+            self.assertEqual(gmail_client.calls, [])
+            self.assertEqual(result["gmail_write_through"]["messages_written"], 0)
+            self.assertEqual(result["gmail_write_through"]["mode"], "no-gmail-write-future-rule-only")
+            self.assertEqual(
+                result["outcome"],
+                {
+                    "state": "future-rule-saved",
+                    "scope": "future-rule",
+                    "current_email_changed_locally": False,
+                    "current_email_written_to_gmail": False,
+                    "matching_existing_changed_locally": 0,
+                    "future_rule_saved": True,
+                    "gmail_write_mode": "no-gmail-write-future-rule-only",
+                    "gmail_label_write_failed": 0,
+                },
+            )
+
+    def test_teach_apply_current_only_writes_current_message_to_gmail(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            gmail_client = MockGmailLabelClient()
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": "Boss <boss@example.com>",
+                        "subject": "Need a response",
+                        "snippet": "Please reply",
+                        "interpretation": "Informational message with no confident category.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                ],
+            )
+
+            result = GmailCompanionApp(
+                storage_dir,
+                gmail_client_factory=lambda account_id, credentials_dir, client_secret_path, required_scope: gmail_client,
+            ).teach_apply(
+                {
+                    "selected_context": {
+                        "provider": "gmail",
+                        "message_id": "gmail-live-001",
+                        "subject": "Need a response",
+                        "sender": "boss@example.com",
+                    },
+                    "target_label": "reply-needed",
+                    "note": "This needs a reply.",
+                    "mode": "current-only",
+                }
+            )
+
+            self.assertIn(("replace_threadwise_labels", "gmail-live-001", [gmail_client.labels["EA/ReplyNeeded"]], "EA/"), gmail_client.calls)
+            self.assertEqual(result["gmail_write_through"]["messages_written"], 1)
+            self.assertEqual(result["gmail_write_through"]["inbox_removed"], 0)
+            self.assertEqual(
+                result["outcome"],
+                {
+                    "state": "changed",
+                    "scope": "current-email",
+                    "current_email_changed_locally": True,
+                    "current_email_written_to_gmail": True,
+                    "matching_existing_changed_locally": 0,
+                    "future_rule_saved": False,
+                    "gmail_write_mode": "applied",
+                    "gmail_label_write_failed": 0,
+                },
+            )
+            self.assertIn("relabeled only this email", result["acknowledgment"])
+
+    def test_teach_preview_reports_inbox_backfill_estimate(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            gmail_client = MockGmailLabelClient(
+                search_results_by_query={
+                    "from:notifications@ashbyhq.com {job jobs recruiter interview application}": [
+                        f"remote-{index}" for index in range(205)
+                    ]
+                }
+            )
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": "Ashby <notifications@ashbyhq.com>",
+                        "subject": "Interview update",
+                        "snippet": "Status changed",
+                        "interpretation": "Informational message with no confident category.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                ],
+            )
+
+            preview = GmailCompanionApp(
+                storage_dir,
+                gmail_client_factory=lambda account_id, credentials_dir, client_secret_path, required_scope: gmail_client,
+            ).teach_preview(
+                {
+                    "selected_context": {
+                        "provider": "gmail",
+                        "message_id": "gmail-live-001",
+                        "subject": "Interview update",
+                        "sender": "notifications@ashbyhq.com",
+                    },
+                    "target_label": "job-related",
+                    "note": "Ashby interview workflow messages should be job-related and kept visible.",
+                }
+            )
+
+            self.assertEqual(
+                preview["inbox_backfill"],
+                {
+                    "available": True,
+                    "estimated_count": 205,
+                    "is_capped": False,
+                    "requires_confirmation": True,
+                    "query": "from:notifications@ashbyhq.com {job jobs recruiter interview application}",
+                },
+            )
+
+    def test_teach_apply_apply_included_backfills_matching_inbox_messages(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            gmail_client = MockGmailLabelClient(
+                search_results_by_query={
+                    "from:notifications@ashbyhq.com {job jobs recruiter interview application}": [
+                        "gmail-live-001",
+                        "gmail-remote-003",
+                    ]
+                }
+            )
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": "Ashby <notifications@ashbyhq.com>",
+                        "subject": "Interview update",
+                        "snippet": "Status changed",
+                        "interpretation": "Informational message with no confident category.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                ],
+            )
+
+            result = GmailCompanionApp(
+                storage_dir,
+                gmail_client_factory=lambda account_id, credentials_dir, client_secret_path, required_scope: gmail_client,
+            ).teach_apply(
+                {
+                    "selected_context": {
+                        "provider": "gmail",
+                        "message_id": "gmail-live-001",
+                        "subject": "Interview update",
+                        "sender": "notifications@ashbyhq.com",
+                    },
+                    "target_label": "job-related",
+                    "note": "Ashby interview workflow messages should be job-related and kept visible.",
+                    "mode": "apply-included",
+                }
+            )
+
+            self.assertIn(("search_message_ids", "from:notifications@ashbyhq.com {job jobs recruiter interview application}", 1000), gmail_client.calls)
+            self.assertIn(("replace_threadwise_labels", "gmail-remote-003", [gmail_client.labels["EA/Work"]], "EA/"), gmail_client.calls)
+            self.assertEqual(result["gmail_write_through"]["remote_match_count"], 1)
+            self.assertEqual(result["gmail_write_through"]["remote_applied_count"], 1)
+            self.assertEqual(result["gmail_write_through"]["messages_written"], 2)
+
+    def test_teach_apply_can_disable_gmail_write_through_for_simulator(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            gmail_client = MockGmailLabelClient()
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": "Boss <boss@example.com>",
+                        "subject": "Need a response",
+                        "snippet": "Please reply",
+                        "interpretation": "Informational message with no confident category.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                ],
+            )
+
+            result = GmailCompanionApp(
+                storage_dir,
+                gmail_client_factory=lambda account_id, credentials_dir, client_secret_path, required_scope: gmail_client,
+                gmail_write_through_enabled=False,
+            ).teach_apply(
+                {
+                    "selected_context": {
+                        "provider": "gmail",
+                        "message_id": "gmail-live-001",
+                        "subject": "Need a response",
+                        "sender": "boss@example.com",
+                    },
+                    "target_label": "reply-needed",
+                    "note": "This needs a reply.",
+                    "mode": "current-only",
+                }
+            )
+
+            self.assertEqual(gmail_client.calls, [])
+            self.assertEqual(result["gmail_write_through"]["mode"], "disabled")
+            self.assertEqual(result["gmail_write_through"]["messages_written"], 0)
+
+    def test_teach_apply_future_only_calls_out_no_existing_rewrite(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            gmail_client = MockGmailLabelClient()
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": "Alerts <alerts@example.com>",
+                        "subject": "System reminder",
+                        "snippet": "Reminder",
+                        "interpretation": "Informational message with no confident category.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                ],
+            )
+
+            result = GmailCompanionApp(
+                storage_dir,
+                gmail_client_factory=lambda account_id, credentials_dir, client_secret_path, required_scope: gmail_client,
+            ).teach_apply(
+                {
+                    "selected_context": {
+                        "provider": "gmail",
+                        "message_id": "gmail-live-001",
+                        "subject": "System reminder",
+                        "sender": "alerts@example.com",
+                    },
+                    "target_label": "account-security",
+                    "note": "Future alerts from this sender should be account-related.",
+                    "mode": "future-only",
+                }
+            )
+
+            self.assertIn("saved a future rule", result["acknowledgment"])
+            self.assertIn("No other existing stored emails were rewritten", result["acknowledgment"])
+
+    def test_teach_apply_returns_fast_sidebar_state_and_starts_follow_up_refresh(self) -> None:
+        app = GmailCompanionApp(Path("/tmp/example"))
+        selected_context = {
+            "provider": "gmail",
+            "message_id": "gmail-live-001",
+            "subject": "Need a response",
+            "sender": "boss@example.com",
+        }
+        teaching_result = {
+            "mode": "current-only",
+            "matched_existing_count": 0,
+            "proposal": None,
+            "preview_matches": [],
+            "semantic_rule": {"target_label": "reply-needed", "sender": "boss@example.com"},
+            "current": {
+                "account_id": "founder-test",
+                "message_id": "gmail-live-001",
+                "subject": "Need a response",
+                "sender": "boss@example.com",
+            },
+            "future_rule_saved": False,
+        }
+        write_through = {
+            "mode": "mock",
+            "messages_written": 1,
+            "label_write_failed": 0,
+            "label_write_skipped": 0,
+            "inbox_removed": 0,
+            "inbox_remove_failed": 0,
+        }
+        fast_sidebar = {
+            "selected_email": {"message_id": "gmail-live-001"},
+            "daily_summary": {"processed_count": 12},
+            "ui_state": {
+                "async_follow_up": {
+                    "kind": "teach-apply-refresh",
+                    "state": "working",
+                    "label": "Background refresh running",
+                    "message": "Refreshing the queue summary and follow-up context in the background.",
+                }
+            },
+        }
+
+        with (
+            patch("src.gmail_companion_ui.apply_sidebar_teaching", return_value=teaching_result),
+            patch.object(app, "_write_teach_result_to_gmail", return_value=write_through),
+            patch.object(app, "_teach_apply_acknowledgment", return_value="Lesson applied."),
+            patch.object(app, "_teach_apply_outcome", return_value={"future_rule_saved": False}),
+            patch.object(app, "_start_teach_apply_follow_up_refresh") as start_follow_up_mock,
+            patch.object(app, "_fast_sidebar_state", return_value=fast_sidebar) as fast_sidebar_mock,
+        ):
+            result = app.teach_apply(
+                {
+                    "selected_context": selected_context,
+                    "target_label": "reply-needed",
+                    "note": "This needs a reply.",
+                    "mode": "current-only",
+                }
+            )
+
+        start_follow_up_mock.assert_called_once_with(selected_context)
+        fast_sidebar_mock.assert_called_once_with(selected_context)
+        self.assertEqual(result["sidebar_state"]["ui_state"]["async_follow_up"]["state"], "working")
+        self.assertEqual(result["acknowledgment"], "Lesson applied.")
+
+    def test_teach_apply_follow_up_refresh_marks_done_after_rebuild(self) -> None:
+        app = GmailCompanionApp(Path("/tmp/example"))
+        selected_context = {"provider": "gmail", "message_id": "gmail-live-001"}
+        app._set_async_follow_up_state(
+            {
+                "kind": "teach-apply-refresh",
+                "state": "working",
+                "label": "Background refresh running",
+                "message": "Refreshing the queue summary and follow-up context in the background.",
+            }
+        )
+
+        with (
+            patch.object(app, "_invalidate_companion_caches") as invalidate_mock,
+            patch.object(app, "sidebar_state", return_value={"selected_email": {}, "daily_summary": {}, "ui_state": {}}),
+            patch.object(app, "_build_harness_state", return_value={"sidebar_state": {"selected_email": {}}}),
+        ):
+            app._run_teach_apply_follow_up_refresh(selected_context)
+
+        invalidate_mock.assert_called_once()
+        self.assertEqual(app._async_follow_up_payload()["state"], "done")
+
+    def test_sidebar_state_exposes_recent_activity_feed_for_async_follow_up(self) -> None:
+        app = GmailCompanionApp(Path("/tmp/example"))
+        app._set_async_follow_up_state(
+            {
+                "kind": "teach-apply-refresh",
+                "state": "retry",
+                "label": "Background refresh stalled",
+                "message": "Queue summary refresh stalled: timeout",
+            }
+        )
+
+        state = app.sidebar_state({})
+
+        self.assertEqual(state["ui_state"]["activity_feed"][0]["kind"], "teach-apply-refresh")
+        self.assertEqual(state["ui_state"]["activity_feed"][0]["state"], "retry")
+        self.assertEqual(state["ui_state"]["activity_feed"][0]["label"], "Background refresh stalled")
+
+    def test_install_page_is_extension_first_and_mentions_gmail_surface(self) -> None:
+        app = GmailCompanionApp(Path("/tmp/example"))
+        page = app.render_install_page("127.0.0.1:8021")
+
+        self.assertIn("Load unpacked", page)
+        self.assertIn("brave://extensions", page)
+        self.assertIn("The product itself lives in Gmail", page)
+        self.assertNotIn("javascript:", page)
+        self.assertNotIn("Copy launcher", page)
+
+    def test_selected_email_contract_endpoint_shape_is_stable(self) -> None:
+        app = GmailCompanionApp(Path("/tmp/example"))
+        status_code, payload = self._get_contract(app)
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(payload["contract_version"], "gmail-companion-selected-email-v1")
+        self.assertIn("message_id", payload["selected_context_fields"])
+        self.assertIn("selected_email", payload["sidebar_state_fields"])
+
+    def test_health_endpoint_reports_service_identity_and_stays_read_only(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": "Airline <alerts@airline.example>",
+                        "subject": "Flight check-in closes tonight",
+                        "snippet": "Check in before 21:00.",
+                        "interpretation": "Travel reminder.",
+                        "review_state": "reviewed",
+                        "final_labels": ["travel"],
+                        "applied_labels": ["travel"],
+                    }
+                ],
+                raw_messages=[
+                    {
+                        "id": "gmail-live-001",
+                        "payload": {
+                            "headers": [
+                                {"name": "From", "value": "Airline <alerts@airline.example>"},
+                            ]
+                        },
+                        "labelIds": ["INBOX"],
+                    }
+                ],
+            )
+            app = GmailCompanionApp(storage_dir)
+            handler = _FakeRequestHandler("/api/health", method="GET")
+
+            app.handle_request(handler)
+            payload = json.loads(handler.wfile.value.decode("utf-8"))
+
+            self.assertEqual(handler.code, 200)
+            self.assertEqual(payload["schema_version"], 1)
+            self.assertEqual(payload["service_id"], "threadwise-gmail-companion")
+            self.assertEqual(payload["service_name"], "Threadwise Gmail Companion")
+            self.assertEqual(payload["status"], "ready")
+            self.assertEqual(payload["bound_origin"], "http://127.0.0.1:8021")
+            self.assertEqual(payload["dashboard_path"], "/daily-dashboard#run-gmail-check")
+            self.assertEqual(payload["health_path"], "/api/health")
+            self.assertEqual(payload["storage_summary"]["storage_dir_name"], storage_dir.name)
+            self.assertEqual(payload["storage_summary"]["batch_count"], 1)
+            self.assertEqual(payload["storage_summary"]["report_count"], 0)
+            self.assertNotIn("items", payload)
+            self.assertNotIn("body", payload)
+            self.assertNotIn("raw_messages", payload)
+            self.assertNotIn("credentials", payload)
+            self.assertNotIn("oauth", payload)
+            self.assertNotIn("token", payload)
+
+    def test_harness_state_reuses_short_lived_cache_for_same_context(self) -> None:
+        app = GmailCompanionApp(Path("/tmp/example"))
+        context = {"provider": "gmail", "message_id": "cached-msg", "selected_at": "2026-07-10T10:00:00Z"}
+
+        with patch("src.gmail_companion_ui.build_companion_runtime_payload") as runtime_mock:
+            runtime_mock.return_value = {"items": []}
+            with patch("src.gmail_companion_ui.selected_email_understanding_state") as understanding_mock:
+                understanding_mock.side_effect = [
+                    {
+                        "understanding_state": "reading",
+                        "understanding_label": "Reading",
+                        "understanding_message": "Reading this email...",
+                    },
+                    {
+                        "understanding_state": "ready",
+                        "understanding_label": "Ready",
+                        "understanding_message": "Threadwise is ready with the current email.",
+                    },
+                ]
+                first = app.harness_state(context)
+                second = app.harness_state(context)
+
+        self.assertNotEqual(first["sidebar_state"]["selected_email"]["understanding_state"], second["sidebar_state"]["selected_email"]["understanding_state"])
+        self.assertEqual(runtime_mock.call_count, 1)
+        self.assertEqual(first["sidebar_state"]["selected_email"]["understanding_state"], "reading")
+        self.assertEqual(second["sidebar_state"]["selected_email"]["understanding_state"], "ready")
+
+    def test_harness_state_endpoint_includes_cors_headers(self) -> None:
+        app = GmailCompanionApp(Path("/tmp/example"))
+        handler = _FakeRequestHandler("/api/harness-state", method="GET")
+
+        app.handle_request(handler)
+
+        self.assertEqual(handler.code, 200)
+        self.assertEqual(handler.sent_headers["Access-Control-Allow-Origin"], "*")
+        self.assertEqual(handler.sent_headers["Access-Control-Allow-Methods"], "GET, POST, OPTIONS")
+        self.assertEqual(handler.sent_headers["Access-Control-Allow-Headers"], "Content-Type")
+        self.assertEqual(handler.sent_headers["Access-Control-Allow-Private-Network"], "true")
+
+    def test_options_request_returns_cors_preflight_headers(self) -> None:
+        app = GmailCompanionApp(Path("/tmp/example"))
+        handler = _FakeRequestHandler("/api/teach-apply", method="OPTIONS")
+
+        app.handle_request(handler)
+
+        self.assertEqual(handler.code, 204)
+        self.assertEqual(handler.sent_headers["Access-Control-Allow-Origin"], "*")
+        self.assertEqual(handler.sent_headers["Access-Control-Allow-Methods"], "GET, POST, OPTIONS")
+        self.assertEqual(handler.sent_headers["Access-Control-Allow-Headers"], "Content-Type")
+        self.assertEqual(handler.sent_headers["Access-Control-Allow-Private-Network"], "true")
+        self.assertEqual(handler.sent_headers["Content-Length"], "0")
+
+    def _get_contract(self, app: GmailCompanionApp) -> tuple[int, dict]:
+        class _HeaderOnlyHandler:
+            path = "/api/selected-email-contract"
+            command = "GET"
+            headers = {}
+            response = None
+
+            def send_response(self, code):
+                self.code = code
+
+            def send_header(self, *_args):
+                return
+
+            def end_headers(self):
+                return
+
+            class _Writer:
+                def write(self, value):
+                    self.value = value
+
+            wfile = _Writer()
+
+        handler = _HeaderOnlyHandler()
+        app.handle_request(handler)
+        return handler.code, json.loads(handler.wfile.value.decode("utf-8"))
+
+    def _write_batch(self, storage_dir: Path, batch_id: str, items: list[dict], raw_messages: list[dict] | None = None) -> None:
+        batch_dir = storage_dir / "batches"
+        batch_dir.mkdir(parents=True, exist_ok=True)
+        (batch_dir / f"{batch_id}.json").write_text(
+            json.dumps(
+                {
+                    "batch_id": batch_id,
+                    "account_id": "founder-test",
+                    "provider": "gmail",
+                    "items": items,
+                    "raw_messages": raw_messages or [],
+                },
+                indent=2,
+            )
+        )
+
+    def _write_daily_report(self, storage_dir: Path, batch_id: str, attention_items: list[dict]) -> None:
+        reports_dir = storage_dir / "reports"
+        reports_dir.mkdir(parents=True, exist_ok=True)
+        grouped_counts = {
+            "needs_attention_now": 0,
+            "possible_attention": 0,
+            "not_attention": 0,
+            "insufficient_context": 0,
+        }
+        for item in attention_items:
+            level = item.get("level")
+            if level in grouped_counts:
+                grouped_counts[level] += 1
+        (reports_dir / f"{batch_id}_daily_report.json").write_text(
+            json.dumps(
+                {
+                    "provider": "gmail",
+                    "account_id": "founder-test",
+                    "batch_id": batch_id,
+                    "report_date": "2026-07-01",
+                    "processed_count": 2,
+                    "inbox_removed_count": 0,
+                    "unlabeled_count": 0,
+                    "label_counts": {},
+                    "attention": {
+                        "schema_version": 1,
+                        "evaluated_message_count": 2,
+                        "lookback_window": {
+                            "latest_batch_id": batch_id,
+                            "stored_lookback_batch_ids": [],
+                            "max_evaluated_messages": 50,
+                        },
+                        "model": {"provider": "fake", "name": "fixture-attention-model"},
+                        "usage": {"input_tokens": 100, "output_tokens": 20, "estimated_cost_usd": 0.001},
+                        "grouped_counts": grouped_counts,
+                        "items": attention_items,
+                    },
+                },
+                indent=2,
+            )
+        )
+
+    def _write_attention_fixture(self, storage_dir: Path) -> None:
+        self._write_batch(
+            storage_dir,
+            "founder-test-batch-1",
+            items=[
+                {
+                    "source": "gmail",
+                    "account_id": "founder-test",
+                    "message_id": "gmail-live-001",
+                    "thread_id": "thread-001",
+                    "sender": "Airline <alerts@airline.example>",
+                    "subject": "Flight check-in closes tonight",
+                    "snippet": "Check in before 21:00.",
+                    "interpretation": "Travel reminder.",
+                    "review_state": "reviewed",
+                    "final_labels": ["travel"],
+                    "applied_labels": ["travel"],
+                },
+                {
+                    "source": "gmail",
+                    "account_id": "founder-test",
+                    "message_id": "gmail-live-002",
+                    "thread_id": "thread-002",
+                    "sender": "Recruiter <recruiter@example.com>",
+                    "subject": "Choose an interview slot",
+                    "snippet": "Please book a time next week.",
+                    "interpretation": "Hiring workflow.",
+                    "review_state": "reviewed",
+                    "final_labels": ["job-related"],
+                    "applied_labels": ["job-related"],
+                },
+            ],
+        )
+        self._write_daily_report(
+            storage_dir,
+            "founder-test-batch-1",
+            attention_items=[
+                {
+                    "message_id": "gmail-live-001",
+                    "thread_id": "thread-001",
+                    "level": "needs_attention_now",
+                    "category": "travel",
+                    "reason": "Check-in closes tonight.",
+                    "evidence": "Email says check-in closes at 21:00.",
+                    "source": "compact_payload",
+                    "handled_state": "appears_unhandled",
+                    "feedback_state": "unset",
+                    "gmail_mutation": "none",
+                }
+            ],
+        )
+
+
+class _FakeServer:
+    def __init__(self, server_port: int) -> None:
+        self.server_port = server_port
+        self.served = False
+        self.closed = False
+
+    def serve_forever(self) -> None:
+        self.served = True
+        raise KeyboardInterrupt
+
+    def server_close(self) -> None:
+        self.closed = True
+
+
+class _FakeRequestHandler:
+    def __init__(
+        self,
+        path: str,
+        *,
+        method: str,
+        json_body: dict | None = None,
+        form_body: dict | None = None,
+    ) -> None:
+        self.path = path
+        self.command = method
+        if form_body is not None:
+            from urllib.parse import urlencode
+
+            body = urlencode(form_body).encode("utf-8")
+            content_type = "application/x-www-form-urlencoded"
+        else:
+            body = json.dumps(json_body).encode("utf-8") if json_body is not None else b""
+            content_type = "application/json" if json_body is not None else ""
+        self.headers = {"Content-Length": str(len(body)), "Content-Type": content_type} if body else {}
+        self.server = SimpleNamespace(server_address=("127.0.0.1", 8021), server_port=8021)
+        self.sent_headers: dict[str, str] = {}
+        self.code = None
+        self.rfile = io.BytesIO(body)
+        self.wfile = self._Writer()
+
+    def send_response(self, code):
+        self.code = code
+
+    def send_header(self, key, value):
+        self.sent_headers[key] = value
+
+    def end_headers(self):
+        return
+
+    class _Writer:
+        def __init__(self) -> None:
+            self.value = b""
+
+        def write(self, value):
+            self.value += value

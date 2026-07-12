@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Threadwise</title>
+<style>
+  :root {
+    --ink: #241812;
+    --muted: #6c5b4f;
+    --paper: #fff7e8;
+    --paper-2: #f6ead2;
+    --panel: #fffdf7;
+    --line: #241812;
+    --orange: #ff7a1a;
+    --yellow: #ffc64a;
+    --green: #2eb67d;
+    --blue: #3d6df2;
+    --red: #f0524f;
+    --shadow: 5px 5px 0 #241812;
+    --soft-shadow: 2px 2px 0 rgba(36, 24, 18, .18);
+    --radius: 18px;
+    --radius-sm: 11px;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color: var(--ink);
+    background:
+      radial-gradient(circle at 18px 18px, rgba(36, 24, 18, .05) 2px, transparent 2px) 0 0 / 36px 36px,
+      linear-gradient(135deg, #f7efe0 0%, #fdfaf2 52%, #e7f3ee 100%);
+    display: grid;
+    place-items: center;
+    padding: 34px;
+  }
+
+  .stage {
+    width: min(1180px, 100%);
+    min-height: 690px;
+    display: grid;
+    grid-template-columns: 1fr 420px;
+    gap: 28px;
+    align-items: stretch;
+  }
+
+  .gmail-context {
+    border: 1px solid rgba(60, 64, 67, .22);
+    border-radius: 18px;
+    background: #fff;
+    overflow: hidden;
+    box-shadow: 0 24px 70px rgba(36, 24, 18, .08);
+  }
+
+  .gmail-top {
+    height: 64px;
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    padding: 0 18px 0 16px;
+    border-bottom: 1px solid #e8eaed;
+    background: #fff;
+  }
+
+  .hamburger {
+    width: 20px;
+    display: grid;
+    gap: 4px;
+  }
+
+  .hamburger span {
+    height: 2px;
+    border-radius: 999px;
+    background: #5f6368;
+  }
+
+  .gmail-wordmark {
+    font-size: 20px;
+    font-weight: 500;
+    color: #3c4043;
+    letter-spacing: -.02em;
+  }
+
+  .search {
+    height: 36px;
+    flex: 1;
+    border-radius: 10px;
+    background: #f1f3f4;
+    display: flex;
+    align-items: center;
+    padding: 0 14px;
+    color: #5f6368;
+    font-size: 13px;
+  }
+
+  .gmail-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: #5f6368;
+    font-size: 18px;
+  }
+
+  .demo-pill {
+    font-size: 12px;
+    font-weight: 700;
+    color: #1857e8;
+    background: #e6efff;
+    padding: 7px 12px;
+    border-radius: 999px;
+  }
+
+  .gmail-body {
+    display: grid;
+    grid-template-columns: 176px 1fr;
+    height: calc(100% - 64px);
+    background: #fff;
+  }
+
+  .nav {
+    padding: 12px 10px 16px 0;
+    background: #fff;
+  }
+
+  .compose {
+    margin: 0 0 12px 12px;
+    width: 124px;
+    height: 48px;
+    border-radius: 16px;
+    background: #c2e7ff;
+    color: #001d35;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 15px;
+    font-size: 14px;
+    font-weight: 500;
+    box-shadow: 0 1px 2px rgba(60,64,67,.2);
+  }
+
+  .nav div {
+    color: #3c4043;
+    margin: 1px 0;
+    font-size: 14px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 12px 0 24px;
+    border-radius: 0 999px 999px 0;
+  }
+
+  .nav .active {
+    color: #202124;
+    background: #fce8e6;
+    font-weight: 700;
+  }
+
+  .nav-count {
+    margin-left: auto;
+    color: #5f6368;
+    font-size: 12px;
+  }
+
+  .list {
+    min-width: 0;
+    border-left: 1px solid #f1f3f4;
+  }
+
+  .mail-toolbar {
+    height: 48px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 0 16px;
+    border-bottom: 1px solid #e8eaed;
+    color: #5f6368;
+    font-size: 13px;
+  }
+
+  .toolbar-spacer {
+    flex: 1;
+  }
+
+  .mail-tabs {
+    height: 46px;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    border-bottom: 1px solid #e8eaed;
+    color: #5f6368;
+    font-size: 13px;
+  }
+
+  .mail-tab {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 16px;
+    border-bottom: 3px solid transparent;
+  }
+
+  .mail-tab.active {
+    color: #d93025;
+    border-bottom-color: #d93025;
+    font-weight: 700;
+  }
+
+  .email {
+    height: 40px;
+    display: grid;
+    grid-template-columns: 22px 22px minmax(104px, .28fr) minmax(0, 1fr) 52px;
+    gap: 10px;
+    align-items: center;
+    border-bottom: 1px solid #f1f3f4;
+    color: #202124;
+    font-size: 13px;
+    padding: 0 12px 0 14px;
+  }
+
+  .email.selected {
+    background: #f2f6fc;
+    box-shadow: inset 3px 0 0 #d93025;
+  }
+
+  .email:hover {
+    box-shadow: 0 1px 4px rgba(60,64,67,.18);
+    position: relative;
+    z-index: 1;
+  }
+
+  .box {
+    width: 14px;
+    height: 14px;
+    border: 2px solid #bdc1c6;
+    border-radius: 2px;
+  }
+
+  .star {
+    color: #bdc1c6;
+    font-size: 16px;
+    line-height: 1;
+  }
+
+  .sender {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 700;
+  }
+
+  .message-line {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .snippet {
+    color: #5f6368;
+    font-weight: 400;
+  }
+
+  .time {
+    color: #5f6368;
+    font-size: 12px;
+    text-align: right;
+  }
+
+  .email b { color: #202124; font-weight: 700; }
+
+  .threadwise {
+    position: relative;
+    border: 3px solid var(--line);
+    border-radius: 22px;
+    background: var(--paper);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+
+  .threadwise::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: .24;
+    background:
+      radial-gradient(circle at 12px 12px, rgba(36,24,18,.18) 1.2px, transparent 1.4px) 0 0 / 18px 18px;
+    mix-blend-mode: multiply;
+  }
+
+  .tw-header {
+    position: relative;
+    display: grid;
+    grid-template-columns: 52px 1fr auto;
+    gap: 12px;
+    align-items: center;
+    padding: 17px 18px;
+    border-bottom: 3px solid var(--line);
+    background: #fff4d7;
+  }
+
+  .badge {
+    width: 42px;
+    height: 42px;
+    border: 2px solid var(--line);
+    border-radius: 12px;
+    background: #fff8df;
+    display: grid;
+    place-items: center;
+    box-shadow: 3px 3px 0 var(--line);
+    overflow: hidden;
+  }
+
+  .badge img {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: cover;
+  }
+
+  .brand-stack {
+    min-width: 0;
+  }
+
+  .title {
+    font-weight: 840;
+    letter-spacing: -.04em;
+    font-size: 22px;
+    line-height: 1;
+  }
+
+  .brand-line {
+    margin-top: 5px;
+    color: #ad6400;
+    font-family: ui-serif, Georgia, "Times New Roman", serif;
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: .13em;
+  }
+
+  .minimize {
+    border: 2px solid var(--line);
+    background: #e9efe2;
+    border-radius: 11px;
+    font-weight: 760;
+    padding: 9px 12px;
+    box-shadow: 2px 2px 0 var(--line);
+  }
+
+  .panel-content {
+    position: relative;
+    padding: 14px;
+  }
+
+  .hero-strip {
+    position: relative;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 14px;
+    align-items: start;
+    padding: 16px;
+    margin-bottom: 13px;
+    border: 3px solid var(--line);
+    border-radius: var(--radius);
+    background: #fffdf7;
+    box-shadow: var(--soft-shadow);
+  }
+
+  .kicker {
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: .14em;
+    font-weight: 820;
+    text-transform: uppercase;
+  }
+
+  .subject {
+    margin-top: 7px;
+    font-size: 23px;
+    line-height: 1.04;
+    letter-spacing: -.015em;
+    font-weight: 840;
+  }
+
+  .state-line {
+    margin-top: 10px;
+    color: var(--muted);
+    line-height: 1.35;
+    font-size: 14px;
+    font-weight: 650;
+  }
+
+  .chips {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+  }
+
+  .chip {
+    border: 2px solid var(--line);
+    border-radius: 999px;
+    padding: 7px 10px;
+    background: #f1eadf;
+    font-size: 12px;
+    font-weight: 760;
+    box-shadow: 2px 2px 0 rgba(36,24,18,.28);
+  }
+
+  .chip.blue { background: #dfe9ff; color: #1b47c4; }
+  .chip.green { background: #dff8ed; color: #09633c; }
+
+  .teach {
+    border: 3px solid var(--line);
+    border-radius: var(--radius);
+    background: #ffe1a3;
+    box-shadow: var(--soft-shadow);
+    overflow: hidden;
+    margin-bottom: 13px;
+  }
+
+  .teach-top {
+    padding: 12px 13px 10px;
+    border-bottom: 3px solid var(--line);
+    background: #ffc64a;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .teach-title {
+    font-size: 11px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    font-weight: 820;
+  }
+
+  .stamp {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid var(--line);
+    border-radius: 999px;
+    background: #fff7e8;
+    padding: 5px 8px;
+    font-size: 11px;
+    font-weight: 760;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  .teach-body {
+    padding: 13px;
+  }
+
+  .diff-card {
+    border: 2px solid var(--line);
+    border-radius: 13px;
+    background: #fff8e8;
+    padding: 12px;
+  }
+
+  .diff-title {
+    font-weight: 820;
+    margin-bottom: 9px;
+  }
+
+  .route {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 18px;
+    font-weight: 820;
+    letter-spacing: -.03em;
+  }
+
+  .route .from, .route .to {
+    border: 2px solid var(--line);
+    border-radius: 999px;
+    padding: 7px 10px;
+    background: white;
+  }
+
+  .route .to {
+    background: #dbf7e7;
+  }
+
+  .copy {
+    color: var(--muted);
+    font-size: 14px;
+    margin-top: 9px;
+    line-height: 1.35;
+  }
+
+  .action-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+  }
+
+  button {
+    cursor: default;
+    font: inherit;
+  }
+
+  .btn {
+    border: 3px solid var(--line);
+    border-radius: 11px;
+    padding: 10px 12px;
+    font-size: 12px;
+    font-weight: 820;
+    box-shadow: 3px 3px 0 var(--line);
+    background: #fffdf7;
+  }
+
+  .btn.primary { background: var(--green); color: #081f14; }
+  .btn.apply { background: var(--blue); color: white; }
+  .btn.secondary { background: #f1eadf; }
+
+  .stats {
+    border: 3px solid var(--line);
+    border-radius: var(--radius);
+    background: #e8f0de;
+    box-shadow: var(--soft-shadow);
+    padding: 13px;
+  }
+
+  .stats-head {
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: .14em;
+    font-weight: 820;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 9px;
+  }
+
+  .stat {
+    border: 2px solid var(--line);
+    border-radius: 13px;
+    background: #fffdf7;
+    padding: 11px;
+    box-shadow: 2px 2px 0 rgba(36,24,18,.18);
+  }
+
+  .stat b {
+    display: block;
+    font-size: 24px;
+    letter-spacing: -.05em;
+    line-height: 1;
+  }
+
+  .stat span {
+    display: block;
+    color: var(--muted);
+    margin-top: 5px;
+    font-weight: 650;
+  }
+
+  @media (max-width: 980px) {
+    .stage { grid-template-columns: 1fr; }
+    .gmail-context { display: none; }
+  }
+</style>
+</head>
+<body>
+  <main class="stage">
+    <section class="gmail-context" aria-label="Gmail context">
+      <div class="gmail-top">
+        <div class="hamburger" aria-hidden="true"><span></span><span></span><span></span></div>
+        <div class="gmail-wordmark">Gmail</div>
+        <div class="search">Search mail</div>
+        <div class="gmail-actions" aria-hidden="true">
+          <span>?</span>
+          <span>⚙</span>
+        </div>
+        <div class="demo-pill">Demo account</div>
+      </div>
+      <div class="gmail-body">
+        <nav class="nav">
+          <div class="compose"><span>＋</span> Compose</div>
+          <div class="active">Inbox <span class="nav-count">14</span></div>
+          <div>Starred</div>
+          <div>Snoozed</div>
+          <div>Sent</div>
+          <div>Drafts</div>
+          <div>EA/Work</div>
+          <div>EA/Promotions</div>
+        </nav>
+        <div class="list">
+          <div class="mail-toolbar">
+            <span class="box"></span>
+            <span>↻</span>
+            <span>⋮</span>
+            <span class="toolbar-spacer"></span>
+            <span>1-50 of 128</span>
+          </div>
+          <div class="mail-tabs">
+            <div class="mail-tab active">▣ Primary</div>
+            <div class="mail-tab">◫ Promotions</div>
+            <div class="mail-tab">◌ Updates</div>
+          </div>
+          <div class="email selected">
+            <span class="box"></span>
+            <span class="star">☆</span>
+            <span class="sender">LinkedIn Jobs</span>
+            <span class="message-line"><b>Senior AI product roles this week</b> <span class="snippet">- New recommendations based on your profile and saved searches</span></span>
+            <span class="time">9:18 AM</span>
+          </div>
+          <div class="email">
+            <span class="box"></span>
+            <span class="star">☆</span>
+            <span class="sender">Railway</span>
+            <span class="message-line"><b>Your trip receipt</b> <span class="snippet">- Booking confirmation and travel details for tomorrow</span></span>
+            <span class="time">8:55 AM</span>
+          </div>
+          <div class="email">
+            <span class="box"></span>
+            <span class="star">☆</span>
+            <span class="sender">Cloud Billing</span>
+            <span class="message-line"><b>Monthly invoice available</b> <span class="snippet">- Your account statement is ready to view</span></span>
+            <span class="time">8:20 AM</span>
+          </div>
+          <div class="email">
+            <span class="box"></span>
+            <span class="star">☆</span>
+            <span class="sender">Northstar Weekly</span>
+            <span class="message-line"><b>Five essays worth reading</b> <span class="snippet">- A concise roundup for product builders</span></span>
+            <span class="time">7:46 AM</span>
+          </div>
+          <div class="email">
+            <span class="box"></span>
+            <span class="star">☆</span>
+            <span class="sender">GitHub</span>
+            <span class="message-line"><b>Security alert resolved</b> <span class="snippet">- Dependabot closed one vulnerability in your repo</span></span>
+            <span class="time">7:12 AM</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="threadwise" aria-label="Threadwise redesigned panel">
+      <header class="tw-header">
+        <div class="badge" aria-hidden="true">
+          <img src="../assets/brand/threadwise-app-icon.png" alt="" />
+        </div>
+        <div class="brand-stack">
+          <div class="title">Threadwise</div>
+          <div class="brand-line">CLEAR THREADS. BETTER INBOX.</div>
+        </div>
+        <button class="minimize">Minimize</button>
+      </header>
+
+      <div class="panel-content">
+        <section class="hero-strip">
+          <div>
+            <div class="kicker">Agent view</div>
+            <div class="subject">LinkedIn job recommendations</div>
+            <div class="state-line">Threadwise filed this as <b>Promotions</b>. It stayed visible because the decision may need teaching.</div>
+            <div class="chips">
+              <span class="chip">Promotions</span>
+              <span class="chip blue">Kept visible</span>
+              <span class="chip green">Safe to teach</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="teach">
+          <div class="teach-top">
+            <div class="teach-title">Correct / teach</div>
+            <div class="stamp">12 matching emails</div>
+          </div>
+          <div class="teach-body">
+            <div class="diff-card">
+              <div class="diff-title">Correction preview</div>
+              <div class="route">
+                <span class="from">Promotions</span>
+                <span>→</span>
+                <span class="to">Work</span>
+              </div>
+              <div class="copy">LinkedIn job recommendations should be treated as work-adjacent. Apply the rule now, save it for future mail, or keep discussing.</div>
+            </div>
+            <div class="action-row">
+              <button class="btn primary">Use for future only</button>
+              <button class="btn apply">Apply to 12</button>
+              <button class="btn secondary">Keep discussing</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="stats">
+          <div class="stats-head">Today</div>
+          <div class="grid">
+            <div class="stat"><b>48</b><span>processed</span></div>
+            <div class="stat"><b>31</b><span>auto-handled</span></div>
+            <div class="stat"><b>5</b><span>need attention</span></div>
+            <div class="stat"><b>3</b><span>unsubscribe</span></div>
+          </div>
+        </section>
+      </div>
+    </aside>
+  </main>
+</body>
+</html>

@@ -1,0 +1,74 @@
+{
+  "messages": [
+    {
+      "id": "gmail-001",
+      "threadId": "thread-001",
+      "labelIds": ["INBOX", "UNREAD"],
+      "internalDate": "1781514000000",
+      "snippet": "Please review the budget update and reply today with your approval.",
+      "payload": {
+        "headers": [
+          {"name": "From", "value": "Manager <boss@example.com>"},
+          {"name": "Subject", "value": "Need your approval today"},
+          {"name": "Date", "value": "Mon, 15 Jun 2026 09:00:00 +0000"}
+        ]
+      }
+    },
+    {
+      "id": "gmail-002",
+      "threadId": "thread-002",
+      "labelIds": ["INBOX"],
+      "internalDate": "1781680800000",
+      "snippet": "We noticed a new sign-in to your account. If this was not you, secure your account now.",
+      "payload": {
+        "headers": [
+          {"name": "From", "value": "Bank <security@example.com>"},
+          {"name": "Subject", "value": "New sign-in detected"},
+          {"name": "Date", "value": "Wed, 17 Jun 2026 10:00:00 +0000"}
+        ]
+      }
+    },
+    {
+      "id": "gmail-003",
+      "threadId": "thread-003",
+      "labelIds": ["INBOX"],
+      "internalDate": "1781596800000",
+      "snippet": "Your recent order has shipped. View your tracking details and receipt online.",
+      "payload": {
+        "headers": [
+          {"name": "From", "value": "Store <orders@example.com>"},
+          {"name": "Subject", "value": "Your order is on the way"},
+          {"name": "Date", "value": "Tue, 16 Jun 2026 08:00:00 +0000"}
+        ]
+      }
+    },
+    {
+      "id": "gmail-004",
+      "threadId": "thread-004",
+      "labelIds": ["INBOX"],
+      "internalDate": "1781767800000",
+      "snippet": "This week's newsletter includes travel ideas, personal essays, and special promotions for members.",
+      "payload": {
+        "headers": [
+          {"name": "From", "value": "News <digest@example.com>"},
+          {"name": "Subject", "value": "Weekend reads and member offers"},
+          {"name": "Date", "value": "Thu, 18 Jun 2026 07:30:00 +0000"}
+        ]
+      }
+    },
+    {
+      "id": "gmail-005",
+      "threadId": "thread-005",
+      "labelIds": ["SENT"],
+      "internalDate": "1781688000000",
+      "snippet": "Sent items should not appear in the inbox fetch queue.",
+      "payload": {
+        "headers": [
+          {"name": "From", "value": "Me <me@example.com>"},
+          {"name": "Subject", "value": "Already sent"},
+          {"name": "Date", "value": "Wed, 17 Jun 2026 12:00:00 +0000"}
+        ]
+      }
+    }
+  ]
+}

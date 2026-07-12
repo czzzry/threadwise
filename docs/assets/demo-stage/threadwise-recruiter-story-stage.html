@@ -1,0 +1,1135 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Threadwise Recruiter Story Stage</title>
+  <style>
+    :root {
+      --ink: #251910;
+      --muted: #6f675d;
+      --paper: #fbf2df;
+      --panel: #fffaf0;
+      --yellow: #ffc84d;
+      --blue: #3f65df;
+      --green: #2db47d;
+      --line: rgba(37, 25, 16, 0.18);
+      --shadow: 0 18px 44px rgba(37, 25, 16, 0.16);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    html,
+    body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 18px 18px, rgba(37,25,16,.055) 2px, transparent 2px) 0 0 / 36px 36px,
+        linear-gradient(135deg, #fbf4e7 0%, #f7ecd8 58%, #edf4ee 100%);
+      color: var(--ink);
+    }
+
+    body {
+      width: 1280px;
+      height: 800px;
+      position: relative;
+    }
+
+    .stage {
+      position: relative;
+      width: 1280px;
+      height: 800px;
+      overflow: hidden;
+    }
+
+    .scene {
+      position: absolute;
+      inset: 0;
+      opacity: var(--opacity, 0);
+      transform: translateY(var(--y, 0)) scale(var(--scale, 1));
+    }
+
+    .narration {
+      position: absolute;
+      z-index: 40;
+      left: 52px;
+      top: 662px;
+      width: 720px;
+      min-height: 72px;
+      padding: 12px 18px;
+      border-radius: 0 24px 24px 0;
+      background: linear-gradient(90deg, rgba(255, 250, 240, 0.96) 0%, rgba(255, 250, 240, 0.86) 72%, rgba(255, 250, 240, 0) 100%);
+      color: #1f1711;
+      font-size: 29px;
+      line-height: 1.06;
+      font-weight: 900;
+      text-shadow: 0 2px 0 rgba(255, 250, 240, 0.98), 0 16px 28px rgba(37, 25, 16, 0.16);
+      opacity: var(--narration-opacity, 1);
+      transform: translateY(var(--narration-y, 0));
+    }
+
+    .app-frame {
+      position: absolute;
+      left: 50px;
+      top: 34px;
+      width: 1185px;
+      height: 728px;
+      display: grid;
+      grid-template-columns: 730px 1fr;
+      gap: 28px;
+    }
+
+    .gmail {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid #d8dee5;
+      border-radius: 16px;
+      background: #fff;
+      box-shadow: 0 10px 30px rgba(55, 65, 81, 0.08);
+    }
+
+    .gmail-head {
+      height: 64px;
+      display: grid;
+      grid-template-columns: 46px 90px 1fr 150px;
+      align-items: center;
+      gap: 8px;
+      padding: 0 20px;
+      border-bottom: 1px solid #e5e7eb;
+      color: #3c4043;
+      font-size: 22px;
+      font-weight: 640;
+    }
+
+    .hamburger,
+    .help,
+    .settings {
+      font-size: 22px;
+      font-weight: 760;
+      text-align: center;
+      color: #3c4043;
+    }
+
+    .search {
+      font-weight: 680;
+    }
+
+    .account {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 20px;
+      font-weight: 700;
+    }
+
+    .gmail-body {
+      display: grid;
+      grid-template-columns: 178px 1fr;
+      min-height: 664px;
+    }
+
+    .nav {
+      padding: 26px 24px;
+      border-right: 1px solid #e5e7eb;
+      color: #3c4043;
+      font-size: 15px;
+      font-weight: 520;
+    }
+
+    .compose {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      margin-bottom: 30px;
+      color: #28536b;
+      font-weight: 720;
+    }
+
+    .nav-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 7px 0;
+    }
+
+    .nav-gap { height: 34px; }
+
+    .mailbox {
+      position: relative;
+      overflow: hidden;
+    }
+
+    .tabs {
+      height: 44px;
+      display: flex;
+      align-items: end;
+      gap: 26px;
+      padding: 0 18px 10px;
+      border-bottom: 1px solid #e5e7eb;
+      color: #5f6368;
+      font-weight: 720;
+    }
+
+    .tab-primary {
+      color: #d93025;
+      border-bottom: 3px solid #d93025;
+      padding-bottom: 10px;
+      margin-bottom: -10px;
+    }
+
+    .mail-list {
+      position: relative;
+      transform: translateX(var(--list-x, 0));
+      opacity: var(--list-opacity, 1);
+    }
+
+    .row {
+      height: 40px;
+      display: grid;
+      grid-template-columns: 28px 116px 1fr auto;
+      align-items: center;
+      gap: 8px;
+      padding: 0 12px 0 18px;
+      border-bottom: 1px solid #edf0f2;
+      color: #3c4043;
+      font-size: 14px;
+      background: #fff;
+    }
+
+    .row.selected {
+      background: #eaf2ff;
+      box-shadow: inset 3px 0 0 #d93025;
+    }
+
+    .check {
+      width: 12px;
+      height: 12px;
+      border: 2px solid #c4cbd3;
+      border-radius: 2px;
+    }
+
+    .subject {
+      color: #202124;
+      font-weight: 780;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .sender,
+    .time {
+      color: #5f6368;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .ea-label {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-left: 8px;
+      min-width: 58px;
+      height: 22px;
+      border: 1px solid #badbcc;
+      border-radius: 999px;
+      background: #e8f5ee;
+      color: #12704d;
+      font-size: 12px;
+      font-weight: 780;
+      opacity: var(--work-label-opacity, 0);
+      transform: translateY(var(--work-label-y, 4px));
+    }
+
+    .message-view {
+      position: absolute;
+      inset: 44px 0 0 0;
+      background: #fff;
+      padding: 34px 42px;
+      opacity: var(--message-opacity, 0);
+      transform: translateX(var(--message-x, 36px));
+      pointer-events: none;
+    }
+
+    .message-back {
+      color: #5f6368;
+      font-size: 20px;
+      margin-bottom: 24px;
+    }
+
+    .message-title {
+      margin: 0 0 12px;
+      font-size: 28px;
+      line-height: 1.18;
+      font-weight: 520;
+      color: #202124;
+    }
+
+    .message-meta {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 28px;
+      color: #5f6368;
+      font-size: 14px;
+    }
+
+    .message-body {
+      max-width: 500px;
+      color: #3c4043;
+      font-size: 16px;
+      line-height: 1.55;
+    }
+
+    .threadwise {
+      position: relative;
+      overflow: hidden;
+      border: 3px solid var(--ink);
+      border-radius: 18px;
+      background: var(--paper);
+      box-shadow: 8px 8px 0 rgba(37, 25, 16, 0.94);
+    }
+
+    .tw-head {
+      height: 80px;
+      display: grid;
+      grid-template-columns: 54px 1fr auto;
+      align-items: center;
+      gap: 12px;
+      padding: 16px 18px;
+      border-bottom: 3px solid var(--ink);
+      background: #fff3d6;
+    }
+
+    .tw-icon {
+      width: 44px;
+      height: 44px;
+      border: 3px solid var(--ink);
+      border-radius: 12px;
+      background: #ffd66f;
+      object-fit: cover;
+      box-shadow: 2px 2px 0 rgba(37, 25, 16, 0.16);
+    }
+
+    .brand {
+      font-size: 22px;
+      line-height: 1;
+      font-weight: 900;
+    }
+
+    .tagline {
+      margin-top: 4px;
+      color: #9a5a08;
+      font-size: 10px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    .minimize {
+      padding: 9px 14px;
+      border: 3px solid var(--ink);
+      border-radius: 14px;
+      background: #f7f2e4;
+      font-size: 16px;
+      font-weight: 620;
+    }
+
+    .tw-body {
+      position: relative;
+      height: 644px;
+      padding: 14px 16px;
+    }
+
+    .card {
+      border: 3px solid var(--ink);
+      border-radius: 17px;
+      background: #fffdf7;
+      box-shadow: 4px 4px 0 rgba(37, 25, 16, 0.12);
+    }
+
+    .agent-card {
+      padding: 16px;
+      min-height: 236px;
+    }
+
+    .kicker {
+      margin-bottom: 8px;
+      color: #6f675d;
+      font-size: 12px;
+      font-weight: 880;
+      text-transform: uppercase;
+    }
+
+    .agent-title {
+      font-size: 22px;
+      line-height: 1.05;
+      font-weight: 880;
+    }
+
+    .agent-sender {
+      margin-top: 7px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .agent-copy {
+      margin-top: 14px;
+      color: #735b40;
+      font-size: 16px;
+      line-height: 1.32;
+      font-weight: 760;
+    }
+
+    .pills {
+      display: flex;
+      gap: 9px;
+      margin-top: 14px;
+      flex-wrap: wrap;
+    }
+
+    .pill {
+      min-height: 34px;
+      padding: 7px 12px;
+      border: 2px solid var(--ink);
+      border-radius: 999px;
+      background: #fff8e8;
+      box-shadow: 2px 2px 0 rgba(37, 25, 16, 0.2);
+      color: var(--ink);
+      font-size: 13px;
+      font-weight: 820;
+    }
+
+    .pill.warn {
+      color: #8d4f03;
+      background: #fff0c6;
+    }
+
+    .teach-card {
+      position: absolute;
+      left: 16px;
+      right: 16px;
+      top: 264px;
+      border-color: var(--ink);
+      background: #fffdf7;
+      overflow: hidden;
+    }
+
+    .teach-head {
+      height: 42px;
+      display: flex;
+      align-items: center;
+      padding: 0 14px;
+      border-bottom: 3px solid var(--ink);
+      background: var(--yellow);
+      color: var(--ink);
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    .teach-body {
+      padding: 14px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .select {
+      height: 44px;
+      border: 2px solid var(--ink);
+      border-radius: 11px;
+      background: #fffdf7;
+      padding: 10px 12px;
+      font-size: 16px;
+    }
+
+    .textarea {
+      min-height: 72px;
+      border: 2px solid var(--ink);
+      border-radius: 11px;
+      background: #fffdf7;
+      padding: 12px;
+      color: #2f281f;
+      font-size: 15px;
+      line-height: 1.25;
+    }
+
+    .caret {
+      display: inline-block;
+      width: 6px;
+      height: 17px;
+      margin-left: 2px;
+      vertical-align: -3px;
+      background: var(--ink);
+      opacity: var(--caret-opacity, 0);
+    }
+
+    .agent-response {
+      border: 2px solid var(--ink);
+      border-radius: 13px;
+      background: #e9f6f1;
+      padding: 12px;
+      color: #243b31;
+      font-size: 14px;
+      line-height: 1.34;
+      font-weight: 720;
+      opacity: var(--response-opacity, 0);
+      transform: translateY(var(--response-y, 8px));
+    }
+
+    .agree-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      opacity: var(--agree-opacity, 0);
+      transform: translateY(var(--agree-y, 8px));
+    }
+
+    .agree-button {
+      width: fit-content;
+      padding: 10px 16px;
+      border: 2px solid var(--ink);
+      border-radius: 999px;
+      background: var(--blue);
+      color: #fff;
+      font-size: 15px;
+      font-weight: 880;
+      box-shadow: 3px 3px 0 var(--ink);
+      transform: scale(var(--agree-scale, 1));
+    }
+
+    .tiny-note {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 680;
+    }
+
+    .success-note {
+      position: absolute;
+      left: 16px;
+      right: 16px;
+      bottom: 16px;
+      padding: 12px 14px;
+      border-top: 2px solid rgba(37, 25, 16, 0.18);
+      color: #126844;
+      font-size: 15px;
+      font-weight: 820;
+      opacity: var(--success-opacity, 0);
+      transform: translateY(var(--success-y, 8px));
+    }
+
+    .unsubscribe-scene {
+      padding: 34px 50px;
+    }
+
+    .unsubscribe-page {
+      width: 1185px;
+      height: 728px;
+      border: 3px solid var(--ink);
+      border-radius: 18px;
+      background: var(--paper);
+      box-shadow: 8px 8px 0 var(--ink);
+      overflow: hidden;
+    }
+
+    .unsub-head {
+      height: 150px;
+      padding: 28px 28px 18px;
+      border-bottom: 3px solid var(--ink);
+      background: #fff3d6;
+    }
+
+    .unsub-brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 14px;
+    }
+
+    .unsub-icon {
+      width: 44px;
+      height: 44px;
+      border: 3px solid var(--ink);
+      border-radius: 12px;
+      background: #ffd66f;
+      object-fit: cover;
+    }
+
+    .unsub-title {
+      font-size: 30px;
+      font-weight: 900;
+      line-height: 1;
+    }
+
+    .unsub-subtitle {
+      color: var(--muted);
+      font-size: 16px;
+      font-weight: 640;
+    }
+
+    .stat-line {
+      display: flex;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .stat-pill {
+      padding: 8px 12px;
+      border: 2px solid var(--ink);
+      border-radius: 999px;
+      background: #fffdf7;
+      font-size: 13px;
+      font-weight: 820;
+    }
+
+    .sub-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      padding: 24px 28px;
+    }
+
+    .sub-card {
+      min-height: 308px;
+      padding: 18px;
+      border: 3px solid var(--ink);
+      border-radius: 16px;
+      background: #fffdf7;
+      box-shadow: 4px 4px 0 rgba(37, 25, 16, 0.12);
+      opacity: var(--sub-opacity, 1);
+      transform: translateY(var(--sub-y, 0));
+    }
+
+    .sub-card.removed {
+      opacity: var(--removed-opacity, 1);
+      transform: translateY(var(--removed-y, 0));
+    }
+
+    .sub-kicker {
+      color: #6f675d;
+      font-size: 12px;
+      font-weight: 880;
+      text-transform: uppercase;
+    }
+
+    .sub-name {
+      margin-top: 12px;
+      font-size: 24px;
+      line-height: 1.08;
+      font-weight: 900;
+    }
+
+    .sub-copy {
+      margin-top: 16px;
+      color: #3a3026;
+      font-size: 15px;
+      line-height: 1.45;
+      font-weight: 620;
+    }
+
+    .unsub-button {
+      margin-top: 28px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 42px;
+      padding: 0 15px;
+      border: 2px solid var(--ink);
+      border-radius: 12px;
+      background: var(--green);
+      color: var(--ink);
+      font-size: 15px;
+      font-weight: 860;
+      box-shadow: 3px 3px 0 var(--ink);
+      transform: scale(var(--unsub-scale, 1));
+    }
+
+    .confirm {
+      position: absolute;
+      left: 430px;
+      top: 252px;
+      width: 420px;
+      padding: 22px;
+      border: 3px solid var(--ink);
+      border-radius: 18px;
+      background: #fffdf7;
+      box-shadow: var(--shadow);
+      opacity: var(--confirm-opacity, 0);
+      transform: translateY(var(--confirm-y, 16px));
+    }
+
+    .confirm-title {
+      font-size: 24px;
+      line-height: 1.12;
+      font-weight: 900;
+    }
+
+    .confirm-copy {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.4;
+    }
+
+    .confirm-actions {
+      margin-top: 18px;
+      display: flex;
+      gap: 10px;
+    }
+
+    .yes-button,
+    .cancel-button {
+      min-height: 40px;
+      padding: 0 16px;
+      border: 2px solid var(--ink);
+      border-radius: 12px;
+      font-size: 15px;
+      font-weight: 860;
+    }
+
+    .yes-button {
+      background: var(--green);
+      transform: scale(var(--yes-scale, 1));
+    }
+
+    .cancel-button {
+      background: #fff8e8;
+    }
+
+    .roadmap-scene {
+      padding: 34px 50px;
+    }
+
+    .roadmap-page {
+      width: 1185px;
+      height: 728px;
+      display: grid;
+      grid-template-columns: 440px 1fr;
+      gap: 26px;
+      align-items: center;
+    }
+
+    .roadmap-copy {
+      padding: 24px 0 24px 20px;
+    }
+
+    .roadmap-kicker {
+      color: #9a5a08;
+      font-size: 13px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    .roadmap-title {
+      margin-top: 12px;
+      font-size: 54px;
+      line-height: 0.95;
+      font-weight: 900;
+      text-shadow: 0 2px 0 rgba(255, 250, 240, 0.94);
+    }
+
+    .roadmap-subcopy {
+      margin-top: 20px;
+      color: #574c40;
+      font-size: 19px;
+      line-height: 1.34;
+      font-weight: 640;
+    }
+
+    .provider-stack {
+      display: grid;
+      gap: 18px;
+    }
+
+    .provider {
+      min-height: 132px;
+      padding: 22px 24px;
+      border: 3px solid var(--ink);
+      border-radius: 18px;
+      background: #fffdf7;
+      box-shadow: 6px 6px 0 rgba(37, 25, 16, 0.12);
+      opacity: var(--provider-opacity, 1);
+      transform: translateX(var(--provider-x, 0));
+    }
+
+    .provider.current { background: #fff3d6; }
+    .provider.next { background: #eef8f4; }
+    .provider.later { background: #eef3ff; }
+
+    .provider-label {
+      color: #7c5c24;
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    .provider-name {
+      margin-top: 8px;
+      font-size: 30px;
+      line-height: 1;
+      font-weight: 900;
+    }
+
+    .provider-copy {
+      margin-top: 10px;
+      color: #574c40;
+      font-size: 16px;
+      line-height: 1.36;
+      font-weight: 620;
+    }
+  </style>
+</head>
+<body>
+  <main class="stage" aria-label="Threadwise recruiter demo story">
+    <div id="narration" class="narration">Threadwise auto-labels Gmail and keeps uncertain mail visible.</div>
+
+    <section id="inbox-scene" class="scene">
+      <div class="app-frame">
+        <div class="gmail">
+          <div class="gmail-head">
+            <div class="hamburger">=</div>
+            <div>Gmail</div>
+            <div class="search">Search mail</div>
+            <div class="account"><span class="help">?</span><span class="settings">*</span><span>Demo account</span></div>
+          </div>
+          <div class="gmail-body">
+            <nav class="nav" aria-label="Gmail demo navigation">
+              <div class="compose">+ Compose</div>
+              <div class="nav-row"><span>Inbox</span><strong id="inbox-count">14</strong></div>
+              <div class="nav-row"><span>Starred</span></div>
+              <div class="nav-row"><span>Snoozed</span></div>
+              <div class="nav-row"><span>Sent</span></div>
+              <div class="nav-row"><span>Drafts</span></div>
+              <div class="nav-gap"></div>
+              <div class="nav-row"><span>EA/Work</span><strong id="work-count">2</strong></div>
+              <div class="nav-row"><span>EA/Promotions</span><strong>8</strong></div>
+            </nav>
+            <section class="mailbox">
+              <div class="tabs">
+                <span class="tab-primary">Primary</span>
+                <span>Recent (12)</span>
+                <span>Auto-handled (2)</span>
+                <span>Kept visible (7)</span>
+              </div>
+              <div id="mail-list" class="mail-list">
+                <div class="row selected">
+                  <span class="check"></span>
+                  <span class="subject">Senior AI product roles this week</span>
+                  <span class="sender">LinkedIn Jobs &lt;jobalerts-noreply@linkedin.com&gt;<span class="ea-label">EA/Work</span></span>
+                  <span class="time">9:18 AM</span>
+                </div>
+                <div class="row">
+                  <span class="check"></span>
+                  <span class="subject">Monthly invoice available</span>
+                  <span class="sender">Cloud Billing &lt;billing@cloudledger.example&gt;<span class="ea-label">EA/Work</span></span>
+                  <span class="time">9:18 AM</span>
+                </div>
+                <div class="row">
+                  <span class="check"></span>
+                  <span class="subject">Confirm Thursday review</span>
+                  <span class="sender">Maya Chen &lt;maya@northstar.example&gt;<span class="ea-label">EA/Work</span></span>
+                  <span class="time">9:18 AM</span>
+                </div>
+                <div class="row">
+                  <span class="check"></span>
+                  <span class="subject">Final hours: 40 percent off workspace gear</span>
+                  <span class="sender">Daily Deals Outlet &lt;deals@example.test&gt;</span>
+                  <span class="time">9:18 AM</span>
+                </div>
+                <div class="row">
+                  <span class="check"></span>
+                  <span class="subject">This week's founder digest</span>
+                  <span class="sender">Founder Digest &lt;digest@founderdigest.example&gt;</span>
+                  <span class="time">9:18 AM</span>
+                </div>
+                <div class="row">
+                  <span class="check"></span>
+                  <span class="subject">Your trip receipt</span>
+                  <span class="sender">Railway &lt;receipts@railway.example&gt;</span>
+                  <span class="time">9:18 AM</span>
+                </div>
+                <div class="row">
+                  <span class="check"></span>
+                  <span class="subject">Security alert for your account</span>
+                  <span class="sender">GitHub &lt;noreply@github.example&gt;</span>
+                  <span class="time">9:18 AM</span>
+                </div>
+                <div class="row">
+                  <span class="check"></span>
+                  <span class="subject">Five papers worth reading</span>
+                  <span class="sender">AI Research Brief &lt;brief@airesearch.example&gt;</span>
+                  <span class="time">9:18 AM</span>
+                </div>
+                <div class="row">
+                  <span class="check"></span>
+                  <span class="subject">Product sync moved to Friday</span>
+                  <span class="sender">Calendar &lt;calendar@threadwise.example&gt;<span class="ea-label">EA/Work</span></span>
+                  <span class="time">9:18 AM</span>
+                </div>
+              </div>
+              <article id="message-view" class="message-view" aria-label="Selected email detail">
+                <div class="message-back">← Inbox</div>
+                <h1 class="message-title">Senior AI product roles this week</h1>
+                <div class="message-meta">
+                  <span>LinkedIn Jobs &lt;jobalerts-noreply@linkedin.com&gt;</span>
+                  <span>9:18 AM</span>
+                </div>
+                <div class="message-body">
+                  <p>New roles matching your saved search: AI Product Lead, Product Manager for Agents, and Automation Platform PM.</p>
+                  <p>Threadwise keeps this visible because job alerts are work-related and may need human review.</p>
+                </div>
+              </article>
+            </section>
+          </div>
+        </div>
+
+        <aside class="threadwise" aria-label="Threadwise sidebar">
+          <header class="tw-head">
+            <img class="tw-icon" src="../brand/threadwise-app-icon.png" alt="">
+            <div>
+              <div class="brand">Threadwise</div>
+              <div class="tagline">Clear threads. Better inbox.</div>
+            </div>
+            <div class="minimize">Minimize</div>
+          </header>
+          <div class="tw-body">
+            <section class="card agent-card">
+              <div class="kicker">Agent view</div>
+              <div class="agent-title">Senior AI product roles this week</div>
+              <div class="agent-sender">LinkedIn Jobs &lt;jobalerts-noreply@linkedin.com&gt;</div>
+              <div class="agent-copy" id="agent-copy">
+                Job recommendations look work-adjacent, but Threadwise wants approval before treating the sender as Work.
+              </div>
+              <div class="pills">
+                <span class="pill" id="status-pill">Uncategorized</span>
+                <span class="pill warn" id="attention-pill">Needs attention</span>
+              </div>
+            </section>
+            <section class="card teach-card">
+              <div class="teach-head">Correct / Teach</div>
+              <div class="teach-body">
+                <div class="select" id="label-select">EA/Work</div>
+                <div class="textarea"><span id="typed-text"></span><span id="typing-caret" class="caret"></span></div>
+                <div id="agent-response" class="agent-response">
+                  Got it. I found 12 similar emails that should be job-related with this rule. Preview them before I change anything?
+                </div>
+                <div id="agree-row" class="agree-row">
+                  <div id="agree-button" class="agree-button">Agree</div>
+                  <div class="tiny-note">Applies only after approval.</div>
+                </div>
+              </div>
+            </section>
+            <div id="success-note" class="success-note"></div>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section id="unsubscribe-scene" class="scene unsubscribe-scene">
+      <div class="unsubscribe-page">
+        <header class="unsub-head">
+          <div class="unsub-brand">
+            <img class="unsub-icon" src="../brand/threadwise-app-icon.png" alt="">
+            <div>
+              <div class="kicker">Unsubscribe review</div>
+              <div class="unsub-title">Subscription cleanup</div>
+            </div>
+          </div>
+          <div class="unsub-subtitle">Threadwise finds supported unsubscribe paths, but waits for approval before acting.</div>
+          <div class="stat-line">
+            <span class="stat-pill">Queued: <span id="queued-count">0</span></span>
+            <span class="stat-pill">Ready now: <span id="ready-count">3</span></span>
+            <span class="stat-pill">Manual follow-up: 0</span>
+          </div>
+        </header>
+        <section class="sub-grid">
+          <article id="sub-daily" class="sub-card removed">
+            <div class="sub-kicker">Unsubscribe</div>
+            <div class="sub-name">Daily Deals Outlet</div>
+            <div class="sub-copy">
+              Sender: deals@example.test<br>
+              Status: ready for one-click HTTPS unsubscribe.<br>
+              Evidence: 4 messages.
+            </div>
+            <div id="unsub-button" class="unsub-button">Unsubscribe</div>
+          </article>
+          <article class="sub-card">
+            <div class="sub-kicker">Unsubscribe</div>
+            <div class="sub-name">Founder Digest</div>
+            <div class="sub-copy">
+              Sender: digest@founderdigest.example<br>
+              Status: ready for one-click HTTPS unsubscribe.<br>
+              Evidence: 2 messages.
+            </div>
+            <div class="unsub-button">Unsubscribe</div>
+          </article>
+          <article class="sub-card">
+            <div class="sub-kicker">Unsubscribe</div>
+            <div class="sub-name">AI Research Brief</div>
+            <div class="sub-copy">
+              Sender: brief@airesearch.example<br>
+              Status: ready for one-click HTTPS unsubscribe.<br>
+              Evidence: 3 messages.
+            </div>
+            <div class="unsub-button">Unsubscribe</div>
+          </article>
+        </section>
+      </div>
+      <aside id="confirm" class="confirm" aria-label="Confirm unsubscribe">
+        <div class="confirm-title">Unsubscribe from Daily Deals Outlet?</div>
+        <div class="confirm-copy">Threadwise will use the supported unsubscribe link for this sender only.</div>
+        <div class="confirm-actions">
+          <div id="yes-button" class="yes-button">Yes, unsubscribe</div>
+          <div class="cancel-button">Cancel</div>
+        </div>
+      </aside>
+    </section>
+
+    <section id="roadmap-scene" class="scene roadmap-scene">
+      <div class="roadmap-page">
+        <div class="roadmap-copy">
+          <div class="roadmap-kicker">Coming next</div>
+          <div class="roadmap-title">Same supervised loop, more inboxes.</div>
+          <div class="roadmap-subcopy">Gmail is the current demo. The next phase carries the same review-and-teach model into additional inboxes without changing the safety boundary.</div>
+        </div>
+        <div class="provider-stack">
+          <article id="provider-gmail" class="provider current">
+            <div class="provider-label">Current demo</div>
+            <div class="provider-name">Gmail</div>
+            <div class="provider-copy">Labels, explanations, teaching, and approved unsubscribe cleanup.</div>
+          </article>
+          <article id="provider-proton" class="provider next">
+            <div class="provider-label">Next</div>
+            <div class="provider-name">ProtonMail</div>
+            <div class="provider-copy">Bring the same supervised daily loop to the founder's second inbox.</div>
+          </article>
+          <article id="provider-outlook" class="provider later">
+            <div class="provider-label">Later</div>
+            <div class="provider-name">Outlook / Hotmail</div>
+            <div class="provider-copy">Inbox-agnostic workflow after the Gmail-first product story is solid.</div>
+          </article>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const duration = 9.6;
+    const typedInstruction = "These are always job emails.";
+
+    function clamp(value, min = 0, max = 1) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    function ease(value) {
+      const t = clamp(value);
+      return t * t * (3 - 2 * t);
+    }
+
+    function between(t, start, end) {
+      return clamp((t - start) / (end - start));
+    }
+
+    function fade(t, start, inEnd, outStart, outEnd) {
+      return Math.min(ease(between(t, start, inEnd)), 1 - ease(between(t, outStart, outEnd)));
+    }
+
+    function setVar(name, value) {
+      document.documentElement.style.setProperty(name, value);
+    }
+
+    function setScene(id, opacity, y = 0, scale = 1) {
+      const el = document.getElementById(id);
+      el.style.setProperty("--opacity", String(opacity));
+      el.style.setProperty("--y", `${y}px`);
+      el.style.setProperty("--scale", String(scale));
+    }
+
+    function narrationFor(t) {
+      if (t < 1.15) return "Threadwise auto-labels Gmail and keeps uncertain mail visible.";
+      if (t < 2.35) return "Open a message and the agent explains what it thinks.";
+      if (t < 3.75) return "Teach the correction in plain English.";
+      if (t < 5.15) return "Broader changes are previewed first, then approved.";
+      if (t < 6.55) return "Mailing lists are handled the same way: found, reviewed, approved.";
+      if (t < 8.0) return "Unsubscribe only after confirmation.";
+      return "Coming next: the same supervised loop beyond Gmail.";
+    }
+
+    function setDemoTime(rawTime) {
+      const t = clamp(Number(rawTime) || 0, 0, duration);
+      const narration = document.getElementById("narration");
+      narration.textContent = narrationFor(t);
+      narration.style.setProperty("--narration-opacity", "1");
+
+      const inboxOpacity = t < 5.4 ? 1 : 1 - ease(between(t, 5.35, 5.7));
+      const unsubscribeOpacity = Math.min(ease(between(t, 5.45, 5.9)), 1 - ease(between(t, 7.85, 8.2)));
+      const roadmapOpacity = ease(between(t, 7.9, 8.35));
+      setScene("inbox-scene", inboxOpacity, 0, 1 + 0.01 * ease(between(t, 1.0, 1.8)));
+      setScene("unsubscribe-scene", unsubscribeOpacity, 10 * (1 - unsubscribeOpacity), 1);
+      setScene("roadmap-scene", roadmapOpacity, 10 * (1 - roadmapOpacity), 1);
+
+      const message = ease(between(t, 1.08, 1.58));
+      setVar("--list-opacity", String(1 - 0.62 * message));
+      setVar("--list-x", `${-28 * message}px`);
+      setVar("--message-opacity", String(message));
+      setVar("--message-x", `${36 * (1 - message)}px`);
+
+      const typedProgress = ease(between(t, 2.42, 3.35));
+      const typedLength = Math.round(typedInstruction.length * typedProgress);
+      document.getElementById("typed-text").textContent = typedInstruction.slice(0, typedLength);
+      setVar("--caret-opacity", t > 2.2 && t < 3.48 ? "1" : "0");
+
+      const responseNode = document.getElementById("agent-response");
+      responseNode.textContent =
+        t >= 4.72
+          ? "Done. 12 matching emails moved to EA/Work. Future job alerts will follow this rule."
+          : "Got it. I found 12 similar emails that should be job-related with this rule. Preview them before I change anything?";
+      const response = ease(between(t, 3.42, 3.82));
+      setVar("--response-opacity", String(response));
+      setVar("--response-y", `${8 * (1 - response)}px`);
+      const agree = ease(between(t, 3.8, 4.12));
+      const agreeVisible = agree * (1 - ease(between(t, 4.58, 4.82)));
+      setVar("--agree-opacity", String(agreeVisible));
+      setVar("--agree-y", `${8 * (1 - agree)}px`);
+      const agreed = ease(between(t, 4.22, 4.5));
+      setVar("--agree-scale", String(1 - 0.06 * Math.sin(agreed * Math.PI)));
+      setVar("--work-label-opacity", String(ease(between(t, 4.48, 4.86))));
+      setVar("--work-label-y", `${4 * (1 - ease(between(t, 4.48, 4.86)))}px`);
+      setVar("--success-opacity", "0");
+      setVar("--success-y", "8px");
+      document.getElementById("work-count").textContent = t >= 4.7 ? "14" : "2";
+      document.getElementById("status-pill").textContent = t >= 4.7 ? "EA/Work" : "Uncategorized";
+      document.getElementById("attention-pill").textContent = t >= 4.7 ? "Approved" : "Needs attention";
+
+      const unsubClick = ease(between(t, 6.32, 6.55));
+      setVar("--unsub-scale", String(1 - 0.05 * Math.sin(unsubClick * Math.PI)));
+      const confirm = Math.min(ease(between(t, 6.55, 6.86)), 1 - ease(between(t, 7.38, 7.62)));
+      setVar("--confirm-opacity", String(confirm));
+      setVar("--confirm-y", `${16 * (1 - confirm)}px`);
+      const yes = ease(between(t, 7.1, 7.32));
+      setVar("--yes-scale", String(1 - 0.06 * Math.sin(yes * Math.PI)));
+      const removed = ease(between(t, 7.42, 7.76));
+      setVar("--removed-opacity", String(1 - removed));
+      setVar("--removed-y", `${-12 * removed}px`);
+      document.getElementById("queued-count").textContent = t >= 7.54 ? "1" : "0";
+      document.getElementById("ready-count").textContent = t >= 7.54 ? "2" : "3";
+
+      const gmailProvider = ease(between(t, 8.18, 8.42));
+      const protonProvider = ease(between(t, 8.48, 8.74));
+      const outlookProvider = ease(between(t, 8.78, 9.06));
+      document.getElementById("provider-gmail").style.setProperty("--provider-opacity", String(gmailProvider));
+      document.getElementById("provider-gmail").style.setProperty("--provider-x", `${24 * (1 - gmailProvider)}px`);
+      document.getElementById("provider-proton").style.setProperty("--provider-opacity", String(protonProvider));
+      document.getElementById("provider-proton").style.setProperty("--provider-x", `${24 * (1 - protonProvider)}px`);
+      document.getElementById("provider-outlook").style.setProperty("--provider-opacity", String(outlookProvider));
+      document.getElementById("provider-outlook").style.setProperty("--provider-x", `${24 * (1 - outlookProvider)}px`);
+    }
+
+    window.setDemoTime = setDemoTime;
+    window.demoDuration = duration;
+
+    const params = new URLSearchParams(window.location.search);
+    setDemoTime(Number(params.get("t") || 0));
+  </script>
+</body>
+</html>

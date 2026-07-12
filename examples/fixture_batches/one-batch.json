@@ -1,0 +1,45 @@
+{
+  "batch_id": "one-batch",
+  "messages": [
+    {
+      "message_id": "msg-003",
+      "sender": "Store <orders@example.com>",
+      "subject": "Your order is on the way",
+      "date": "2026-06-16T08:00:00Z",
+      "interpretation": "Shipping confirmation for a recent online purchase.",
+      "applied_labels": ["shopping-order"],
+      "near_misses": ["receipt-billing"],
+      "confidence_band": "medium"
+    },
+    {
+      "message_id": "msg-002",
+      "sender": "Bank <security@example.com>",
+      "subject": "New sign-in detected",
+      "date": "2026-06-17T10:00:00Z",
+      "interpretation": "Account security alert about a recent sign-in.",
+      "applied_labels": ["account-security"],
+      "near_misses": ["reply-needed"],
+      "confidence_band": "high"
+    },
+    {
+      "message_id": "msg-001",
+      "sender": "Manager <boss@example.com>",
+      "subject": "Need your approval today",
+      "date": "2026-06-15T09:00:00Z",
+      "interpretation": "Work request that likely needs a response.",
+      "applied_labels": ["reply-needed", "job-related"],
+      "near_misses": ["personal"],
+      "confidence_band": "high"
+    },
+    {
+      "message_id": "msg-004",
+      "sender": "News <digest@example.com>",
+      "subject": "Weekend reads",
+      "date": "2026-06-18T07:30:00Z",
+      "interpretation": "General newsletter roundup.",
+      "applied_labels": ["newsletter", "promotions", "travel", "personal"],
+      "near_misses": [],
+      "confidence_band": "low"
+    }
+  ]
+}

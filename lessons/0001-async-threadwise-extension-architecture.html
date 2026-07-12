@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Lesson 0001: Async Threadwise Extension Architecture</title>
+    <link rel="stylesheet" href="../assets/teaching-pack.css">
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <p class="eyebrow">Lesson 0001</p>
+        <h1>From "Is it frozen?" to a professional async interaction model</h1>
+        <p class="lede">This lesson teaches the actual architectural move we made in Threadwise: we did not "make it async" in the abstract. We redesigned the founder experience so the product acknowledges work quickly, shows visible stages, finishes the main path first, and lets slower supporting work complete separately.</p>
+        <div class="link-row">
+          <a href="../reference/0001-async-threadwise-extension-reference.html">Open the reference sheet</a>
+          <a href="../RESOURCES.md">See grounded resources</a>
+        </div>
+      </section>
+
+      <h2>Mission Tie-In</h2>
+      <div class="callout">
+        You wanted to understand this well enough to speak truthfully on a resume and reason about future changes like a professional collaborator. That means we care about architecture, tradeoffs, and system behavior more than memorizing function names.
+      </div>
+
+      <h2>The User Problem We Actually Solved</h2>
+      <div class="compare-grid">
+        <div class="grid-card">
+          <h3>What the founder experienced</h3>
+          <p>When reviewing an email, Threadwise sometimes took long enough that it felt frozen or unclear whether it had accepted the action.</p>
+        </div>
+        <div class="grid-card">
+          <h3>What would have been the wrong diagnosis</h3>
+          <p>"Browser extensions are the problem. We need a standalone app now."</p>
+        </div>
+        <div class="grid-card">
+          <h3>What we concluded instead</h3>
+          <p>The bigger issue was the interaction model: too much work was hidden behind one blocking moment, and the UI did not reveal meaningful progress.</p>
+        </div>
+      </div>
+
+      <h2>What "Async" Means In This Product</h2>
+      <div class="card">
+        <p><strong>Not:</strong> "Use a trendy technical pattern because professionals do."</p>
+        <p><strong>Not:</strong> "Rebuild the whole product as jobs, workers, queues, and dashboards."</p>
+        <p><strong>Yes:</strong> "Split one long opaque interaction into visible stages so the founder gets confidence early and detail later."</p>
+      </div>
+
+      <div class="callout work">
+        Async here means we separate <strong>main-path value</strong> from <strong>secondary follow-up work</strong>.
+      </div>
+
+      <h2>The Four Loops We Now Have</h2>
+      <div class="flow">
+        <div class="flow-step">
+          <div class="flow-index">1</div>
+          <div>
+            <h3>Selected-email understanding loop</h3>
+            <p>The extension no longer jumps from nothing to complete judgment. It moves through <code>reading</code>, then <code>understanding</code>, then <code>ready</code>.</p>
+            <p>This is implemented in <code>src/gmail_companion_state.py</code> and rendered in <code>extensions/gmail_companion/content.js</code>.</p>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-index">2</div>
+          <div>
+            <h3>Teach / fix action loop</h3>
+            <p>Submitting a correction now gives an immediate accepted state, then a visible working state, then either a done result or a retry surface.</p>
+            <p>This is the difference between "I hope it heard me" and "I know it accepted the request and I know what state it is in now."</p>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-index">3</div>
+          <div>
+            <h3>Background follow-up loop</h3>
+            <p>After the main result is returned, slower summary warming and broader refresh work continues behind the scenes and reports back as <code>working</code>, <code>done</code>, or <code>retry</code>.</p>
+            <p>This lives in the local companion in <code>src/gmail_companion_ui.py</code>.</p>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-index">4</div>
+          <div>
+            <h3>Recent-activity loop</h3>
+            <p>The founder can still see what Threadwise just did even after the original moment has passed. That keeps the sidebar compact without making it feel forgetful.</p>
+          </div>
+        </div>
+      </div>
+
+      <h2>State Machine Diagram</h2>
+      <pre>Selected email
+  idle
+    -> reading
+    -> understanding
+    -> ready
+
+Teach / fix
+  draft
+    -> previewing
+    -> rule-proposed
+    -> scope-confirmation
+    -> applying
+    -> result OR retry
+
+Background follow-up
+  working
+    -> done OR retry</pre>
+
+      <h2>Why We Kept The Extension</h2>
+      <div class="card-grid">
+        <div class="grid-card">
+          <h3>Reason 1: right problem first</h3>
+          <p>The user pain was waiting without confidence. A standalone app would not automatically solve that if the state model stayed opaque.</p>
+        </div>
+        <div class="grid-card">
+          <h3>Reason 2: lower disruption</h3>
+          <p>The extension is already the founder's working surface. We can improve the experience without forcing a new operating habit immediately.</p>
+        </div>
+        <div class="grid-card">
+          <h3>Reason 3: reusable semantics</h3>
+          <p>The async states we created are portable. A future standalone app can reuse them instead of starting from zero.</p>
+        </div>
+      </div>
+
+      <h2>The Architectural Decision In Plain English</h2>
+      <div class="callout">
+        We chose to change the <strong>state model</strong> before changing the <strong>product shell</strong>.
+      </div>
+
+      <p>That is a professional move because it separates the core behavior from the presentation vehicle. If the underlying interaction semantics are good, they can survive platform changes. If they are bad, a platform rewrite only hides the same confusion behind more effort.</p>
+
+      <h2>When Professional Developers Reach For Async</h2>
+      <table class="reference-table">
+        <thead>
+          <tr>
+            <th>Good async fit</th>
+            <th>Poor async fit</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>The user is waiting on browser messaging, local I/O, summary recomputation, Gmail writes, or background refresh work.</td>
+            <td>The work is instant, local, and simple enough that a richer state machine would only create complexity.</td>
+          </tr>
+          <tr>
+            <td>You can return partial value honestly before all follow-up work is done.</td>
+            <td>The operation must be represented as one atomic decision and partial visibility would be misleading.</td>
+          </tr>
+          <tr>
+            <td>The user needs confidence that the request was accepted and to know what to do if it stalls.</td>
+            <td>You have no plan to expose accepted / working / done / retry and would just bury the complexity.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Alternatives We Did Not Choose</h2>
+      <div class="card-grid">
+        <div class="grid-card">
+          <h3>Alternative: full standalone app now</h3>
+          <p>Rejected because it attacked the shell before proving the better state model. Higher effort, weaker diagnosis.</p>
+        </div>
+        <div class="grid-card">
+          <h3>Alternative: keep everything synchronous but add generic loading copy</h3>
+          <p>Rejected because it still hides the lifecycle. The founder needs state semantics, not only a spinner.</p>
+        </div>
+        <div class="grid-card">
+          <h3>Alternative: build a heavy queueing system immediately</h3>
+          <p>Rejected because the MVP need was visible staged trust, not a full platform for background jobs.</p>
+        </div>
+      </div>
+
+      <h2>Important Code-Level Decisions</h2>
+      <div class="flow">
+        <div class="flow-step">
+          <div class="flow-index">A</div>
+          <div>
+            <h3>We made understanding explicit</h3>
+            <p><code>selected_email_understanding_state(...)</code> adds a small timed state contract so the current email has a believable ramp from "I just clicked this" to "Threadwise is ready".</p>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-index">B</div>
+          <div>
+            <h3>We made teach/apply request acceptance explicit</h3>
+            <p>The content script now has local pending cards, disabled duplicate actions, and clearer result states.</p>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-index">C</div>
+          <div>
+            <h3>We returned the fast path first</h3>
+            <p><code>teach_apply()</code> now starts a background follow-up refresh and returns a fast sidebar state instead of making the founder wait for secondary refresh warming.</p>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-index">D</div>
+          <div>
+            <h3>We reused work instead of recomputing it</h3>
+            <p><code>apply_sidebar_teaching()</code> now returns semantic rule data so <code>teach_apply()</code> does not rebuild preview work just to continue the flow.</p>
+          </div>
+        </div>
+      </div>
+
+      <h2>How To Explain This Like A Professional</h2>
+      <div class="callout work">
+        "We kept the Gmail extension surface, but redesigned the interaction as explicit async state machines. The founder now gets immediate acknowledgment, visible progress, a fast main-path result, and a compact recent-activity/retry model while slower summary refresh work finishes in the background."
+      </div>
+
+      <h2>Retrieval Practice</h2>
+      <div class="quiz">
+        <h3>Answer these from memory before rereading:</h3>
+        <ol>
+          <li>Why was "move to a standalone app" not the first fix?</li>
+          <li>What is the difference between the fast path and the follow-up path in this redesign?</li>
+          <li>What states can a founder now observe during a teach/fix action?</li>
+          <li>When would adding async here have been the wrong move?</li>
+        </ol>
+      </div>
+
+      <h2>Your Memory Aid</h2>
+      <div class="card">
+        <h3>A-W-D-R</h3>
+        <p><strong>Acknowledge</strong> fast.</p>
+        <p><strong>Work</strong> in visible stages.</p>
+        <p><strong>Deliver</strong> the main result first.</p>
+        <p><strong>Refresh</strong> slower follow-up in the background.</p>
+      </div>
+
+      <p class="footer-note">Ask follow-up questions whenever something feels fuzzy. The goal is not to remember every file name. The goal is to see the architectural shape clearly enough that future choices feel legible.</p>
+    </main>
+  </body>
+</html>

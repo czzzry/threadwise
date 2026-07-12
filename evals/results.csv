@@ -1,0 +1,13 @@
+email_id,sender,subject,expected_label,predicted_label,label_correct,expected_attention_required,predicted_attention_required,attention_correct,suggested_action,false_ignore,unsafe_action,notes
+eval-001,LinkedIn Jobs <jobs-noreply@linkedin.example>,Senior AI product roles this week,EA/Work,EA/Work,true,true,true,true,review,false,false,Opportunity worth review
+eval-002,Cloud Billing <billing@cloudledger.example>,Monthly invoice available,EA/Account,EA/Account,true,true,true,true,review,false,false,Financial/account email
+eval-003,GitHub <noreply@github.example>,Security alert resolved,EA/Account,EA/Account,true,true,true,true,review,false,false,Security/account event should still surface
+eval-004,Railway <receipts@railway.example>,Your trip receipt,EA/Travel,EA/Travel,true,false,false,true,keep,false,false,Informational receipt
+eval-005,Workspace Weekly <newsletter@workspaceweekly.example>,New planning templates for product teams,EA/Newsletter,EA/Newsletter,true,false,false,true,ignore,false,false,Newsletter should not need attention
+eval-006,Founder Digest <digest@founderdigest.example>,This week's founder digest,EA/Newsletter,EA/Newsletter,true,false,false,true,ignore,false,false,Low-priority digest
+eval-007,Northstar Store <orders@northstarstore.example>,Your order has shipped,EA/Shopping,EA/Shopping,true,false,false,true,keep,false,false,Useful label but not urgent
+eval-008,Maya Chen <maya@northstar.example>,Confirm Thursday review,EA/Personal,EA/Personal,true,true,true,true,review,false,false,Direct human coordination
+eval-009,Brand Supply <hello@brandsupply.example>,Team swag sale ends Friday,EA/Promotions,EA/Promotions,true,false,false,true,archive,false,false,Promotional mail
+eval-010,Calendar <calendar@threadwise.example>,Product sync moved to 3 PM,EA/Work,EA/Work,true,true,true,true,review,false,false,Time-sensitive work coordination
+,,,,,,,,,,,,
+SUMMARY,,,label_accuracy=1.0000,attention_required_recall=1.0000,false_ignore_count=0,unsafe_action_count=0,,,,,,

@@ -1,0 +1,1282 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Threadwise Demo Capture Stage</title>
+  <style>
+    :root {
+      --bg: #f3efe4;
+      --gmail-bg: #f6f8fc;
+      --gmail-line: #e0e3eb;
+      --gmail-text: #202124;
+      --paper: #fffaf0;
+      --paper-2: #f5efe2;
+      --ink: #211912;
+      --muted: #6b6255;
+      --line: rgba(84,68,45,0.22);
+      --teal: #0f766e;
+      --teal-soft: #d8f3ef;
+      --gold: #c88616;
+      --gold-soft: #fff4dd;
+      --warn: #8a4b00;
+      --shadow: 0 18px 50px rgba(31,26,20,0.16);
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #efe7d7;
+      color: var(--ink);
+    }
+
+    body {
+      width: 1280px;
+      height: 800px;
+      transform-origin: top left;
+    }
+
+    .stage {
+      position: relative;
+      width: 1280px;
+      height: 800px;
+      overflow: hidden;
+      background: radial-gradient(circle at top, #fff8eb 0%, #f4ecdd 54%, #ede1cf 100%);
+    }
+
+    .world {
+      position: absolute;
+      inset: 0;
+      transform-origin: 77% 52%;
+    }
+
+    .browser {
+      position: absolute;
+      inset: 24px 28px;
+      border-radius: 16px;
+      background: #fff;
+      box-shadow: var(--shadow);
+      border: 1px solid rgba(60,64,67,0.16);
+      overflow: hidden;
+    }
+
+    .chrome {
+      height: 44px;
+      background: #edf0f5;
+      border-bottom: 1px solid #dfe3eb;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 14px;
+    }
+
+    .traffic {
+      display: flex;
+      gap: 6px;
+    }
+
+    .traffic span {
+      width: 11px;
+      height: 11px;
+      border-radius: 999px;
+      background: #d7dbe4;
+    }
+
+    .address {
+      flex: 1;
+      height: 26px;
+      border-radius: 999px;
+      background: #fff;
+      color: #5f6368;
+      display: flex;
+      align-items: center;
+      padding: 0 14px;
+      font-size: 12px;
+      max-width: 620px;
+    }
+
+    .gmail {
+      height: calc(100% - 44px);
+      background: var(--gmail-bg);
+      display: grid;
+      grid-template-columns: 206px minmax(0, 1fr) 382px;
+      grid-template-rows: 58px minmax(0, 1fr);
+    }
+
+    .gmail-top {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: 206px minmax(0, 1fr) 382px;
+      align-items: center;
+      gap: 16px;
+      padding: 0 18px;
+      border-bottom: 1px solid var(--gmail-line);
+      background: #f6f8fc;
+    }
+
+    .gmail-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: #5f6368;
+      font-size: 21px;
+      letter-spacing: -0.02em;
+    }
+
+    .gmail-mark {
+      width: 31px;
+      height: 22px;
+      border-radius: 4px;
+      border: 3px solid #d93025;
+      border-top-color: #ea4335;
+      position: relative;
+      background: #fff;
+    }
+
+    .gmail-mark::before, .gmail-mark::after {
+      content: "";
+      position: absolute;
+      top: 5px;
+      width: 18px;
+      height: 3px;
+      background: #d93025;
+    }
+
+    .gmail-mark::before { left: -1px; transform: rotate(28deg); }
+    .gmail-mark::after { right: -1px; transform: rotate(-28deg); }
+
+    .search {
+      height: 40px;
+      border-radius: 999px;
+      background: #eaf1fb;
+      color: #5f6368;
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      font-size: 14px;
+      max-width: 640px;
+    }
+
+    .demo-account {
+      justify-self: end;
+      color: #5f6368;
+      font-size: 12px;
+      background: #fff;
+      border: 1px solid #dadce0;
+      border-radius: 999px;
+      padding: 8px 11px;
+    }
+
+    .nav {
+      padding: 14px 12px;
+      border-right: 1px solid #edf0f5;
+      color: #3c4043;
+      font-size: 14px;
+    }
+
+    .compose {
+      height: 44px;
+      width: 132px;
+      border: 0;
+      border-radius: 14px;
+      background: #c2e7ff;
+      color: #001d35;
+      font-weight: 600;
+      margin-bottom: 14px;
+    }
+
+    .nav-item {
+      height: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 10px;
+      border-radius: 999px;
+      margin-bottom: 3px;
+    }
+
+    .nav-item.active {
+      background: #d3e3fd;
+      font-weight: 700;
+    }
+
+    .inbox {
+      background: #fff;
+      border-right: 1px solid #edf0f5;
+      display: grid;
+      grid-template-rows: 48px minmax(0, 1fr);
+      overflow: hidden;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      padding: 0 14px;
+      border-bottom: 1px solid var(--gmail-line);
+      color: #5f6368;
+      font-size: 13px;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 2px;
+      margin-left: 12px;
+    }
+
+    .tab {
+      padding: 15px 22px 12px;
+      border-bottom: 3px solid transparent;
+      color: #5f6368;
+      font-size: 13px;
+    }
+
+    .tab.active {
+      color: #0b57d0;
+      border-color: #0b57d0;
+      font-weight: 700;
+    }
+
+    .rows {
+      overflow: hidden;
+    }
+
+    .email-row {
+      height: 38px;
+      border-bottom: 1px solid #edf0f5;
+      display: grid;
+      grid-template-columns: 28px 28px 166px minmax(0, 1fr) 58px;
+      align-items: center;
+      gap: 8px;
+      padding: 0 12px;
+      color: #202124;
+      font-size: 13px;
+      background: #fff;
+    }
+
+    .email-row.selected {
+      background: #eaf4ff;
+      box-shadow: inset 3px 0 0 #0b57d0;
+    }
+
+    .email-row.dimmed {
+      color: #5f6368;
+      background: #fbfbfb;
+    }
+
+    .box {
+      width: 14px;
+      height: 14px;
+      border: 1px solid #c7cbd1;
+      border-radius: 2px;
+    }
+
+    .star { color: #c7cbd1; font-size: 16px; }
+    .sender { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .subject { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .snippet { color: #5f6368; }
+    .time { color: #5f6368; justify-self: end; font-size: 12px; }
+
+    .threadwise {
+      background: rgba(255,252,244,0.99);
+      border-left: 1px solid rgba(84,68,45,0.22);
+      font-family: Georgia, "Times New Roman", serif;
+      color: var(--ink);
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      overflow: hidden;
+    }
+
+    .tw-header {
+      background: linear-gradient(180deg, #fff6e3 0%, #f7edd9 100%);
+      border-bottom: 1px solid rgba(84,68,45,0.18);
+      padding: 13px 14px 11px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .tw-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .tw-icon {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      border: 1px solid rgba(33,25,18,0.18);
+      box-shadow: 0 3px 10px rgba(31,26,20,0.16);
+      object-fit: cover;
+    }
+
+    .tw-title {
+      font-weight: 700;
+      font-size: 17px;
+      line-height: 1;
+    }
+
+    .tw-kicker {
+      color: var(--gold);
+      font-size: 10px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      margin-top: 3px;
+    }
+
+    .tw-subtitle {
+      padding: 8px 14px;
+      background: #fffaf0;
+      color: var(--muted);
+      font-size: 13px;
+      border-bottom: 1px solid rgba(84,68,45,0.12);
+    }
+
+    .tw-body {
+      padding: 12px;
+      display: grid;
+      gap: 10px;
+      align-content: start;
+      overflow: hidden;
+    }
+
+    .card {
+      border: 1px solid rgba(84,68,45,0.18);
+      border-radius: 10px;
+      background: #fffdfa;
+      padding: 12px;
+    }
+
+    .card.tint {
+      background: linear-gradient(180deg,#fffdfa 0%,#fbf3e3 100%);
+    }
+
+    .eyebrow {
+      color: var(--muted);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    .tw-subject {
+      font-size: 19px;
+      line-height: 1.05;
+      font-weight: 700;
+      margin-top: 8px;
+    }
+
+    .tw-sender {
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.25;
+    }
+
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      margin-top: 10px;
+    }
+
+    .pill {
+      border-radius: 999px;
+      padding: 5px 9px;
+      background: #f1eadb;
+      color: #5d5342;
+      font-size: 12px;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+    }
+
+    .pill.teal { background: var(--teal-soft); color: var(--teal); }
+    .pill.warn { background: var(--gold-soft); color: var(--warn); }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 9px;
+    }
+
+    .metric {
+      border-radius: 9px;
+      background: var(--paper-2);
+      padding: 9px;
+      min-height: 60px;
+    }
+
+    .metric strong {
+      display: block;
+      font-size: 23px;
+      line-height: 1;
+      margin-bottom: 5px;
+    }
+
+    .metric span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .note-box {
+      margin-top: 10px;
+      border-radius: 9px;
+      background: var(--paper-2);
+      padding: 10px;
+      line-height: 1.35;
+      font-size: 14px;
+    }
+
+    .field {
+      margin-top: 8px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      min-height: 62px;
+      background: #fffdfa;
+      padding: 9px;
+      font-size: 14px;
+      line-height: 1.3;
+      position: relative;
+    }
+
+    .caret {
+      display: inline-block;
+      width: 2px;
+      height: 18px;
+      background: #111;
+      margin-left: 2px;
+      vertical-align: -3px;
+      opacity: 0;
+    }
+
+    .caret.visible {
+      opacity: 1;
+    }
+
+    .buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 9px;
+    }
+
+    .button {
+      border-radius: 999px;
+      padding: 8px 10px;
+      border: 0;
+      background: #f0e5d2;
+      color: var(--ink);
+      font-size: 13px;
+      font-family: Georgia, "Times New Roman", serif;
+    }
+
+    .button.primary { background: var(--teal); color: white; }
+    .button.blue { background: #1f6f8b; color: white; }
+    .button.gold { background: #7b5d2a; color: white; }
+
+    .impact {
+      border-radius: 10px;
+      background: #fff8eb;
+      padding: 10px;
+      margin-top: 10px;
+      font-size: 14px;
+      line-height: 1.35;
+    }
+
+    .impact-title {
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .dashboard {
+      position: absolute;
+      inset: 84px 76px 52px 76px;
+      border-radius: 14px;
+      background: #fffaf0;
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+      padding: 22px;
+      font-family: Georgia, "Times New Roman", serif;
+      color: var(--ink);
+      overflow: hidden;
+    }
+
+    .dash-head {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .dash-head img {
+      width: 42px;
+      height: 42px;
+      border-radius: 12px;
+      border: 1px solid rgba(33,25,18,0.18);
+      box-shadow: 0 4px 12px rgba(31,26,20,0.16);
+    }
+
+    .dash-title {
+      font-size: 34px;
+      font-weight: 700;
+      line-height: 1.04;
+    }
+
+    .dash-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin: 14px 0;
+    }
+
+    .dash-metric {
+      border-radius: 10px;
+      background: var(--paper-2);
+      padding: 13px;
+    }
+
+    .dash-metric strong {
+      display: block;
+      font-size: 28px;
+      line-height: 1;
+      margin-bottom: 5px;
+    }
+
+    .dash-cards {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin-top: 16px;
+    }
+
+    .dash-card {
+      background: #fffdfa;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 14px;
+      min-height: 165px;
+    }
+
+    .dash-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .dash-item {
+      border-radius: 8px;
+      background: var(--paper-2);
+      padding: 9px;
+      font-size: 13px;
+      line-height: 1.28;
+    }
+
+    .review-page {
+      position: absolute;
+      inset: 76px 88px 46px 88px;
+      border-radius: 14px;
+      background: #fffaf0;
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+      padding: 22px;
+      font-family: Georgia, "Times New Roman", serif;
+      color: var(--ink);
+    }
+
+    .review-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .review-card {
+      min-height: 220px;
+      background: #fffdfa;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 16px;
+      line-height: 1.35;
+    }
+
+    .review-card.focus {
+      border-color: var(--teal);
+      box-shadow: 0 0 0 3px rgba(15,118,110,0.14);
+      background: #f5fbfa;
+    }
+
+    .roadmap {
+      position: absolute;
+      inset: 54px 70px;
+      font-family: Georgia, "Times New Roman", serif;
+      color: var(--ink);
+      display: grid;
+      align-content: center;
+      gap: 28px;
+    }
+
+    .roadmap h1 {
+      font-size: 54px;
+      margin: 0;
+      line-height: 1;
+    }
+
+    .provider-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+
+    .provider {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: #fffaf0;
+      min-height: 230px;
+      padding: 18px;
+      box-shadow: 0 10px 30px rgba(31,26,20,0.08);
+      transform: translateY(18px);
+      opacity: 0.35;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-width: 0;
+    }
+
+    .provider.active {
+      opacity: 1;
+      transform: translateY(0);
+      box-shadow: 0 18px 48px rgba(31,26,20,0.16);
+    }
+
+    .provider-icon {
+      width: 54px;
+      height: 54px;
+      border-radius: 14px;
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+      color: #fff;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 28px;
+    }
+
+    .provider.gmail .provider-icon { background: #d93025; }
+    .provider.proton .provider-icon { background: #6d4aff; }
+    .provider.outlook .provider-icon { background: #0078d4; }
+
+    .caption {
+      position: absolute;
+      max-width: 290px;
+      border-radius: 16px;
+      background: rgba(33,25,18,0.95);
+      color: #fff8eb;
+      padding: 10px 13px;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 15px;
+      line-height: 1.25;
+      box-shadow: 0 10px 28px rgba(0,0,0,0.18);
+      z-index: 55;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .caption.visible { opacity: 1; }
+
+    .caption::after {
+      content: "";
+      position: absolute;
+      width: 0;
+      height: 0;
+      border: 10px solid transparent;
+    }
+
+    .caption.top::after {
+      left: 22px;
+      bottom: -18px;
+      border-top-color: rgba(33,25,18,0.95);
+    }
+
+    .caption.bottom::after {
+      left: 22px;
+      top: -18px;
+      border-bottom-color: rgba(33,25,18,0.95);
+    }
+
+    .caption.left::after {
+      right: -18px;
+      top: 18px;
+      border-left-color: rgba(33,25,18,0.95);
+    }
+
+    .caption.right::after {
+      left: -18px;
+      top: 18px;
+      border-right-color: rgba(33,25,18,0.95);
+    }
+
+    .highlight {
+      position: absolute;
+      border: 3px solid rgba(200,134,22,0.95);
+      border-radius: 16px;
+      background: rgba(255,244,221,0.14);
+      box-shadow: 0 0 0 6px rgba(255,244,221,0.7);
+      z-index: 40;
+      opacity: 0;
+    }
+
+    .highlight.visible { opacity: 1; }
+  </style>
+</head>
+<body>
+  <div class="stage">
+    <div id="world" class="world"></div>
+    <div id="caption" class="caption"></div>
+    <div id="highlight" class="highlight"></div>
+  </div>
+
+  <script>
+    const iconPath = "../brand/threadwise-app-icon.png";
+    const clips = {
+      daily: { duration: 5 },
+      teach: { duration: 5 },
+      unsubscribe: { duration: 5 },
+      roadmap: { duration: 4.6 },
+    };
+    const rows = [
+      ["RoleScout Jobs", "Senior AI product roles this week", "New recommendations based on your profile.", "9:42 AM", "selected", "teach-job-row"],
+      ["Alex Rivera", "Quick note on the portfolio review", "I left comments on the demo flow.", "9:31 AM", ""],
+      ["Cloud Billing", "Monthly invoice available", "Your account statement is ready.", "8:58 AM", "dimmed"],
+      ["Northstar Weekly", "Five essays worth reading", "A concise roundup for product builders.", "8:21 AM", "dimmed"],
+      ["Daily Deals Outlet", "Final hours: 40 percent off workspace gear", "Subscriber-only code expires tonight.", "7:55 AM", "dimmed", "unsubscribe-row"],
+      ["Repo Security", "Security alert resolved", "Dependency Bot closed one vulnerability.", "7:18 AM", "dimmed"],
+      ["City Rail", "Your trip receipt", "Booking confirmation and travel details.", "6:44 AM", "dimmed"],
+      ["SaaS Webinar Club", "Tomorrow: automate your inbox workshop", "Reserve your place for the live session.", "Yesterday", "dimmed"],
+      ["Dev Store", "Your keyboard order shipped", "Tracking will update after carrier scan.", "Yesterday", "dimmed"],
+      ["Utopia Offers", "Utopia Age 113 is almost here", "Low-value novelty promotion.", "Yesterday", "dimmed"],
+      ["Calendar Bot", "Coffee chat confirmed for Thursday", "Calendar invitation details attached.", "Mon", "dimmed"],
+      ["Project Partner", "Can you approve the demo copy?", "Please confirm the wording.", "Mon", "dimmed"],
+    ];
+
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    function ease(x) {
+      x = clamp(x, 0, 1);
+      return x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2;
+    }
+
+    function lerp(a, b, x) {
+      return a + (b - a) * ease(x);
+    }
+
+    function phase(t, start, end) {
+      return clamp((t - start) / (end - start), 0, 1);
+    }
+
+    function rowHtml(row, i, forceSelected = false) {
+      const selected = forceSelected || row[4] === "selected";
+      return `
+        <div class="email-row ${selected ? "selected" : row[4]}"${row[5] ? ` data-demo-target="${row[5]}"` : ""}>
+          <div class="box"></div>
+          <div class="star">☆</div>
+          <div class="sender">${row[0]}</div>
+          <div class="subject"><strong>${row[1]}</strong> <span class="snippet">- ${row[2]}</span></div>
+          <div class="time">${row[3]}</div>
+        </div>
+      `;
+    }
+
+    function gmailShell(sidebarHtml, selectedIndex = 0) {
+      return `
+        <div class="browser">
+          <div class="chrome">
+            <div class="traffic"><span></span><span></span><span></span></div>
+            <div class="address">mail.google.com/mail/u/demo.threadwise.test/#inbox</div>
+          </div>
+          <div class="gmail">
+            <div class="gmail-top">
+              <div class="gmail-logo"><div class="gmail-mark"></div><span>Gmail</span></div>
+              <div class="search">Search mail</div>
+              <div class="demo-account">Demo account · synthetic mail</div>
+            </div>
+            <aside class="nav">
+              <button class="compose">Compose</button>
+              <div class="nav-item active"><span>Inbox</span><strong>24</strong></div>
+              <div class="nav-item"><span>Starred</span></div>
+              <div class="nav-item"><span>Snoozed</span></div>
+              <div class="nav-item"><span>Sent</span></div>
+              <div class="nav-item"><span>Drafts</span></div>
+              <div style="height:18px"></div>
+              <div class="nav-item"><span>EA/Work</span></div>
+              <div class="nav-item"><span>EA/Promotions</span></div>
+              <div class="nav-item"><span>EA/LowValue</span></div>
+            </aside>
+            <main class="inbox">
+              <div class="toolbar">
+                <span>☑</span><span>↻</span><span>More</span>
+                <div class="tabs">
+                  <div class="tab active">Primary</div>
+                  <div class="tab">Promotions</div>
+                  <div class="tab">Updates</div>
+                </div>
+              </div>
+              <div class="rows">${rows.map((row, i) => rowHtml(row, i, i === selectedIndex)).join("")}</div>
+            </main>
+            ${threadwisePanel(sidebarHtml)}
+          </div>
+        </div>
+      `;
+    }
+
+    function threadwisePanel(body) {
+      return `
+        <aside class="threadwise">
+          <div>
+            <div class="tw-header">
+              <div class="tw-brand">
+                <img class="tw-icon" src="${iconPath}" alt="">
+                <div>
+                  <div class="tw-title">Threadwise</div>
+                  <div class="tw-kicker">CLEAR THREADS. BETTER INBOX.</div>
+                </div>
+              </div>
+              <button class="button">Minimize</button>
+            </div>
+          </div>
+          <div class="tw-body">${body}</div>
+        </aside>
+      `;
+    }
+
+    function selectedEmailCard(status = "Promotions", handling = "Kept visible") {
+      return `
+        <section class="card tint" data-demo-target="teach-selected-card">
+          <div class="eyebrow">Selected Email</div>
+          <div class="tw-subject">Senior AI product roles this week</div>
+          <div class="tw-sender">RoleScout Jobs &lt;jobs@example.test&gt;</div>
+          <div class="pill-row">
+            <span class="pill">${status}</span>
+            <span class="pill ${handling === "Needs attention" || handling === "Review needed" ? "warn" : "teal"}">${handling}</span>
+          </div>
+          <div class="note-box">
+            <div class="eyebrow">Why</div>
+            New job recommendation email from a recurring sender. Currently treated as promotional.
+          </div>
+        </section>
+      `;
+    }
+
+    function todayCard() {
+      return `
+        <section class="card" data-demo-target="today-summary-card">
+          <div class="eyebrow">Today</div>
+          <div class="metric-grid">
+            <div class="metric" data-demo-target="processed-stat"><strong>24</strong><span>processed</span></div>
+            <div class="metric" data-demo-target="auto-handled-stat"><strong>14</strong><span>auto-handled</span></div>
+            <div class="metric" data-demo-target="needs-attention-stat"><strong>4</strong><span>review needed</span></div>
+            <div class="metric" data-demo-target="unsubscribe-stat"><strong>3</strong><span>unsubscribe</span></div>
+          </div>
+          <div class="note-box" data-demo-target="today-explainer">
+            <strong>Viewing · Review needed</strong><br>
+            Uncertain mail stays visible until a human decides.
+          </div>
+          <div class="buttons">
+            <button class="button primary" data-demo-target="open-dashboard-button">Open daily dashboard</button>
+            <button class="button">Review unsubscribe candidates</button>
+          </div>
+        </section>
+      `;
+    }
+
+    function dailyDashboard() {
+      return `
+        <div class="dashboard" data-demo-target="daily-dashboard-page">
+          <div class="dash-head" data-demo-target="daily-dashboard-header">
+            <img src="${iconPath}" alt="">
+            <div>
+              <div class="eyebrow">Daily Dashboard</div>
+              <div class="dash-title">What Threadwise did today</div>
+            </div>
+          </div>
+          <p style="font-size:17px;line-height:1.45;margin:0;color:var(--ink);">The fuller view behind the inbox sidebar: what came in, what was handled, and what still needs review.</p>
+          <div class="dash-grid">
+            <div class="dash-metric"><strong>24</strong><span>processed</span></div>
+            <div class="dash-metric"><strong>14</strong><span>auto-handled</span></div>
+            <div class="dash-metric"><strong>4</strong><span>review needed</span></div>
+            <div class="dash-metric"><strong>3</strong><span>unsubscribe candidates</span></div>
+          </div>
+          <div class="dash-cards">
+            <div class="dash-card">
+              <div class="eyebrow">What Changed Today</div>
+              <div class="dash-list">
+                <div class="dash-item"><strong>9 labels written</strong><br>Promotions, receipts, travel, and account security.</div>
+                <div class="dash-item"><strong>5 low-value items removed</strong><br>Bounded cleanup under current rules.</div>
+                <div class="dash-item"><strong>0 deletes, 0 sends</strong><br>Safety boundary remains visible.</div>
+              </div>
+            </div>
+            <div class="dash-card">
+              <div class="eyebrow">Review Needed</div>
+              <div class="dash-list">
+                <div class="dash-item">RoleScout Jobs · category needs correction</div>
+                <div class="dash-item">Hiring Coordinator · reply needed</div>
+                <div class="dash-item">Calendar Bot · review invite details</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function teachPanel(t) {
+      const text = "RoleScout job alerts should be work.";
+      const typeProgress = phase(t, 1.0, 2.1);
+      const typed = text.slice(0, Math.floor(text.length * typeProgress));
+      const caretVisible = t >= 0.9 && t < 2.2 && Math.floor(t * 4) % 2 === 0;
+      const previewVisible = t >= 2.7;
+      return `
+        ${selectedEmailCard("Promotions", "Kept visible")}
+        <section class="card" data-demo-target="teach-panel">
+          <div class="eyebrow">Correct / Teach</div>
+          <div class="pill-row">
+            <span class="pill">Promotions</span>
+            <span class="pill teal">→ EA/Work</span>
+          </div>
+          <div class="field" data-demo-target="teach-text-field">${typed}<span class="caret ${caretVisible ? "visible" : ""}"></span></div>
+          <div class="buttons">
+            <button class="button primary" data-demo-target="preview-lesson-button">Preview lesson</button>
+            <button class="button">Clear</button>
+          </div>
+          ${previewVisible ? `
+            <div class="impact" data-demo-target="impact-preview">
+              <div class="impact-title">I found 4 matching emails before changing anything.</div>
+              <div class="pill-row">
+                <span class="pill teal">Current email → EA/Work</span>
+                <span class="pill warn">4 matching emails</span>
+              </div>
+              <div style="margin-top:8px;color:var(--muted);">Nothing else changes unless you explicitly approve it.</div>
+              <div class="buttons">
+                <button class="button primary">Use for future only</button>
+                <button class="button blue">Apply to 4</button>
+                <button class="button">Keep discussing</button>
+              </div>
+            </div>
+          ` : ""}
+        </section>
+      `;
+    }
+
+    function unsubscribePanel() {
+      return `
+        ${selectedEmailCard("Promotions", "Kept visible")}
+        <section class="card" data-demo-target="unsubscribe-summary-card">
+          <div class="eyebrow">Today</div>
+          <div class="metric-grid">
+            <div class="metric"><strong>24</strong><span>processed</span></div>
+            <div class="metric" data-demo-target="unsubscribe-count-stat"><strong>3</strong><span>unsubscribe candidates</span></div>
+          </div>
+          <div class="note-box" data-demo-target="unsubscribe-explainer">
+            <strong>Daily Deals Outlet</strong><br>
+            Unsubscribe candidate found. Nothing has been executed.
+          </div>
+          <div class="buttons">
+            <button class="button primary" data-demo-target="review-unsubscribe-button">Review unsubscribe candidates</button>
+          </div>
+        </section>
+      `;
+    }
+
+    function unsubscribeReview(focus = false) {
+      return `
+        <div class="review-page" data-demo-target="unsubscribe-review-page">
+          <div class="dash-head" data-demo-target="unsubscribe-review-header">
+            <img src="${iconPath}" alt="">
+            <div>
+              <div class="eyebrow">Unsubscribe Review</div>
+              <div class="dash-title">Subscription cleanup</div>
+            </div>
+          </div>
+          <p style="font-size:17px;line-height:1.45;margin:0;">Selected for later unsubscribe: 0. Ready now: 3. Manual follow-up needed: 1.</p>
+          <div class="pill-row" style="margin-top:12px;">
+            <span class="pill">Ready now: 3</span>
+            <span class="pill warn">Manual follow-up: 1</span>
+            <span class="pill">All candidates: 4</span>
+          </div>
+          <div class="review-grid">
+            <article class="review-card ${focus ? "focus" : ""}" data-demo-target="unsubscribe-review-card">
+              <div class="eyebrow">Unsubscribe</div>
+              <h2 style="margin:8px 0 14px;font-size:27px;">Daily Deals Outlet</h2>
+              <p><strong>Sender:</strong> deals@example.test</p>
+              <p><strong>Status:</strong> Ready for review.</p>
+              <p><strong>Evidence:</strong> 5 messages</p>
+              <button class="button primary">Queue for approval</button>
+            </article>
+            <article class="review-card">
+              <div class="eyebrow">Unsubscribe</div>
+              <h2 style="margin:8px 0 14px;font-size:27px;">Northstar Weekly</h2>
+              <p><strong>Sender:</strong> weekly@example.test</p>
+              <p><strong>Status:</strong> Ready for review.</p>
+              <p><strong>Evidence:</strong> 2 messages</p>
+              <button class="button primary">Queue for approval</button>
+            </article>
+            <article class="review-card">
+              <div class="eyebrow">Manual</div>
+              <h2 style="margin:8px 0 14px;font-size:27px;">Newsletter Lab</h2>
+              <p><strong>Sender:</strong> newsletter@example.test</p>
+              <p><strong>Status:</strong> Manual follow-up.</p>
+              <p><strong>Evidence:</strong> 1 message</p>
+              <button class="button">Leave manual</button>
+            </article>
+          </div>
+        </div>
+      `;
+    }
+
+    function roadmap(t) {
+      const g = t >= 0.35;
+      const p = t >= 1.45;
+      const o = t >= 2.55;
+      return `
+        <div class="roadmap">
+          <div>
+            <div class="eyebrow">Roadmap / Next</div>
+            <h1 data-demo-target="roadmap-title">Gmail-first today. Inbox-agnostic later.</h1>
+          </div>
+          <div class="provider-row">
+            <div class="provider gmail ${g ? "active" : ""}" data-demo-target="roadmap-gmail-card">
+              <div class="provider-icon">M</div>
+              <div>
+                <div class="eyebrow">Current Demo</div>
+                <h2 style="margin:8px 0;font-size:32px;">Gmail</h2>
+                <p>Shipped demo surface with synthetic data.</p>
+              </div>
+            </div>
+            <div class="provider proton ${p ? "active" : ""}" data-demo-target="roadmap-proton-card">
+              <div class="provider-icon">P</div>
+              <div>
+                <div class="eyebrow">Next</div>
+                <h2 style="margin:8px 0;font-size:32px;">ProtonMail</h2>
+                <p>Bring the same supervised loop to the next inbox.</p>
+              </div>
+            </div>
+            <div class="provider outlook ${o ? "active" : ""}" data-demo-target="roadmap-outlook-card">
+              <div class="provider-icon">O</div>
+              <div>
+                <div class="eyebrow">Later</div>
+                <h2 style="margin:8px 0;font-size:32px;">Outlook / Hotmail</h2>
+                <p>Inbox-agnostic direction, still human-approved.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function clampRect(rect) {
+      const width = 290;
+      const height = 56;
+      return {
+        width,
+        height,
+        left: clamp(rect.left, 20, 1280 - width - 20),
+        top: clamp(rect.top, 20, 800 - height - 20),
+      };
+    }
+
+    function getTargetRect(target) {
+      if (!target) {
+        return null;
+      }
+      const node = typeof target === "string" ? document.querySelector(`[data-demo-target="${target}"]`) : target;
+      if (!node) {
+        return null;
+      }
+      const rect = node.getBoundingClientRect();
+      return {
+        left: rect.left,
+        top: rect.top,
+        width: rect.width,
+        height: rect.height,
+        right: rect.right,
+        bottom: rect.bottom,
+      };
+    }
+
+    function setCallout(text, target, placement = "top") {
+      const caption = document.getElementById("caption");
+      caption.textContent = text;
+      if (!text) {
+        caption.className = "caption";
+        caption.style.display = "none";
+        return;
+      }
+      caption.style.display = "block";
+      const rect = getTargetRect(target);
+      const boxWidth = text.length > 30 ? 290 : 250;
+      const boxHeight = text.length > 30 ? 58 : 50;
+      let left = 32;
+      let top = 32;
+      let side = placement;
+      if (rect) {
+        if (placement === "top") {
+          left = rect.left;
+          top = rect.top - boxHeight - 16;
+          side = "top";
+        } else if (placement === "bottom") {
+          left = rect.left;
+          top = rect.bottom + 16;
+          side = "bottom";
+        } else if (placement === "left") {
+          left = rect.left - boxWidth - 16;
+          top = rect.top + rect.height / 2 - boxHeight / 2;
+          side = "left";
+        } else {
+          left = rect.right + 16;
+          top = rect.top + rect.height / 2 - boxHeight / 2;
+          side = "right";
+        }
+      }
+      const bounded = clampRect({ left, top });
+      caption.className = `caption ${side} visible`;
+      caption.style.left = `${bounded.left}px`;
+      caption.style.top = `${bounded.top}px`;
+      caption.style.width = `${boxWidth}px`;
+    }
+
+    function setHighlight(target, visible = false) {
+      const node = document.getElementById("highlight");
+      if (!visible) {
+        node.classList.remove("visible");
+        return;
+      }
+      const rect = getTargetRect(target);
+      if (!rect) {
+        node.classList.remove("visible");
+        return;
+      }
+      Object.assign(node.style, {
+        left: `${rect.left - 6}px`,
+        top: `${rect.top - 6}px`,
+        width: `${rect.width + 12}px`,
+        height: `${rect.height + 12}px`,
+      });
+      node.classList.add("visible");
+    }
+
+    function clearFocus() {
+      setCallout("", null);
+      setHighlight(null, false);
+    }
+
+    function daily(t) {
+      const world = document.getElementById("world");
+      const useDashboard = t >= 3.6;
+      world.style.transform = "none";
+      world.innerHTML = useDashboard
+        ? dailyDashboard()
+        : gmailShell(`${selectedEmailCard("EA/Work", "Review needed")}${todayCard()}`, 0);
+      if (t < 0.7) {
+        setCallout("Daily run completed.", "today-summary-card", "right");
+        setHighlight("today-summary-card", true);
+      } else if (t < 1.5) {
+        setCallout("Processed / auto-handled / review / unsubscribe.", "needs-attention-stat", "top");
+        setHighlight("needs-attention-stat", true);
+      } else if (t < 2.7) {
+        setCallout("Uncertain mail stays visible.", "today-explainer", "right");
+        setHighlight("today-explainer", true);
+      } else if (t < 3.6) {
+        setCallout("Open the daily dashboard.", "open-dashboard-button", "top");
+        setHighlight("open-dashboard-button", true);
+      } else {
+        setCallout("Open the daily dashboard.", "daily-dashboard-header", "bottom");
+        setHighlight("daily-dashboard-header", true);
+      }
+    }
+
+    function teach(t) {
+      const world = document.getElementById("world");
+      world.style.transform = "none";
+      world.innerHTML = gmailShell(teachPanel(t), 0);
+      if (t < 0.7) {
+        setCallout("A job email is selected.", "teach-job-row", "right");
+        setHighlight("teach-job-row", true);
+      } else if (t < 1.6) {
+        setCallout("Threadwise explains the decision.", "teach-selected-card", "left");
+        setHighlight("teach-selected-card", true);
+      } else if (t < 2.8) {
+        setCallout("Teach: Promotions → EA/Work.", "teach-panel", "left");
+        setHighlight("teach-panel", true);
+      } else {
+        setCallout("Preview first. Nothing changes blindly.", "preview-lesson-button", "top");
+        setHighlight("impact-preview", true);
+      }
+    }
+
+    function unsubscribe(t) {
+      const world = document.getElementById("world");
+      const useReview = t >= 3.1;
+      world.style.transform = "none";
+      world.innerHTML = useReview ? unsubscribeReview(true) : gmailShell(unsubscribePanel(), 4);
+      if (t < 0.7) {
+        setCallout("Daily Deals Outlet.", "unsubscribe-row", "right");
+        setHighlight("unsubscribe-row", true);
+      } else if (t < 1.6) {
+        setCallout("3 unsubscribe candidates.", "unsubscribe-count-stat", "top");
+        setHighlight("unsubscribe-count-stat", true);
+      } else if (t < 2.4) {
+        setCallout("Nothing has been executed.", "unsubscribe-explainer", "right");
+        setHighlight("unsubscribe-explainer", true);
+      } else if (t < 3.1) {
+        setCallout("Review unsubscribe candidates.", "review-unsubscribe-button", "top");
+        setHighlight("review-unsubscribe-button", true);
+      } else {
+        setCallout("Approval is explicit.", "unsubscribe-review-card", "left");
+        setHighlight("unsubscribe-review-card", true);
+      }
+    }
+
+    function roadmapClip(t) {
+      const world = document.getElementById("world");
+      world.style.transform = "none";
+      world.innerHTML = roadmap(t);
+      if (t < 1.0) {
+        setCallout("Current demo: Gmail.", "roadmap-gmail-card", "top");
+        setHighlight("roadmap-gmail-card", true);
+      } else if (t < 2.1) {
+        setCallout("Next: same supervised loop.", "roadmap-proton-card", "top");
+        setHighlight("roadmap-proton-card", true);
+      } else if (t < 3.2) {
+        setCallout("Later: inbox-agnostic.", "roadmap-outlook-card", "top");
+        setHighlight("roadmap-outlook-card", true);
+      } else {
+        setCallout("Gmail-first today. Inbox-agnostic later.", "roadmap-title", "bottom");
+      }
+    }
+
+    function renderDemoTime(t, clipName = currentClip) {
+      currentClip = clipName || "daily";
+      const duration = clips[currentClip]?.duration || 18;
+      t = clamp(Number(t) || 0, 0, duration);
+      clearFocus();
+      if (currentClip === "daily") daily(t);
+      if (currentClip === "teach") teach(t);
+      if (currentClip === "unsubscribe") unsubscribe(t);
+      if (currentClip === "roadmap") roadmapClip(t);
+    }
+
+    const params = new URLSearchParams(location.search);
+    let currentClip = params.get("clip") || "daily";
+    window.setDemoTime = (t, clipName) => renderDemoTime(t, clipName);
+    window.demoClips = clips;
+    renderDemoTime(Number(params.get("t") || "0"), currentClip);
+  </script>
+</body>
+</html>

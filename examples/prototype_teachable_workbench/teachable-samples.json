@@ -1,0 +1,40 @@
+{
+  "batch_id": "teachable-samples",
+  "messages": [
+    {
+      "message_id": "teach-001",
+      "sender": "Ashby <notifications@ashbyhq.com>",
+      "subject": "Company profile update",
+      "date": "2026-06-24T09:00:00Z",
+      "body": "A profile you follow has new activity. Review the latest update when you have time."
+    },
+    {
+      "message_id": "teach-002",
+      "sender": "Greenhouse <no-reply@greenhouse.io>",
+      "subject": "Portal reminder",
+      "date": "2026-06-24T09:10:00Z",
+      "body": "There is a pending portal notification waiting for your review."
+    },
+    {
+      "message_id": "teach-003",
+      "sender": "Lever <notifications@hire.lever.co>",
+      "subject": "Status page updated",
+      "date": "2026-06-24T09:20:00Z",
+      "body": "The workspace status page has a new update."
+    },
+    {
+      "message_id": "teach-004",
+      "sender": "Taylor Morgan <taylor@northstarsearch.example>",
+      "subject": "Following up",
+      "date": "2026-06-24T09:30:00Z",
+      "body": "I am a recruiter checking whether you are open to a quick call next week."
+    },
+    {
+      "message_id": "teach-005",
+      "sender": "Store <orders@example.com>",
+      "subject": "Your order is on the way",
+      "date": "2026-06-24T09:40:00Z",
+      "body": "Your recent order has shipped. View tracking details and receipt online."
+    }
+  ]
+}
