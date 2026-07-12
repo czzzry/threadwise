@@ -3206,6 +3206,7 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertEqual(payload["bound_origin"], "http://127.0.0.1:8021")
             self.assertEqual(payload["dashboard_path"], "/daily-dashboard#run-gmail-check")
             self.assertEqual(payload["health_path"], "/api/health")
+            self.assertFalse(payload["analytics_enabled"])
             self.assertEqual(payload["storage_summary"]["storage_dir_name"], storage_dir.name)
             self.assertEqual(payload["storage_summary"]["batch_count"], 1)
             self.assertEqual(payload["storage_summary"]["report_count"], 0)

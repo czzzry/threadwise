@@ -489,6 +489,7 @@ class GmailCompanionApp:
             "bound_origin": self._bound_origin(handler),
             "dashboard_path": "/daily-dashboard#run-gmail-check",
             "health_path": HEALTH_STATUS_PATH,
+            "analytics_enabled": self._analytics.enabled,
             "storage_summary": self._cached_storage_summary(),
             "capabilities": [
                 "sidebar-state",
