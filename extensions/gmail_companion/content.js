@@ -454,6 +454,11 @@
 
   function refreshSelection(force = false) {
     lastLiveContext = stabilizedLiveContext(selectedContext());
+    if (manualPreviewContext && isMeaningfulContext(lastLiveContext) && !contextsMatch(lastLiveContext, manualPreviewContext)) {
+      manualPreviewContext = null;
+      resetPerEmailInteraction();
+      previousPayload = "";
+    }
     if (forcedHome && isMeaningfulContext(lastLiveContext) && (!forcedHomeLiveContext || !contextsMatch(lastLiveContext, forcedHomeLiveContext))) {
       forcedHome = false;
       forcedHomeLiveContext = null;
@@ -1409,7 +1414,7 @@
       setHtml(selectedEmailSecondaryNode, "");
       setHtml(teachPanelNode, "");
     } else if (workspaceMode === "teach-preview") {
-      const label = decisionLabelName(teachDraft.targetLabel || decisionSuggestedLabelId(selected) || selected.classification || "");
+      const label = decisionLabelName(teachPreview?.target_label || teachPreview?.proposed_label || (teachPreview?.selected_label_after || [])[0] || teachDraft.targetLabel || decisionSuggestedLabelId(selected) || selected.classification || "");
       const learningPreviewHtml = teachPreview
         ? renderCompactTeachPreviewHtml(teachPreview)
         : teachResult
@@ -2639,6 +2644,29 @@
     return `Your note sounds like ${decisionLabelName(mentioned.id)}, but ${decisionLabelName(selectedLabel)} is selected. Choose which one you mean.`;
   }
 
+  function explicitMultiLabelRequest() {
+    const note = String(teachDraft.note || "").trim().toLowerCase();
+    if (!note || !/\b(?:both|two labels?|multiple labels?)\b/.test(note)) {
+      return "";
+    }
+    const requested = allowedDecisionLabels().filter((item) => {
+      const aliases = [
+        normalizedLabelText(item.name),
+        normalizedLabelText(item.id),
+        normalizedLabelText(item.id).replaceAll("-", " "),
+      ].filter(Boolean);
+      return aliases.some((alias) => {
+        const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        return new RegExp(`\\b${escaped}\\b`, "i").test(note);
+      });
+    });
+    if (requested.length < 2) {
+      return "";
+    }
+    const names = requested.map((item) => decisionLabelName(item.id)).join(" and ");
+    return `Threadwise currently applies one EA label at a time. You asked for ${names}. Choose the single best label for this email, then describe any conditional future behavior separately.`;
+  }
+
   function noteExplicitlyAssignsLabel(note, alias) {
     const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const clauses = String(note || "").split(/[.!?;]+/).map((part) => part.trim()).filter(Boolean);
@@ -2913,10 +2941,15 @@
       event.preventDefault();
       syncTeachDraftFromDom();
       teachDraft.targetLabel = internalLabelId(teachDraft.targetLabel);
-      if (!teachDraft.targetLabel) {
-        selectedDecisionConflict = "Choose a label before previewing the change.";
+      selectedDecisionConflict = explicitMultiLabelRequest();
+      if (selectedDecisionConflict) {
         if (lastSidebarState) renderState(lastSidebarState);
-        document.getElementById("ea-target-label")?.focus();
+        return;
+      }
+      if (!teachDraft.targetLabel && !String(teachDraft.note || "").trim()) {
+        selectedDecisionConflict = "Choose a label or describe the correction in the note.";
+        if (lastSidebarState) renderState(lastSidebarState);
+        document.getElementById("ea-teach-note")?.focus();
         return;
       }
       selectedDecisionConflict = labelConflictForDraft();
@@ -3192,6 +3225,10 @@
       } else {
         teachResult = null;
         teachPreview = response.payload;
+        const previewTargetLabel = internalLabelId(response.payload?.target_label || response.payload?.proposed_label || (response.payload?.selected_label_after || [])[0] || "");
+        if (previewTargetLabel) {
+          teachDraft.targetLabel = previewTargetLabel;
+        }
         teachFlowState = "rule-proposed";
         inboxApplyConfirmOpen = false;
         teachOutcome = null;
@@ -3208,6 +3245,10 @@
       return false;
     }
     syncTeachDraftFromDom();
+    const previewTargetLabel = internalLabelId(teachPreview?.target_label || teachPreview?.proposed_label || (teachPreview?.selected_label_after || [])[0] || "");
+    if (previewTargetLabel) {
+      teachDraft.targetLabel = previewTargetLabel;
+    }
     currentApplyError = "";
     if (mode === "current-only") {
       recordCommittedCurrentDecision();
