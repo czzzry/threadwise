@@ -117,6 +117,13 @@ def build_selected_email_state(storage_dir: Path, unsubscribe_candidates: list[d
         status, status_label = "kept-visible", "Kept visible"
     else:
         status, status_label = classify_handling_status(item, write_status, inbox_status)
+        if (
+            status == "kept-visible"
+            and write_status is None
+            and labels
+            and item.get("review_state") == "reviewed"
+        ):
+            status, status_label = "write-unconfirmed", "Gmail update needs confirmation"
     candidate = candidate_from_message(
         batch.get("provider", "gmail"),
         batch.get("account_id", ""),
@@ -204,9 +211,18 @@ def classify_handling_status(item: dict, write_status: str | None, inbox_status:
         return "auto-handled", "Auto-handled"
     if write_status == "applied":
         return "kept-visible", "Kept visible"
+    if write_status in {"failed", "pending"}:
+        return "write-unconfirmed", "Gmail update needs confirmation"
     if item.get("review_action") == "auto-approve":
         return "auto-labeled", "Auto-labeled"
     return "kept-visible", "Kept visible"
+
+def action_reason_for_status(status: str) -> str:
+    if status == "write-unconfirmed":
+        return "Finish Gmail update"
+    if status == "needs-attention":
+        return "Choose or confirm label"
+    return ""
 
 def suggested_label_for_item(item: dict) -> str | None:
     labels = item.get("final_labels") or item.get("applied_labels") or []
@@ -679,6 +695,7 @@ def build_companion_runtime_payload(storage_dir: Path) -> dict:
                         "classification": classification,
                         "status": status,
                         "status_label": status_label,
+                        "action_reason": action_reason_for_status(status),
                         "reason": item.get("interpretation") or item.get("snippet") or "",
                         "unsubscribe_available": unsubscribe_candidate is not None,
                     }
@@ -690,7 +707,9 @@ def build_companion_runtime_payload(storage_dir: Path) -> dict:
         "daily_summary": build_daily_summary(storage_dir),
         "items": items[:80],
         "recent_items": items[:24],
-        "needs_attention_items": [item for item in items if item.get("status") == "needs-attention"][:12],
+        "needs_attention_items": [
+            item for item in items if item.get("status") in {"needs-attention", "write-unconfirmed"}
+        ][:12],
         "auto_handled_items": [item for item in items if item.get("status") == "auto-handled"][:12],
         "kept_visible_items": [item for item in items if item.get("status") in {"kept-visible", "auto-labeled"}][:12],
     }

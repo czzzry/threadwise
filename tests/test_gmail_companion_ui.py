@@ -263,6 +263,17 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertEqual(background_result.returncode, 0, background_result.stderr)
         self.assertEqual(analytics_result.returncode, 0, analytics_result.stderr)
 
+    def test_extension_offers_apply_suggestion_for_unconfirmed_selected_email(self) -> None:
+        content_js = (
+            Path(__file__).parent.parent / "extensions" / "gmail_companion" / "content.js"
+        ).read_text()
+
+        self.assertIn('selected.status === "write-unconfirmed"', content_js)
+        self.assertIn('data-ea-action="accept-suggestion"', content_js)
+        self.assertIn("Apply ${escapeHtml(label)}", content_js)
+        self.assertIn("Finish Gmail update", content_js)
+        self.assertIn('["needs-attention", "write-unconfirmed"].includes(selected?.status)', content_js)
+
     def test_extension_uses_harness_state_and_clickable_summary_filters(self) -> None:
         repo_root = Path(__file__).resolve().parent.parent
         background_js = (repo_root / "extensions" / "gmail_companion" / "background.js").read_text()
@@ -315,7 +326,9 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("let forcedHome = false", content_js)
         self.assertIn('return "home";', content_js)
         self.assertIn("Review next", content_js)
-        self.assertIn("Review queue needs a refresh", content_js)
+        self.assertNotIn("Review queue needs a refresh", content_js)
+        self.assertIn("No emails need review", content_js)
+        self.assertIn("Gmail sync completed. Threadwise handled everything automatically.", content_js)
         self.assertIn("function noteExplicitlyAssignsLabel", content_js)
         self.assertIn("function defaultManualRuleNote", content_js)
         self.assertIn("teachDraft.note = defaultManualRuleNote()", content_js)
@@ -472,17 +485,12 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("web_accessible_resources", manifest)
         self.assertIn("assets/brand/threadwise-app-icon.png", manifest["web_accessible_resources"][0]["resources"])
 
-    def test_home_sync_button_immediately_renders_pending_feedback(self) -> None:
+    def test_empty_home_does_not_offer_repeated_sync_as_the_primary_action(self) -> None:
         content_js = (Path(__file__).parent.parent / "extensions" / "gmail_companion" / "content.js").read_text()
 
-        self.assertIn(
-            '${gmailCheckPending ? "Running Gmail sync..." : "Run Gmail sync"}',
-            content_js,
-        )
-        self.assertIn(
-            'data-ea-action="run-gmail-sync" ${gmailCheckPending ? "disabled" : ""}',
-            content_js,
-        )
+        self.assertIn('needsReviewCount ? \'<button type="button" data-ea-action="open-needs-attention"', content_js)
+        self.assertIn("No emails need review", content_js)
+        self.assertNotIn('${gmailCheckPending ? "Running Gmail sync..." : "Run Gmail sync"}', content_js)
 
     def test_final_review_receipt_does_not_offer_a_nonexistent_next_email(self) -> None:
         content_js = (Path(__file__).parent.parent / "extensions" / "gmail_companion" / "content.js").read_text()
@@ -2068,6 +2076,75 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertEqual(len(state["recent_items"]), 2)
             self.assertEqual(state["auto_handled_items"], [])
             self.assertEqual(len(state["kept_visible_items"]), 1)
+
+    def test_harness_queue_includes_failed_gmail_write_with_confirmation_reason(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": "Store <news@example.com>",
+                        "subject": "Big sale this week",
+                        "interpretation": "Promotional mail from a recurring sender.",
+                        "review_state": "reviewed",
+                        "review_action": "approve",
+                        "final_labels": ["promotions"],
+                        "applied_labels": ["promotions"],
+                    }
+                ],
+            )
+            (storage_dir / "founder-test-batch-1_write_status.json").write_text(
+                json.dumps({"gmail-live-001": "failed"}, indent=2)
+            )
+
+            state = GmailCompanionApp(storage_dir).harness_state({})
+
+            self.assertEqual(len(state["needs_attention_items"]), 1)
+            self.assertEqual(state["needs_attention_items"][0]["status"], "write-unconfirmed")
+            self.assertEqual(
+                state["needs_attention_items"][0]["action_reason"],
+                "Finish Gmail update",
+            )
+            self.assertEqual(state["kept_visible_items"], [])
+
+    def test_selected_reviewed_email_without_visible_or_recorded_label_write_needs_confirmation(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": "Store <news@example.com>",
+                        "subject": "Big sale this week",
+                        "review_state": "reviewed",
+                        "review_action": "approve",
+                        "final_labels": ["promotions"],
+                        "applied_labels": ["promotions"],
+                    }
+                ],
+            )
+
+            selected = GmailCompanionApp(storage_dir).sidebar_state(
+                {
+                    "provider": "gmail",
+                    "message_id": "gmail-live-001",
+                    "subject": "Big sale this week",
+                    "sender": "news@example.com",
+                    "gmail_labels": "Inbox",
+                }
+            )["selected_email"]
+
+            self.assertEqual(selected["status"], "write-unconfirmed")
+            self.assertEqual(selected["status_label"], "Gmail update needs confirmation")
 
     def test_harness_state_orders_numbered_batches_naturally(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
