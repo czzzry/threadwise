@@ -697,9 +697,7 @@ class GmailCompanionApp:
             "selected_context": selected_context,
             "sidebar_state": self.sidebar_state(selected_context),
             "recent_items": items[:24],
-            "needs_attention_items": [
-                item for item in items if item.get("status") in {"needs-attention", "write-unconfirmed"}
-            ][:12],
+            "needs_attention_items": list(runtime.get("needs_attention_items") or [])[:12],
             "auto_handled_items": [item for item in items if item.get("status") == "auto-handled"][:12],
             "kept_visible_items": [item for item in items if item.get("status") in {"kept-visible", "auto-labeled"}][:12],
         }
