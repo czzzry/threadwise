@@ -366,6 +366,7 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("Decision source", content_js)
         self.assertIn("All labels:", content_js)
         self.assertNotIn("Live Gmail sidebar mode is using the same stored inbox snapshot and queue buckets as the local harness.", content_js)
+
         self.assertIn("data-ea-summary-item", content_js)
         self.assertIn("data-ea-action=\"open-selected-gmail\"", content_js)
         self.assertIn("Open this email in Gmail", content_js)
@@ -470,6 +471,18 @@ class GmailCompanionUiTests(unittest.TestCase):
         manifest = json.loads((repo_root / "extensions" / "gmail_companion" / "manifest.json").read_text())
         self.assertIn("web_accessible_resources", manifest)
         self.assertIn("assets/brand/threadwise-app-icon.png", manifest["web_accessible_resources"][0]["resources"])
+
+    def test_home_sync_button_immediately_renders_pending_feedback(self) -> None:
+        content_js = (Path(__file__).parent.parent / "extensions" / "gmail_companion" / "content.js").read_text()
+
+        self.assertIn(
+            '${gmailCheckPending ? "Running Gmail sync..." : "Run Gmail sync"}',
+            content_js,
+        )
+        self.assertIn(
+            'data-ea-action="run-gmail-sync" ${gmailCheckPending ? "disabled" : ""}',
+            content_js,
+        )
 
     def test_companion_script_runs_from_repo_root_without_pythonpath(self) -> None:
         repo_root = Path(__file__).resolve().parent.parent
