@@ -198,6 +198,8 @@ class LiveGmailClient:
             if id_to_name.get(current_label_id, "").startswith(namespace_prefix) and current_label_id not in label_ids
         ]
         add_label_ids = [label_id for label_id in label_ids if label_id not in current_label_ids]
+        if not add_label_ids and not remove_label_ids:
+            return
         self._transport(
             "POST",
             f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{message_id}/modify",
