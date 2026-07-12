@@ -1291,7 +1291,7 @@
         || Number(teachWriteThrough?.label_write_failed || 0) > 0;
       const inboxFailed = Number(teachWriteThrough?.inbox_remove_failed || 0) > 0;
       const inboxRemoved = Number(teachWriteThrough?.inbox_removed || 0) > 0;
-      const needsReviewCount = Number((lastSidebarState.daily_summary || {}).needs_attention_count || 0);
+      const hasNextReviewItem = remainingNeedsAttentionItems().length > 0;
       const successfulGmailChange = !labelWriteFailed && !inboxFailed;
       const receiptHeading = labelWriteFailed
         ? (teachOutcome.current_email_changed_locally ? `Saved locally as ${label}` : `Couldn’t change to ${label}`)
@@ -1314,7 +1314,8 @@
           <div style="display:grid;gap:8px;border-radius:14px;background:#eef7f5;padding:12px;color:#1f1a14;line-height:1.45;">
             ${receiptOutcomes}
           </div>
-          ${needsReviewCount > 0 && successfulGmailChange ? '<button type="button" data-ea-action="open-needs-attention" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Next email</button>' : ""}
+          ${hasNextReviewItem && successfulGmailChange ? '<button type="button" data-ea-action="open-needs-attention" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Next email</button>' : ""}
+          ${!hasNextReviewItem && successfulGmailChange ? '<div data-ea-review-complete role="status" style="border-radius:14px;background:#dff8ed;padding:12px;color:#0f665e;font-weight:800;">Review queue complete</div><button type="button" data-ea-action="return-home-after-receipt" style="justify-self:start;border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Back to Home</button>' : ""}
           ${successfulGmailChange ? '<button type="button" data-ea-action="teach-future-after-receipt" style="justify-self:start;border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Teach Threadwise for future emails</button>' : ""}
           ${labelWriteFailed || inboxFailed ? `<a href="${LOCAL_ORIGIN}/daily-dashboard" target="_blank" rel="noreferrer" style="color:#5d5342;font-weight:760;text-underline-offset:3px;">Open Activity</a>` : ""}
         </div>
@@ -1786,6 +1787,19 @@
       return [];
     }
     return Array.isArray(lastHarnessState[filter]) ? lastHarnessState[filter] : [];
+  }
+
+  function remainingNeedsAttentionItems() {
+    const currentMessageId = ((lastSidebarState || {}).selected_email || {}).message_id || "";
+    const seen = new Set();
+    return summaryItemsForFilter("needs_attention_items").filter((item) => {
+      const messageId = item?.message_id || "";
+      if (!messageId || messageId === currentMessageId || seen.has(messageId)) {
+        return false;
+      }
+      seen.add(messageId);
+      return true;
+    });
   }
 
   function bucketLabelForFilter(filter) {
@@ -2677,6 +2691,10 @@
       ANALYTICS?.openReviewQueue(Number((lastSidebarState?.daily_summary || {}).needs_attention_count || 0));
       openFirstSummaryItemIfHelpful(activeSummaryFilter);
       return;
+    }
+    const returnHomeAfterReceiptButton = event.target.closest("[data-ea-action='return-home-after-receipt']");
+    if (returnHomeAfterReceiptButton) {
+      return openThreadwiseHome(event);
     }
 
     const teachFutureAfterReceiptButton = event.target.closest("[data-ea-action='teach-future-after-receipt']");

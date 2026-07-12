@@ -484,6 +484,14 @@ class GmailCompanionUiTests(unittest.TestCase):
             content_js,
         )
 
+    def test_final_review_receipt_does_not_offer_a_nonexistent_next_email(self) -> None:
+        content_js = (Path(__file__).parent.parent / "extensions" / "gmail_companion" / "content.js").read_text()
+
+        self.assertIn("function remainingNeedsAttentionItems", content_js)
+        self.assertIn("remainingNeedsAttentionItems().length > 0", content_js)
+        self.assertIn("Review queue complete", content_js)
+        self.assertIn('data-ea-action="return-home-after-receipt"', content_js)
+
     def test_companion_script_runs_from_repo_root_without_pythonpath(self) -> None:
         repo_root = Path(__file__).resolve().parent.parent
         result = subprocess.run(
