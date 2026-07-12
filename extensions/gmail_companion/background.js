@@ -5,6 +5,8 @@ const HEALTH_TIMEOUT_MS = 5000;
 const HARNESS_STATE_TIMEOUT_MS = 30000;
 // A bounded live Gmail run can take longer than an ordinary state read.
 const GMAIL_CHECK_TIMEOUT_MS = 180000;
+// Teaching can include bounded Gmail label mutations across matching inbox messages.
+const GMAIL_MUTATION_TIMEOUT_MS = 180000;
 const ANALYTICS_DISTINCT_ID_KEY = "threadwise_analytics_distinct_id";
 const ANONYMOUS_ID_PATTERN = /^tw_anon_[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -101,6 +103,16 @@ async function probeHealth() {
   };
 }
 
+function apiTimeoutMs(path) {
+  if (path === "/api/gmail-check-run") {
+    return GMAIL_CHECK_TIMEOUT_MS;
+  }
+  if (path === "/api/teach-apply") {
+    return GMAIL_MUTATION_TIMEOUT_MS;
+  }
+  return HARNESS_STATE_TIMEOUT_MS;
+}
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (!message) {
     return false;
@@ -144,7 +156,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "email-agent:api") {
     fetchJson(message.path, {
       method: message.method || "GET",
-      timeoutMs: message.path === "/api/gmail-check-run" ? GMAIL_CHECK_TIMEOUT_MS : HARNESS_STATE_TIMEOUT_MS,
+      timeoutMs: apiTimeoutMs(message.path),
       body: message.body ? JSON.stringify(message.body) : undefined,
     })
       .then(async (response) => {
