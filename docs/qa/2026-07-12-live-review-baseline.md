@@ -1,6 +1,6 @@
 # Live Gmail Review Baseline
 
-Status: Baseline and repair cycle complete; final live verification of extension-only fixes awaits one Chrome extension reload
+Status: Complete; all requested review and recategorization paths repaired and verified live
 Current as of: 2026-07-12
 Surface: Installed Threadwise Gmail companion in the founder's signed-in Chrome profile
 
@@ -105,6 +105,10 @@ The visible sync request was found to take about 75 seconds while the extension 
 
 All four repairs are merged to `main` through PRs 71-73. GitHub CI passed for each follow-up. The final repository state at `dd9f60d` passes 606 tests, focused review-flow checks, JavaScript syntax checks, and `git diff --check`.
 
-### Remaining live gate
+### Final live confirmation
 
-The Chrome extension was last manually reloaded before the final extension-only button and receipt changes landed. The local helper is already running the final `main` backend, and the backend long-instruction repair was verified live. Chrome must reload the unpacked Threadwise extension once more before the corrected current-plus-future button mapping and durable broader-scope receipt can be re-exercised in the installed UI.
+After loading the final extension build, the manual current-email-plus-future path relabeled `Your AI Development Workflow Resource` to `EA/Newsletter`, saved the future rule, reported one successful Gmail label write, and did not rewrite other stored emails.
+
+The manual current-email-plus-future-plus-inbox path then ran on `Your statement is ready`. Threadwise displayed the scope-correct progress message for the full operation, remained connected beyond the former 30-second timeout, and produced a durable receipt after roughly 135 seconds: current email done, Gmail label done, 30 other stored emails changed, future rule saved, 31 Gmail writes applied, one skipped, and no Inbox removals. The same receipt remained visible after the background follow-up refresh.
+
+The final extension timeout repair is merged through PR 75 at `c055aa9`. Together with PRs 71-74, this closes every confirmed blocker from the requested review/categorization QA scope.
