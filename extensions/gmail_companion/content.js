@@ -42,6 +42,7 @@
   let futureLearningError = "";
   let currentApplyError = "";
   let applyInFlight = false;
+  let activeTeachApplyMode = "";
   let recordedSuggestionDecisions = { approve: false, edit: false };
   let lastSelectedMessageId = "";
   let affectedReviewOpen = false;
@@ -883,6 +884,7 @@
     selectedDecisionConflict = "";
     futureLearningError = "";
     currentApplyError = "";
+    activeTeachApplyMode = "";
     recordedSuggestionDecisions = { approve: false, edit: false };
     affectedReviewOpen = false;
     teachDraft = { targetLabel: "", note: "" };
@@ -945,6 +947,12 @@
     return teachFlowState === "result" && teachOutcome?.scope === "current-email";
   }
 
+  function isBroaderTeachResult() {
+    return teachFlowState === "result"
+      && teachResult
+      && ["included-existing", "matching-existing", "current-email-and-future-rule"].includes(teachOutcome?.scope || "");
+  }
+
   function currentEmailResultIsPartial() {
     if (!isCurrentEmailResult()) {
       return false;
@@ -982,6 +990,9 @@
     }
     if (isCurrentEmailResult()) {
       return currentEmailResultIsPartial() ? "partial-receipt" : "current-receipt";
+    }
+    if (isBroaderTeachResult()) {
+      return "teach-result-receipt";
     }
     if (teachFlowState === "applying") {
       return "applying";
@@ -1262,6 +1273,15 @@
         </div>
       `);
       setHtml(selectedEmailSecondaryNode, "");
+    } else if (workspaceMode === "teach-result-receipt") {
+      gmailCheckResult = null;
+      setHtml(selectedEmailNode, `
+        <div data-ea-selected-state="teach-result-receipt" role="status">
+          ${renderTeachReceiptHtml(teachResult.message || "Rule applied.", teachOutcome, ((lastSidebarState || {}).ui_state || {}).async_follow_up)}
+        </div>
+      `);
+      setHtml(selectedEmailSecondaryNode, "");
+      setHtml(teachPanelNode, "");
     } else if (workspaceMode === "current-receipt" || workspaceMode === "partial-receipt") {
       gmailCheckResult = null;
       const label = decisionLabelName(teachDraft.targetLabel || decisionSuggestedLabelId(selected) || selected.classification || "");
@@ -1406,13 +1426,18 @@
       setHtml(selectedEmailSecondaryNode, "");
     } else if (workspaceMode === "applying") {
       const label = decisionLabelName(teachDraft.targetLabel || decisionSuggestedLabelId(selected) || selected.classification || "");
+      const progressCopy = activeTeachApplyMode === "apply-included" || activeTeachApplyMode === "matching-existing"
+        ? "Updating this email and matching inbox emails…"
+        : activeTeachApplyMode === "future-only"
+          ? "Updating this email and saving the future rule…"
+          : "Updating the current email only…";
       setHtml(selectedEmailNode, `
         <div data-ea-selected-state="applying" aria-live="polite" style="display:grid;gap:12px;margin-top:10px;">
           <div>
             <div data-ea-preview-heading style="font-size:1.3rem;font-weight:840;line-height:1.15;overflow-wrap:anywhere;">Applying ${escapeHtml(label)}</div>
             <div style="margin-top:6px;color:#6b6255;font-size:0.88rem;overflow-wrap:anywhere;">${escapeHtml(selected.subject || "(no subject)")}</div>
           </div>
-          <div data-ea-preview-effect style="border-radius:14px;background:#f5efe2;padding:12px;color:#1f1a14;line-height:1.45;">Updating the current email only…</div>
+          <div data-ea-preview-effect style="border-radius:14px;background:#f5efe2;padding:12px;color:#1f1a14;line-height:1.45;">${escapeHtml(progressCopy)}</div>
         </div>
       `);
       setHtml(selectedEmailSecondaryNode, "");
@@ -3075,6 +3100,7 @@
       recordCommittedCurrentDecision();
     }
     applyInFlight = true;
+    activeTeachApplyMode = mode;
     teachFlowState = "applying";
     teachResult = teachPendingResult("apply", mode);
     if (lastHarnessState || lastSidebarState) {

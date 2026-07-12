@@ -475,6 +475,7 @@ try {
     button.click();
   })()`);
   await waitFor(() => evaluate(`document.querySelector('[data-ea-selected-state="applying"]') !== null`));
+  const broadApplying = await decisionSnapshot();
   const applyIncludedGuardCount = await evaluate(`window.__applyRequests.length - ${applyCountBeforeGuard}`);
   const applyIncludedRequest = await evaluate(`window.__applyRequests.at(-1)`);
   await evaluate(`window.__applyCallbacks.shift()?.({
@@ -490,6 +491,11 @@ try {
       sidebar_state: window.__workspaceState
     }
   })`);
+  await waitFor(() => evaluate(`document.querySelector('[data-ea-selected-state="teach-result-receipt"]') !== null`));
+  const broadReceipt = await decisionSnapshot();
+  await evaluate(`window.__eaTestHooks.forceRefresh()`);
+  await waitFor(() => evaluate(`document.querySelector('[data-ea-selected-state="teach-result-receipt"]') !== null`));
+  const broadReceiptAfterRefresh = await decisionSnapshot();
 
   await evaluate(`(() => {
     window.__workspaceState = {
@@ -506,7 +512,7 @@ try {
   const home = await workspaceSnapshot();
   const widthAudits = [...reviewWidthAudits, ...changeWidthAudits, ...previewWidthAudits, ...applyingWidthAudits, ...currentApplyErrorWidthAudits, ...receiptWidthAudits];
 
-  const result = { initialError, selected, review, change, conflict, preview, applying, currentApplyError, receipt, futureLearning, receiptAfterFutureLearning, initialMessageId, nextEmail, nextEmailSubject, nextEmailMessageId, futureReceipt, partialReceipt, partialEditAnalytics, labelFailureReceipt, teachApplyRequestCount, currentApplyRetryRequestCount, acceptRequest, acceptAnalytics, editAnalytics, futureRequest, futureConfirmAnalytics, staleStateReset, changeAfterEdit, reviewAfterCancel, autoHandled, autoHandledWhy, autoHandledChangeOpened, autoHandledSuggestionAnalytics, autoHandledUnconfirmed, keptVisible, autoLabeled, failedHandling, noSuggestion, noSuggestionHasAccept, broadOptionVisible, broadConfirmationVisible, applyIncludedGuardCount, applyIncludedRequest, home, widthAudits, uncaughtErrorCount: uncaughtErrors.length };
+  const result = { initialError, selected, review, change, conflict, preview, applying, currentApplyError, receipt, futureLearning, receiptAfterFutureLearning, initialMessageId, nextEmail, nextEmailSubject, nextEmailMessageId, futureReceipt, partialReceipt, partialEditAnalytics, labelFailureReceipt, teachApplyRequestCount, currentApplyRetryRequestCount, acceptRequest, acceptAnalytics, editAnalytics, futureRequest, futureConfirmAnalytics, staleStateReset, changeAfterEdit, reviewAfterCancel, autoHandled, autoHandledWhy, autoHandledChangeOpened, autoHandledSuggestionAnalytics, autoHandledUnconfirmed, keptVisible, autoLabeled, failedHandling, noSuggestion, noSuggestionHasAccept, broadOptionVisible, broadConfirmationVisible, broadApplying, broadReceipt, broadReceiptAfterRefresh, applyIncludedGuardCount, applyIncludedRequest, home, widthAudits, uncaughtErrorCount: uncaughtErrors.length };
   console.log(JSON.stringify(result, null, 2));
   if (
     initialError.bodyCount !== 1 || initialError.mode !== "error" || !initialError.visible ||
@@ -562,6 +568,8 @@ try {
     autoLabeled.heading !== "Newsletter · Auto-labeled" || autoLabeled.receipt !== "Threadwise classified this email as Newsletter and kept it visible. Gmail label write is not confirmed." ||
     failedHandling.state !== "blocked" || noSuggestionHasAccept || noSuggestion.primaryActions.join(",") !== "Change label" ||
     !broadOptionVisible || !broadConfirmationVisible || applyIncludedGuardCount !== 1 || applyIncludedRequest?.mode !== "apply-included" ||
+    broadApplying.effect !== "Updating this email and matching inbox emails…" ||
+    broadReceipt.state !== "teach-result-receipt" || broadReceiptAfterRefresh.state !== "teach-result-receipt" ||
     home.bodyCount !== 1 || home.mode !== "home" || home.hasSelectedEmail || !home.hasDailySummary ||
     widthAudits.length !== 18 || [...new Set(widthAudits.map((audit) => audit.state))].sort().join(",") !== "applying,change,current-apply-error,preview,receipt,review" ||
     widthAudits.some((audit) => audit.visibleBodyCount !== 1 || audit.visiblePrimaryCount > 1 || audit.horizontalOverflow > 1 || audit.rootRightOverflow > 1) ||
