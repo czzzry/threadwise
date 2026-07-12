@@ -13,6 +13,7 @@
   const PANEL_WIDTH_EXPANDED = "min(920px, calc(100vw - 84px))";
   const PANEL_WIDTH_MINIMIZED = "70px";
   const REFRESH_INTERVAL_MS = 5000;
+  const UNDERSTANDING_REFRESH_INTERVAL_MS = 400;
   let minimized = true;
   let previousPayload = "";
   let lastHarnessState = null;
@@ -59,6 +60,7 @@
   let lastLiveContext = null;
   let trustedHtmlPolicy = null;
   let refreshIntervalId = null;
+  let understandingRefreshTimeoutId = null;
   let refreshInFlight = false;
   let hashChangeListener = null;
   let documentClickListener = null;
@@ -1094,6 +1096,7 @@
     const showingQueuePreview = !!manualPreviewContext;
     const stepCopy = nextStepCopy(selected, showingQueuePreview);
     const understandingActive = selectedUnderstandingActive(selected);
+    scheduleUnderstandingRefresh(understandingActive);
     if (!(selected && selected.found)) {
       previousTeachPreview = null;
       unsubscribeResult = "";
@@ -1720,6 +1723,21 @@
         <div style="margin-top:10px;display:grid;gap:8px;">${renderSummaryItemCards(summaryItemsForFilter(activeSummaryFilter))}</div>
       </details>
     `);
+  }
+
+  function scheduleUnderstandingRefresh(active) {
+    if (understandingRefreshTimeoutId !== null) {
+      window.clearTimeout(understandingRefreshTimeoutId);
+      understandingRefreshTimeoutId = null;
+    }
+    if (!active) {
+      return;
+    }
+    understandingRefreshTimeoutId = window.setTimeout(() => {
+      understandingRefreshTimeoutId = null;
+      previousPayload = "";
+      refreshSelection(true);
+    }, UNDERSTANDING_REFRESH_INTERVAL_MS);
   }
 
   function setHtml(node, html) {
@@ -3683,6 +3701,10 @@
     if (refreshIntervalId !== null) {
       window.clearInterval(refreshIntervalId);
       refreshIntervalId = null;
+    }
+    if (understandingRefreshTimeoutId !== null) {
+      window.clearTimeout(understandingRefreshTimeoutId);
+      understandingRefreshTimeoutId = null;
     }
     if (hashChangeListener) {
       window.removeEventListener("hashchange", hashChangeListener);

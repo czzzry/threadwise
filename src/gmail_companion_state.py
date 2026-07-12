@@ -652,6 +652,51 @@ def group_changed_today_items(items: list[dict]) -> list[dict]:
         groups.append({"label": "Other changes", "items": other_items[:6]})
     return groups
 
+def build_runtime_item(
+    batch: dict,
+    item: dict,
+    raw_message: dict,
+    write_status: str | None,
+    inbox_status: str | None,
+    *,
+    missing_write_is_unconfirmed: bool = False,
+) -> dict:
+    labels = list(item.get("final_labels") or item.get("applied_labels") or [])
+    status, status_label = classify_handling_status(item, write_status, inbox_status)
+    if (
+        missing_write_is_unconfirmed
+        and write_status is None
+        and labels
+        and item.get("review_state") == "reviewed"
+        and inbox_status != "applied"
+    ):
+        status, status_label = "write-unconfirmed", "Gmail update needs confirmation"
+    sender_address = normalized_sender_email(item.get("sender") or "")
+    unsubscribe_candidate = candidate_from_message(
+        batch.get("provider", "gmail"),
+        batch.get("account_id", ""),
+        item,
+        raw_message,
+    )
+    return {
+        "provider": batch.get("provider", "gmail"),
+        "account_id": batch.get("account_id", ""),
+        "batch_id": batch.get("batch_id", ""),
+        "message_id": item.get("message_id", ""),
+        "subject": item.get("subject", ""),
+        "subject_key": (item.get("subject") or "").strip().lower(),
+        "sender": item.get("sender", ""),
+        "sender_address": sender_address,
+        "internal_label": labels[0] if labels else None,
+        "suggested_label": suggested_label_for_item(item),
+        "classification": gmail_label_name(labels[0]) if labels else "Uncategorized",
+        "status": status,
+        "status_label": status_label,
+        "action_reason": action_reason_for_status(status),
+        "reason": item.get("interpretation") or item.get("snippet") or "",
+        "unsubscribe_available": unsubscribe_candidate is not None,
+    }
+
 def build_companion_runtime_payload(storage_dir: Path) -> dict:
     items = []
     batches_dir = storage_dir / "batches"
@@ -666,50 +711,51 @@ def build_companion_runtime_payload(storage_dir: Path) -> dict:
             inbox_status_map = load_json_or_default(inbox_removal_status_path(storage_dir, batch_id), {})
             raw_messages = {message.get("id"): message for message in batch.get("raw_messages", [])}
             for item in batch.get("items", [])[:25]:
-                labels = list(item.get("final_labels") or item.get("applied_labels") or [])
-                classification = gmail_label_name(labels[0]) if labels else "Uncategorized"
-                sender_address = normalized_sender_email(item.get("sender") or "")
-                unsubscribe_candidate = candidate_from_message(
-                    batch.get("provider", "gmail"),
-                    batch.get("account_id", ""),
+                items.append(build_runtime_item(
+                    batch,
                     item,
                     raw_messages.get(item.get("message_id"), {}),
-                )
-                status, status_label = classify_handling_status(
-                    item,
                     write_status_map.get(item.get("message_id", "")),
                     inbox_status_map.get(item.get("message_id", "")),
-                )
-                items.append(
-                    {
-                        "provider": batch.get("provider", "gmail"),
-                        "account_id": batch.get("account_id", ""),
-                        "batch_id": batch_id,
-                        "message_id": item.get("message_id", ""),
-                        "subject": item.get("subject", ""),
-                        "subject_key": (item.get("subject") or "").strip().lower(),
-                        "sender": item.get("sender", ""),
-                        "sender_address": sender_address,
-                        "internal_label": labels[0] if labels else None,
-                        "suggested_label": suggested_label_for_item(item),
-                        "classification": classification,
-                        "status": status,
-                        "status_label": status_label,
-                        "action_reason": action_reason_for_status(status),
-                        "reason": item.get("interpretation") or item.get("snippet") or "",
-                        "unsubscribe_available": unsubscribe_candidate is not None,
-                    }
-                )
+                ))
             if len(items) >= 80:
+                break
+
+    actionable_items: list[dict] = []
+    seen_message_ids: set[str] = set()
+    if batches_dir.exists():
+        all_batch_paths = sorted(
+            batches_dir.glob("*.json"), key=artifact_path_sort_key, reverse=True
+        )
+        for batch_path in all_batch_paths:
+            batch = load_json(batch_path)
+            batch_id = batch.get("batch_id", "")
+            write_status_map = load_json_or_default(write_status_path(storage_dir, batch_id), {})
+            inbox_status_map = load_json_or_default(inbox_removal_status_path(storage_dir, batch_id), {})
+            raw_messages = {message.get("id"): message for message in batch.get("raw_messages", [])}
+            for item in batch.get("items", []):
+                message_id = item.get("message_id", "")
+                if not message_id or message_id in seen_message_ids:
+                    continue
+                seen_message_ids.add(message_id)
+                runtime_item = build_runtime_item(
+                    batch,
+                    item,
+                    raw_messages.get(message_id, {}),
+                    write_status_map.get(message_id),
+                    inbox_status_map.get(message_id),
+                    missing_write_is_unconfirmed=True,
+                )
+                if runtime_item["status"] in {"needs-attention", "write-unconfirmed"}:
+                    actionable_items.append(runtime_item)
+            if len(actionable_items) >= 50:
                 break
     return {
         "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "daily_summary": build_daily_summary(storage_dir),
         "items": items[:80],
         "recent_items": items[:24],
-        "needs_attention_items": [
-            item for item in items if item.get("status") in {"needs-attention", "write-unconfirmed"}
-        ][:12],
+        "needs_attention_items": actionable_items[:12],
         "auto_handled_items": [item for item in items if item.get("status") == "auto-handled"][:12],
         "kept_visible_items": [item for item in items if item.get("status") in {"kept-visible", "auto-labeled"}][:12],
     }

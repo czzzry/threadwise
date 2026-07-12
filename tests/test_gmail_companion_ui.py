@@ -274,6 +274,15 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("Finish Gmail update", content_js)
         self.assertIn('["needs-attention", "write-unconfirmed"].includes(selected?.status)', content_js)
 
+    def test_extension_keeps_refreshing_until_selected_email_is_ready(self) -> None:
+        content_js = (
+            Path(__file__).parent.parent / "extensions" / "gmail_companion" / "content.js"
+        ).read_text()
+
+        self.assertIn("function scheduleUnderstandingRefresh", content_js)
+        self.assertIn("selectedUnderstandingActive(selected)", content_js)
+        self.assertIn("UNDERSTANDING_REFRESH_INTERVAL_MS", content_js)
+
     def test_extension_uses_harness_state_and_clickable_summary_filters(self) -> None:
         repo_root = Path(__file__).resolve().parent.parent
         background_js = (repo_root / "extensions" / "gmail_companion" / "background.js").read_text()
@@ -1410,7 +1419,12 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertIn("Insufficient context, high-consequence cue", attention_section)
             self.assertIn("Could be account-risk mail, but compact context is not enough.", attention_section)
             self.assertIn("1 lower-risk insufficient-context item kept out of this daily attention view.", attention_section)
-            self.assertNotIn("Weekly reading list", attention_section)
+            self.assertNotIn(
+                'class="email-card attention-card"><h3>Weekly reading list',
+                attention_section,
+            )
+            self.assertIn("Weekly reading list", attention_section)
+            self.assertIn("Gmail update needs confirmation", attention_section)
             self.assertIn("Possible Attention", attention_section)
             self.assertNotIn("Needs Attention Now", attention_section)
             self.assertNotIn("No attention-now items in the latest Gmail daily report.", attention_section)
@@ -1737,7 +1751,12 @@ class GmailCompanionUiTests(unittest.TestCase):
                 'data-dashboard-section="activity"', 1
             )[0]
 
-            self.assertNotIn("Flight check-in closes tonight", attention_section)
+            self.assertNotIn(
+                'class="email-card attention-card"><h3>Flight check-in closes tonight',
+                attention_section,
+            )
+            self.assertIn("Flight check-in closes tonight", attention_section)
+            self.assertIn("Gmail update needs confirmation", attention_section)
             self.assertIn('data-dashboard-attention-status="clear"', attention_section)
             self.assertIn("Latest attention pass found no attention-now or possible-attention items.", attention_section)
 
@@ -2145,6 +2164,39 @@ class GmailCompanionUiTests(unittest.TestCase):
 
             self.assertEqual(selected["status"], "write-unconfirmed")
             self.assertEqual(selected["status_label"], "Gmail update needs confirmation")
+
+    def test_harness_queue_finds_unconfirmed_email_beyond_recent_activity_batches(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            for batch_number in range(1, 7):
+                item = {
+                    "source": "gmail",
+                    "account_id": "founder-test",
+                    "message_id": f"gmail-live-00{batch_number}",
+                    "sender": "Store <news@example.com>",
+                    "subject": f"Message {batch_number}",
+                    "review_state": "reviewed",
+                    "review_action": "approve",
+                    "final_labels": ["promotions"],
+                    "applied_labels": ["promotions"],
+                }
+                self._write_batch(
+                    storage_dir,
+                    f"founder-test-batch-{batch_number}",
+                    items=[item],
+                )
+                if batch_number > 1:
+                    (storage_dir / f"founder-test-batch-{batch_number}_write_status.json").write_text(
+                        json.dumps({item["message_id"]: "applied"}, indent=2)
+                    )
+
+            state = GmailCompanionApp(storage_dir).harness_state({})
+
+            self.assertEqual(
+                [item["message_id"] for item in state["needs_attention_items"]],
+                ["gmail-live-001"],
+            )
+            self.assertEqual(state["needs_attention_items"][0]["status"], "write-unconfirmed")
 
     def test_harness_state_orders_numbered_batches_naturally(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
