@@ -62,6 +62,17 @@ def auto_approve_items(items: list[dict], write_status_map: dict[str, str]) -> l
         labels = list(item.get("applied_labels") or [])
         final_labels = list(item.get("final_labels") or [])
         if item.get("review_state") == "reviewed":
+            if (
+                item.get("review_action") == "edit"
+                and not final_labels
+                and len(labels) == 1
+                and labels[0] in {"shopping-order", "receipt-billing"}
+                and item["message_id"] not in write_status_map
+            ):
+                item["review_action"] = "auto-approve"
+                item["final_labels"] = list(labels)
+                auto_items.append(item)
+                continue
             if item.get("review_action") != "auto-approve":
                 continue
             if write_status_map.get(item["message_id"]) == "applied":
@@ -127,7 +138,10 @@ def summarize_inbox_removal_candidates(
 
 
 def is_inbox_removal_label_eligible(final_labels: list[str]) -> bool:
-    return "promotions" in final_labels or "spam-low-value" in final_labels
+    return bool(
+        {"promotions", "spam-low-value", "shopping-order", "receipt-billing"}
+        .intersection(final_labels)
+    )
 
 
 def failed_write_items(items: list[dict], writer: MockGmailLabelWriter, batch_id: str) -> list[dict]:

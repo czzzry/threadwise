@@ -96,17 +96,54 @@ class GmailAutomationTests(unittest.TestCase):
                     "gmail-live-001": "applied",
                     "gmail-live-002": "failed",
                     "gmail-live-003": "applied",
+                    "gmail-live-004": "applied",
+                    "gmail-live-005": "applied",
                 },
             )
             items = [
                 {"message_id": "gmail-live-001", "review_state": "reviewed", "final_labels": ["promotions"]},
                 {"message_id": "gmail-live-002", "review_state": "reviewed", "final_labels": ["spam-low-value"]},
                 {"message_id": "gmail-live-003", "review_state": "reviewed", "final_labels": ["reply-needed"]},
+                {"message_id": "gmail-live-004", "review_state": "reviewed", "final_labels": ["shopping-order"]},
+                {"message_id": "gmail-live-005", "review_state": "reviewed", "final_labels": ["receipt-billing"]},
             ]
 
             summary = summarize_inbox_removal_candidates("founder-test-batch-1", items, writer)
 
-            self.assertEqual(summary, (1, 1, 1))
+            self.assertEqual(summary, (3, 1, 1))
+
+    def test_auto_approve_items_repairs_unwritten_transactional_edit_with_empty_final_labels(self) -> None:
+        items = [
+            {
+                "message_id": "gmail-live-001",
+                "review_state": "reviewed",
+                "review_action": "edit",
+                "final_labels": [],
+                "applied_labels": ["shopping-order"],
+            },
+            {
+                "message_id": "gmail-live-002",
+                "review_state": "reviewed",
+                "review_action": "edit",
+                "final_labels": [],
+                "applied_labels": ["reply-needed"],
+            },
+            {
+                "message_id": "gmail-live-003",
+                "review_state": "reviewed",
+                "review_action": "edit",
+                "final_labels": [],
+                "applied_labels": ["shopping-order", "receipt-billing"],
+            },
+        ]
+
+        approved = auto_approve_items(items, {})
+
+        self.assertEqual([item["message_id"] for item in approved], ["gmail-live-001"])
+        self.assertEqual(items[0]["review_action"], "auto-approve")
+        self.assertEqual(items[0]["final_labels"], ["shopping-order"])
+        self.assertEqual(items[1]["review_action"], "edit")
+        self.assertEqual(items[2]["review_action"], "edit")
 
     def test_retry_failed_writes_blocks_changed_labels_and_retries_current_failures(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
