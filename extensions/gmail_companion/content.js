@@ -1011,6 +1011,9 @@
     if (selectedDecisionMode === "preview") {
       return "preview";
     }
+    if (selected.status === "write-unconfirmed") {
+      return "review";
+    }
     if (isHandledSelection(selected)) {
       return hasFailedOrPendingHandling(selected) ? "blocked" : "handled-receipt";
     }
@@ -1356,18 +1359,19 @@
       gmailCheckResult = null;
       const suggestedLabelId = decisionSuggestedLabelId(selected);
       const label = suggestedLabelId ? decisionLabelName(suggestedLabelId) : "";
+      const finishingGmailUpdate = selected.status === "write-unconfirmed";
       setHtml(selectedEmailNode, `
         <div data-ea-selected-state="review" style="display:grid;gap:12px;margin-top:10px;">
-          <div style="color:#8a4b00;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;font-weight:820;">Needs your review</div>
+          <div style="color:#8a4b00;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;font-weight:820;">${finishingGmailUpdate ? "Finish Gmail update" : "Needs your review"}</div>
           <div>
             <div style="font-size:1.3rem;font-weight:840;line-height:1.15;overflow-wrap:anywhere;">${escapeHtml(selected.subject || "(no subject)")}</div>
             <div style="margin-top:6px;color:#6b6255;font-size:0.88rem;overflow-wrap:anywhere;">${escapeHtml(selected.sender || "(unknown sender)")}</div>
           </div>
-          <div data-ea-review-suggestion style="font-size:1.05rem;font-weight:760;line-height:1.4;">${label ? `Threadwise suggests ${escapeHtml(label)}` : "Threadwise needs you to choose a label"}</div>
+          <div data-ea-review-suggestion style="font-size:1.05rem;font-weight:760;line-height:1.4;">${label ? finishingGmailUpdate ? `Threadwise classified this as ${escapeHtml(label)}, but Gmail was not confirmed.` : `Threadwise suggests ${escapeHtml(label)}` : "Threadwise needs you to choose a label"}</div>
           <div style="border-radius:14px;background:#fff4dd;padding:12px;color:#1f1a14;line-height:1.45;">${escapeHtml(likelyReasonForSelected(selected).slice(0, 160))}</div>
           <div style="display:grid;gap:9px;">
             <button type="button" data-ea-action="open-selected-gmail" style="min-height:40px;border:1px solid rgba(36,24,18,.24);background:#fffdf7;color:#241812;border-radius:11px;padding:8px 12px;cursor:pointer;font:inherit;font-weight:760;">Open email in Gmail ↗</button>
-            ${label ? `<button type="button" data-ea-action="accept-suggestion" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Accept ${escapeHtml(label)}</button>` : ""}
+            ${label ? `<button type="button" data-ea-action="accept-suggestion" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">${finishingGmailUpdate ? `Apply ${escapeHtml(label)}` : `Accept ${escapeHtml(label)}`}</button>` : ""}
             <button type="button" data-ea-action="change-suggestion" ${label ? "" : "data-tw-primary-action"} style="min-height:44px;border:${label ? "1px solid rgba(36,24,18,.16)" : "2px solid #241812"};background:${label ? "#f5efe2" : "#2eb67d"};color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:760;${label ? "" : "box-shadow:3px 3px 0 #241812;"}">Change label</button>
           </div>
         </div>
@@ -1638,17 +1642,16 @@
       `border:2px solid #241812;border-radius:11px;background:${activeSummaryFilter === key ? "#dff8ed" : "#fffdf7"};box-shadow:2px 2px 0 rgba(36,24,18,.18);padding:12px;text-align:left;cursor:pointer;font:inherit;color:#241812;`;
     const keptVisibleCount = summary.kept_visible_count ?? countForFilter("kept_visible_items");
     if (workspaceMode === "home") {
-      const reportedNeedsReviewCount = Number(summary.needs_attention_count || 0);
       const needsReviewCount = countForFilter("needs_attention_items");
-      const queueNeedsRefresh = reportedNeedsReviewCount > 0 && needsReviewCount === 0;
-      const gmailSyncButtonHtml = queueNeedsRefresh
-        ? `<button type="button" data-ea-action="run-gmail-sync" ${gmailCheckPending ? "disabled" : ""} aria-busy="${gmailCheckPending ? "true" : "false"}" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:${gmailCheckPending ? "#c7d8cc" : "#ffc64a"};color:#241812;border-radius:11px;padding:9px 12px;cursor:${gmailCheckPending ? "wait" : "pointer"};font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;transform:${gmailCheckPending ? "translate(2px, 2px)" : "none"};">${gmailCheckPending ? "Running Gmail sync..." : "Run Gmail sync"}</button>`
-        : "";
+      const emptyQueueCopy = gmailCheckResult
+        ? "Gmail sync completed. Threadwise handled everything automatically."
+        : "There is no review queue right now.";
       setHtml(dailySummaryNode, `
         <div data-ea-selected-state="home" style="display:grid;gap:12px;margin-top:10px;">
-          <div style="font-size:1.3rem;font-weight:840;line-height:1.15;overflow-wrap:anywhere;">${queueNeedsRefresh ? "Review queue needs a refresh" : needsReviewCount ? `${needsReviewCount} email${needsReviewCount === 1 ? "" : "s"} need your review` : "Your inbox is caught up"}</div>
+          <div style="font-size:1.3rem;font-weight:840;line-height:1.15;overflow-wrap:anywhere;">${needsReviewCount ? `${needsReviewCount} email${needsReviewCount === 1 ? "" : "s"} need your review` : "No emails need review"}</div>
+          ${needsReviewCount ? "" : `<div style="color:#0f766e;line-height:1.45;">${escapeHtml(emptyQueueCopy)}</div>`}
           <div style="color:#6b6255;line-height:1.45;">${Number(summary.processed_count || 0)} processed · ${Number(summary.auto_handled_count || 0)} auto-handled · ${Number(keptVisibleCount || 0)} kept visible</div>
-          ${queueNeedsRefresh ? gmailSyncButtonHtml : needsReviewCount ? '<button type="button" data-ea-action="open-needs-attention" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Review next</button>' : ""}
+          ${needsReviewCount ? '<button type="button" data-ea-action="open-needs-attention" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Review next</button>' : ""}
           <div style="display:flex;flex-wrap:wrap;gap:12px;">
             <a href="${LOCAL_ORIGIN}/daily-dashboard" target="_blank" rel="noreferrer" style="border:0;background:transparent;color:#5d5342;border-radius:0;padding:7px 2px;display:inline-flex;align-items:center;text-decoration:underline;text-underline-offset:3px;font:inherit;font-weight:760;box-shadow:none;">Activity</a>
             <a href="${LOCAL_ORIGIN}/unsubscribe-review" target="_blank" rel="noreferrer" style="border:0;background:transparent;color:#5d5342;border-radius:0;padding:7px 2px;display:inline-flex;align-items:center;text-decoration:underline;text-underline-offset:3px;font:inherit;font-weight:760;box-shadow:none;">Subscription cleanup</a>
@@ -2586,7 +2589,7 @@
 
   function recordCommittedCurrentDecision() {
     const selected = lastSidebarState?.selected_email;
-    if (selected?.status !== "needs-attention") {
+    if (!["needs-attention", "write-unconfirmed"].includes(selected?.status)) {
       return;
     }
     const suggestedLabel = decisionSuggestedLabelId(selected);
