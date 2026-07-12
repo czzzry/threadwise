@@ -46,6 +46,7 @@
   let recordedSuggestionDecisions = { approve: false, edit: false };
   let lastSelectedMessageId = "";
   let affectedReviewOpen = false;
+  let selectedTeachScope = "current-only";
   let gmailCheckPending = false;
   let gmailCheckResult = null;
   let forcedHome = false;
@@ -887,6 +888,7 @@
     activeTeachApplyMode = "";
     recordedSuggestionDecisions = { approve: false, edit: false };
     affectedReviewOpen = false;
+    selectedTeachScope = "current-only";
     teachDraft = { targetLabel: "", note: "" };
   }
 
@@ -1364,6 +1366,7 @@
           <div data-ea-review-suggestion style="font-size:1.05rem;font-weight:760;line-height:1.4;">${label ? `Threadwise suggests ${escapeHtml(label)}` : "Threadwise needs you to choose a label"}</div>
           <div style="border-radius:14px;background:#fff4dd;padding:12px;color:#1f1a14;line-height:1.45;">${escapeHtml(likelyReasonForSelected(selected).slice(0, 160))}</div>
           <div style="display:grid;gap:9px;">
+            <button type="button" data-ea-action="open-selected-gmail" style="min-height:40px;border:1px solid rgba(36,24,18,.24);background:#fffdf7;color:#241812;border-radius:11px;padding:8px 12px;cursor:pointer;font:inherit;font-weight:760;">Open email in Gmail ↗</button>
             ${label ? `<button type="button" data-ea-action="accept-suggestion" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Accept ${escapeHtml(label)}</button>` : ""}
             <button type="button" data-ea-action="change-suggestion" ${label ? "" : "data-tw-primary-action"} style="min-height:44px;border:${label ? "1px solid rgba(36,24,18,.16)" : "2px solid #241812"};background:${label ? "#f5efe2" : "#2eb67d"};color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:760;${label ? "" : "box-shadow:3px 3px 0 #241812;"}">Change label</button>
           </div>
@@ -1401,7 +1404,7 @@
     } else if (workspaceMode === "teach-preview") {
       const label = decisionLabelName(teachDraft.targetLabel || decisionSuggestedLabelId(selected) || selected.classification || "");
       const learningPreviewHtml = teachPreview
-        ? renderTeachPreviewHtml(teachPreview)
+        ? renderCompactTeachPreviewHtml(teachPreview)
         : teachResult
           ? renderTeachResultHtml(teachResult)
           : renderTeachResultHtml(teachPendingResult("preview"));
@@ -1411,6 +1414,8 @@
             <div style="font-size:1.3rem;font-weight:840;line-height:1.15;">Change this email to ${escapeHtml(label)}</div>
             <div style="margin-top:6px;color:#6b6255;font-size:0.88rem;overflow-wrap:anywhere;">${escapeHtml(selected.subject || "(no subject)")}</div>
           </div>
+          <button type="button" data-ea-action="open-selected-gmail" style="justify-self:start;border:1px solid rgba(36,24,18,.24);background:#fffdf7;color:#241812;border-radius:9px;padding:7px 10px;cursor:pointer;font:inherit;font-weight:760;">Open email in Gmail ↗</button>
+          <div style="color:#6b6255;font-size:0.82rem;line-height:1.4;">Opening the email preserves the current correction draft.</div>
           <div style="border-radius:14px;background:#f5efe2;padding:12px;color:#1f1a14;line-height:1.45;">This keeps the simple current-email change, and also lets you choose whether the lesson should apply to future or matching inbox emails.</div>
           ${learningPreviewHtml}
           <button type="button" data-ea-action="edit-current-change" style="justify-self:start;border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Edit</button>
@@ -1485,7 +1490,7 @@
       } else {
         const resultHtml = teachResult ? renderTeachResultHtml(teachResult) : "";
         teachPanelHtml = teachPreview
-          ? `${resultHtml}${renderPreviousTeachPreviewHtml(previousTeachPreview)}${renderTeachPreviewHtml(teachPreview)}`
+          ? `${resultHtml}${renderPreviousTeachPreviewHtml(previousTeachPreview)}${renderCompactTeachPreviewHtml(teachPreview)}`
           : teachResult
             ? resultHtml
             : renderPreviousTeachPreviewHtml(previousTeachPreview);
@@ -1904,6 +1909,10 @@
   }
 
   function gmailSearchUrl(item) {
+    const messageId = String(item?.message_id || "").trim();
+    if (messageId) {
+      return `https://mail.google.com/mail/u/0/#all/${encodeURIComponent(messageId)}`;
+    }
     const subject = String(item?.subject || "").replace(/\s+/g, " ").trim().slice(0, 80);
     let sender = String(item?.sender || "").trim();
     if (sender.includes("<") && sender.includes(">")) {
@@ -2297,34 +2306,11 @@
   }
 
   function renderTeachScopeHtml(preview) {
-    const backfill = preview.inbox_backfill || {};
     const pending = teachFlowState === "applying";
-    const pendingHtml = pending && teachResult ? renderTeachResultHtml(teachResult) : "";
-    return `
-      <div data-ea-teach-state="${pending ? "applying" : "scope-confirmation"}" style="box-sizing:border-box;width:100%;min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word;margin-top:12px;border:2px solid #241812;border-radius:14px;background:#fffdf7;padding:12px;color:#241812;line-height:1.45;">
-        <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">Accepted rule</div>
-        <div style="margin-top:8px;font-weight:800;">${escapeHtml(preview.plain_english_rule || "No rule proposed.")}</div>
-        <div style="margin-top:8px;color:#6b6255;">Choose how broadly to apply this rule.</div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
-          <button type="button" data-ea-apply="current-only" ${pending ? "disabled" : ""} style="border:2px solid #241812;background:${pending ? "#c7d8cc" : "#2eb67d"};color:#241812;border-radius:11px;padding:9px 12px;cursor:${pending ? "wait" : "pointer"};font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Fix email</button>
-          <button type="button" data-ea-apply="future-only" ${pending ? "disabled" : ""} style="border:2px solid #241812;background:${pending ? "#c7d8cc" : "#ebe4d7"};color:#241812;border-radius:11px;padding:9px 12px;cursor:${pending ? "wait" : "pointer"};font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Fix + future</button>
-          <button type="button" data-ea-apply="apply-included" ${pending ? "disabled" : ""} style="border:2px solid #241812;background:${pending ? "#c7d8cc" : "#3d6df2"};color:#fff;border-radius:11px;padding:9px 12px;cursor:${pending ? "wait" : "pointer"};font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Fix + inbox</button>
-        </div>
-        <div style="margin-top:8px;color:#6b6255;">Fix email applies only to this email. Fix + future also saves the rule. Fix + inbox also applies it to matching inbox emails.</div>
-        ${backfill.available ? `<div style="margin-top:8px;color:#6b6255;">Will update about ${escapeHtml(String(backfill.estimated_count || 0))} matching inbox emails.</div>` : ""}
-        ${pendingHtml}
-        ${inboxApplyConfirmOpen ? `
-          <div style="margin-top:12px;border-radius:14px;background:#fff4dd;padding:12px;color:#8a4b00;line-height:1.45;">
-            <div style="font-weight:800;">Apply to inbox?</div>
-            <div style="margin-top:8px;">Will update about ${escapeHtml(String(backfill.estimated_count || 0))} matching inbox emails.</div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
-              <button type="button" data-ea-action="confirm-inbox-apply" style="border:2px solid #241812;background:#3d6df2;color:#fff;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Apply to inbox</button>
-              <button type="button" data-ea-action="cancel-inbox-apply" style="border:0;background:transparent;color:#5d5342;border-radius:0;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;box-shadow:none;">Cancel</button>
-            </div>
-          </div>
-        ` : ""}
-      </div>
-    `;
+    if (pending && teachResult) {
+      return renderTeachResultHtml(teachResult);
+    }
+    return renderCompactTeachPreviewHtml(preview);
   }
 
   function renderTeachPreviewHtml(preview) {
@@ -2437,6 +2423,62 @@
           <button type="button" data-ea-apply="future-only" style="border:2px solid #241812;background:#ffc64a;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Teach future rule</button>
           <button type="button" data-ea-action="refine-teach" style="border:2px solid #241812;background:#fffdf7;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Keep discussing</button>
         </div>
+      </div>
+    `;
+  }
+
+  function renderCompactTeachPreviewHtml(preview) {
+    const impact = preview?.impact || {};
+    const matchingCount = Number(impact.matching_existing_count || 0);
+    const similarCount = Number(impact.similar_candidate_count || 0);
+    const targetLabelName = humanLabelNameFromId((preview?.selected_label_after || [])[0] || "");
+    const structuredRule = preview?.structured_rule || {};
+    const selectedStyle = "border:2px solid #241812;background:#dff8ed;";
+    const idleStyle = "border:1px solid rgba(36,24,18,.24);background:#fffdf7;";
+    const scopeCard = (mode, title, description, disabled = false) => `
+      <button type="button" data-ea-scope-choice="${mode}" aria-pressed="${selectedTeachScope === mode ? "true" : "false"}" ${disabled ? "disabled" : ""} style="box-sizing:border-box;width:100%;display:grid;grid-template-columns:28px minmax(0,1fr);gap:10px;text-align:left;border-radius:13px;padding:11px 12px;color:#241812;cursor:${disabled ? "not-allowed" : "pointer"};font:inherit;${selectedTeachScope === mode ? selectedStyle : idleStyle}opacity:${disabled ? ".58" : "1"};">
+        <span aria-hidden="true" style="display:grid;place-items:center;width:26px;height:26px;border-radius:999px;background:#241812;color:#fff;font-size:.76rem;font-weight:850;">${mode === "current-only" ? "1" : mode === "future-only" ? "2" : "3"}</span>
+        <span><strong style="display:block;line-height:1.25;">${escapeHtml(title)}</strong><small style="display:block;margin-top:3px;color:#6b6255;line-height:1.35;">${escapeHtml(description)}</small></span>
+      </button>
+    `;
+    const actionLabel = selectedTeachScope === "future-only"
+      ? "Fix + remember"
+      : selectedTeachScope === "apply-included"
+        ? `Review ${matchingCount} matches`
+        : "Fix this email";
+    const structuredRuleRows = Object.keys(structuredRule).length
+      ? Object.entries(structuredRule).map(([key, value]) => `<div><strong>${escapeHtml(key.replaceAll("_", " "))}:</strong> ${escapeHtml(Array.isArray(value) ? value.join(", ") : String(value))}</div>`).join("")
+      : "<div>No structured rule details are available yet.</div>";
+    const examples = (impact.matching_existing_examples || []).slice(0, 4)
+      .map((item) => `<li>${escapeHtml(item.subject || "(no subject)")} · ${escapeHtml(item.sender || "(unknown sender)")}</li>`)
+      .join("");
+    return `
+      <div data-ea-compact-scope-chooser style="display:grid;gap:12px;">
+        <div>
+          <div style="font-size:1.05rem;font-weight:840;line-height:1.25;">Where should this change apply?</div>
+          <div style="margin-top:4px;color:#6b6255;font-size:.84rem;">Current label → ${escapeHtml(targetLabelName)}</div>
+        </div>
+        <div role="group" aria-label="Choose how broadly to apply this change" style="display:grid;gap:8px;">
+          ${scopeCard("current-only", "Just this email", "Relabel this message only.")}
+          ${scopeCard("future-only", "This email + future emails", "Also remember the rule for new matching mail.")}
+          ${scopeCard("apply-included", `Also update ${matchingCount} inbox email${matchingCount === 1 ? "" : "s"}`, matchingCount ? "Review the exact matches before applying." : "No matching existing emails are available.", matchingCount === 0)}
+        </div>
+        <button type="button" data-ea-action="confirm-selected-scope" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">${escapeHtml(actionLabel)}</button>
+        <details style="border-top:1px solid rgba(36,24,18,.2);padding-top:10px;color:#6b6255;">
+          <summary style="cursor:pointer;font-weight:800;color:#241812;">How Threadwise understood this</summary>
+          <div style="margin-top:8px;font-weight:700;color:#241812;">${escapeHtml(preview?.plain_english_rule || "No future rule proposal was generated.")}</div>
+          <div style="margin-top:6px;">${escapeHtml(preview?.rule_type_label || "Future rule")} · ${escapeHtml(preview?.rule_confidence_label || "Confidence unavailable")}</div>
+          ${preview?.clarifying_question ? `<div style="margin-top:8px;color:#8a4b00;">${escapeHtml(preview.clarifying_question)}</div>` : ""}
+          <div style="display:grid;gap:4px;margin-top:8px;font-size:.82rem;">${structuredRuleRows}</div>
+        </details>
+        <details style="border-top:1px solid rgba(36,24,18,.2);padding-top:10px;color:#6b6255;">
+          <summary style="cursor:pointer;font-weight:800;color:#241812;">Matching evidence</summary>
+          <div style="margin-top:8px;"><strong style="color:#241812;">${matchingCount}</strong> exact matches can be reviewed. <strong style="color:#241812;">${similarCount}</strong> similar candidates will not be changed.</div>
+          ${examples ? `<ol style="margin:8px 0 0;padding-left:18px;">${examples}</ol>` : ""}
+        </details>
+        ${renderRuleAmendmentHtml(preview?.amendment_proposal)}
+        ${affectedReviewOpen ? `${renderAffectedReviewHtml(preview)}<button type="button" data-ea-apply="apply-included" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#3d6df2;color:#fff;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Apply to included</button>` : ""}
+        <button type="button" data-ea-action="refine-teach" style="justify-self:start;border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Keep discussing</button>
       </div>
     `;
   }
@@ -2975,6 +3017,34 @@
       }
       return;
     }
+    const scopeChoiceButton = event.target.closest("[data-ea-scope-choice]");
+    if (scopeChoiceButton) {
+      event.preventDefault();
+      if (isTeachPending() || scopeChoiceButton.disabled) {
+        return;
+      }
+      selectedTeachScope = scopeChoiceButton.getAttribute("data-ea-scope-choice") || "current-only";
+      affectedReviewOpen = false;
+      if (lastSidebarState) {
+        renderState(lastSidebarState);
+      }
+      return;
+    }
+    const confirmSelectedScopeButton = event.target.closest("[data-ea-action='confirm-selected-scope']");
+    if (confirmSelectedScopeButton) {
+      event.preventDefault();
+      if (isTeachPending()) {
+        return;
+      }
+      if (selectedTeachScope === "apply-included") {
+        affectedReviewOpen = true;
+        if (lastSidebarState) {
+          renderState(lastSidebarState);
+        }
+        return;
+      }
+      return startTeachApply(selectedTeachScope);
+    }
     const applyButton = event.target.closest("[data-ea-apply]");
     if (applyButton) {
       event.preventDefault();
@@ -2982,7 +3052,7 @@
         return;
       }
       const mode = applyButton.getAttribute("data-ea-apply");
-      if (mode === "apply-included" && teachPreview?.inbox_backfill?.requires_confirmation) {
+      if (mode === "apply-included" && teachPreview?.inbox_backfill?.requires_confirmation && !affectedReviewOpen) {
         if (!inboxApplyConfirmOpen) {
           inboxApplyConfirmOpen = true;
           if (lastSidebarState) {
@@ -3065,6 +3135,7 @@
       return;
     }
     syncTeachDraftFromDom();
+    selectedTeachScope = "current-only";
     const targetLabel = teachDraft.targetLabel;
     const note = teachDraft.note;
     teachFlowState = "previewing";

@@ -492,6 +492,28 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("Review queue complete", content_js)
         self.assertIn('data-ea-action="return-home-after-receipt"', content_js)
 
+    def test_review_and_scope_screens_can_open_the_exact_gmail_message(self) -> None:
+        content_js = (Path(__file__).parent.parent / "extensions" / "gmail_companion" / "content.js").read_text()
+
+        self.assertGreaterEqual(content_js.count('data-ea-action="open-selected-gmail"'), 3)
+        self.assertIn('return `https://mail.google.com/mail/u/0/#all/${encodeURIComponent(messageId)}`', content_js)
+        self.assertIn("Opening the email preserves the current correction draft", content_js)
+
+    def test_label_change_preview_uses_one_compact_three_scope_chooser(self) -> None:
+        content_js = (Path(__file__).parent.parent / "extensions" / "gmail_companion" / "content.js").read_text()
+
+        self.assertIn('scopeCard("current-only", "Just this email"', content_js)
+        self.assertIn('scopeCard("future-only", "This email + future emails"', content_js)
+        self.assertIn('scopeCard("apply-included", `Also update ${matchingCount}', content_js)
+        self.assertIn('data-ea-action="confirm-selected-scope"', content_js)
+        self.assertIn("Where should this change apply?", content_js)
+        self.assertIn("How Threadwise understood this", content_js)
+        self.assertIn("Matching evidence", content_js)
+        self.assertIn('let selectedTeachScope = "current-only"', content_js)
+        self.assertIn('return startTeachApply(selectedTeachScope)', content_js)
+        self.assertIn('selectedTeachScope === "apply-included"', content_js)
+        self.assertIn('requires_confirmation && !affectedReviewOpen', content_js)
+
     def test_companion_script_runs_from_repo_root_without_pythonpath(self) -> None:
         repo_root = Path(__file__).resolve().parent.parent
         result = subprocess.run(
