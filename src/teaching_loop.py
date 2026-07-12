@@ -494,7 +494,10 @@ def infer_semantic_pattern(current: dict, note: str, target_label: str, intent: 
         return {
             "name": str(intent.get("semantic_pattern") or "").strip(),
             "cross_sender": bool(intent.get("cross_sender")),
-            "has_strong_signal": str(intent.get("confidence") or "").lower() in {"medium", "high"},
+            "has_strong_signal": (
+                str(intent.get("confidence") or "").lower() in {"medium", "high"}
+                or _note_defines_explicit_semantic_boundary(note)
+            ),
         }
     text = _semantic_text(current, note)
     if target_label == "spam-low-value" and any(term in text for term in ("phishing", "phish", "scam", "suspicious", "fake")):
@@ -517,7 +520,7 @@ def infer_semantic_pattern(current: dict, note: str, target_label: str, intent: 
         return {
             "name": label_patterns[target_label],
             "cross_sender": target_label in {"job-related", "travel", "spam-low-value"},
-            "has_strong_signal": False,
+            "has_strong_signal": _note_defines_explicit_semantic_boundary(note),
         }
     checks = [
         {
@@ -559,6 +562,28 @@ def infer_semantic_pattern(current: dict, note: str, target_label: str, intent: 
                 "has_strong_signal": True,
             }
     return {"name": "", "cross_sender": False, "has_strong_signal": False}
+
+
+def _note_defines_explicit_semantic_boundary(note: str) -> bool:
+    text = " ".join(str(note or "").lower().split())
+    has_inclusion_boundary = bool(re.search(r"\b(?:only|specifically)\b", text))
+    has_exclusion_boundary = bool(re.search(r"\b(?:exclude|excluding|except|unrelated)\b", text))
+    semantic_kind_terms = (
+        "resource",
+        "guide",
+        "newsletter",
+        "digest",
+        "account",
+        "transactional",
+        "receipt",
+        "invoice",
+        "statement",
+        "security",
+        "booking",
+        "recruiter",
+        "interview",
+    )
+    return has_inclusion_boundary and has_exclusion_boundary and any(term in text for term in semantic_kind_terms)
 
 
 def _semantic_text(current: dict, note: str) -> str:

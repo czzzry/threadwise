@@ -1961,7 +1961,7 @@ class GmailCompanionApp:
           </div>
           ${affectedReviewHtml}
           <div class="button-row" style="margin-top:10px;">
-            <button type="button" class="action-button future" data-apply-mode="save-future-rule">Teach future rule</button>
+            <button type="button" class="action-button future" data-apply-mode="future-only">Teach future rule</button>
             <button type="button" class="action-button secondary" data-action="refine-teach">Keep discussing</button>
           </div>
         </div>
@@ -4226,7 +4226,7 @@ class GmailCompanionApp:
           </div>
           ${affectedReviewHtml}
           <div class="button-row">
-            <button type="button" class="action-button future" data-apply-mode="save-future-rule">Teach future rule</button>
+            <button type="button" class="action-button future" data-apply-mode="future-only">Teach future rule</button>
             <button type="button" class="action-button secondary" data-action="refine-teach">Keep discussing</button>
           </div>
         </div>
