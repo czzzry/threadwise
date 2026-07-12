@@ -1,6 +1,6 @@
 # Live Gmail Review Baseline
 
-Status: Baseline plus live repair/retest complete for conversational scopes; manual-scope parity fix awaits extension reload verification
+Status: Baseline and repair cycle complete; final live verification of extension-only fixes awaits one Chrome extension reload
 Current as of: 2026-07-12
 Surface: Installed Threadwise Gmail companion in the founder's signed-in Chrome profile
 
@@ -17,6 +17,7 @@ This pass exercised only review, categorization, teaching, and selected-email be
 | `Welcome to OpenWhispr!` | OpenWhispr | Opened directly from Gmail inbox | Wait for Threadwise to recognize selected email | Threadwise remained on Home; no selected-email, unsynced, check-again, or run-sync state appeared |
 | `Your statement is ready` | Sun Life | Gmail visibly had `EA/Finance`; Threadwise local snapshot said needs review | Long conversational instruction; current-only; future rule; matching inbox | Current Gmail write confirmed; future rule saved with no Gmail mutation; 30 matching stored/inbox messages applied; a sampled match visibly showed `EA/Finance` in Gmail |
 | `Cezary, your account is missing information.` | Sun Life | Uncategorized in Threadwise affected-email review | Included in confirmed matching-inbox apply | Verified through Gmail search with `EA/Finance` and Inbox visible |
+| `Your AI Development Workflow Resource` | Zevi Arnovitz | Needs review; no confident category | Manual `Newsletter`; save future behavior; long conditional instruction and refinement | The pre-fix future action saved only a rule and did not relabel the current email, exposing a scope bug. The refined narrow rule is now understood without repeating the clarification question. |
 
 ## Baseline results
 
@@ -82,3 +83,28 @@ The visible sync request was found to take about 75 seconds while the extension 
 - Focused Gmail companion and analytics suites: 84 tests passed.
 - Full repository suite: 606 tests passed.
 - Live Chrome verification passed for Home recovery, selected unsynced Gmail email recognition, visible sync failure explanation, and selected synced Gmail email recognition.
+
+## Autonomous continuation and final repair cycle
+
+### Additional live paths exercised
+
+- The visible Home recovery path ran a Gmail sync through Threadwise. The stored batch count advanced from 55 to 56, and the panel displayed `Gmail sync finished` without using a backend substitute for the user action.
+- Directly opening `Your AI Development Workflow Resource` in Gmail moved Threadwise to the same email and exposed its review controls.
+- Manual category selection without a note reached the shared rule preview. `Newsletter` produced a transparent sender-semantic rule and the visible scope controls.
+- The loaded pre-fix `Teach future rule` action was exercised. Its receipt explicitly said the current email was not relabeled, proving that the button implemented future-only persistence instead of the required current-email-plus-future scope.
+- A long instruction said the requested resource looked like marketing but must not be Promotions, should remain Newsletter, and should become ReplyNeeded only when a future message explicitly asks for a response. Threadwise selected Newsletter without a false category conflict.
+- The follow-up refinement limited the rule to requested resources, guides, newsletters, and digests; excluded unrelated account and transactional mail; and retained conditional ReplyNeeded precedence. Before repair, Threadwise repeated the same clarification. After the backend repair was loaded, the live preview showed `Future rule`, kept Newsletter, and no longer asked the redundant question.
+- Manual matching-inbox review on `Your statement is ready` exposed 30 exact Sun Life matches, eight broader similar candidates, per-email inspection/exclusion controls, and `Apply to included`. The action updated the recorded batch/write statuses to applied without another Gmail HTTP 400 after the idempotent-write repair was loaded.
+
+### Confirmed bugs fixed and merged
+
+1. Reapplying an already-present EA label sent Gmail an empty modify payload, which Gmail rejected with HTTP 400. Threadwise now skips no-op label mutations.
+2. The visible `Teach future rule` button dispatched `save-future-rule`, which intentionally saved only a candidate. It now dispatches `future-only`, the required current-email-plus-future-rule action.
+3. Explicitly narrowing a semantic rule did not satisfy Threadwise's own clarification question. Boundary-aware confidence now accepts concrete inclusion and exclusion language while preserving questions for genuinely vague rules.
+4. Successful `included-existing` outcomes fell out of the result state and returned to the preview, hiding success. Broader scopes now have scope-specific progress copy and a durable `Done` receipt that survives same-email refreshes.
+
+All four repairs are merged to `main` through PRs 71-73. GitHub CI passed for each follow-up. The final repository state at `dd9f60d` passes 606 tests, focused review-flow checks, JavaScript syntax checks, and `git diff --check`.
+
+### Remaining live gate
+
+The Chrome extension was last manually reloaded before the final extension-only button and receipt changes landed. The local helper is already running the final `main` backend, and the backend long-instruction repair was verified live. Chrome must reload the unpacked Threadwise extension once more before the corrected current-plus-future button mapping and durable broader-scope receipt can be re-exercised in the installed UI.
