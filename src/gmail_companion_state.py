@@ -1,6 +1,7 @@
 from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
+import re
 from urllib.parse import urlencode
 
 from src.attention_feedback import load_attention_feedback
@@ -31,6 +32,14 @@ HIGH_CONSEQUENCE_ATTENTION_CATEGORIES = {
 
 SELECTED_EMAIL_READING_SECONDS = 0.35
 SELECTED_EMAIL_UNDERSTANDING_SECONDS = 1.5
+
+
+def artifact_path_sort_key(path: Path) -> tuple[tuple[int, object], ...]:
+    """Sort numbered artifacts naturally so batch-10 follows batch-9."""
+    return tuple(
+        (1, int(part)) if part.isdigit() else (0, part.lower())
+        for part in re.split(r"(\d+)", path.name)
+    )
 
 
 def selected_context_from_query(query: dict[str, list[str]]) -> dict:
@@ -405,7 +414,7 @@ def build_attention_context_index(storage_dir: Path) -> dict[str, dict[str, dict
     if not batches_dir.exists():
         return {"message_id": by_message_id, "thread_id": by_thread_id}
 
-    for batch_path in sorted(batches_dir.glob("*.json"), reverse=True):
+    for batch_path in sorted(batches_dir.glob("*.json"), key=artifact_path_sort_key, reverse=True):
         batch = load_json(batch_path)
         batch_id = batch.get("batch_id", "")
         for item in batch.get("items", []):
@@ -631,7 +640,9 @@ def build_companion_runtime_payload(storage_dir: Path) -> dict:
     items = []
     batches_dir = storage_dir / "batches"
     if batches_dir.exists():
-        recent_batch_paths = sorted(batches_dir.glob("*.json"), reverse=True)[:4]
+        recent_batch_paths = sorted(
+            batches_dir.glob("*.json"), key=artifact_path_sort_key, reverse=True
+        )[:4]
         for batch_path in recent_batch_paths:
             batch = load_json(batch_path)
             batch_id = batch.get("batch_id", "")
@@ -685,13 +696,17 @@ def build_companion_runtime_payload(storage_dir: Path) -> dict:
     }
 
 def load_latest_report(storage_dir: Path) -> dict | None:
-    matches = sorted(reports_dir(storage_dir).glob("*_daily_report.json")) if reports_dir(storage_dir).exists() else []
+    matches = sorted(
+        reports_dir(storage_dir).glob("*_daily_report.json"), key=artifact_path_sort_key
+    ) if reports_dir(storage_dir).exists() else []
     if not matches:
         return None
     return load_json(matches[-1])
 
 def load_recent_reports(storage_dir: Path, limit: int = 5, provider: str | None = None) -> list[dict]:
-    matches = sorted(reports_dir(storage_dir).glob("*_daily_report.json")) if reports_dir(storage_dir).exists() else []
+    matches = sorted(
+        reports_dir(storage_dir).glob("*_daily_report.json"), key=artifact_path_sort_key
+    ) if reports_dir(storage_dir).exists() else []
     reports = []
     for path in matches:
         report = load_json(path)
@@ -704,7 +719,7 @@ def load_latest_batch(storage_dir: Path) -> dict | None:
     batches_dir = storage_dir / "batches"
     if not batches_dir.exists():
         return None
-    matches = sorted(batches_dir.glob("*.json"))
+    matches = sorted(batches_dir.glob("*.json"), key=artifact_path_sort_key)
     if not matches:
         return None
     return load_json(matches[-1])
@@ -716,7 +731,7 @@ def find_matching_item(storage_dir: Path, selected_context: dict) -> dict | None
     batches_dir = storage_dir / "batches"
     if not batches_dir.exists():
         return None
-    for batch_path in sorted(batches_dir.glob("*.json"), reverse=True):
+    for batch_path in sorted(batches_dir.glob("*.json"), key=artifact_path_sort_key, reverse=True):
         batch = load_json(batch_path)
         raw_messages = {message.get("id"): message for message in batch.get("raw_messages", [])}
         for item in batch.get("items", []):

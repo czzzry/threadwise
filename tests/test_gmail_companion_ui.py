@@ -2039,6 +2039,40 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertEqual(state["auto_handled_items"], [])
             self.assertEqual(len(state["kept_visible_items"]), 1)
 
+    def test_harness_state_orders_numbered_batches_naturally(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-9",
+                items=[
+                    {
+                        "message_id": "older-reviewed",
+                        "review_state": "reviewed",
+                        "final_labels": ["personal"],
+                        "applied_labels": ["personal"],
+                    }
+                ],
+            )
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-10",
+                items=[
+                    {
+                        "message_id": "newer-needs-review",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                ],
+            )
+
+            state = GmailCompanionApp(storage_dir).harness_state({})
+
+            self.assertEqual(state["recent_items"][0]["message_id"], "newer-needs-review")
+            self.assertEqual(state["needs_attention_items"][0]["message_id"], "newer-needs-review")
+            self.assertEqual(state["sidebar_state"]["daily_summary"]["batch_id"], "founder-test-batch-10")
+
     def test_sidebar_state_has_safe_empty_selected_email_when_message_not_found(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
