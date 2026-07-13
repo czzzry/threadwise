@@ -2526,6 +2526,7 @@
     const impact = preview?.impact || {};
     const matchingCount = Number(impact.matching_existing_count || 0);
     const similarCount = Number(impact.similar_candidate_count || 0);
+    const inboxMatchScanCapped = Boolean(preview?.inbox_backfill?.is_capped);
     const targetLabelName = humanLabelNameFromId((preview?.selected_label_after || [])[0] || "");
     const structuredRule = preview?.structured_rule || {};
     const selectedStyle = "border:2px solid #241812;background:#dff8ed;";
@@ -2556,7 +2557,16 @@
         <div role="group" aria-label="Choose how broadly to apply this change" style="display:grid;gap:8px;">
           ${scopeCard("current-only", "Just this email", "Relabel this message only.")}
           ${scopeCard("future-only", "This email + future emails", "Also remember the rule for new matching mail.")}
-          ${scopeCard("apply-included", `Also update ${matchingCount} inbox email${matchingCount === 1 ? "" : "s"}`, matchingCount ? "Review the exact matches before applying." : "No matching existing emails are available.", matchingCount === 0)}
+          ${scopeCard(
+            "apply-included",
+            `Also update ${matchingCount} reviewed inbox email${matchingCount === 1 ? "" : "s"}`,
+            matchingCount
+              ? inboxMatchScanCapped
+                ? "Review these exact matches. More inbox emails may match, but they will not be changed."
+                : "Review the exact matches before applying."
+              : "No matching existing emails are available.",
+            matchingCount === 0,
+          )}
         </div>
         <button type="button" data-ea-action="confirm-selected-scope" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">${escapeHtml(actionLabel)}</button>
         <details style="border-top:1px solid rgba(36,24,18,.2);padding-top:10px;color:#6b6255;">
@@ -2568,7 +2578,7 @@
         </details>
         <details style="border-top:1px solid rgba(36,24,18,.2);padding-top:10px;color:#6b6255;">
           <summary style="cursor:pointer;font-weight:800;color:#241812;">Matching evidence</summary>
-          <div style="margin-top:8px;"><strong style="color:#241812;">${matchingCount}</strong> exact matches can be reviewed. <strong style="color:#241812;">${similarCount}</strong> similar candidates will not be changed.</div>
+          <div style="margin-top:8px;"><strong style="color:#241812;">${matchingCount}</strong> exact matches can be reviewed. <strong style="color:#241812;">${similarCount}</strong> similar candidates will not be changed.${inboxMatchScanCapped ? " The live inbox scan was capped; unreviewed messages will not be changed." : ""}</div>
           ${examples ? `<ol style="margin:8px 0 0;padding-left:18px;">${examples}</ol>` : ""}
         </details>
         ${renderRuleAmendmentHtml(preview?.amendment_proposal)}

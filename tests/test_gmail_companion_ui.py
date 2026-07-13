@@ -62,6 +62,12 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("renderSelectedEmailTransition(context)", content_js)
         self.assertIn("Reading this email…", content_js)
 
+    def test_capped_live_preview_discloses_that_unreviewed_messages_will_not_change(self) -> None:
+        content_js = Path("extensions/gmail_companion/content.js").read_text()
+
+        self.assertIn("More inbox emails may match, but they will not be changed.", content_js)
+        self.assertIn("The live inbox scan was capped; unreviewed messages will not be changed.", content_js)
+
     def test_teach_preview_inspects_remote_candidates_and_exposes_only_semantic_matches(self) -> None:
         class InspectableSearchClient(MockGmailLabelClient):
             def __init__(self, payloads: dict[str, dict]) -> None:
@@ -792,7 +798,7 @@ class GmailCompanionUiTests(unittest.TestCase):
 
         self.assertIn('scopeCard("current-only", "Just this email"', content_js)
         self.assertIn('scopeCard("future-only", "This email + future emails"', content_js)
-        self.assertIn('scopeCard("apply-included", `Also update ${matchingCount}', content_js)
+        self.assertIn('`Also update ${matchingCount} reviewed inbox email', content_js)
         self.assertIn('data-ea-action="confirm-selected-scope"', content_js)
         self.assertIn("Where should this change apply?", content_js)
         self.assertIn("How Threadwise understood this", content_js)
