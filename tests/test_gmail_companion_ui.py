@@ -41,6 +41,21 @@ from src.unsubscribe_execution import UnsubscribeExecutor
 
 
 class GmailCompanionUiTests(unittest.TestCase):
+    def test_review_identity_does_not_collapse_distinct_gmail_messages_with_the_same_subject(self) -> None:
+        content_js = Path("extensions/gmail_companion/content.js").read_text()
+
+        self.assertIn("if (current.messageId && itemMessageId)", content_js)
+        self.assertIn("return itemMessageId === current.messageId;", content_js)
+        self.assertIn("if (current.threadId && itemThreadId)", content_js)
+        self.assertIn("return itemThreadId === current.threadId;", content_js)
+
+    def test_handled_receipt_offers_a_direct_looks_right_next_action(self) -> None:
+        content_js = Path("extensions/gmail_companion/content.js").read_text()
+
+        self.assertIn('data-ea-action="confirm-handled-and-next"', content_js)
+        self.assertIn("Looks right · Next", content_js)
+        self.assertIn("confirmHandledAndOpenNext", content_js)
+
     def test_refining_a_rule_preserves_the_founder_note_instead_of_the_model_summary(self) -> None:
         content_js = Path("extensions/gmail_companion/content.js").read_text()
 
@@ -160,6 +175,117 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertNotIn("remote-security", {
                 item["message_id"] for item in preview["impact"]["matching_existing_items"]
             })
+
+    def test_initial_teach_preview_does_not_wait_for_live_gmail_impact_scan(self) -> None:
+        class FailingIfScannedClient(MockGmailLabelClient):
+            def search_message_ids(self, query: str, max_results: int) -> list[str]:
+                raise AssertionError("the initial rule preview must not scan Gmail")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "current-order",
+                        "sender": "Merchant <orders@example.com>",
+                        "subject": "Your order shipped",
+                        "snippet": "Track your package.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                ],
+            )
+            gmail_client = FailingIfScannedClient()
+
+            with patch("src.teaching_loop.OpenAITeachingIntentClient.from_env", return_value=None):
+                preview = GmailCompanionApp(
+                    storage_dir,
+                    gmail_client_factory=lambda account_id, credentials_dir, client_secret_path, required_scope: gmail_client,
+                ).teach_preview_initial(
+                    {
+                        "selected_context": {"provider": "gmail", "message_id": "current-order"},
+                        "target_label": "shopping-order",
+                        "note": "Apply to order and shipment emails from any merchant.",
+                    }
+                )
+
+            self.assertEqual(preview["inbox_backfill"]["state"], "working")
+            self.assertEqual(gmail_client.calls, [])
+
+    def test_teach_preview_impact_finishes_the_deferred_live_gmail_scan(self) -> None:
+        class InspectableClient(MockGmailLabelClient):
+            def search_message_ids(self, query: str, max_results: int) -> list[str]:
+                return ["remote-order"]
+
+            def get_message(self, message_id: str) -> dict:
+                return {
+                    "id": message_id,
+                    "threadId": f"thread-{message_id}",
+                    "internalDate": "1718784000000",
+                    "snippet": "Shipment dispatched and arriving today.",
+                    "labelIds": ["INBOX"],
+                    "payload": {
+                        "headers": [
+                            {"name": "From", "value": "Merchant <orders@example.com>"},
+                            {"name": "Subject", "value": "Shipment dispatched"},
+                        ]
+                    },
+                }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "current-order",
+                        "sender": "Merchant <orders@example.com>",
+                        "subject": "Your order shipped",
+                        "snippet": "Track your package.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                ],
+            )
+            gmail_client = InspectableClient()
+            app = GmailCompanionApp(
+                storage_dir,
+                gmail_client_factory=lambda account_id, credentials_dir, client_secret_path, required_scope: gmail_client,
+            )
+
+            with patch("src.teaching_loop.OpenAITeachingIntentClient.from_env", return_value=None):
+                initial = app.teach_preview_initial(
+                    {
+                        "selected_context": {"provider": "gmail", "message_id": "current-order"},
+                        "target_label": "shopping-order",
+                        "note": "Apply to order and shipment emails from any merchant.",
+                    }
+                )
+            completed = app.teach_preview_impact({"preview": initial})
+
+            self.assertEqual(completed["inbox_backfill"]["state"], "ready")
+            self.assertEqual(completed["inbox_backfill"]["estimated_count"], 1)
+            self.assertIn("remote-order", {
+                item["message_id"] for item in completed["impact"]["matching_existing_items"]
+            })
+
+    def test_extension_renders_rule_before_requesting_deferred_inbox_impact(self) -> None:
+        content_js = Path("extensions/gmail_companion/content.js").read_text()
+
+        self.assertIn('path: "/api/teach-preview-impact"', content_js)
+        self.assertIn("Checking matching inbox emails…", content_js)
+        self.assertIn("Inbox match scan couldn’t finish", content_js)
+        self.assertIn('state: "unavailable"', content_js)
+        self.assertIn("loadTeachPreviewImpact", content_js)
 
     def test_teach_preview_inspects_remote_candidates_concurrently(self) -> None:
         class ConcurrentInspectableClient(MockGmailLabelClient):

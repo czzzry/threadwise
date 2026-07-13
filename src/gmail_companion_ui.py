@@ -332,7 +332,15 @@ class GmailCompanionApp:
         if handler.command == "POST" and parsed.path == "/api/teach-preview":
             try:
                 payload = self._read_json_body(handler)
-                response = self.teach_preview(payload)
+                response = self.teach_preview_initial(payload)
+                return self._write_json(handler, HTTPStatus.OK, response)
+            except (KeyError, ValueError, HTTPException) as exc:
+                return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+
+        if handler.command == "POST" and parsed.path == "/api/teach-preview-impact":
+            try:
+                payload = self._read_json_body(handler)
+                response = self.teach_preview_impact(payload)
                 return self._write_json(handler, HTTPStatus.OK, response)
             except (KeyError, ValueError, HTTPException) as exc:
                 return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
@@ -719,17 +727,43 @@ class GmailCompanionApp:
         }
 
     def teach_preview(self, payload: dict) -> dict:
+        return self._finish_teach_preview_impact(self._build_teach_preview(payload))
+
+    def teach_preview_initial(self, payload: dict) -> dict:
+        preview = self._build_teach_preview(payload)
+        preview["inbox_backfill"] = {
+            "state": "working",
+            "available": None,
+            "estimated_count": 0,
+            "is_capped": False,
+            "requires_confirmation": False,
+            "query": "",
+            "matches": [],
+        }
+        return preview
+
+    def teach_preview_impact(self, payload: dict) -> dict:
+        preview = payload.get("preview")
+        if not isinstance(preview, dict):
+            raise ValueError("preview must be an object")
+        completed = self._finish_teach_preview_impact(dict(preview))
+        completed["inbox_backfill"]["state"] = "ready"
+        return completed
+
+    def _build_teach_preview(self, payload: dict) -> dict:
         selected_context = payload.get("selected_context") or {}
         target_label = payload["target_label"]
         note = (payload.get("note") or "").strip()
         scope = payload.get("scope") or "sender"
-        preview = build_sidebar_teach_preview(
+        return build_sidebar_teach_preview(
             self._storage_dir,
             selected_context=selected_context,
             target_label=target_label,
             note=note,
             scope=scope,
         )
+
+    def _finish_teach_preview_impact(self, preview: dict) -> dict:
         preview["inbox_backfill"] = self._build_inbox_backfill_preview(preview)
         remote_matches = list(preview["inbox_backfill"].get("matches") or [])
         existing_items = list(preview.get("impact", {}).get("matching_existing_items") or [])

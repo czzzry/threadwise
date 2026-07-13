@@ -24,6 +24,7 @@
     details: "Checking the local companion.",
   };
   let teachPreview = null;
+  let teachPreviewRequestId = 0;
   let previousTeachPreview = null;
   let teachResult = null;
   let teachFlowState = "teaching";
@@ -918,6 +919,7 @@
   }
 
   function resetPerEmailInteraction() {
+    teachPreviewRequestId += 1;
     teachPreview = null;
     previousTeachPreview = null;
     teachResult = null;
@@ -1394,6 +1396,7 @@
             <div style="margin-top:6px;color:#6b6255;font-size:0.88rem;overflow-wrap:anywhere;">${escapeHtml(selected.subject || "(no subject)")} · ${escapeHtml(selected.sender || "(unknown sender)")}</div>
           </div>
           <div data-ea-auto-handled-receipt style="border-radius:14px;background:#eef7f5;padding:12px;color:#1f1a14;line-height:1.45;">${escapeHtml(handlingReceipt)}</div>
+          <button type="button" data-ea-action="confirm-handled-and-next" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Looks right · Next</button>
           <div style="display:flex;gap:12px;flex-wrap:wrap;">
             <button type="button" data-ea-action="open-selected-gmail" style="border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Open email</button>
             <button type="button" data-ea-action="change-auto-handled" style="border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Change</button>
@@ -1890,11 +1893,13 @@
     if (!item || !current) {
       return false;
     }
-    if (current.messageId && item.message_id === current.messageId) {
-      return true;
+    const itemMessageId = String(item.message_id || "");
+    const itemThreadId = String(item.thread_id || "");
+    if (current.messageId && itemMessageId) {
+      return itemMessageId === current.messageId;
     }
-    if (current.threadId && item.thread_id === current.threadId) {
-      return true;
+    if (current.threadId && itemThreadId) {
+      return itemThreadId === current.threadId;
     }
     return Boolean(
       current.sender && current.subject
@@ -2537,6 +2542,8 @@
     const impact = preview?.impact || {};
     const matchingCount = Number(impact.matching_existing_count || 0);
     const similarCount = Number(impact.similar_candidate_count || 0);
+    const inboxMatchScanWorking = preview?.inbox_backfill?.state === "working";
+    const inboxMatchScanUnavailable = preview?.inbox_backfill?.state === "unavailable";
     const inboxMatchScanCapped = Boolean(preview?.inbox_backfill?.is_capped);
     const targetLabelName = humanLabelNameFromId((preview?.selected_label_after || [])[0] || "");
     const structuredRule = preview?.structured_rule || {};
@@ -2575,8 +2582,12 @@
               ? inboxMatchScanCapped
                 ? "Review these exact matches. More inbox emails may match, but they will not be changed."
                 : "Review the exact matches before applying."
-              : "No matching existing emails are available.",
-            matchingCount === 0,
+              : inboxMatchScanWorking
+                ? "Checking matching inbox emails…"
+                : inboxMatchScanUnavailable
+                  ? "Inbox match scan couldn’t finish. Try the preview again to check existing emails."
+                : "No matching existing emails are available.",
+            inboxMatchScanWorking || matchingCount === 0,
           )}
         </div>
         <button type="button" data-ea-action="confirm-selected-scope" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">${escapeHtml(actionLabel)}</button>
@@ -2589,7 +2600,7 @@
         </details>
         <details style="border-top:1px solid rgba(36,24,18,.2);padding-top:10px;color:#6b6255;">
           <summary style="cursor:pointer;font-weight:800;color:#241812;">Matching evidence</summary>
-          <div style="margin-top:8px;"><strong style="color:#241812;">${matchingCount}</strong> exact matches can be reviewed. <strong style="color:#241812;">${similarCount}</strong> similar candidates will not be changed.${inboxMatchScanCapped ? " The live inbox scan was capped; unreviewed messages will not be changed." : ""}</div>
+          <div style="margin-top:8px;">${inboxMatchScanWorking ? "Checking matching inbox emails… You can still fix this email or save the future rule now." : inboxMatchScanUnavailable ? "Inbox match scan couldn’t finish. You can still fix this email or save the future rule; try the preview again before changing existing inbox emails." : `<strong style="color:#241812;">${matchingCount}</strong> exact matches can be reviewed. <strong style="color:#241812;">${similarCount}</strong> similar candidates will not be changed.${inboxMatchScanCapped ? " The live inbox scan was capped; unreviewed messages will not be changed." : ""}`}</div>
           ${examples ? `<ol style="margin:8px 0 0;padding-left:18px;">${examples}</ol>` : ""}
         </details>
         ${renderRuleAmendmentHtml(preview?.amendment_proposal)}
@@ -2876,6 +2887,11 @@
     const returnHomeAfterReceiptButton = event.target.closest("[data-ea-action='return-home-after-receipt']");
     if (returnHomeAfterReceiptButton) {
       return openThreadwiseHome(event);
+    }
+    const confirmHandledButton = event.target.closest("[data-ea-action='confirm-handled-and-next']");
+    if (confirmHandledButton) {
+      event.preventDefault();
+      return confirmHandledAndOpenNext();
     }
 
     const teachFutureAfterReceiptButton = event.target.closest("[data-ea-action='teach-future-after-receipt']");
@@ -3305,6 +3321,7 @@
     selectedTeachScope = "current-only";
     const targetLabel = teachDraft.targetLabel;
     const note = teachDraft.note;
+    const requestId = ++teachPreviewRequestId;
     teachFlowState = "previewing";
     teachResult = teachPendingResult("preview");
     teachPreview = null;
@@ -3325,6 +3342,9 @@
         scope: "sender",
       },
     }, (response) => {
+      if (requestId !== teachPreviewRequestId) {
+        return;
+      }
       if (chrome.runtime.lastError) {
         teachResult = teachErrorResult("preview", chrome.runtime.lastError.message || "Could not preview the lesson.");
         teachPreview = null;
@@ -3350,7 +3370,43 @@
         unsubscribeResult = "";
       }
       renderState(lastHarnessState || lastSidebarState);
+      if (teachPreview && requestId === teachPreviewRequestId) {
+        loadTeachPreviewImpact(teachPreview, requestId);
+      }
     });
+  }
+
+  function loadTeachPreviewImpact(initialPreview, requestId) {
+    chrome.runtime.sendMessage({
+      type: "email-agent:api",
+      path: "/api/teach-preview-impact",
+      method: "POST",
+      body: { preview: initialPreview },
+    }, (response) => {
+      if (requestId !== teachPreviewRequestId) {
+        return;
+      }
+      if (chrome.runtime.lastError || !response?.ok) {
+        teachPreview = {
+          ...initialPreview,
+          inbox_backfill: {
+            ...(initialPreview.inbox_backfill || {}),
+            state: "unavailable",
+          },
+        };
+        renderState(lastHarnessState || lastSidebarState);
+        return;
+      }
+      teachPreview = response.payload;
+      renderState(lastHarnessState || lastSidebarState);
+    });
+  }
+
+  function confirmHandledAndOpenNext() {
+    recordSuggestionDecisionOnce("approve");
+    activeSummaryFilter = "needs_attention_items";
+    openFirstSummaryItemIfHelpful(activeSummaryFilter);
+    return true;
   }
 
   function startTeachApply(mode) {
@@ -3366,6 +3422,7 @@
     if (mode === "current-only") {
       recordCommittedCurrentDecision();
     }
+    teachPreviewRequestId += 1;
     applyInFlight = true;
     activeTeachApplyMode = mode;
     teachFlowState = "applying";
