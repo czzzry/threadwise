@@ -151,6 +151,94 @@ class TeachingLoopTests(unittest.TestCase):
             self.assertEqual(preview["selected_label_after"], ["shopping-order"])
             self.assertIn("shipment", preview["semantic_rule"]["semantic_pattern"])
 
+    def test_account_lifecycle_lesson_stays_narrow_when_llm_suggests_broad_account_rule(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                [
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "1se-current",
+                        "sender": "1SE <noreply@1se.co>",
+                        "subject": "[1SE] Your 1SE account is inactive and will be deleted soon.",
+                        "snippet": "Your inactive account is scheduled for deletion.",
+                        "body": "Sign in if you do not want your account deleted.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    },
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "1se-lifecycle-match",
+                        "sender": "1SE <noreply@1se.co>",
+                        "subject": "Your inactive account is scheduled for deletion",
+                        "snippet": "Your account will be deleted in 14 days.",
+                        "body": "Open 1SE to keep your account active.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    },
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "1se-security-nonmatch",
+                        "sender": "1SE <noreply@1se.co>",
+                        "subject": "New sign-in to your 1SE account",
+                        "snippet": "A new device signed in.",
+                        "body": "Reset your password if this was not you.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    },
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "1se-marketing-nonmatch",
+                        "sender": "1SE <noreply@1se.co>",
+                        "subject": "Make your memories shine with 1SE",
+                        "snippet": "A special offer for your account.",
+                        "body": "Save on your annual subscription.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    },
+                ],
+            )
+            client = Mock()
+            client.interpret.return_value = {
+                "target_label": "account-security",
+                "semantic_pattern": "account, security, or statement notices",
+                "cross_sender": False,
+                "confidence": "high",
+                "rationale": "This is an account notice.",
+            }
+            note = (
+                "ONLY future emails from noreply@1se.co whose subject or body says the account is inactive, "
+                "scheduled for deletion, or will be deleted should be Account. Do not match other account, "
+                "security, statement, marketing, or unrelated 1SE emails."
+            )
+
+            with patch("src.teaching_loop.OpenAITeachingIntentClient.from_env", return_value=client):
+                preview = build_sidebar_teach_preview(
+                    storage_dir,
+                    selected_context={"provider": "gmail", "message_id": "1se-current"},
+                    target_label="account-security",
+                    note=note,
+                    scope="sender",
+                )
+
+            self.assertIn("inactivity or deletion", preview["plain_english_rule"].lower())
+            self.assertNotIn("account, security, or statement", preview["plain_english_rule"].lower())
+            self.assertEqual(preview["semantic_rule"]["include_families"], ["account-lifecycle"])
+            self.assertEqual(
+                {item["message_id"] for item in preview["impact"]["matching_existing_items"]},
+                {"1se-lifecycle-match"},
+            )
+
     def test_explicit_order_lesson_uses_meaning_not_sender_for_existing_matches(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)

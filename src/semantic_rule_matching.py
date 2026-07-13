@@ -30,6 +30,17 @@ SEMANTIC_FAMILY_TERMS = {
         "verification",
         "suspicious login",
     ),
+    "account-lifecycle": (
+        "account inactive",
+        "inactive account",
+        "account inactivity",
+        "due to inactivity",
+        "scheduled for deletion",
+        "will be deleted",
+        "account deletion",
+        "delete your account",
+        "account deleted",
+    ),
     "privacy-legal": (
         "privacy policy",
         "privacy-policy",
@@ -64,6 +75,7 @@ SEMANTIC_FAMILY_TERMS = {
 FAMILY_DESCRIPTIONS = {
     "orders": "purchase confirmations and shipment, delivery, or order-status emails",
     "account-security": "account, security, or statement notices",
+    "account-lifecycle": "account inactivity or deletion warnings",
     "privacy-legal": "privacy-policy, user-agreement, or terms-update notices",
     "promotions": "marketing or promotional emails",
     "receipts": "billing, receipt, invoice, or payment notices",
@@ -121,10 +133,16 @@ def build_semantic_boundary(
                 destination.append(family)
 
     target_family = LABEL_FAMILIES.get(target_label)
-    if target_family:
+    if target_family and target_family in positive_families:
+        positive_families = [target_family]
+    elif target_family and (
+        not positive_families
+        or not re.search(r"\b(?:only|specifically|classify only|apply only)\b", normalized_note)
+    ):
+        positive_families = [target_family]
+    if target_family and target_family in positive_families:
         if target_family in excluded_families:
             excluded_families.remove(target_family)
-        positive_families = [target_family]
 
     llm_families = _families_in_text(_normalize(llm_pattern))
     llm_contradicts_note = any(family in excluded_families for family in llm_families)
