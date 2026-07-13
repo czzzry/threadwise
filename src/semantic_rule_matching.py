@@ -85,9 +85,13 @@ LABEL_FAMILIES = {
 }
 
 NEGATIVE_MARKERS = (
-    "do not",
-    "don't",
-    "dont",
+    "do not include",
+    "don't include",
+    "dont include",
+    "do not apply",
+    "don't apply",
+    "do not match",
+    "do not treat",
     "never",
     "exclude",
     "excluding",
@@ -170,9 +174,9 @@ def semantic_rule_matches_message(rule: dict, message: dict) -> bool:
         return False
     included = set(rule.get("include_families") or [])
     if included:
-        if included == {"orders"}:
+        if included in ({"orders"}, {"privacy-legal"}):
             subject_families = set(_families_in_text(_normalize(str(message.get("subject") or ""))))
-            return "orders" in subject_families
+            return bool(subject_families & included)
         return bool(message_families & included)
     return False
 
@@ -227,7 +231,11 @@ def _contains_term(text: str, term: str) -> bool:
 
 
 def _clauses(text: str) -> list[str]:
-    return [clause.strip() for clause in re.split(r"[.!?;]+", text) if clause.strip()]
+    return [
+        clause.strip(" ,")
+        for clause in re.split(r"[.!?;]+|,?\s+but\s+", text)
+        if clause.strip(" ,")
+    ]
 
 
 def _pattern_for_families(families: list[str]) -> str:

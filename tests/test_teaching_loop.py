@@ -241,6 +241,70 @@ class TeachingLoopTests(unittest.TestCase):
             self.assertIn("shipment", preview["plain_english_rule"].lower())
             self.assertNotIn("account, security", preview["plain_english_rule"].lower())
 
+    def test_low_value_privacy_note_is_not_reduced_to_generic_low_value_mail(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                [
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "reddit-privacy",
+                        "sender": "Reddit <noreply@redditmail.com>",
+                        "subject": "Updates to Reddit's Privacy Policy and User Agreement",
+                        "snippet": "We updated our privacy terms.",
+                        "review_state": "pending",
+                        "final_labels": ["spam-low-value"],
+                        "applied_labels": ["spam-low-value"],
+                    },
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "service-terms",
+                        "sender": "Service <legal@service.example>",
+                        "subject": "User Agreement update",
+                        "snippet": "Our terms have changed.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    },
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "reddit-security",
+                        "sender": "Reddit <noreply@redditmail.com>",
+                        "subject": "Your Reddit account was locked",
+                        "snippet": "Review the privacy policy linked in the footer.",
+                        "review_state": "pending",
+                        "final_labels": ["account-security"],
+                        "applied_labels": ["account-security"],
+                    },
+                ],
+            )
+            note = (
+                "Keep this as LowValue because it is a privacy-policy or user-agreement update that I do not need to act on. "
+                "Apply this lesson to privacy-policy, terms-of-service, and user-agreement notices from any service, "
+                "but do not include unrelated account-security, login, or password-reset emails."
+            )
+
+            with patch("src.teaching_loop.OpenAITeachingIntentClient.from_env", return_value=None):
+                preview = build_sidebar_teach_preview(
+                    storage_dir,
+                    selected_context={"provider": "gmail", "message_id": "reddit-privacy"},
+                    target_label="spam-low-value",
+                    note=note,
+                    scope="sender",
+                )
+
+            self.assertIn("privacy-policy", preview["plain_english_rule"].lower())
+            self.assertNotIn("low-value or suspicious", preview["plain_english_rule"].lower())
+            self.assertEqual(
+                {item["message_id"] for item in preview["impact"]["matching_existing_items"]},
+                {"service-terms"},
+            )
+
     def test_preview_reports_matching_existing_emails_without_app_route(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
