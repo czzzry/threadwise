@@ -72,7 +72,7 @@ from src.teaching_loop import (
     exclude_sidebar_teaching_match,
     load_items_for_gmail_write_through,
 )
-from src.semantic_rule_matching import semantic_rule_matches_message, semantic_search_keywords
+from src.semantic_rule_matching import semantic_gmail_search_clauses, semantic_rule_matches_message, semantic_search_keywords
 
 
 DEFAULT_STORAGE_DIR = Path("data/gmail_fetch")
@@ -86,7 +86,7 @@ HARNESS_STATE_CACHE_SECONDS = 120.0
 HEALTH_STATUS_CACHE_SECONDS = 5.0
 COMPANION_DATA_CACHE_SECONDS = 120.0
 INBOX_BACKFILL_CONFIRM_THRESHOLD = 200
-INBOX_BACKFILL_ESTIMATE_CAP = 250
+INBOX_BACKFILL_ESTIMATE_CAP = 100
 THREADWISE_APP_VERSION = "0.1.0"
 
 
@@ -1359,11 +1359,18 @@ class GmailCompanionApp:
         sender = (semantic_rule or {}).get("sender") or current_sender or ""
         semantic_pattern = (semantic_rule or {}).get("semantic_pattern") or ""
         rule_type = (semantic_rule or {}).get("rule_type") or ""
+        include_clauses, exclude_clauses = semantic_gmail_search_clauses(semantic_rule)
         subject_keywords = semantic_search_keywords(semantic_rule) or self._query_keywords_for_semantic_pattern(semantic_pattern, current_subject)
         parts: list[str] = []
         if sender and "@" in sender and rule_type != "cross-sender-semantic":
             parts.append(f"from:{sender}")
-        if subject_keywords:
+        if include_clauses:
+            if len(include_clauses) == 1:
+                parts.append(include_clauses[0])
+            else:
+                parts.append("{" + " ".join(include_clauses) + "}")
+            parts.extend(exclude_clauses)
+        elif subject_keywords:
             if len(subject_keywords) == 1:
                 parts.append(subject_keywords[0])
             else:

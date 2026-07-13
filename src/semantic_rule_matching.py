@@ -184,6 +184,30 @@ def semantic_search_keywords(rule: dict) -> list[str]:
     return keywords
 
 
+def semantic_gmail_search_clauses(rule: dict) -> tuple[list[str], list[str]]:
+    include_clauses = _gmail_subject_clauses(rule.get("include_families") or [], limit=10)
+    exclude_clauses = _gmail_subject_clauses(rule.get("exclude_families") or [], limit=12)
+    return include_clauses, [f"-{clause}" for clause in exclude_clauses]
+
+
+def _gmail_subject_clauses(families: list[str], *, limit: int) -> list[str]:
+    clauses: list[str] = []
+    family_terms = [list(SEMANTIC_FAMILY_TERMS.get(family, ())) for family in families]
+    term_index = 0
+    while len(clauses) < limit and any(term_index < len(terms) for terms in family_terms):
+        for terms in family_terms:
+            if term_index >= len(terms):
+                continue
+            term = terms[term_index]
+            clause = f'subject:"{term}"' if " " in term else f"subject:{term}"
+            if clause not in clauses:
+                clauses.append(clause)
+            if len(clauses) >= limit:
+                break
+        term_index += 1
+    return clauses
+
+
 def _families_in_text(text: str) -> list[str]:
     families: list[str] = []
     for family, terms in SEMANTIC_FAMILY_TERMS.items():
