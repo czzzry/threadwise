@@ -202,7 +202,10 @@ class GmailCompanionUiTests(unittest.TestCase):
             )
             gmail_client = FailingIfScannedClient()
 
-            with patch("src.teaching_loop.OpenAITeachingIntentClient.from_env", return_value=None):
+            with (
+                patch("src.teaching_loop.OpenAITeachingIntentClient.from_env", return_value=None),
+                patch("src.teaching_loop.load_storage_items", side_effect=AssertionError("initial preview must not scan stored inbox history")),
+            ):
                 preview = GmailCompanionApp(
                     storage_dir,
                     gmail_client_factory=lambda account_id, credentials_dir, client_secret_path, required_scope: gmail_client,

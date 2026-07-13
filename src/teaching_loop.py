@@ -102,6 +102,7 @@ def build_sidebar_teach_preview(
     target_label: str,
     note: str,
     scope: str,
+    include_existing_impact: bool = True,
 ) -> dict:
     current = load_selected_storage_item(storage_dir, selected_context)
     intent = interpret_teaching_intent(current=current, target_label=target_label, note=note, scope=scope)
@@ -113,6 +114,7 @@ def build_sidebar_teach_preview(
         scope=scope,
         intent=intent,
     )
+    storage_items = load_storage_items(storage_dir, current.get("provider", "gmail")) if include_existing_impact else []
     proposal = build_companion_memory_proposal(
         storage_dir,
         current=current,
@@ -120,6 +122,7 @@ def build_sidebar_teach_preview(
         note=note,
         scope=scope,
         semantic_rule=semantic_rule,
+        storage_items=storage_items,
     )
     preview = proposal.preview
     proposal_payload = proposal.to_dict()
@@ -128,6 +131,7 @@ def build_sidebar_teach_preview(
         current=current,
         proposal_preview=preview,
         semantic_rule=semantic_rule,
+        storage_items=storage_items,
     )
     preview_matches = filter_excluded_preview_matches(storage_dir, proposal_payload, preview_matches)
     affected_existing = [
@@ -146,6 +150,7 @@ def build_sidebar_teach_preview(
         current=current,
         target_label=target_label,
         exact_matches=normalized_existing,
+        storage_items=storage_items,
     )
     target_label_name = gmail_label_name(target_label)
     current_labels = list(current.get("final_labels") or current.get("applied_labels") or [])
@@ -205,6 +210,72 @@ def build_sidebar_teach_preview(
             {"id": "refine", "label": "Keep discussing"},
         ],
     }
+
+
+def finish_sidebar_teach_preview_impact(storage_dir: Path, preview: dict) -> dict:
+    completed = dict(preview)
+    semantic_rule = dict(completed.get("semantic_rule") or {})
+    proposal_payload = dict(completed.get("proposal") or {})
+    current = {
+        "provider": proposal_payload.get("provider") or "gmail",
+        "batch_id": completed.get("selected_batch_id") or proposal_payload.get("source_batch_id") or "",
+        "account_id": completed.get("selected_account_id") or proposal_payload.get("account_id") or "",
+        "message_id": completed.get("selected_message_id") or "",
+        "sender": completed.get("selected_sender") or "",
+        "subject": completed.get("selected_subject") or "",
+        "final_labels": list(completed.get("selected_label_before") or []),
+        "applied_labels": list(completed.get("selected_label_before") or []),
+    }
+    target_label = semantic_rule.get("target_label") or (completed.get("selected_label_after") or [""])[0]
+    storage_items = load_storage_items(storage_dir, current["provider"])
+    proposal = build_companion_memory_proposal(
+        storage_dir,
+        current=current,
+        target_label=target_label,
+        note=str(proposal_payload.get("explanation") or ""),
+        scope=str(proposal_payload.get("scope") or semantic_rule.get("scope") or "sender"),
+        semantic_rule=semantic_rule,
+        storage_items=storage_items,
+    )
+    proposal_payload = proposal.to_dict()
+    preview_matches = _authoritative_preview_matches(
+        storage_dir,
+        current=current,
+        proposal_preview=proposal.preview,
+        semantic_rule=semantic_rule,
+        storage_items=storage_items,
+    )
+    preview_matches = filter_excluded_preview_matches(storage_dir, proposal_payload, preview_matches)
+    affected_existing = [
+        {**match, "labels_after": [target_label]}
+        for match in preview_matches
+        if match.get("message_id") != current["message_id"]
+    ]
+    similar_candidates = build_similar_candidate_preview(
+        storage_dir,
+        current=current,
+        target_label=target_label,
+        exact_matches=affected_existing,
+        storage_items=storage_items,
+    )
+    impact = dict(completed.get("impact") or {})
+    impact.update(
+        {
+            "matching_existing_count": len(affected_existing),
+            "matching_existing_examples": affected_existing[:5],
+            "matching_existing_items": affected_existing,
+            "similar_candidate_count": similar_candidates["similar_candidate_count"],
+            "similar_candidate_examples": similar_candidates["similar_candidate_examples"],
+            "similar_candidate_groups": similar_candidates["similar_candidate_groups"],
+            "broader_rule_candidates": similar_candidates["broader_rule_candidates"],
+        }
+    )
+    structured_rule = dict(completed.get("structured_rule") or {})
+    structured_rule["applies_to_existing_count"] = len(affected_existing)
+    completed["proposal"] = proposal_payload
+    completed["impact"] = impact
+    completed["structured_rule"] = structured_rule
+    return completed
 
 
 def apply_sidebar_teaching(
@@ -640,11 +711,13 @@ def _authoritative_preview_matches(
     current: dict,
     proposal_preview: dict,
     semantic_rule: dict,
+    storage_items: list[dict] | None = None,
 ) -> list[dict]:
+    storage_items = storage_items if storage_items is not None else load_storage_items(storage_dir, current.get("provider", "gmail"))
     if semantic_rule.get("semantic_pattern"):
         return [
             item
-            for item in _deduplicate_messages(load_storage_items(storage_dir, current.get("provider", "gmail")))
+            for item in _deduplicate_messages(storage_items)
             if semantic_rule_matches_message(semantic_rule, item)
         ]
     return _deduplicate_messages(list(proposal_preview.get("matches", [])))
@@ -693,6 +766,7 @@ def build_companion_memory_proposal(
     note: str,
     scope: str,
     semantic_rule: dict | None = None,
+    storage_items: list[dict] | None = None,
 ):
     provider = current.get("provider", "gmail")
     semantic_rule = semantic_rule or build_semantic_future_rule(current=current, target_label=target_label, note=note, scope=scope)
@@ -707,7 +781,7 @@ def build_companion_memory_proposal(
         scope=scope,
         label=target_label,
         explanation=explanation,
-        storage_items=load_storage_items(storage_dir, provider),
+        storage_items=storage_items if storage_items is not None else load_storage_items(storage_dir, provider),
         semantic_rule=semantic_rule,
     )
 
@@ -718,11 +792,12 @@ def build_similar_candidate_preview(
     current: dict,
     target_label: str,
     exact_matches: list[dict],
+    storage_items: list[dict] | None = None,
 ) -> dict:
     provider = current.get("provider", "gmail")
     current_message_id = current.get("message_id", "")
     exact_message_ids = {match.get("message_id") for match in exact_matches if match.get("message_id")}
-    storage_items = load_storage_items(storage_dir, provider)
+    storage_items = storage_items if storage_items is not None else load_storage_items(storage_dir, provider)
     groups = [
         _similar_group_same_domain(current, storage_items, target_label, exact_message_ids),
         _similar_group_display_sender(current, storage_items, target_label, exact_message_ids),

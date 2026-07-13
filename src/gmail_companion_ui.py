@@ -70,6 +70,7 @@ from src.teaching_loop import (
     apply_sidebar_teaching,
     build_sidebar_teach_preview,
     exclude_sidebar_teaching_match,
+    finish_sidebar_teach_preview_impact,
     load_items_for_gmail_write_through,
 )
 from src.semantic_rule_matching import semantic_gmail_search_clauses, semantic_rule_matches_message, semantic_search_keywords
@@ -730,7 +731,7 @@ class GmailCompanionApp:
         return self._finish_teach_preview_impact(self._build_teach_preview(payload))
 
     def teach_preview_initial(self, payload: dict) -> dict:
-        preview = self._build_teach_preview(payload)
+        preview = self._build_teach_preview(payload, include_existing_impact=False)
         preview["inbox_backfill"] = {
             "state": "working",
             "available": None,
@@ -746,11 +747,12 @@ class GmailCompanionApp:
         preview = payload.get("preview")
         if not isinstance(preview, dict):
             raise ValueError("preview must be an object")
-        completed = self._finish_teach_preview_impact(dict(preview))
+        completed = finish_sidebar_teach_preview_impact(self._storage_dir, dict(preview))
+        completed = self._finish_teach_preview_impact(completed)
         completed["inbox_backfill"]["state"] = "ready"
         return completed
 
-    def _build_teach_preview(self, payload: dict) -> dict:
+    def _build_teach_preview(self, payload: dict, *, include_existing_impact: bool = True) -> dict:
         selected_context = payload.get("selected_context") or {}
         target_label = payload["target_label"]
         note = (payload.get("note") or "").strip()
@@ -761,6 +763,7 @@ class GmailCompanionApp:
             target_label=target_label,
             note=note,
             scope=scope,
+            include_existing_impact=include_existing_impact,
         )
 
     def _finish_teach_preview_impact(self, preview: dict) -> dict:
