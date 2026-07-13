@@ -832,7 +832,8 @@ class GmailCompanionUiTests(unittest.TestCase):
     def test_review_and_scope_screens_can_open_the_exact_gmail_message(self) -> None:
         content_js = (Path(__file__).parent.parent / "extensions" / "gmail_companion" / "content.js").read_text()
 
-        self.assertGreaterEqual(content_js.count('data-ea-action="open-selected-gmail"'), 3)
+        self.assertGreaterEqual(content_js.count('data-ea-action="open-selected-gmail"'), 4)
+        self.assertIn('data-ea-action="open-selected-gmail" style="border:0;background:transparent', content_js)
         self.assertIn('return `https://mail.google.com/mail/u/0/#all/${encodeURIComponent(messageId)}`', content_js)
         self.assertIn("Opening the email preserves the current correction draft", content_js)
 

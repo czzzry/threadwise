@@ -1395,6 +1395,7 @@
           </div>
           <div data-ea-auto-handled-receipt style="border-radius:14px;background:#eef7f5;padding:12px;color:#1f1a14;line-height:1.45;">${escapeHtml(handlingReceipt)}</div>
           <div style="display:flex;gap:12px;flex-wrap:wrap;">
+            <button type="button" data-ea-action="open-selected-gmail" style="border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Open email</button>
             <button type="button" data-ea-action="change-auto-handled" style="border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Change</button>
             <button type="button" data-ea-action="toggle-details" aria-expanded="${detailsExpanded ? "true" : "false"}" aria-controls="ea-handled-why" style="border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">${detailsExpanded ? "Hide why" : "Why"}</button>
           </div>
