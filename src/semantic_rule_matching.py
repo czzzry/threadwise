@@ -8,9 +8,11 @@ SEMANTIC_FAMILY_TERMS = {
         "order confirmation",
         "order status",
         "order update",
+        "your order",
         "shipment",
         "shipping",
-        "delivery",
+        "shipped",
+        "delivered",
         "dispatched",
         "out for delivery",
         "track package",
@@ -168,6 +170,9 @@ def semantic_rule_matches_message(rule: dict, message: dict) -> bool:
         return False
     included = set(rule.get("include_families") or [])
     if included:
+        if included == {"orders"}:
+            subject_families = set(_families_in_text(_normalize(str(message.get("subject") or ""))))
+            return "orders" in subject_families
         return bool(message_families & included)
     return False
 
