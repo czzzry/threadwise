@@ -28,12 +28,14 @@ from src.teachable_rule_memory import TeachableRuleMemory
 
 VALID_TEACHING_APPLY_MODES = {"current-only", "matching-existing", "save-future-rule", "future-only", "apply-included"}
 DEFAULT_TEACHING_INTENT_MODEL = "gpt-4.1-mini"
+DEFAULT_TEACHING_INTENT_TIMEOUT_SECONDS = 8
 
 
 class OpenAITeachingIntentClient:
-    def __init__(self, api_key: str, model: str) -> None:
+    def __init__(self, api_key: str, model: str, timeout_seconds: float = DEFAULT_TEACHING_INTENT_TIMEOUT_SECONDS) -> None:
         self._api_key = api_key
         self._model = model
+        self._timeout_seconds = timeout_seconds
 
     @classmethod
     def from_env(cls, model: str | None = None) -> "OpenAITeachingIntentClient | None":
@@ -75,11 +77,13 @@ class OpenAITeachingIntentClient:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(request, timeout=30) as response:
+            with urllib.request.urlopen(request, timeout=self._timeout_seconds) as response:
                 body = json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError:
             return {}
         except urllib.error.URLError:
+            return {}
+        except TimeoutError:
             return {}
         content = (((body.get("choices") or [{}])[0].get("message") or {}).get("content") or "").strip()
         if not content:

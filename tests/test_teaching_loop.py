@@ -7,6 +7,7 @@ from unittest.mock import Mock, patch
 from src.candidate_change_store import CandidateChangeStore
 from src.local_artifacts import candidate_changes_path
 from src.teaching_loop import (
+    OpenAITeachingIntentClient,
     apply_rule_amendment_decision,
     apply_sidebar_teaching,
     build_sidebar_teach_preview,
@@ -18,6 +19,39 @@ from src.teachable_rule_memory import TeachableRule, matching_rules_for_message
 
 
 class TeachingLoopTests(unittest.TestCase):
+    def test_teaching_intent_client_has_a_bounded_ui_timeout(self) -> None:
+        response = Mock()
+        response.read.return_value = json.dumps(
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "target_label": "shopping-order",
+                                    "semantic_pattern": "shipment emails",
+                                    "cross_sender": True,
+                                    "confidence": "high",
+                                    "rationale": "Order shipment",
+                                }
+                            )
+                        }
+                    }
+                ]
+            }
+        ).encode("utf-8")
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+
+        with patch("src.teaching_loop.urllib.request.urlopen", return_value=response) as urlopen:
+            result = OpenAITeachingIntentClient("test-key", "test-model").interpret({"note": "shipment"})
+
+        self.assertEqual(result["target_label"], "shopping-order")
+        self.assertEqual(urlopen.call_args.kwargs["timeout"], 8)
+
+        with patch("src.teaching_loop.urllib.request.urlopen", side_effect=TimeoutError("slow model")):
+            self.assertEqual(OpenAITeachingIntentClient("test-key", "test-model").interpret({"note": "shipment"}), {})
+
     def test_saved_semantic_rule_keeps_same_sender_security_mail_out_of_orders(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
