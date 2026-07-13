@@ -112,18 +112,28 @@ def build_selected_email_state(storage_dir: Path, unsubscribe_candidates: list[d
     classification = label_names[0] if label_names else "Uncategorized"
     write_status = load_json_or_default(write_status_path(storage_dir, batch["batch_id"]), {}).get(item["message_id"])
     inbox_status = load_json_or_default(inbox_removal_status_path(storage_dir, batch["batch_id"]), {}).get(item["message_id"])
+    latest_write_status = latest_message_mutation_status(storage_dir, item["message_id"], "write_status")
+    latest_inbox_status = latest_message_mutation_status(storage_dir, item["message_id"], "inbox_removal_status")
+    if latest_write_status is not None:
+        write_status = latest_write_status
+    if latest_inbox_status is not None:
+        inbox_status = latest_inbox_status
     if visible_gmail_labels:
         write_status = "applied"
-        status, status_label = "kept-visible", "Kept visible"
+        status, status_label = (
+            ("auto-handled", "Auto-handled")
+            if inbox_status == "applied"
+            else ("kept-visible", "Kept visible")
+        )
     else:
         status, status_label = classify_handling_status(item, write_status, inbox_status)
-        if (
-            status == "kept-visible"
-            and write_status is None
-            and labels
-            and item.get("review_state") == "reviewed"
-        ):
-            status, status_label = "write-unconfirmed", "Gmail update needs confirmation"
+    if (
+        status == "kept-visible"
+        and write_status is None
+        and labels
+        and item.get("review_state") == "reviewed"
+    ):
+        status, status_label = "write-unconfirmed", "Gmail update needs confirmation"
     candidate = candidate_from_message(
         batch.get("provider", "gmail"),
         batch.get("account_id", ""),
@@ -216,6 +226,19 @@ def classify_handling_status(item: dict, write_status: str | None, inbox_status:
     if item.get("review_action") == "auto-approve":
         return "auto-labeled", "Auto-labeled"
     return "kept-visible", "Kept visible"
+
+
+def latest_message_mutation_status(storage_dir: Path, message_id: str, artifact_suffix: str) -> str | None:
+    paths = sorted(
+        storage_dir.glob(f"*_{artifact_suffix}.json"),
+        key=lambda path: path.stat().st_mtime_ns,
+        reverse=True,
+    )
+    for path in paths:
+        status = load_json_or_default(path, {}).get(message_id)
+        if status is not None:
+            return str(status)
+    return None
 
 def action_reason_for_status(status: str) -> str:
     if status == "write-unconfirmed":

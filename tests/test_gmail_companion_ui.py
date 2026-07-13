@@ -2668,6 +2668,42 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertEqual(selected["classification"], "EA/Finance")
             self.assertEqual(selected["status"], "kept-visible")
 
+    def test_sidebar_state_uses_latest_mutation_receipt_for_visible_gmail_label(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[{
+                    "source": "gmail",
+                    "account_id": "founder-test",
+                    "message_id": "privacy-update",
+                    "sender": "OpenAI <noreply@email.openai.com>",
+                    "subject": "Updates to OpenAI's Privacy Policy",
+                    "review_state": "reviewed",
+                    "final_labels": ["spam-low-value"],
+                    "applied_labels": ["spam-low-value"],
+                }],
+            )
+            (storage_dir / "gmail-companion-backfill-test_write_status.json").write_text(
+                json.dumps({"privacy-update": "applied"})
+            )
+            (storage_dir / "gmail-companion-backfill-test_inbox_removal_status.json").write_text(
+                json.dumps({"privacy-update": "applied"})
+            )
+
+            selected = GmailCompanionApp(storage_dir).sidebar_state({
+                "provider": "gmail",
+                "message_id": "privacy-update",
+                "subject": "Updates to OpenAI's Privacy Policy",
+                "sender": "noreply@email.openai.com",
+                "gmail_labels": "EA/LowValue",
+            })["selected_email"]
+
+            self.assertEqual(selected["classification"], "EA/LowValue")
+            self.assertEqual(selected["status"], "auto-handled")
+            self.assertEqual(selected["details"]["inbox_status"], "applied")
+
     def test_daily_summary_rolls_up_recent_gmail_reports(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
