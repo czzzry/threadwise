@@ -473,7 +473,7 @@
       gmail_labels: context.gmail_labels || "",
       page_url: context.page_url || "",
     });
-    if (!force && payload === previousPayload) {
+    if (!force && payload === previousPayload && !asyncFollowUpIsWorking()) {
       return;
     }
     if (refreshInFlight && !force) {
@@ -509,6 +509,10 @@
       });
       renderState(response.payload);
     });
+  }
+
+  function asyncFollowUpIsWorking() {
+    return String((((lastSidebarState || {}).ui_state || {}).async_follow_up || {}).state || "") === "working";
   }
 
   function renderLoadingState(message) {
@@ -912,9 +916,8 @@
     previousPayload = "";
     if (lastHarnessState) {
       renderState(lastHarnessState);
-    } else {
-      refreshSelection(true);
     }
+    refreshSelection(true);
     renderMinimized();
   }
 
@@ -1843,7 +1846,17 @@
   }
 
   function countForFilter(filter) {
+    if (filter === "needs_attention_items") {
+      return liveNeedsAttentionCount();
+    }
     return summaryItemsForFilter(filter).length;
+  }
+
+  function liveNeedsAttentionCount() {
+    const summaryCount = Number((((lastSidebarState || {}).daily_summary || {}).needs_attention_count));
+    return Number.isFinite(summaryCount)
+      ? Math.max(0, summaryCount)
+      : summaryItemsForFilter("needs_attention_items").length;
   }
 
   function nextStepCopy(selected, showingQueuePreview) {
@@ -3154,9 +3167,31 @@
   function openFirstSummaryItemIfHelpful(filter) {
     const items = summaryItemsForFilter(filter);
     if (!items.length) {
+      forcedHome = true;
+      forcedHomeLiveContext = lastLiveContext ? { ...lastLiveContext } : null;
+      manualPreviewContext = null;
+      resetPerEmailInteraction();
+      gmailCheckResult = {
+        kind: "queue-refresh",
+        title: "No review emails remain. Refreshing Home",
+        message: "Threadwise is checking the live queue before offering another review.",
+      };
+      previousPayload = "";
       if (lastHarnessState) {
-        renderState(lastHarnessState);
+        const sidebarState = lastHarnessState.sidebar_state || {};
+        renderState({
+          ...lastHarnessState,
+          needs_attention_items: [],
+          sidebar_state: {
+            ...sidebarState,
+            daily_summary: {
+              ...(sidebarState.daily_summary || {}),
+              needs_attention_count: 0,
+            },
+          },
+        });
       }
+      refreshSelection(true);
       return;
     }
     const currentMessageId = ((lastSidebarState || {}).selected_email || {}).message_id || "";

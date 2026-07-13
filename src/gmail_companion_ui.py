@@ -635,10 +635,6 @@ class GmailCompanionApp:
         try:
             self._invalidate_companion_caches()
             self.sidebar_state(selected_context)
-            cache_key = json.dumps(selected_context or {}, sort_keys=True)
-            payload = self._build_harness_state(selected_context)
-            with self._harness_state_lock:
-                self._harness_state_cache[cache_key] = (time.monotonic(), payload)
             self._set_async_follow_up_state(
                 {
                     "kind": "teach-apply-refresh",
@@ -647,6 +643,10 @@ class GmailCompanionApp:
                     "message": "Queue summary and follow-up context are ready.",
                 }
             )
+            cache_key = json.dumps(selected_context or {}, sort_keys=True)
+            payload = self._build_harness_state(selected_context)
+            with self._harness_state_lock:
+                self._harness_state_cache[cache_key] = (time.monotonic(), payload)
         except Exception as exc:
             self._set_async_follow_up_state(
                 {
@@ -693,9 +693,11 @@ class GmailCompanionApp:
         runtime = self._cached_runtime_payload()
         items = runtime.get("items", [])
         selected_context = selected_context or {}
+        sidebar_state = self.sidebar_state(selected_context)
+        sidebar_state["daily_summary"] = runtime.get("daily_summary") or sidebar_state.get("daily_summary") or {}
         return {
             "selected_context": selected_context,
-            "sidebar_state": self.sidebar_state(selected_context),
+            "sidebar_state": sidebar_state,
             "recent_items": items[:24],
             "needs_attention_items": list(runtime.get("needs_attention_items") or [])[:12],
             "auto_handled_items": [item for item in items if item.get("status") == "auto-handled"][:12],

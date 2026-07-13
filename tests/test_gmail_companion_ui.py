@@ -473,6 +473,10 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("teachDraft.targetLabel = previewTargetLabel", content_js)
         self.assertIn("teachPreview?.target_label || teachPreview?.proposed_label", content_js)
         self.assertIn("!contextsMatch(lastLiveContext, manualPreviewContext)", content_js)
+        self.assertIn("function asyncFollowUpIsWorking", content_js)
+        self.assertIn("payload === previousPayload && !asyncFollowUpIsWorking()", content_js)
+        self.assertIn("liveNeedsAttentionCount", content_js)
+        self.assertIn("No review emails remain. Refreshing Home", content_js)
         self.assertNotIn('selectedDecisionConflict = "Choose a label before previewing the change."', content_js)
         self.assertIn("Fix this email only updates the message you are reviewing.", content_js)
         self.assertIn("Queue unsubscribe review", content_js)
@@ -2205,6 +2209,54 @@ class GmailCompanionUiTests(unittest.TestCase):
             )
             self.assertEqual(state["needs_attention_items"][0]["status"], "write-unconfirmed")
 
+    def test_harness_queue_count_tracks_live_actionable_backlog_not_report_snapshot(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "message_id": "still-needs-review",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    },
+                    {
+                        "message_id": "already-taught",
+                        "review_state": "reviewed",
+                        "review_action": "sidebar-current-only",
+                        "final_labels": ["personal"],
+                        "applied_labels": ["personal"],
+                    },
+                ],
+            )
+            (storage_dir / "founder-test-batch-1_write_status.json").write_text(
+                json.dumps({"already-taught": "applied"}, indent=2)
+            )
+            reports_dir = storage_dir / "reports"
+            reports_dir.mkdir(parents=True, exist_ok=True)
+            (reports_dir / "founder-test-batch-1_daily_report.json").write_text(
+                json.dumps(
+                    {
+                        "provider": "gmail",
+                        "account_id": "founder-test",
+                        "batch_id": "founder-test-batch-1",
+                        "report_date": "2026-07-13",
+                        "processed_count": 12,
+                        "inbox_removed_count": 0,
+                        "unlabeled_count": 12,
+                        "label_counts": {},
+                    },
+                    indent=2,
+                )
+            )
+
+            state = GmailCompanionApp(storage_dir).harness_state({})
+
+            self.assertEqual([item["message_id"] for item in state["needs_attention_items"]], ["still-needs-review"])
+            self.assertEqual(state["sidebar_state"]["daily_summary"]["needs_attention_count"], 1)
+
     def test_harness_state_orders_numbered_batches_naturally(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
@@ -3336,6 +3388,32 @@ class GmailCompanionUiTests(unittest.TestCase):
 
         invalidate_mock.assert_called_once()
         self.assertEqual(app._async_follow_up_payload()["state"], "done")
+
+    def test_teach_apply_follow_up_cache_exposes_done_instead_of_working_forever(self) -> None:
+        app = GmailCompanionApp(Path("/tmp/example"))
+        selected_context = {"provider": "gmail", "message_id": "gmail-live-001"}
+        app._set_async_follow_up_state(
+            {
+                "kind": "teach-apply-refresh",
+                "state": "working",
+                "label": "Background refresh running",
+                "message": "Refreshing the queue summary and follow-up context in the background.",
+            }
+        )
+
+        def build_payload(_selected_context: dict) -> dict:
+            return {"sidebar_state": {"ui_state": app._sidebar_ui_state()}}
+
+        with (
+            patch.object(app, "_invalidate_companion_caches"),
+            patch.object(app, "sidebar_state", return_value={"selected_email": {}, "daily_summary": {}, "ui_state": {}}),
+            patch.object(app, "_build_harness_state", side_effect=build_payload),
+        ):
+            app._run_teach_apply_follow_up_refresh(selected_context)
+
+        cache_key = json.dumps(selected_context, sort_keys=True)
+        cached_payload = app._harness_state_cache[cache_key][1]
+        self.assertEqual(cached_payload["sidebar_state"]["ui_state"]["async_follow_up"]["state"], "done")
 
     def test_sidebar_state_exposes_recent_activity_feed_for_async_follow_up(self) -> None:
         app = GmailCompanionApp(Path("/tmp/example"))

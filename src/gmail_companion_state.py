@@ -748,11 +748,14 @@ def build_companion_runtime_payload(storage_dir: Path) -> dict:
                 )
                 if runtime_item["status"] in {"needs-attention", "write-unconfirmed"}:
                     actionable_items.append(runtime_item)
-            if len(actionable_items) >= 50:
-                break
+    live_daily_summary = {
+        **build_daily_summary(storage_dir),
+        "needs_attention_count": len(actionable_items),
+        "unlabeled_count": len(actionable_items),
+    }
     return {
         "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
-        "daily_summary": build_daily_summary(storage_dir),
+        "daily_summary": live_daily_summary,
         "items": items[:80],
         "recent_items": items[:24],
         "needs_attention_items": actionable_items[:12],
