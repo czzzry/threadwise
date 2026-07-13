@@ -502,6 +502,7 @@ class GmailCompanionApp:
             "dashboard_path": "/daily-dashboard#run-gmail-check",
             "health_path": HEALTH_STATUS_PATH,
             "analytics_enabled": self._analytics.enabled,
+            "analytics": self._analytics.delivery_status(),
             "storage_summary": self._cached_storage_summary(),
             "capabilities": [
                 "sidebar-state",
@@ -714,6 +715,7 @@ class GmailCompanionApp:
             "needs_attention_items": list(runtime.get("needs_attention_items") or [])[:12],
             "auto_handled_items": [item for item in items if item.get("status") == "auto-handled"][:12],
             "kept_visible_items": [item for item in items if item.get("status") in {"kept-visible", "auto-labeled"}][:12],
+            "analytics_status": self._analytics.delivery_status(),
         }
 
     def _with_live_understanding_state(self, payload: dict, selected_context: dict) -> dict:

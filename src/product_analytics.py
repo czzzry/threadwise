@@ -9,8 +9,10 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 import uuid
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Callable, Literal, Mapping, Protocol, TypedDict, cast
 
@@ -271,6 +273,11 @@ class ProductAnalytics:
         self.environment = environment
         self.enabled = bool(enabled and client is not None)
         self.synthetic_only = synthetic_only
+        self._delivery_lock = threading.Lock()
+        self._queued_count = 0
+        self._last_queued_at: str | None = None
+        self._delivery_error_count = 0
+        self._last_delivery_error_at: str | None = None
 
     @classmethod
     def from_environment(
@@ -295,6 +302,10 @@ class ProductAnalytics:
         if host not in {POSTHOG_EU_HOST, "https://us.i.posthog.com"}:
             raise AnalyticsValidationError("POSTHOG_HOST must be an official PostHog Cloud ingestion host")
         factory = client_factory or _default_client_factory
+        analytics = cls(
+            environment=environment,
+            synthetic_only=synthetic_enabled,
+        )
         client = factory(
             project_api_key=token,
             host=host,
@@ -302,13 +313,39 @@ class ProductAnalytics:
             disable_geoip=True,
             flush_at=20,
             flush_interval=1,
+            on_error=analytics.record_delivery_error,
         )
-        return cls(
-            client=client,
-            environment=environment,
-            enabled=True,
-            synthetic_only=synthetic_enabled,
-        )
+        analytics._client = client
+        analytics.enabled = True
+        return analytics
+
+    def record_delivery_error(self, error: object, batch: object) -> None:
+        """Record an SDK upload failure without retaining its potentially sensitive payload."""
+        del error, batch
+        with self._delivery_lock:
+            self._delivery_error_count += 1
+            self._last_delivery_error_at = datetime.now(UTC).isoformat()
+
+    def delivery_status(self) -> dict[str, object]:
+        """Return local SDK health; this deliberately does not claim remote ingestion."""
+        with self._delivery_lock:
+            if not self.enabled or self._client is None:
+                state = "disabled"
+            elif self._delivery_error_count:
+                state = "degraded"
+            elif self._queued_count:
+                state = "active"
+            else:
+                state = "configured"
+            return {
+                "state": state,
+                "configured": bool(self.enabled and self._client is not None),
+                "queued_count": self._queued_count,
+                "last_queued_at": self._last_queued_at,
+                "last_delivery_error_at": self._last_delivery_error_at,
+                "error_category": "delivery_error" if self._delivery_error_count else None,
+                "assurance": "local_sdk",
+            }
 
     def capture(
         self,
@@ -334,8 +371,12 @@ class ProductAnalytics:
                 properties=safe_properties,
                 disable_geoip=True,
             )
-        except Exception:
+        except Exception as error:
+            self.record_delivery_error(error, [])
             return False
+        with self._delivery_lock:
+            self._queued_count += 1
+            self._last_queued_at = datetime.now(UTC).isoformat()
         return True
 
     def shutdown(self) -> None:

@@ -41,6 +41,14 @@ from src.unsubscribe_execution import UnsubscribeExecutor
 
 
 class GmailCompanionUiTests(unittest.TestCase):
+    def test_home_surfaces_analytics_delivery_health_without_claiming_remote_ingestion(self) -> None:
+        content_js = Path("extensions/gmail_companion/content.js").read_text()
+
+        self.assertIn("Analytics delivery issue", content_js)
+        self.assertIn("Analytics active", content_js)
+        self.assertIn("No SDK delivery errors detected", content_js)
+        self.assertIn("PostHog arrival is checked separately", content_js)
+
     def test_review_identity_does_not_collapse_distinct_gmail_messages_with_the_same_subject(self) -> None:
         content_js = Path("extensions/gmail_companion/content.js").read_text()
 

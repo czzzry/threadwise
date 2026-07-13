@@ -25,6 +25,54 @@ class FakePostHogClient:
 
 
 class ProductAnalyticsTests(unittest.TestCase):
+    def test_delivery_status_distinguishes_disabled_configured_active_and_degraded(self) -> None:
+        disabled = ProductAnalytics(environment="production")
+        self.assertEqual(disabled.delivery_status()["state"], "disabled")
+
+        client = FakePostHogClient()
+        analytics = ProductAnalytics(client=client, environment="production", enabled=True)
+        self.assertEqual(analytics.delivery_status()["state"], "configured")
+
+        analytics.capture(
+            distinct_id="tw_anon_12345678-1234-4234-8234-123456789abc",
+            event="extension opened",
+            properties={
+                "app_version": "0.1.0",
+                "workflow_version": "gmail-companion-v1",
+                "source": "extension",
+                "surface": "gmail_companion",
+            },
+        )
+        self.assertEqual(analytics.delivery_status()["state"], "active")
+        self.assertEqual(analytics.delivery_status()["queued_count"], 1)
+
+        analytics.record_delivery_error(RuntimeError("network unavailable"), [])
+        degraded = analytics.delivery_status()
+        self.assertEqual(degraded["state"], "degraded")
+        self.assertEqual(degraded["error_category"], "delivery_error")
+        self.assertNotIn("network unavailable", str(degraded))
+
+    def test_environment_client_reports_background_delivery_errors(self) -> None:
+        created: list[dict] = []
+
+        def client_factory(**kwargs):
+            created.append(kwargs)
+            return FakePostHogClient()
+
+        analytics = ProductAnalytics.from_environment(
+            {
+                "POSTHOG_PROJECT_TOKEN": "phc_local_test_only",
+                "POSTHOG_HOST": "https://eu.i.posthog.com",
+                "THREADWISE_ANALYTICS_ENABLED": "true",
+                "THREADWISE_ENVIRONMENT": "production",
+            },
+            client_factory=client_factory,
+        )
+
+        self.assertEqual(analytics.delivery_status()["state"], "configured")
+        created[0]["on_error"](RuntimeError("upload failed"), [{"event": "extension opened"}])
+        self.assertEqual(analytics.delivery_status()["state"], "degraded")
+
     def test_capture_emits_expected_event_with_required_safe_properties(self) -> None:
         client = FakePostHogClient()
         analytics = ProductAnalytics(client=client, environment="production", enabled=True)
@@ -237,6 +285,18 @@ class ProductAnalyticsTests(unittest.TestCase):
         )
         self.assertEqual(client.calls[0]["properties"]["write_count_bucket"], "2-5")
         self.assertEqual(client.calls[1]["properties"]["error_category"], "provider_write_error")
+
+    def test_companion_health_and_harness_expose_analytics_delivery_state(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            analytics = ProductAnalytics(
+                client=FakePostHogClient(),
+                environment="production",
+                enabled=True,
+            )
+            app = GmailCompanionApp(Path(temp_dir), analytics=analytics)
+
+            self.assertEqual(app.health_status()["analytics"]["state"], "configured")
+            self.assertEqual(app._build_harness_state(None)["analytics_status"]["state"], "configured")
 
 
 if __name__ == "__main__":

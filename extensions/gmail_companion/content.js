@@ -1696,6 +1696,23 @@
     const keptVisibleCount = summary.kept_visible_count ?? countForFilter("kept_visible_items");
     if (workspaceMode === "home") {
       const needsReviewCount = countForFilter("needs_attention_items");
+      const analyticsStatus = lastHarnessState?.analytics_status || {};
+      const analyticsState = analyticsStatus.state || "disabled";
+      const analyticsTitle = analyticsState === "degraded"
+        ? "Analytics delivery issue"
+        : analyticsState === "active"
+          ? "Analytics active"
+          : analyticsState === "configured"
+            ? "Analytics configured"
+            : "Analytics disabled";
+      const analyticsMessage = analyticsState === "degraded"
+        ? "PostHog’s SDK reported a delivery error. Threadwise event counts may be incomplete."
+        : analyticsState === "active"
+          ? "No SDK delivery errors detected. PostHog arrival is checked separately."
+          : analyticsState === "configured"
+            ? "PostHog is configured. No events have been queued during this service run."
+            : "Analytics is disabled for this Threadwise environment.";
+      const analyticsBackground = analyticsState === "degraded" ? "#fff1d6" : "#eef7f5";
       const emptyQueueCopy = gmailCheckResult
         ? "Gmail sync completed. Threadwise handled everything automatically."
         : "There is no review queue right now.";
@@ -1708,6 +1725,10 @@
           <div style="display:flex;flex-wrap:wrap;gap:12px;">
             <a href="${LOCAL_ORIGIN}/daily-dashboard" target="_blank" rel="noreferrer" style="border:0;background:transparent;color:#5d5342;border-radius:0;padding:7px 2px;display:inline-flex;align-items:center;text-decoration:underline;text-underline-offset:3px;font:inherit;font-weight:760;box-shadow:none;">Activity</a>
             <a href="${LOCAL_ORIGIN}/unsubscribe-review" target="_blank" rel="noreferrer" style="border:0;background:transparent;color:#5d5342;border-radius:0;padding:7px 2px;display:inline-flex;align-items:center;text-decoration:underline;text-underline-offset:3px;font:inherit;font-weight:760;box-shadow:none;">Subscription cleanup</a>
+          </div>
+          <div data-ea-analytics-health="${escapeHtml(analyticsState)}" style="border-radius:12px;background:${analyticsBackground};padding:10px 12px;color:#155e59;line-height:1.4;">
+            <div style="font-weight:820;">${escapeHtml(analyticsTitle)}</div>
+            <div style="margin-top:4px;font-size:0.84rem;">${escapeHtml(analyticsMessage)}</div>
           </div>
           ${gmailCheckResult ? renderGmailCheckResultHtml(gmailCheckResult) : ""}
           ${activityHtml}
