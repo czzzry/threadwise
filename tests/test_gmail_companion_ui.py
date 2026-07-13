@@ -3,6 +3,8 @@ import json
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from datetime import UTC, datetime
 from pathlib import Path
@@ -152,6 +154,74 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertNotIn("remote-security", {
                 item["message_id"] for item in preview["impact"]["matching_existing_items"]
             })
+
+    def test_teach_preview_inspects_remote_candidates_concurrently(self) -> None:
+        class ConcurrentInspectableClient(MockGmailLabelClient):
+            def __init__(self) -> None:
+                super().__init__()
+                self.active = 0
+                self.max_active = 0
+                self.lock = threading.Lock()
+
+            def search_message_ids(self, query: str, max_results: int) -> list[str]:
+                return [f"remote-order-{index}" for index in range(12)]
+
+            def get_message(self, message_id: str) -> dict:
+                with self.lock:
+                    self.active += 1
+                    self.max_active = max(self.max_active, self.active)
+                time.sleep(0.02)
+                with self.lock:
+                    self.active -= 1
+                return {
+                    "id": message_id,
+                    "threadId": f"thread-{message_id}",
+                    "internalDate": "1718784000000",
+                    "snippet": "Shipment dispatched and arriving today.",
+                    "labelIds": ["INBOX"],
+                    "payload": {
+                        "headers": [
+                            {"name": "From", "value": "Merchant <orders@example.com>"},
+                            {"name": "Subject", "value": "Shipment dispatched"},
+                        ]
+                    },
+                }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "current-order",
+                        "sender": "Merchant <orders@example.com>",
+                        "subject": "Your order shipped",
+                        "snippet": "Track your package.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                ],
+            )
+            gmail_client = ConcurrentInspectableClient()
+
+            with patch("src.teaching_loop.OpenAITeachingIntentClient.from_env", return_value=None):
+                preview = GmailCompanionApp(
+                    storage_dir,
+                    gmail_client_factory=lambda account_id, credentials_dir, client_secret_path, required_scope: gmail_client,
+                ).teach_preview(
+                    {
+                        "selected_context": {"provider": "gmail", "message_id": "current-order"},
+                        "target_label": "shopping-order",
+                        "note": "Apply to order and shipment emails from any merchant.",
+                    }
+                )
+
+            self.assertGreater(gmail_client.max_active, 1)
+            self.assertEqual(preview["inbox_backfill"]["estimated_count"], 12)
 
     def test_apply_included_writes_only_explicitly_reviewed_message_ids(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

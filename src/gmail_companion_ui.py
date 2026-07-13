@@ -2,6 +2,7 @@ import argparse
 import json
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from http.client import HTTPException
 from http import HTTPStatus
@@ -1234,26 +1235,33 @@ class GmailCompanionApp:
             str(item.get("message_id") or "")
             for item in preview.get("impact", {}).get("matching_existing_items") or []
         }
-        inspected_matches: list[dict] = []
         seen: set[str] = set()
+        inspect_ids: list[str] = []
         for message_id in candidate_ids[:INBOX_BACKFILL_ESTIMATE_CAP]:
             if not message_id or message_id == selected_id or message_id in local_ids or message_id in seen:
                 continue
             seen.add(message_id)
+            inspect_ids.append(message_id)
+
+        def inspect_message(message_id: str) -> dict | None:
             try:
                 normalized = normalize_gmail_message(account_id, gmail_client.get_message(message_id))
             except Exception:
-                continue
+                return None
             if not semantic_rule_matches_message(semantic_rule, normalized):
-                continue
-            inspected_matches.append(
-                {
-                    **normalized,
-                    "labels_before": [],
-                    "labels_after": [preview.get("semantic_rule", {}).get("target_label") or (preview.get("selected_label_after") or [""])[0]],
-                    "source": "gmail-live-preview",
-                }
-            )
+                return None
+            return {
+                **normalized,
+                "labels_before": [],
+                "labels_after": [preview.get("semantic_rule", {}).get("target_label") or (preview.get("selected_label_after") or [""])[0]],
+                "source": "gmail-live-preview",
+            }
+
+        inspected_matches: list[dict] = []
+        if inspect_ids:
+            worker_count = min(16, len(inspect_ids))
+            with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="threadwise-preview") as executor:
+                inspected_matches = [match for match in executor.map(inspect_message, inspect_ids) if match]
         estimated_count = len(inspected_matches)
         capped = len(candidate_ids) > INBOX_BACKFILL_ESTIMATE_CAP
         return {
