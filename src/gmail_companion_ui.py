@@ -732,18 +732,25 @@ class GmailCompanionApp:
         )
         preview["inbox_backfill"] = self._build_inbox_backfill_preview(preview)
         remote_matches = list(preview["inbox_backfill"].get("matches") or [])
-        if remote_matches:
-            existing_items = list(preview.get("impact", {}).get("matching_existing_items") or [])
-            combined_by_id = {
-                str(item.get("message_id") or ""): item
-                for item in [*existing_items, *remote_matches]
-                if item.get("message_id")
-            }
-            combined_items = list(combined_by_id.values())
-            preview["impact"]["matching_existing_items"] = combined_items
-            preview["impact"]["matching_existing_examples"] = combined_items[:5]
-            preview["impact"]["matching_existing_count"] = len(combined_items)
-            preview["structured_rule"]["applies_to_existing_count"] = len(combined_items)
+        existing_items = list(preview.get("impact", {}).get("matching_existing_items") or [])
+        combined_by_id = {
+            str(item.get("message_id") or ""): item
+            for item in [*existing_items, *remote_matches]
+            if item.get("message_id")
+        }
+        combined_items = list(combined_by_id.values())
+        combined_was_capped = len(combined_items) > INBOX_BACKFILL_ESTIMATE_CAP
+        reviewed_items = combined_items[:INBOX_BACKFILL_ESTIMATE_CAP]
+        preview["impact"]["matching_existing_items"] = reviewed_items
+        preview["impact"]["matching_existing_examples"] = reviewed_items[:5]
+        preview["impact"]["matching_existing_count"] = len(reviewed_items)
+        preview["structured_rule"]["applies_to_existing_count"] = len(reviewed_items)
+        preview["inbox_backfill"]["is_capped"] = bool(
+            preview["inbox_backfill"].get("is_capped") or combined_was_capped
+        )
+        preview["inbox_backfill"]["requires_confirmation"] = bool(
+            preview["inbox_backfill"].get("requires_confirmation") or combined_was_capped
+        )
         return preview
 
     def teach_apply(self, payload: dict, *, analytics_distinct_id: str | None = None) -> dict:

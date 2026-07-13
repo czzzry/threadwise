@@ -248,6 +248,48 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("-subject:promotion", query)
         self.assertNotIn("from:orders@amazon.example", query)
 
+    def test_combined_local_and_live_preview_is_capped_to_reviewable_exact_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": f"order-{index}",
+                        "sender": f"Merchant {index} <orders-{index}@example.com>",
+                        "subject": f"Shipment {index} dispatched",
+                        "snippet": "Delivery status for your purchase.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                    for index in range(31)
+                ],
+            )
+
+            with patch("src.teaching_loop.OpenAITeachingIntentClient.from_env", return_value=None):
+                preview = GmailCompanionApp(
+                    storage_dir,
+                    gmail_write_through_enabled=False,
+                ).teach_preview(
+                    {
+                        "selected_context": {"provider": "gmail", "message_id": "order-0"},
+                        "target_label": "shopping-order",
+                        "note": "Apply to shipment and delivery emails from any merchant.",
+                    }
+                )
+
+            reviewed_ids = [item["message_id"] for item in preview["impact"]["matching_existing_items"]]
+            self.assertEqual(len(reviewed_ids), 25)
+            self.assertEqual(len(set(reviewed_ids)), 25)
+            self.assertEqual(preview["impact"]["matching_existing_count"], 25)
+            self.assertEqual(preview["structured_rule"]["applies_to_existing_count"], 25)
+            self.assertTrue(preview["inbox_backfill"]["is_capped"])
+            self.assertTrue(preview["inbox_backfill"]["requires_confirmation"])
+
     def test_apply_included_writes_only_explicitly_reviewed_message_ids(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
