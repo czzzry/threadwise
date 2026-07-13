@@ -1,6 +1,6 @@
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -31,6 +31,7 @@ class MemoryProposal:
     updated_at: str = ""
     approved_rule_id: str = ""
     review_notes: str = ""
+    semantic_rule: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -51,6 +52,7 @@ class MemoryProposal:
             "updated_at": self.updated_at,
             "approved_rule_id": self.approved_rule_id,
             "review_notes": self.review_notes,
+            "semantic_rule": dict(self.semantic_rule),
         }
 
     @classmethod
@@ -73,6 +75,7 @@ class MemoryProposal:
             updated_at=payload.get("updated_at", ""),
             approved_rule_id=payload.get("approved_rule_id", ""),
             review_notes=payload.get("review_notes", ""),
+            semantic_rule=dict(payload.get("semantic_rule", {})),
         )
 
 
@@ -133,6 +136,7 @@ class MemoryProposalStore:
                 updated_at=now,
                 approved_rule_id=approved_rule_id,
                 review_notes=review_notes,
+                semantic_rule=proposal.semantic_rule,
             )
             rewritten.append(updated)
         if updated is None:
@@ -163,6 +167,7 @@ def build_memory_proposal(
     label: str,
     explanation: str,
     storage_items: list[dict],
+    semantic_rule: dict | None = None,
 ) -> MemoryProposal:
     if scope not in SUPPORTED_MEMORY_SCOPES:
         raise ValueError(f"Unsupported memory scope: {scope}")
@@ -192,6 +197,7 @@ def build_memory_proposal(
             preview={},
             created_at=_now_iso(),
             updated_at=_now_iso(),
+            semantic_rule=dict(semantic_rule or {}),
         ),
         existing_count=0,
     )
@@ -212,6 +218,7 @@ def build_memory_proposal(
         status="pending",
         created_at=_now_iso(),
         updated_at=_now_iso(),
+        semantic_rule=dict(semantic_rule or {}),
     )
 
 
@@ -237,6 +244,7 @@ def rule_from_memory_proposal(proposal: MemoryProposal, existing_count: int) -> 
             "source_message_ids": list(proposal.source_message_ids),
             "scope": proposal.scope,
             "explanation": proposal.explanation,
+            "semantic_rule": dict(proposal.semantic_rule),
         },
         updated_at=created_at,
     )

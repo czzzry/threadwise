@@ -22,6 +22,7 @@ from src.attention_rules import (
     reject_attention_rule_proposal,
 )
 from src.gmail_writer import MockGmailLabelWriter
+from src.gmail_message_normalizer import normalize_gmail_message
 from src.label_taxonomy import CANONICAL_LABEL_ORDER, gmail_label_name
 from src.live_gmail_client import GMAIL_MODIFY_SCOPE
 from src.local_artifacts import write_json_artifact
@@ -70,6 +71,7 @@ from src.teaching_loop import (
     exclude_sidebar_teaching_match,
     load_items_for_gmail_write_through,
 )
+from src.semantic_rule_matching import semantic_rule_matches_message, semantic_search_keywords
 
 
 DEFAULT_STORAGE_DIR = Path("data/gmail_fetch")
@@ -728,6 +730,19 @@ class GmailCompanionApp:
             scope=scope,
         )
         preview["inbox_backfill"] = self._build_inbox_backfill_preview(preview)
+        remote_matches = list(preview["inbox_backfill"].get("matches") or [])
+        if remote_matches:
+            existing_items = list(preview.get("impact", {}).get("matching_existing_items") or [])
+            combined_by_id = {
+                str(item.get("message_id") or ""): item
+                for item in [*existing_items, *remote_matches]
+                if item.get("message_id")
+            }
+            combined_items = list(combined_by_id.values())
+            preview["impact"]["matching_existing_items"] = combined_items
+            preview["impact"]["matching_existing_examples"] = combined_items[:5]
+            preview["impact"]["matching_existing_count"] = len(combined_items)
+            preview["structured_rule"]["applies_to_existing_count"] = len(combined_items)
         return preview
 
     def teach_apply(self, payload: dict, *, analytics_distinct_id: str | None = None) -> dict:
@@ -736,6 +751,12 @@ class GmailCompanionApp:
         note = (payload.get("note") or "").strip()
         scope = payload.get("scope") or "sender"
         mode = payload["mode"]
+        included_message_ids = payload.get("included_message_ids") or []
+        if not isinstance(included_message_ids, list) or any(
+            not isinstance(message_id, str) or not message_id.strip()
+            for message_id in included_message_ids
+        ):
+            raise ValueError("included_message_ids must be a list of message ids.")
         teaching_result = apply_sidebar_teaching(
             self._storage_dir,
             selected_context=selected_context,
@@ -743,6 +764,7 @@ class GmailCompanionApp:
             note=note,
             scope=scope,
             mode=mode,
+            included_message_ids=included_message_ids,
         )
         write_through_summary = self._write_teach_result_to_gmail(
             teaching_result["current"]["account_id"],
@@ -755,6 +777,7 @@ class GmailCompanionApp:
             },
             current_subject=teaching_result["current"].get("subject") or "",
             current_sender=teaching_result["current"].get("sender") or "",
+            included_message_ids=set(included_message_ids),
         )
         self._capture_label_write_outcomes(
             analytics_distinct_id or self._analytics_distinct_ids.get_or_create(),
@@ -1024,6 +1047,7 @@ class GmailCompanionApp:
         semantic_rule: dict | None = None,
         current_subject: str = "",
         current_sender: str = "",
+        included_message_ids: set[str] | None = None,
     ) -> dict:
         if mode == "save-future-rule":
             return {
@@ -1118,6 +1142,7 @@ class GmailCompanionApp:
                 current_subject=current_subject,
                 current_sender=current_sender,
                 excluded_message_ids=local_ids,
+                included_message_ids=included_message_ids or set(),
             )
             remote_search_count = remote_summary["matched_count"]
             remote_applied = remote_summary["applied_count"]
@@ -1162,6 +1187,7 @@ class GmailCompanionApp:
                 "estimated_count": 0,
                 "requires_confirmation": False,
                 "query": "",
+                "matches": [],
             }
         account_id = preview.get("selected_account_id") or ""
         query = self._build_gmail_backfill_query(
@@ -1175,6 +1201,7 @@ class GmailCompanionApp:
                 "estimated_count": 0,
                 "requires_confirmation": False,
                 "query": query,
+                "matches": [],
             }
         try:
             gmail_client = self._gmail_client_factory(
@@ -1183,24 +1210,59 @@ class GmailCompanionApp:
                 self._client_secret_path,
                 GMAIL_MODIFY_SCOPE,
             )
-            matches = gmail_client.search_message_ids(query, INBOX_BACKFILL_ESTIMATE_CAP + 1)
+            candidate_ids = gmail_client.search_message_ids(query, INBOX_BACKFILL_ESTIMATE_CAP + 1)
         except Exception:
             return {
                 "available": False,
                 "estimated_count": 0,
                 "requires_confirmation": False,
                 "query": query,
+                "matches": [],
             }
-        estimated_count = len(matches)
-        capped = estimated_count > INBOX_BACKFILL_ESTIMATE_CAP
-        if capped:
-            estimated_count = INBOX_BACKFILL_ESTIMATE_CAP
+        if not hasattr(gmail_client, "get_message"):
+            return {
+                "available": False,
+                "estimated_count": 0,
+                "is_capped": len(candidate_ids) > INBOX_BACKFILL_ESTIMATE_CAP,
+                "requires_confirmation": False,
+                "query": query,
+                "matches": [],
+            }
+        semantic_rule = preview.get("semantic_rule") or {}
+        selected_id = str(preview.get("selected_message_id") or "")
+        local_ids = {
+            str(item.get("message_id") or "")
+            for item in preview.get("impact", {}).get("matching_existing_items") or []
+        }
+        inspected_matches: list[dict] = []
+        seen: set[str] = set()
+        for message_id in candidate_ids[:INBOX_BACKFILL_ESTIMATE_CAP]:
+            if not message_id or message_id == selected_id or message_id in local_ids or message_id in seen:
+                continue
+            seen.add(message_id)
+            try:
+                normalized = normalize_gmail_message(account_id, gmail_client.get_message(message_id))
+            except Exception:
+                continue
+            if not semantic_rule_matches_message(semantic_rule, normalized):
+                continue
+            inspected_matches.append(
+                {
+                    **normalized,
+                    "labels_before": [],
+                    "labels_after": [preview.get("semantic_rule", {}).get("target_label") or (preview.get("selected_label_after") or [""])[0]],
+                    "source": "gmail-live-preview",
+                }
+            )
+        estimated_count = len(inspected_matches)
+        capped = len(candidate_ids) > INBOX_BACKFILL_ESTIMATE_CAP
         return {
             "available": True,
             "estimated_count": estimated_count,
             "is_capped": capped,
             "requires_confirmation": estimated_count > INBOX_BACKFILL_CONFIRM_THRESHOLD or capped,
             "query": query,
+            "matches": inspected_matches,
         }
 
     def _apply_rule_to_matching_inbox_messages(
@@ -1212,16 +1274,13 @@ class GmailCompanionApp:
         current_subject: str,
         current_sender: str,
         excluded_message_ids: set[str],
+        included_message_ids: set[str],
     ) -> dict:
-        query = self._build_gmail_backfill_query(
-            semantic_rule=semantic_rule,
-            current_subject=current_subject,
-            current_sender=current_sender,
+        filtered_ids = sorted(
+            message_id
+            for message_id in included_message_ids
+            if message_id and message_id not in excluded_message_ids
         )
-        if not query:
-            return self._empty_remote_mutation_summary()
-        message_ids = gmail_client.search_message_ids(query, 1000)
-        filtered_ids = [message_id for message_id in message_ids if message_id and message_id not in excluded_message_ids]
         target_label = (semantic_rule or {}).get("target_label") or ""
         if not gmail_label_name(target_label):
             return {
@@ -1292,9 +1351,9 @@ class GmailCompanionApp:
         sender = (semantic_rule or {}).get("sender") or current_sender or ""
         semantic_pattern = (semantic_rule or {}).get("semantic_pattern") or ""
         rule_type = (semantic_rule or {}).get("rule_type") or ""
-        subject_keywords = self._query_keywords_for_semantic_pattern(semantic_pattern, current_subject)
+        subject_keywords = semantic_search_keywords(semantic_rule) or self._query_keywords_for_semantic_pattern(semantic_pattern, current_subject)
         parts: list[str] = []
-        if sender and "@" in sender:
+        if sender and "@" in sender and rule_type != "cross-sender-semantic":
             parts.append(f"from:{sender}")
         if subject_keywords:
             if len(subject_keywords) == 1:

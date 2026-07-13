@@ -39,6 +39,177 @@ from src.unsubscribe_execution import UnsubscribeExecutor
 
 
 class GmailCompanionUiTests(unittest.TestCase):
+    def test_refining_a_rule_preserves_the_founder_note_instead_of_the_model_summary(self) -> None:
+        content_js = Path("extensions/gmail_companion/content.js").read_text()
+
+        self.assertIn("previousTeachPreview = teachPreview", content_js)
+        self.assertNotIn("note: previousTeachPreview.plain_english_rule", content_js)
+
+    def test_review_navigation_never_falls_back_to_the_completed_current_item(self) -> None:
+        content_js = Path("extensions/gmail_companion/content.js").read_text()
+
+        self.assertNotIn(
+            "items.find((item) => !currentMessageId || item.message_id !== currentMessageId) || items[0]",
+            content_js,
+        )
+        self.assertIn("No review emails remain. Refreshing Home", content_js)
+
+    def test_new_gmail_selection_leaves_home_for_a_reading_transition_immediately(self) -> None:
+        content_js = Path("extensions/gmail_companion/content.js").read_text()
+
+        self.assertIn("renderSelectedEmailTransition(context)", content_js)
+        self.assertIn("Reading this email…", content_js)
+
+    def test_teach_preview_inspects_remote_candidates_and_exposes_only_semantic_matches(self) -> None:
+        class InspectableSearchClient(MockGmailLabelClient):
+            def __init__(self, payloads: dict[str, dict]) -> None:
+                super().__init__()
+                self.payloads = payloads
+
+            def search_message_ids(self, query: str, max_results: int) -> list[str]:
+                self.calls.append(("search_message_ids", query, max_results))
+                return list(self.payloads)[:max_results]
+
+            def get_message(self, message_id: str) -> dict:
+                self.calls.append(("get_message", message_id))
+                return self.payloads[message_id]
+
+        def payload(message_id: str, sender: str, subject: str, snippet: str) -> dict:
+            return {
+                "id": message_id,
+                "threadId": f"thread-{message_id}",
+                "internalDate": "1718784000000",
+                "snippet": snippet,
+                "labelIds": ["INBOX"],
+                "payload": {
+                    "headers": [
+                        {"name": "From", "value": sender},
+                        {"name": "Subject", "value": subject},
+                    ]
+                },
+            }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "amazon-shipment",
+                        "sender": "Amazon <dispatch@amazon.example>",
+                        "subject": "Your order shipped",
+                        "snippet": "Track your delivery",
+                        "body": "Your purchase is on its way.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                ],
+            )
+            gmail_client = InspectableSearchClient(
+                {
+                    "remote-security": payload(
+                        "remote-security",
+                        "Amazon <dispatch@amazon.example>",
+                        "Someone signed in to your account",
+                        "Reset your password after this suspicious login.",
+                    ),
+                    "remote-shipment": payload(
+                        "remote-shipment",
+                        "DHL <tracking@dhl.example>",
+                        "Shipment out for delivery",
+                        "Track your package arriving today.",
+                    ),
+                }
+            )
+
+            with patch("src.teaching_loop.OpenAITeachingIntentClient.from_env", return_value=None):
+                preview = GmailCompanionApp(
+                    storage_dir,
+                    gmail_client_factory=lambda account_id, credentials_dir, client_secret_path, required_scope: gmail_client,
+                ).teach_preview(
+                    {
+                        "selected_context": {"provider": "gmail", "message_id": "amazon-shipment"},
+                        "target_label": "shopping-order",
+                        "note": (
+                            "Apply to shipment and delivery messages from any merchant. "
+                            "Never include account-security, login, or password-reset emails."
+                        ),
+                    }
+                )
+
+            self.assertEqual(
+                [item["message_id"] for item in preview["inbox_backfill"]["matches"]],
+                ["remote-shipment"],
+            )
+            self.assertEqual(preview["inbox_backfill"]["estimated_count"], 1)
+            self.assertIn("remote-shipment", {
+                item["message_id"] for item in preview["impact"]["matching_existing_items"]
+            })
+            self.assertNotIn("remote-security", {
+                item["message_id"] for item in preview["impact"]["matching_existing_items"]
+            })
+
+    def test_apply_included_writes_only_explicitly_reviewed_message_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            gmail_client = MockGmailLabelClient(
+                search_results_by_query={
+                    "{shipment shipping delivery dispatched tracking order}": [
+                        "amazon-shipment",
+                        "remote-shipment",
+                        "remote-security",
+                    ]
+                }
+            )
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "amazon-shipment",
+                        "sender": "Amazon <dispatch@amazon.example>",
+                        "subject": "Your order shipped",
+                        "snippet": "Track your delivery",
+                        "body": "Your purchase is on its way.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                ],
+            )
+
+            with patch("src.teaching_loop.OpenAITeachingIntentClient.from_env", return_value=None):
+                result = GmailCompanionApp(
+                    storage_dir,
+                    gmail_client_factory=lambda account_id, credentials_dir, client_secret_path, required_scope: gmail_client,
+                ).teach_apply(
+                    {
+                        "selected_context": {"provider": "gmail", "message_id": "amazon-shipment"},
+                        "target_label": "shopping-order",
+                        "note": (
+                            "Apply to shipment and delivery messages from any merchant. "
+                            "Never include account-security or login emails."
+                        ),
+                        "mode": "apply-included",
+                        "included_message_ids": ["remote-shipment"],
+                    }
+                )
+
+            written_ids = {
+                call[1]
+                for call in gmail_client.calls
+                if call[0] == "replace_threadwise_labels"
+            }
+            self.assertEqual(written_ids, {"amazon-shipment", "remote-shipment"})
+            self.assertEqual(result["gmail_write_through"]["remote_match_count"], 1)
+
+
     def test_script_safe_json_round_trips_hostile_unsubscribe_candidate_key(self) -> None:
         hostile_key = "gmail:test:</script><script>window.pwned=1</script>&@example.com"
 
@@ -2989,11 +3160,12 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertEqual(
                 preview["inbox_backfill"],
                 {
-                    "available": True,
-                    "estimated_count": 205,
+                    "available": False,
+                    "estimated_count": 0,
                     "is_capped": False,
-                    "requires_confirmation": True,
-                    "query": "from:notifications@ashbyhq.com {job jobs recruiter interview application}",
+                    "requires_confirmation": False,
+                    "query": "from:notifications@ashbyhq.com {job recruiter interview application hiring}",
+                    "matches": [],
                 },
             )
 
@@ -3041,10 +3213,11 @@ class GmailCompanionUiTests(unittest.TestCase):
                     "target_label": "job-related",
                     "note": "Ashby interview workflow messages should be job-related and kept visible.",
                     "mode": "apply-included",
+                    "included_message_ids": ["gmail-remote-003"],
                 }
             )
 
-            self.assertIn(("search_message_ids", "from:notifications@ashbyhq.com {job jobs recruiter interview application}", 1000), gmail_client.calls)
+            self.assertNotIn(("search_message_ids", "from:notifications@ashbyhq.com {job jobs recruiter interview application}", 1000), gmail_client.calls)
             self.assertIn(("replace_threadwise_labels", "gmail-remote-003", [gmail_client.labels["EA/Work"]], "EA/"), gmail_client.calls)
             self.assertEqual(result["gmail_write_through"]["remote_match_count"], 1)
             self.assertEqual(result["gmail_write_through"]["remote_applied_count"], 1)
@@ -3113,6 +3286,7 @@ class GmailCompanionUiTests(unittest.TestCase):
                     "target_label": "promotions",
                     "note": "Marketing email that should be treated as a promotion.",
                     "mode": "apply-included",
+                    "included_message_ids": ["gmail-remote-003"],
                 }
             )
 
@@ -3187,6 +3361,7 @@ class GmailCompanionUiTests(unittest.TestCase):
                     "target_label": "promotions",
                     "note": "Marketing email that should be treated as a promotion.",
                     "mode": "apply-included",
+                    "included_message_ids": ["gmail-remote-003"],
                 }
             )
 

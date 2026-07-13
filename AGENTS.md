@@ -20,6 +20,18 @@ Use a Matt Pocock-style AI-assisted development workflow:
 
 Do not skip ahead in this sequence unless the founder explicitly asks.
 
+## QA follow-through
+
+When the founder asks for product QA or live user-path testing, treat confirmed in-scope defects as implementation work, not report-only findings:
+
+- record the failure and its reproduction evidence
+- fix it once the baseline or current test loop has isolated the behavior
+- add regression coverage at the real user-facing seam where practical
+- rerun the affected automated and live user paths after the fix
+- continue the requested testing instead of stopping after filing an issue
+
+Stop and ask only when a fix requires a materially new product decision, expands scope beyond the requested workflow, or crosses a sensitive or destructive-action boundary. Preserve the distinction between `LIVE`, `AUTOMATED`, `PASS`, `FAIL`, and `BLOCKED` evidence in QA reporting.
+
 ## Current-stage awareness
 
 Treat alignment, PRD, issue, checkpoint, implementation, review, and handoff docs as different stages with different trust levels.

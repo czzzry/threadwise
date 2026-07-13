@@ -2,6 +2,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 from src.candidate_change_store import CandidateChangeStore
 from src.local_artifacts import candidate_changes_path
@@ -13,9 +14,175 @@ from src.teaching_loop import (
     load_items_for_gmail_write_through,
 )
 from src.teaching_exclusions import is_rule_message_excluded
+from src.teachable_rule_memory import TeachableRule, matching_rules_for_message
 
 
 class TeachingLoopTests(unittest.TestCase):
+    def test_saved_semantic_rule_keeps_same_sender_security_mail_out_of_orders(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                [
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "amazon-shipment",
+                        "sender": "Amazon <dispatch@amazon.example>",
+                        "subject": "Your package was dispatched",
+                        "snippet": "Track delivery",
+                        "body": "Your order is on its way.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                ],
+            )
+            note = (
+                "Only shipment, delivery, and order-status messages should be Orders. "
+                "Never include account-security, login, or password-reset messages."
+            )
+
+            with patch("src.teaching_loop.OpenAITeachingIntentClient.from_env", return_value=None):
+                result = apply_sidebar_teaching(
+                    storage_dir,
+                    selected_context={"provider": "gmail", "message_id": "amazon-shipment"},
+                    target_label="shopping-order",
+                    note=note,
+                    scope="sender",
+                    mode="save-future-rule",
+                )
+
+            saved_rules = result["candidate_change"]["metadata"]["rules"]
+            memory_rules = [TeachableRule.from_dict(rule) for rule in saved_rules]
+            self.assertEqual(
+                [rule.id for rule in matching_rules_for_message(
+                    {
+                        "provider": "gmail",
+                        "sender": "Amazon <dispatch@amazon.example>",
+                        "subject": "Someone signed in to your account",
+                        "snippet": "Reset your password",
+                        "body": "We locked your account after a suspicious login.",
+                    },
+                    memory_rules,
+                )],
+                [],
+            )
+            self.assertTrue(saved_rules)
+
+    def test_explicit_label_still_uses_llm_for_semantic_boundary(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                [
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "merchant-shipment",
+                        "sender": "Merchant <dispatch@merchant.example>",
+                        "subject": "Your parcel shipped",
+                        "snippet": "Delivery update",
+                        "body": "Your purchase is on its way.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                ],
+            )
+            client = Mock()
+            client.interpret.return_value = {
+                "target_label": "account-security",
+                "semantic_pattern": "shipment and delivery status emails",
+                "cross_sender": True,
+                "confidence": "high",
+                "rationale": "The note describes a message family across merchants.",
+            }
+
+            with patch("src.teaching_loop.OpenAITeachingIntentClient.from_env", return_value=client):
+                preview = build_sidebar_teach_preview(
+                    storage_dir,
+                    selected_context={"provider": "gmail", "message_id": "merchant-shipment"},
+                    target_label="shopping-order",
+                    note="Orders from any merchant, but never account-security messages.",
+                    scope="sender",
+                )
+
+            client.interpret.assert_called_once()
+            llm_payload = client.interpret.call_args.args[0]
+            self.assertEqual(llm_payload["explicit_target_label"], "shopping-order")
+            self.assertIn("purchase is on its way", llm_payload["current_body"])
+            self.assertEqual(preview["selected_label_after"], ["shopping-order"])
+            self.assertIn("shipment", preview["semantic_rule"]["semantic_pattern"])
+
+    def test_explicit_order_lesson_uses_meaning_not_sender_for_existing_matches(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                [
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "amazon-shipment",
+                        "sender": "Amazon <dispatch@amazon.example>",
+                        "subject": "Your package was dispatched",
+                        "snippet": "Track your delivery",
+                        "body": "Order 123 is on its way.",
+                        "review_state": "reviewed",
+                        "final_labels": ["shopping-order"],
+                        "applied_labels": ["shopping-order"],
+                    },
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "amazon-security",
+                        "sender": "Amazon <dispatch@amazon.example>",
+                        "subject": "Someone signed in to your account",
+                        "snippet": "Reset your password if this was not you",
+                        "body": "We locked your account after a suspicious login.",
+                        "review_state": "pending",
+                        "final_labels": ["account-security"],
+                        "applied_labels": ["account-security"],
+                    },
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "dhl-shipment",
+                        "sender": "DHL <tracking@dhl.example>",
+                        "subject": "Your shipment is out for delivery",
+                        "snippet": "Track package 456",
+                        "body": "Delivery is expected today.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    },
+                ],
+            )
+
+            with patch("src.teaching_loop.OpenAITeachingIntentClient.from_env", return_value=None):
+                preview = build_sidebar_teach_preview(
+                    storage_dir,
+                    selected_context={"provider": "gmail", "message_id": "amazon-shipment"},
+                    target_label="shopping-order",
+                    note=(
+                        "Apply this to shipment, delivery, order-confirmation, and order-status emails from any merchant. "
+                        "Never include account-security, login, password-reset, privacy-policy, or promotional emails "
+                        "merely because they come from the same merchant."
+                    ),
+                    scope="sender",
+                )
+
+            affected_ids = {
+                item["message_id"] for item in preview["impact"]["matching_existing_items"]
+            }
+            self.assertEqual(affected_ids, {"dhl-shipment"})
+            self.assertIn("shipment", preview["plain_english_rule"].lower())
+            self.assertNotIn("account, security", preview["plain_english_rule"].lower())
+
     def test_preview_reports_matching_existing_emails_without_app_route(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
@@ -658,6 +825,7 @@ class TeachingLoopTests(unittest.TestCase):
                 note="Ashby interview workflow messages should be job-related and kept visible.",
                 scope="sender",
                 mode="apply-included",
+                included_message_ids=["gmail-live-003"],
             )
             batch = json.loads((storage_dir / "batches" / "founder-test-batch-1.json").read_text())
             candidates = CandidateChangeStore(candidate_changes_path(storage_dir)).list_candidates()

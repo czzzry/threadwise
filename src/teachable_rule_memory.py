@@ -6,6 +6,7 @@ from pathlib import Path
 
 from src.label_taxonomy import CANONICAL_LABEL_ORDER
 from src.sender_utils import normalized_sender_email
+from src.semantic_rule_matching import semantic_rule_matches_message
 
 BLOCKED_TEACHABLE_LABELS = {"promotions", "spam-low-value"}
 
@@ -300,6 +301,9 @@ def _message_text(message: dict) -> str:
 
 
 def _rule_matches_message(rule: TeachableRule, message: dict) -> bool:
+    semantic_rule = (rule.provenance or {}).get("semantic_rule") or {}
+    if semantic_rule.get("semantic_pattern"):
+        return semantic_rule_matches_message(semantic_rule, message)
     if rule.match_mode == "sender":
         return _sender_rule_matches(rule, message)
     if rule.match_mode == "sender-cluster":

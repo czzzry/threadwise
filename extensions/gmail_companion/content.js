@@ -479,6 +479,15 @@
     if (refreshInFlight && !force) {
       return;
     }
+    const renderedContext = (lastSidebarState && lastSidebarState.selected_context) || {};
+    if (
+      !forcedHome
+      && !manualPreviewContext
+      && isMeaningfulContext(context)
+      && !contextsMatch(context, renderedContext)
+    ) {
+      renderSelectedEmailTransition(context);
+    }
     refreshInFlight = true;
     chrome.runtime.sendMessage({ type: "email-agent:get-state", context }, (response) => {
       refreshInFlight = false;
@@ -525,6 +534,25 @@
       <div data-ea-selected-state="loading" role="status" aria-live="polite" aria-busy="true" style="display:grid;gap:12px;">
         <h2 style="margin:0;font-size:1.3rem;line-height:1.2;">Loading Threadwise</h2>
         <div style="border-radius:14px;background:#d8f3ef;padding:12px;color:#0f766e;line-height:1.45;">${escapeHtml(message)}</div>
+      </div>
+    `);
+  }
+
+  function renderSelectedEmailTransition(context) {
+    lastConnectionState = normalizeConnectionState({
+      kind: "ready",
+      label: "Ready",
+      details: "Threadwise is reading the selected Gmail message.",
+    });
+    renderStandaloneWorkspace("understanding", `
+      <div data-ea-selected-state="reading" role="status" aria-live="polite" aria-busy="true" style="display:grid;gap:12px;">
+        <div style="font-size:1.3rem;font-weight:840;line-height:1.2;">${escapeHtml(context.subject || "Selected email")}</div>
+        <div style="color:#6b6255;overflow-wrap:anywhere;">${escapeHtml(context.sender || "")}</div>
+        <div style="border-radius:14px;background:#fff8eb;padding:12px;color:#1f1a14;line-height:1.45;">
+          <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">Reading progress</div>
+          <div style="margin-top:8px;">Reading this email…</div>
+          <div style="margin-top:6px;color:#6b6255;">Threadwise is updating the selected-email view.</div>
+        </div>
       </div>
     `);
   }
@@ -1824,16 +1852,44 @@
   }
 
   function remainingNeedsAttentionItems() {
-    const currentMessageId = ((lastSidebarState || {}).selected_email || {}).message_id || "";
+    const current = currentReviewIdentity();
     const seen = new Set();
     return summaryItemsForFilter("needs_attention_items").filter((item) => {
       const messageId = item?.message_id || "";
-      if (!messageId || messageId === currentMessageId || seen.has(messageId)) {
+      if (!messageId || reviewItemMatchesIdentity(item, current) || seen.has(messageId)) {
         return false;
       }
       seen.add(messageId);
       return true;
     });
+  }
+
+  function currentReviewIdentity() {
+    const selected = (lastSidebarState || {}).selected_email || {};
+    const context = (lastSidebarState || {}).selected_context || {};
+    return {
+      messageId: selected.message_id || context.message_id || "",
+      threadId: selected.thread_id || context.thread_id || "",
+      sender: normalizedSender(selected.sender || context.sender || ""),
+      subject: normalizedSubject(selected.subject || context.subject || ""),
+    };
+  }
+
+  function reviewItemMatchesIdentity(item, current) {
+    if (!item || !current) {
+      return false;
+    }
+    if (current.messageId && item.message_id === current.messageId) {
+      return true;
+    }
+    if (current.threadId && item.thread_id === current.threadId) {
+      return true;
+    }
+    return Boolean(
+      current.sender && current.subject
+      && normalizedSender(item.sender || "") === current.sender
+      && normalizedSubject(item.subject || "") === current.subject
+    );
   }
 
   function bucketLabelForFilter(filter) {
@@ -3040,12 +3096,6 @@
       teachOutcome = null;
       teachWriteThrough = null;
       affectedReviewOpen = false;
-      if (previousTeachPreview && previousTeachPreview.plain_english_rule) {
-        teachDraft = {
-          ...teachDraft,
-          note: previousTeachPreview.plain_english_rule,
-        };
-      }
       if (lastSidebarState) {
         renderState(lastSidebarState);
       }
@@ -3165,7 +3215,18 @@
   }
 
   function openFirstSummaryItemIfHelpful(filter) {
-    const items = summaryItemsForFilter(filter);
+    const current = currentReviewIdentity();
+    const seen = new Set();
+    const items = (filter === "needs_attention_items"
+      ? remainingNeedsAttentionItems()
+      : summaryItemsForFilter(filter).filter((item) => {
+          const messageId = item?.message_id || "";
+          if (!messageId || reviewItemMatchesIdentity(item, current) || seen.has(messageId)) {
+            return false;
+          }
+          seen.add(messageId);
+          return true;
+        }));
     if (!items.length) {
       forcedHome = true;
       forcedHomeLiveContext = lastLiveContext ? { ...lastLiveContext } : null;
@@ -3194,13 +3255,7 @@
       refreshSelection(true);
       return;
     }
-    const currentMessageId = ((lastSidebarState || {}).selected_email || {}).message_id || "";
-    const firstItem = items.find((item) => !currentMessageId || item.message_id !== currentMessageId) || items[0];
-    if (currentMessageId && firstItem?.message_id === currentMessageId) {
-      if (lastHarnessState) renderState(lastHarnessState);
-      return;
-    }
-    openItemPreview(firstItem);
+    openItemPreview(items[0]);
   }
 
   function handlePanelInput(event) {
@@ -3329,6 +3384,9 @@
         note,
         scope: "sender",
         mode,
+        included_message_ids: mode === "apply-included"
+          ? affectedReviewItemsFromPreview(teachPreview).map((item) => item.message_id).filter(Boolean)
+          : [],
       },
     }, (response) => {
       applyInFlight = false;

@@ -17,6 +17,7 @@ from src.memory_proposal_store import (
     rule_from_memory_proposal,
 )
 from src.sender_utils import normalized_sender_email
+from src.semantic_rule_matching import build_semantic_boundary, semantic_rule_matches_message
 from src.teaching_exclusions import (
     count_teaching_exclusions_for_proposal,
     filter_excluded_preview_matches,
@@ -49,8 +50,9 @@ class OpenAITeachingIntentClient:
             + ", ".join(CANONICAL_LABEL_ORDER)
             + ".\n"
             "Choose the label the founder wants after reading the current email context and complaint.\n"
+            "When explicit_target_label is present, it is authoritative: keep that target label and use the note to infer only the semantic boundary.\n"
             "If the founder is rejecting existing wrong labels, do not echo them back as the desired target.\n"
-            "semantic_pattern should be a short plain-English message family description.\n"
+            "semantic_pattern should be a short plain-English description of what should match, honoring every inclusion, negation, and exclusion in the note.\n"
             "cross_sender must be true only if the founder intent clearly spans multiple senders.\n"
             "If uncertain, still pick the best label and set confidence to low."
         )
@@ -117,7 +119,13 @@ def build_sidebar_teach_preview(
     )
     preview = proposal.preview
     proposal_payload = proposal.to_dict()
-    preview_matches = filter_excluded_preview_matches(storage_dir, proposal_payload, preview.get("matches", []))
+    preview_matches = _authoritative_preview_matches(
+        storage_dir,
+        current=current,
+        proposal_preview=preview,
+        semantic_rule=semantic_rule,
+    )
+    preview_matches = filter_excluded_preview_matches(storage_dir, proposal_payload, preview_matches)
     affected_existing = [
         match for match in preview_matches
         if match.get("message_id") != current["message_id"]
@@ -179,6 +187,7 @@ def build_sidebar_teach_preview(
             "current_message_will_change": True,
             "matching_existing_count": len(affected_existing),
             "matching_existing_examples": normalized_existing[:5],
+            "matching_existing_items": normalized_existing,
             "similar_candidate_count": similar_candidates["similar_candidate_count"],
             "similar_candidate_examples": similar_candidates["similar_candidate_examples"],
             "similar_candidate_groups": similar_candidates["similar_candidate_groups"],
@@ -202,6 +211,7 @@ def apply_sidebar_teaching(
     note: str,
     scope: str,
     mode: str,
+    included_message_ids: list[str] | None = None,
 ) -> dict:
     if mode not in VALID_TEACHING_APPLY_MODES:
         raise ValueError("Unsupported apply mode.")
@@ -223,7 +233,19 @@ def apply_sidebar_teaching(
         scope=scope,
         semantic_rule=semantic_rule,
     )
-    preview_matches = filter_excluded_preview_matches(storage_dir, proposal.to_dict(), proposal.preview.get("matches", []))
+    preview_matches = _authoritative_preview_matches(
+        storage_dir,
+        current=current,
+        proposal_preview=proposal.preview,
+        semantic_rule=semantic_rule,
+    )
+    preview_matches = filter_excluded_preview_matches(storage_dir, proposal.to_dict(), preview_matches)
+    if mode == "apply-included":
+        included_ids = {str(message_id) for message_id in included_message_ids or [] if message_id}
+        preview_matches = [
+            match for match in preview_matches
+            if str(match.get("message_id") or "") in included_ids
+        ]
 
     current_changed = False
     if mode in {"current-only", "matching-existing", "future-only", "apply-included"}:
@@ -315,13 +337,20 @@ def exclude_sidebar_teaching_match(
     current = load_selected_storage_item(storage_dir, selected_context)
     intent = interpret_teaching_intent(current=current, target_label=target_label, note=note, scope=scope)
     target_label = intent["target_label"]
+    semantic_rule = build_semantic_future_rule(
+        current=current,
+        target_label=target_label,
+        note=note,
+        scope=scope,
+        intent=intent,
+    )
     proposal = build_companion_memory_proposal(
         storage_dir,
         current=current,
         target_label=target_label,
         note=note,
         scope=scope,
-        semantic_rule=build_semantic_future_rule(current=current, target_label=target_label, note=note, scope=scope, intent=intent),
+        semantic_rule=semantic_rule,
     )
     entry = save_teaching_exclusion(
         storage_dir,
@@ -329,7 +358,13 @@ def exclude_sidebar_teaching_match(
         message_id=excluded_message_id,
         reason=reason,
     )
-    remaining_matches = filter_excluded_preview_matches(storage_dir, proposal.to_dict(), proposal.preview.get("matches", []))
+    remaining_matches = _authoritative_preview_matches(
+        storage_dir,
+        current=current,
+        proposal_preview=proposal.preview,
+        semantic_rule=semantic_rule,
+    )
+    remaining_matches = filter_excluded_preview_matches(storage_dir, proposal.to_dict(), remaining_matches)
     amendment = build_rule_amendment_proposal(
         current=current,
         proposal=proposal.to_dict(),
@@ -477,6 +512,7 @@ def build_semantic_future_rule(*, current: dict, target_label: str, note: str, s
         clarifying_question = f"Should this apply to all future messages from {sender_name}, or only a narrower kind of message?"
     return {
         "scope": scope,
+        "target_label": target_label,
         "sender": sender,
         "semantic_pattern": semantic_pattern["name"],
         "plain_english_rule": plain_rule,
@@ -486,19 +522,22 @@ def build_semantic_future_rule(*, current: dict, target_label: str, note: str, s
         "rule_confidence_label": "Tentative future rule" if confidence == "tentative" else "Future rule",
         "clarifying_question": clarifying_question,
         "matching_basis": matching_basis,
+        "include_families": semantic_pattern.get("include_families", []),
+        "exclude_families": semantic_pattern.get("exclude_families", []),
+        "cross_sender": cross_sender,
     }
 
 
 def infer_semantic_pattern(current: dict, note: str, target_label: str, intent: dict | None = None) -> dict:
-    if intent and intent.get("semantic_pattern"):
-        return {
-            "name": str(intent.get("semantic_pattern") or "").strip(),
-            "cross_sender": bool(intent.get("cross_sender")),
-            "has_strong_signal": (
-                str(intent.get("confidence") or "").lower() in {"medium", "high"}
-                or _note_defines_explicit_semantic_boundary(note)
-            ),
-        }
+    boundary = build_semantic_boundary(
+        note=note,
+        target_label=target_label,
+        llm_pattern=str((intent or {}).get("semantic_pattern") or ""),
+        llm_cross_sender=bool((intent or {}).get("cross_sender")),
+        llm_confidence=str((intent or {}).get("confidence") or ""),
+    )
+    if boundary["name"]:
+        return boundary
     text = _semantic_text(current, note)
     if target_label == "spam-low-value" and any(term in text for term in ("phishing", "phish", "scam", "suspicious", "fake")):
         return {
@@ -564,6 +603,34 @@ def infer_semantic_pattern(current: dict, note: str, target_label: str, intent: 
     return {"name": "", "cross_sender": False, "has_strong_signal": False}
 
 
+def _deduplicate_messages(items: list[dict]) -> list[dict]:
+    by_message_id: dict[str, dict] = {}
+    without_identity: list[dict] = []
+    for item in items:
+        message_id = str(item.get("message_id") or "").strip()
+        if not message_id:
+            without_identity.append(item)
+            continue
+        by_message_id[message_id] = item
+    return [*by_message_id.values(), *without_identity]
+
+
+def _authoritative_preview_matches(
+    storage_dir: Path,
+    *,
+    current: dict,
+    proposal_preview: dict,
+    semantic_rule: dict,
+) -> list[dict]:
+    if semantic_rule.get("semantic_pattern"):
+        return [
+            item
+            for item in _deduplicate_messages(load_storage_items(storage_dir, current.get("provider", "gmail")))
+            if semantic_rule_matches_message(semantic_rule, item)
+        ]
+    return _deduplicate_messages(list(proposal_preview.get("matches", [])))
+
+
 def _note_defines_explicit_semantic_boundary(note: str) -> bool:
     text = " ".join(str(note or "").lower().split())
     has_inclusion_boundary = bool(re.search(r"\b(?:only|specifically)\b", text))
@@ -622,6 +689,7 @@ def build_companion_memory_proposal(
         label=target_label,
         explanation=explanation,
         storage_items=load_storage_items(storage_dir, provider),
+        semantic_rule=semantic_rule,
     )
 
 
@@ -832,32 +900,36 @@ def resolve_target_label(target_label: str, note: str) -> str:
 
 def interpret_teaching_intent(*, current: dict, target_label: str, note: str, scope: str) -> dict:
     explicit_label = (target_label or "").strip()
-    if explicit_label:
-        return {
-            "target_label": explicit_label,
-            "semantic_pattern": "",
-            "cross_sender": False,
-            "confidence": "high",
-            "source": "explicit-label",
-        }
-
     llm_client = OpenAITeachingIntentClient.from_env()
-    if llm_client is not None:
+    if llm_client is not None and (note or not explicit_label):
         llm_intent = normalize_llm_teaching_intent(
             llm_client.interpret(
                 {
                     "note": note,
                     "scope": scope,
+                    "explicit_target_label": explicit_label,
                     "current_subject": current.get("subject") or "",
                     "current_sender": current.get("sender") or "",
                     "current_snippet": current.get("snippet") or "",
+                    "current_body": current.get("body") or "",
                     "current_interpretation": current.get("interpretation") or "",
                     "current_labels": list(current.get("final_labels") or current.get("applied_labels") or []),
                 }
             )
         )
         if llm_intent:
+            if explicit_label:
+                llm_intent["target_label"] = explicit_label
             return {**llm_intent, "source": "llm"}
+
+    if explicit_label:
+        return {
+            "target_label": explicit_label,
+            "semantic_pattern": "",
+            "cross_sender": False,
+            "confidence": "low",
+            "source": "explicit-label",
+        }
 
     inferred = infer_target_label_from_note(note)
     if inferred:
