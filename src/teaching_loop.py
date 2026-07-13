@@ -9,7 +9,7 @@ from src.gmail_batch_review_store import GmailBatchReviewStore
 from src.gmail_companion_state import find_matching_item
 from src.label_taxonomy import CANONICAL_LABEL_ORDER, gmail_label_name
 from src.candidate_change_store import CandidateChange, CandidateChangeStore
-from src.local_artifacts import candidate_changes_path, load_json, memory_proposals_path
+from src.local_artifacts import candidate_changes_path, load_json, memory_proposals_path, teachable_rules_path
 from src.memory_proposal_store import (
     MemoryProposalStore,
     build_memory_proposal,
@@ -269,8 +269,17 @@ def apply_sidebar_teaching(
     if mode in {"save-future-rule", "future-only", "apply-included"}:
         store = MemoryProposalStore(memory_proposals_path(storage_dir))
         proposal_record = store.save_proposal(proposal)
+        proposal_record = store.review_proposal(
+            proposal.id,
+            "approved",
+            rules_memory=TeachableRuleMemory(teachable_rules_path(storage_dir)),
+            review_notes="Explicitly approved in the Gmail companion teaching flow.",
+        )
         candidate_store = CandidateChangeStore(candidate_changes_path(storage_dir))
-        projection_rule = rule_from_memory_proposal(proposal, existing_count=0)
+        projection_rule = rule_from_memory_proposal(
+            proposal_record,
+            existing_count=0,
+        )
         candidate_record = candidate_store.save_candidate(
             CandidateChange(
                 id=f"candidate-{proposal.id}",
@@ -293,6 +302,12 @@ def apply_sidebar_teaching(
                     "apply_mode": mode,
                 },
             )
+        )
+        candidate_record = candidate_store.apply_decision(
+            candidate_record.id,
+            decision="promote",
+            actor="founder-explicit-teaching-action",
+            latest_recommendation="Explicitly approved in the Gmail companion teaching flow.",
         )
         future_rule_saved = True
     if mode in {"matching-existing", "apply-included"}:
@@ -1136,16 +1151,16 @@ def build_apply_acknowledgment(
         return f"I relabeled this email to {label_name} and rewrote {matched_existing_count} matching stored emails. I did not save a future rule."
     if mode == "apply-included":
         future_copy = (
-            "saved a future rule candidate for evaluation"
+            "saved a future rule"
             if future_rule_saved
-            else "did not save a future rule candidate"
+            else "did not save a future rule"
         )
         return (
             f"I relabeled this email to {label_name}, rewrote {matched_existing_count} included stored emails, "
             f"kept {exceptions_saved_count} saved exceptions, and {future_copy}."
         )
     if mode == "save-future-rule":
-        return f"I saved a future rule candidate for evaluation. I did not relabel this email or rewrite other existing emails."
+        return f"I saved a future rule. I did not relabel this email or rewrite other existing emails."
     if mode == "future-only":
-        return f"I relabeled this email to {label_name} and saved a future rule candidate for evaluation. No other existing stored emails were rewritten."
+        return f"I relabeled this email to {label_name} and saved a future rule. No other existing stored emails were rewritten."
     return f"I applied the teaching action for {label_name}."

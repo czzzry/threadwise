@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from src.candidate_change_store import CandidateChangeStore
-from src.local_artifacts import candidate_changes_path
+from src.local_artifacts import candidate_changes_path, teachable_rules_path
 from src.teaching_loop import (
     OpenAITeachingIntentClient,
     apply_rule_amendment_decision,
@@ -15,7 +15,7 @@ from src.teaching_loop import (
     load_items_for_gmail_write_through,
 )
 from src.teaching_exclusions import is_rule_message_excluded
-from src.teachable_rule_memory import TeachableRule, matching_rules_for_message
+from src.teachable_rule_memory import TeachableRule, TeachableRuleMemory, matching_rules_for_message
 
 
 class TeachingLoopTests(unittest.TestCase):
@@ -960,6 +960,53 @@ class TeachingLoopTests(unittest.TestCase):
             self.assertEqual(batch["items"][1]["final_labels"], [])
             self.assertEqual(batch["items"][2]["final_labels"], ["job-related"])
             self.assertEqual(len(candidates), 1)
+
+    def test_future_only_activates_the_rule_after_explicit_user_confirmation(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                [
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "gmail-live-001",
+                        "sender": "noreply@1se.co",
+                        "subject": "[1SE] Your 1SE account is inactive and will be deleted soon.",
+                        "snippet": "Your inactive account is scheduled for deletion.",
+                        "body": "Sign in if you do not want your account deleted.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                ],
+            )
+
+            result = apply_sidebar_teaching(
+                storage_dir,
+                selected_context={
+                    "provider": "gmail",
+                    "message_id": "gmail-live-001",
+                    "sender": "noreply@1se.co",
+                    "subject": "[1SE] Your 1SE account is inactive and will be deleted soon.",
+                },
+                target_label="account-security",
+                note="This is clearly an account email.",
+                scope="sender",
+                mode="future-only",
+            )
+
+            rules = TeachableRuleMemory(teachable_rules_path(storage_dir)).list_rules()
+            candidates = CandidateChangeStore(candidate_changes_path(storage_dir)).list_candidates()
+
+            self.assertEqual(result["proposal"]["status"], "approved")
+            self.assertTrue(result["proposal"]["approved_rule_id"])
+            self.assertEqual(len(rules), 1)
+            self.assertEqual(rules[0].label, "account-security")
+            self.assertEqual(candidates[0].status, "promoted")
+            self.assertIn("saved a future rule", result["acknowledgment"])
+            self.assertNotIn("candidate for evaluation", result["acknowledgment"])
 
     def test_exclusion_proposes_rule_amendment_without_applying_it_silently(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
