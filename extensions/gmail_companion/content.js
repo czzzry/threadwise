@@ -57,6 +57,7 @@
     note: "",
   };
   let manualPreviewContext = null;
+  let manualPreviewOriginContext = null;
   let lastLiveContext = null;
   let trustedHtmlPolicy = null;
   let refreshIntervalId = null;
@@ -421,6 +422,7 @@
     }
     forcedHome = false;
     manualPreviewContext = contextFromItem(item);
+    manualPreviewOriginContext = lastLiveContext ? { ...lastLiveContext } : null;
     teachPreview = null;
     previousTeachPreview = null;
     teachResult = null;
@@ -454,8 +456,14 @@
 
   function refreshSelection(force = false) {
     lastLiveContext = stabilizedLiveContext(selectedContext());
-    if (manualPreviewContext && isMeaningfulContext(lastLiveContext) && !contextsMatch(lastLiveContext, manualPreviewContext)) {
+    if (
+      manualPreviewContext
+      && manualPreviewOriginContext
+      && isMeaningfulContext(lastLiveContext)
+      && !contextsMatch(lastLiveContext, manualPreviewOriginContext)
+    ) {
       manualPreviewContext = null;
+      manualPreviewOriginContext = null;
       resetPerEmailInteraction();
       previousPayload = "";
     }
@@ -939,6 +947,7 @@
     forcedHome = true;
     forcedHomeLiveContext = lastLiveContext ? { ...lastLiveContext } : null;
     manualPreviewContext = null;
+    manualPreviewOriginContext = null;
     gmailCheckResult = null;
     resetPerEmailInteraction();
     previousPayload = "";
@@ -963,6 +972,7 @@
     lastLiveContext = stabilizedLiveContext(selectedContext());
     if (isMeaningfulContext(lastLiveContext)) {
       manualPreviewContext = null;
+      manualPreviewOriginContext = null;
       previousPayload = "";
       refreshSelection(true);
     } else if (lastHarnessState || lastSidebarState) {
@@ -3208,6 +3218,7 @@
     if (returnButton) {
       event.preventDefault();
       manualPreviewContext = null;
+      manualPreviewOriginContext = null;
       forcedHome = false;
       forcedHomeLiveContext = null;
       teachPreview = null;
@@ -3241,6 +3252,7 @@
       forcedHome = true;
       forcedHomeLiveContext = lastLiveContext ? { ...lastLiveContext } : null;
       manualPreviewContext = null;
+      manualPreviewOriginContext = null;
       resetPerEmailInteraction();
       gmailCheckResult = {
         kind: "queue-refresh",
@@ -3825,6 +3837,7 @@
       },
       returnToLive() {
         manualPreviewContext = null;
+        manualPreviewOriginContext = null;
         forcedHome = false;
         forcedHomeLiveContext = null;
         teachPreview = null;
