@@ -20,6 +20,10 @@ SEMANTIC_FAMILY_TERMS = {
     ),
     "account-security": (
         "account security",
+        "account or security alert",
+        "account or security alerts",
+        "account alert",
+        "security alert",
         "account locked",
         "locked your account",
         "sign-in",
@@ -56,11 +60,13 @@ SEMANTIC_FAMILY_TERMS = {
         "promotional",
         "marketing",
         "discount",
+        "coupon",
         "sale",
         "special offer",
     ),
     "receipts": (
         "receipt",
+        "receipts",
         "invoice",
         "billing",
         "charged",
@@ -69,6 +75,32 @@ SEMANTIC_FAMILY_TERMS = {
     "newsletter": ("newsletter", "digest", "roundup"),
     "travel": ("flight", "hotel", "booking", "reservation", "itinerary"),
     "jobs": ("job", "recruiter", "interview", "application", "hiring"),
+    "work-admin": (
+        "workspace",
+        "workplace",
+        "collaboration service",
+        "workspace policy",
+        "retention policy",
+        "content retention",
+        "content deletion",
+        "team administration",
+    ),
+    "support": (
+        "customer support",
+        "direct support",
+        "support message",
+        "support request",
+        "support case",
+        "support ticket",
+    ),
+    "meetings": (
+        "meeting invitation",
+        "meeting invitations",
+        "meeting reminder",
+        "meeting reminders",
+        "webinar",
+        "webinars",
+    ),
     "reply": ("reply", "respond", "response required", "answer needed"),
 }
 
@@ -77,11 +109,14 @@ FAMILY_DESCRIPTIONS = {
     "account-security": "account, security, or statement notices",
     "account-lifecycle": "account inactivity or deletion warnings",
     "privacy-legal": "privacy-policy, user-agreement, or terms-update notices",
-    "promotions": "marketing or promotional emails",
+    "promotions": "marketing discounts, coupon offers, sales, or other promotional emails",
     "receipts": "billing, receipt, invoice, or payment notices",
     "newsletter": "newsletter or digest emails",
     "travel": "travel and booking emails",
     "jobs": "job, recruiter, or interview emails",
+    "work-admin": "workplace service administration, workspace-policy, or retention notices",
+    "support": "direct customer-support messages",
+    "meetings": "meeting invitations, reminders, or webinar notices",
     "reply": "emails that directly require a reply",
 }
 
@@ -112,7 +147,44 @@ NEGATIVE_MARKERS = (
     "should not",
     "shouldn't",
     "not include",
+    "not a ",
+    "isn't",
+    "isnt",
+    "is not",
 )
+
+SEMANTIC_PATTERN_STOP_WORDS = {
+    "about",
+    "after",
+    "also",
+    "before",
+    "being",
+    "email",
+    "emails",
+    "from",
+    "future",
+    "have",
+    "indicating",
+    "kind",
+    "label",
+    "looks",
+    "message",
+    "messages",
+    "potential",
+    "sender",
+    "sending",
+    "should",
+    "similar",
+    "that",
+    "their",
+    "these",
+    "this",
+    "treat",
+    "unwanted",
+    "user",
+    "value",
+    "with",
+}
 
 
 def build_semantic_boundary(
@@ -135,10 +207,7 @@ def build_semantic_boundary(
     target_family = LABEL_FAMILIES.get(target_label)
     if target_family and target_family in positive_families:
         positive_families = [target_family]
-    elif target_family and (
-        not positive_families
-        or not re.search(r"\b(?:only|specifically|classify only|apply only)\b", normalized_note)
-    ):
+    elif target_family and not positive_families:
         positive_families = [target_family]
     if target_family and target_family in positive_families:
         if target_family in excluded_families:
@@ -168,6 +237,7 @@ def build_semantic_boundary(
         "name": pattern,
         "include_families": positive_families,
         "exclude_families": excluded_families,
+        "excluded_pattern": _pattern_for_families(excluded_families),
         "cross_sender": cross_sender,
         "has_strong_signal": has_strong_signal,
         "llm_contradicted_note": llm_contradicts_note,
@@ -196,7 +266,12 @@ def semantic_rule_matches_message(rule: dict, message: dict) -> bool:
             subject_families = set(_families_in_text(_normalize(str(message.get("subject") or ""))))
             return bool(subject_families & included)
         return bool(message_families & included)
-    return False
+    pattern_tokens = set(_semantic_pattern_tokens(str(rule.get("semantic_pattern") or "")))
+    if len(pattern_tokens) < 2:
+        return False
+    message_tokens = set(_semantic_pattern_tokens(text))
+    minimum_overlap = 3 if rule.get("cross_sender") else 2
+    return len(pattern_tokens & message_tokens) >= minimum_overlap
 
 
 def semantic_search_keywords(rule: dict) -> list[str]:
@@ -263,3 +338,27 @@ def _pattern_for_families(families: list[str]) -> str:
 
 def _normalize(value: str) -> str:
     return " ".join(str(value or "").lower().replace("_", " ").split())
+
+
+def _semantic_pattern_tokens(value: str) -> list[str]:
+    tokens: list[str] = []
+    for raw in re.findall(r"[a-z0-9]+", _normalize(value)):
+        if len(raw) < 4 or raw in SEMANTIC_PATTERN_STOP_WORDS:
+            continue
+        token = _light_stem(raw)
+        if token in SEMANTIC_PATTERN_STOP_WORDS or token in tokens:
+            continue
+        tokens.append(token)
+    return tokens
+
+
+def _light_stem(token: str) -> str:
+    if len(token) > 5 and token.endswith("ies"):
+        return f"{token[:-3]}y"
+    if len(token) > 5 and token.endswith("ing"):
+        return token[:-3]
+    if len(token) > 4 and token.endswith("ed"):
+        return token[:-2]
+    if len(token) > 4 and token.endswith("s") and not token.endswith(("ss", "us")):
+        return token[:-1]
+    return token

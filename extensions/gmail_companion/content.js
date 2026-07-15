@@ -43,6 +43,7 @@
   let selectedDecisionConflict = "";
   let futureLearningError = "";
   let currentApplyError = "";
+  let handledAdvanceError = "";
   let applyInFlight = false;
   let activeTeachApplyMode = "";
   let recordedSuggestionDecisions = { approve: false, edit: false };
@@ -55,6 +56,7 @@
   let forcedHomeLiveContext = null;
   let teachDraft = {
     targetLabel: "",
+    targetLabelExplicit: false,
     note: "",
   };
   let manualPreviewContext = null;
@@ -75,8 +77,11 @@
     refreshIntervalId = window.setInterval(refreshSelection, REFRESH_INTERVAL_MS);
     hashChangeListener = () => refreshSelection();
     window.addEventListener("hashchange", hashChangeListener);
-    documentClickListener = () => window.setTimeout(refreshSelection, 150);
-    document.addEventListener("click", documentClickListener);
+    documentClickListener = (event) => {
+      releaseCompletedQueuePreviewOnGmailClick(event);
+      window.setTimeout(refreshSelection, 150);
+    };
+    document.addEventListener("click", documentClickListener, true);
     runtimeMessageListener = (message) => {
       if (!message || message.type !== "email-agent:toggle") {
         return;
@@ -458,17 +463,11 @@
   function refreshSelection(force = false) {
     lastLiveContext = stabilizedLiveContext(selectedContext());
     if (
-      manualPreviewContext
-      && manualPreviewOriginContext
-      && isMeaningfulContext(lastLiveContext)
-      && !contextsMatch(lastLiveContext, manualPreviewOriginContext)
+      forcedHome
+      && forcedHomeLiveContext?.page_url
+      && lastLiveContext?.page_url
+      && lastLiveContext.page_url !== forcedHomeLiveContext.page_url
     ) {
-      manualPreviewContext = null;
-      manualPreviewOriginContext = null;
-      resetPerEmailInteraction();
-      previousPayload = "";
-    }
-    if (forcedHome && isMeaningfulContext(lastLiveContext) && (!forcedHomeLiveContext || !contextsMatch(lastLiveContext, forcedHomeLiveContext))) {
       forcedHome = false;
       forcedHomeLiveContext = null;
     }
@@ -586,6 +585,24 @@
     return lastLiveContext;
   }
 
+  function releaseCompletedQueuePreviewOnGmailClick(event) {
+    if (event?.target?.closest?.(`#${ROOT_ID}`)) {
+      return;
+    }
+    const completedReceipt = document.querySelector(
+      `#${ROOT_ID} [data-ea-selected-state="receipt"], `
+      + `#${ROOT_ID} [data-ea-selected-state="teach-result-receipt"], `
+      + `#${ROOT_ID} [data-ea-selected-state="future-learning-receipt"]`,
+    );
+    if (!completedReceipt) {
+      return;
+    }
+    manualPreviewContext = null;
+    manualPreviewOriginContext = null;
+    previousPayload = "";
+    resetPerEmailInteraction();
+  }
+
   function stabilizedLiveContext(nextContext) {
     if (!gmailRouteHasOpenMessage()) {
       return nextContext || {};
@@ -618,7 +635,9 @@
 
   function shouldHoldSelectedContext() {
     const selectedContext = (lastSidebarState && lastSidebarState.selected_context) || {};
-    if ((!hasTeachDraftChanges() && !affectedReviewOpen) || !isMeaningfulContext(selectedContext)) {
+    const correctionInProgress = ["change", "teach-preview", "teach-scope"].includes(selectedDecisionMode)
+      || ["previewing", "applying", "scope-confirmation"].includes(teachFlowState);
+    if ((!correctionInProgress && !affectedReviewOpen) || !isMeaningfulContext(selectedContext)) {
       return false;
     }
     return (
@@ -934,6 +953,7 @@
     selectedDecisionConflict = "";
     futureLearningError = "";
     currentApplyError = "";
+    handledAdvanceError = "";
     activeTeachApplyMode = "";
     recordedSuggestionDecisions = { approve: false, edit: false };
     affectedReviewOpen = false;
@@ -947,7 +967,7 @@
     }
     minimized = false;
     forcedHome = true;
-    forcedHomeLiveContext = lastLiveContext ? { ...lastLiveContext } : null;
+    forcedHomeLiveContext = { ...selectedContext() };
     manualPreviewContext = null;
     manualPreviewOriginContext = null;
     gmailCheckResult = null;
@@ -1331,9 +1351,11 @@
       setHtml(selectedEmailSecondaryNode, "");
     } else if (workspaceMode === "teach-result-receipt") {
       gmailCheckResult = null;
+      const hasNextReviewItem = remainingNeedsAttentionItems().length > 0;
       setHtml(selectedEmailNode, `
         <div data-ea-selected-state="teach-result-receipt" role="status">
           ${renderTeachReceiptHtml(teachResult.message || "Rule applied.", teachOutcome, ((lastSidebarState || {}).ui_state || {}).async_follow_up)}
+          ${hasNextReviewItem ? '<button type="button" data-ea-action="open-needs-attention" data-tw-primary-action style="width:100%;min-height:44px;margin-top:12px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Next email</button>' : '<div data-ea-review-complete role="status" style="margin-top:12px;border-radius:14px;background:#dff8ed;padding:12px;color:#0f5f4c;line-height:1.45;">Review queue complete.</div>'}
         </div>
       `);
       setHtml(selectedEmailSecondaryNode, "");
@@ -1396,7 +1418,10 @@
             <div style="margin-top:6px;color:#6b6255;font-size:0.88rem;overflow-wrap:anywhere;">${escapeHtml(selected.subject || "(no subject)")} · ${escapeHtml(selected.sender || "(unknown sender)")}</div>
           </div>
           <div data-ea-auto-handled-receipt style="border-radius:14px;background:#eef7f5;padding:12px;color:#1f1a14;line-height:1.45;">${escapeHtml(handlingReceipt)}</div>
-          <button type="button" data-ea-action="confirm-handled-and-next" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Looks right · Next</button>
+          ${selected.handled_review_acknowledged
+            ? '<div data-ea-handled-reviewed role="status" style="border-radius:14px;background:#dff8ed;padding:12px;color:#0f665e;font-weight:800;">Reviewed · Threadwise will not offer this email again</div>'
+            : '<button type="button" data-ea-action="confirm-handled-and-next" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Looks right · Next</button>'}
+          ${handledAdvanceError ? `<div data-ea-handled-advance-error role="alert" style="border-radius:14px;background:#f7e2e2;padding:12px;color:#8a1f1f;line-height:1.45;">${escapeHtml(handledAdvanceError)}</div>` : ""}
           <div style="display:flex;gap:12px;flex-wrap:wrap;">
             <button type="button" data-ea-action="open-selected-gmail" style="border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Open email</button>
             <button type="button" data-ea-action="change-auto-handled" style="border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Change</button>
@@ -1419,6 +1444,7 @@
           <div>
             <div style="font-size:1.3rem;font-weight:840;line-height:1.15;overflow-wrap:anywhere;">${escapeHtml(selected.subject || "(no subject)")}</div>
             <div style="margin-top:6px;color:#6b6255;font-size:0.88rem;overflow-wrap:anywhere;">${escapeHtml(selected.sender || "(unknown sender)")}</div>
+            ${reviewReceivedLabel(selected.received_at) ? `<div data-ea-review-received-at style="margin-top:4px;color:#6b6255;font-size:0.8rem;">${escapeHtml(reviewReceivedLabel(selected.received_at))}</div>` : ""}
           </div>
           <div data-ea-review-suggestion style="font-size:1.05rem;font-weight:760;line-height:1.4;">${label ? finishingGmailUpdate ? `Threadwise classified this as ${escapeHtml(label)}, but Gmail was not confirmed.` : `Threadwise suggests ${escapeHtml(label)}` : "Threadwise needs you to choose a label"}</div>
           <div style="border-radius:14px;background:#fff4dd;padding:12px;color:#1f1a14;line-height:1.45;">${escapeHtml(likelyReasonForSelected(selected).slice(0, 160))}</div>
@@ -1443,11 +1469,12 @@
             <div style="font-size:1.3rem;font-weight:840;line-height:1.15;">What should this email be?</div>
             <div style="margin-top:6px;color:#6b6255;font-size:0.88rem;overflow-wrap:anywhere;">${escapeHtml(selected.subject || "(no subject)")}</div>
           </div>
-          <label style="display:grid;gap:6px;font-weight:760;">Label
-            <select id="ea-target-label" style="box-sizing:border-box;width:100%;min-height:44px;padding:10px 12px;border-radius:10px;border:1px solid rgba(36,24,18,.32);background:#fffdf7;color:#241812;font:inherit;"><option value="">Choose label</option>${labelOptions}</select>
+          <label style="display:grid;gap:6px;font-weight:760;">Tell Threadwise what this should be
+            <textarea id="ea-teach-note" rows="3" placeholder="For example: LowValue welcome email — I don't care about these" style="box-sizing:border-box;width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(36,24,18,.32);background:#fffdf7;color:#241812;font:inherit;resize:vertical;">${escapeHtml(teachDraft.note)}</textarea>
           </label>
-          <label style="display:grid;gap:6px;font-weight:760;">Anything Threadwise should remember? (optional)
-            <textarea id="ea-teach-note" rows="3" style="box-sizing:border-box;width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(36,24,18,.32);background:#fffdf7;color:#241812;font:inherit;resize:vertical;">${escapeHtml(teachDraft.note)}</textarea>
+          <div style="margin-top:-4px;color:#6b6255;font-size:0.82rem;line-height:1.4;">A clear label in your instruction takes priority over Threadwise's current guess.</div>
+          <label style="display:grid;gap:6px;font-weight:760;">Manual label override (optional)
+            <select id="ea-target-label" style="box-sizing:border-box;width:100%;min-height:44px;padding:10px 12px;border-radius:10px;border:1px solid rgba(36,24,18,.32);background:#fffdf7;color:#241812;font:inherit;"><option value="">Use my instruction</option>${labelOptions}</select>
           </label>
           ${selectedDecisionConflict ? `<div data-ea-label-conflict role="alert" style="border-radius:14px;background:#fde8e6;padding:12px;color:#7f1d1d;line-height:1.45;">${escapeHtml(selectedDecisionConflict)}</div>` : ""}
           <div style="display:grid;gap:9px;">
@@ -2728,7 +2755,11 @@
   function recordSuggestionDecisionOnce(decision) {
     if (!recordedSuggestionDecisions.approve && !recordedSuggestionDecisions.edit) {
       recordedSuggestionDecisions[decision] = true;
-      ANALYTICS?.decideSuggestion(decision);
+      try {
+        ANALYTICS?.decideSuggestion(decision);
+      } catch (_error) {
+        // Product actions must continue even when optional analytics is unavailable.
+      }
     }
   }
 
@@ -2912,6 +2943,9 @@
     const confirmHandledButton = event.target.closest("[data-ea-action='confirm-handled-and-next']");
     if (confirmHandledButton) {
       event.preventDefault();
+      confirmHandledButton.disabled = true;
+      confirmHandledButton.setAttribute("aria-busy", "true");
+      confirmHandledButton.textContent = "Opening next…";
       return confirmHandledAndOpenNext();
     }
 
@@ -3028,6 +3062,7 @@
       selectedDecisionConflict = "";
       teachDraft = {
         targetLabel: decisionSuggestedLabelId(lastSidebarState?.selected_email),
+        targetLabelExplicit: false,
         note: "",
       };
       if (lastSidebarState) renderState(lastSidebarState);
@@ -3294,31 +3329,39 @@
       resetPerEmailInteraction();
       gmailCheckResult = {
         kind: "queue-refresh",
-        title: "No review emails remain. Refreshing Home",
-        message: "Threadwise is checking the live queue before offering another review.",
+        title: filter === "needs_attention_items" ? "Review queue complete" : `${bucketLabelForFilter(filter)} complete`,
+        message: filter === "needs_attention_items"
+          ? "No review emails remain. Threadwise is checking the live queue before offering another review."
+          : `No more ${bucketLabelForFilter(filter).toLowerCase()} emails remain in this view.`,
       };
       previousPayload = "";
       if (lastHarnessState) {
         const sidebarState = lastHarnessState.sidebar_state || {};
+        const completingNeedsAttention = filter === "needs_attention_items";
         renderState({
           ...lastHarnessState,
-          needs_attention_items: [],
+          needs_attention_items: completingNeedsAttention ? [] : lastHarnessState.needs_attention_items,
           sidebar_state: {
             ...sidebarState,
             daily_summary: {
               ...(sidebarState.daily_summary || {}),
-              needs_attention_count: 0,
+              needs_attention_count: completingNeedsAttention
+                ? 0
+                : Number((sidebarState.daily_summary || {}).needs_attention_count || 0),
             },
           },
         });
       }
       refreshSelection(true);
-      return;
+      return false;
     }
-    openItemPreview(items[0]);
+    return openItemPreview(items[0]);
   }
 
   function handlePanelInput(event) {
+    if (event.target?.id === "ea-target-label" && event.type === "change") {
+      teachDraft.targetLabelExplicit = true;
+    }
     if (
       event.target?.id === "ea-target-label" ||
       event.target?.id === "ea-teach-note" ||
@@ -3359,6 +3402,7 @@
       body: {
         selected_context: lastSidebarState.selected_context || {},
         target_label: targetLabel,
+        target_label_explicit: Boolean(teachDraft.targetLabelExplicit),
         note,
         scope: "sender",
       },
@@ -3424,9 +3468,30 @@
   }
 
   function confirmHandledAndOpenNext() {
-    recordSuggestionDecisionOnce("approve");
-    activeSummaryFilter = "needs_attention_items";
-    openFirstSummaryItemIfHelpful(activeSummaryFilter);
+    const current = currentReviewIdentity();
+    const activeItems = summaryItemsForFilter(activeSummaryFilter);
+    const currentBelongsToActiveQueue = activeItems.some((item) => reviewItemMatchesIdentity(item, current));
+    const nextFilter = currentBelongsToActiveQueue ? activeSummaryFilter : "needs_attention_items";
+    handledAdvanceError = "";
+    chrome.runtime.sendMessage({
+      type: "email-agent:api",
+      path: "/api/handled-review-acknowledge",
+      method: "POST",
+      body: {
+        selected_context: lastSidebarState?.selected_context || {},
+      },
+    }, (response) => {
+      if (chrome.runtime.lastError || !response?.ok) {
+        handledAdvanceError = `${friendlyErrorMessage(
+          chrome.runtime.lastError?.message || response?.payload?.error || response?.error || "Could not save this review.",
+        )} Threadwise kept this email in the review flow. Try again.`;
+        renderState(lastHarnessState || lastSidebarState);
+        return;
+      }
+      recordSuggestionDecisionOnce("approve");
+      renderState(response.payload?.harness_state || lastHarnessState || lastSidebarState);
+      openFirstSummaryItemIfHelpful(nextFilter);
+    });
     return true;
   }
 
@@ -3453,6 +3518,52 @@
     }
     applyTeach(mode, lastSelectedMessageId);
     return true;
+  }
+
+  function reconcileCurrentApplyAfterTransportFailure(rawError, targetLabel, requestIdentity) {
+    const selectedContext = { ...(lastSidebarState?.selected_context || {}) };
+    chrome.runtime.sendMessage({
+      type: "email-agent:get-state",
+      context: selectedContext,
+    }, (response) => {
+      const payload = response?.payload;
+      const sidebarState = payload?.sidebar_state || {};
+      const selected = sidebarState.selected_email || {};
+      const selectedIdentity = selectedMessageIdentity(sidebarState, selected);
+      const appliedLabel = internalLabelId(selected.internal_label || selected.classification || "");
+      const writeApplied = selected.details?.write_status === "applied";
+      const writeFailed = selected.details?.write_status === "failed";
+      const inboxFailed = selected.details?.inbox_status === "failed";
+      const sameMessage = Boolean(requestIdentity && selectedIdentity === requestIdentity);
+      if (response?.ok && sameMessage && appliedLabel === targetLabel && writeApplied && !writeFailed && !inboxFailed) {
+        const inboxRemoved = selected.details?.inbox_status === "applied";
+        teachPreview = null;
+        previousTeachPreview = null;
+        teachResult = {
+          kind: "apply-success",
+          title: "Change confirmed",
+          message: "Threadwise confirmed the completed Gmail change after reconnecting.",
+        };
+        teachFlowState = "result";
+        teachOutcome = {
+          scope: "current-email",
+          current_email_changed_locally: true,
+          current_email_written_to_gmail: true,
+          gmail_label_write_failed: 0,
+        };
+        teachWriteThrough = {
+          label_write_applied: 1,
+          label_write_failed: 0,
+          inbox_removed: inboxRemoved ? 1 : 0,
+          inbox_remove_failed: 0,
+        };
+        currentApplyError = "";
+        renderState(payload);
+        return;
+      }
+      currentApplyError = `${friendlyErrorMessage(rawError)} Threadwise checked again but could not confirm that the change completed.`;
+      renderState(payload || lastHarnessState || lastSidebarState);
+    });
   }
 
   async function applyTeach(mode, requestIdentity) {
@@ -3502,7 +3613,11 @@
         if (mode === "save-future-rule") {
           futureLearningError = teachResult.message;
         } else if (mode === "current-only") {
-          currentApplyError = `${friendlyErrorMessage(chrome.runtime.lastError.message || "Could not apply the change.")} Threadwise did not confirm that the change completed.`;
+          return reconcileCurrentApplyAfterTransportFailure(
+            chrome.runtime.lastError.message || "Could not apply the change.",
+            targetLabel,
+            requestIdentity,
+          );
         }
         renderState(lastHarnessState || lastSidebarState);
         return;
@@ -3514,7 +3629,7 @@
         if (mode === "save-future-rule") {
           futureLearningError = teachResult.message;
         } else if (mode === "current-only") {
-          currentApplyError = `${friendlyErrorMessage(rawError)} Threadwise did not confirm that the change completed.`;
+          return reconcileCurrentApplyAfterTransportFailure(rawError, targetLabel, requestIdentity);
         }
         renderState(lastHarnessState || lastSidebarState);
         return;
@@ -3707,6 +3822,7 @@
     const futureNoteNode = document.getElementById("ea-future-note");
     teachDraft = {
       targetLabel: selectNode?.value || teachDraft.targetLabel || "",
+      targetLabelExplicit: Boolean(teachDraft.targetLabelExplicit),
       note: noteNode ? noteNode.value : futureNoteNode ? futureNoteNode.value : teachDraft.note || "",
     };
   }
@@ -3947,7 +4063,7 @@
       hashChangeListener = null;
     }
     if (documentClickListener) {
-      document.removeEventListener("click", documentClickListener);
+      document.removeEventListener("click", documentClickListener, true);
       documentClickListener = null;
     }
     if (
@@ -3973,6 +4089,23 @@
       .replaceAll(">", "&gt;")
       .replaceAll('"', "&quot;")
       .replaceAll("'", "&#39;");
+  }
+
+  function reviewReceivedLabel(value) {
+    if (!value) {
+      return "";
+    }
+    const received = new Date(value);
+    if (Number.isNaN(received.getTime())) {
+      return "";
+    }
+    return `Received ${new Intl.DateTimeFormat(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(received)}`;
   }
 
   boot();

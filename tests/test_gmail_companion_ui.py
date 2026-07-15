@@ -26,6 +26,8 @@ from src.gmail_companion_rendering import (
     unsubscribe_section_key,
 )
 from src.gmail_companion_state import (
+    build_companion_runtime_payload,
+    build_runtime_item,
     build_selected_email_state,
     classify_handling_status,
     load_latest_batch,
@@ -41,6 +43,173 @@ from src.unsubscribe_execution import UnsubscribeExecutor
 
 
 class GmailCompanionUiTests(unittest.TestCase):
+    def test_review_queue_refreshes_five_amazon_variants_without_turning_security_into_orders(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+
+            def raw(message_id: str, sender: str, subject: str, snippet: str, labels: list[str] | None = None) -> dict:
+                return {
+                    "id": message_id,
+                    "internalDate": "1718784000000",
+                    "snippet": snippet,
+                    "labelIds": labels or ["INBOX"],
+                    "payload": {
+                        "headers": [
+                            {"name": "From", "value": sender},
+                            {"name": "Subject", "value": subject},
+                            {"name": "Date", "value": "Wed, 19 Jun 2024 08:00:00 +0000"},
+                        ]
+                    },
+                }
+
+            raw_messages = [
+                raw("amazon-dispatched", '"Amazon.de" <versandbestaetigung@amazon.de>', "Dispatched: hammock", "Your order was dispatched."),
+                raw("amazon-order", '"Amazon.de" <bestellbestaetigung@amazon.de>', "Ihre Amazon.de Bestellung von Rushmore", "Bestellung bestätigt."),
+                raw("amazon-return", '"rueckgabe@amazon.de" <rueckgabe@amazon.de>', "Your return drop-off confirmation", "Your return was dropped off."),
+                raw("amazon-security", 'Amazon <account-update@amazon.de>', "amazon.de: Account data access attempt", "Someone is attempting to access your account data."),
+                raw("amazon-prime-welcome", 'Amazon Prime <prime@amazon.com>', "Welcome back to Prime!", "See your Prime benefits.", ["INBOX", "CATEGORY_PROMOTIONS"]),
+            ]
+            stale_items = [
+                {
+                    "source": "gmail",
+                    "account_id": "founder-test",
+                    "message_id": message["id"],
+                    "sender": next(header["value"] for header in message["payload"]["headers"] if header["name"] == "From"),
+                    "subject": next(header["value"] for header in message["payload"]["headers"] if header["name"] == "Subject"),
+                    "review_state": "pending",
+                    "final_labels": [],
+                    "applied_labels": [],
+                    "near_misses": [],
+                }
+                for message in raw_messages
+            ]
+            self._write_batch(storage_dir, "founder-test-batch-1", stale_items, raw_messages)
+
+            payload = build_companion_runtime_payload(storage_dir)
+            queue = {item["message_id"]: item for item in payload["needs_attention_items"]}
+
+            self.assertEqual(queue["amazon-dispatched"]["suggested_label"], "shopping-order")
+            self.assertEqual(queue["amazon-order"]["suggested_label"], "shopping-order")
+            self.assertEqual(queue["amazon-return"]["suggested_label"], "shopping-order")
+            self.assertEqual(queue["amazon-security"]["suggested_label"], "account-security")
+            self.assertNotEqual(queue["amazon-prime-welcome"]["suggested_label"], "shopping-order")
+
+    def test_selected_email_uses_the_same_refreshed_classification_as_review_queue(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            raw_message = {
+                "id": "bad-axe-visit",
+                "internalDate": "1716027383000",
+                "snippet": "Your visit is booked for Saturday at 12:00.",
+                "labelIds": ["INBOX"],
+                "payload": {
+                    "headers": [
+                        {"name": "From", "value": "Piotr from BAD AXE <badaxe@badaxe.pl>"},
+                        {"name": "Subject", "value": "Wizyta BAD AXE"},
+                        {"name": "Date", "value": "Sat, 18 May 2024 10:16:23 +0000"},
+                    ]
+                },
+            }
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                [
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "bad-axe-visit",
+                        "sender": "Piotr from BAD AXE <badaxe@badaxe.pl>",
+                        "subject": "Wizyta BAD AXE",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                ],
+                [raw_message],
+            )
+
+            state = GmailCompanionApp(storage_dir).harness_state(
+                {"provider": "gmail", "message_id": "bad-axe-visit"}
+            )
+            queue_item = state["needs_attention_items"][0]
+            selected = state["sidebar_state"]["selected_email"]
+
+            self.assertEqual(queue_item["internal_label"], "calendar-event")
+            self.assertEqual(selected["internal_label"], queue_item["internal_label"])
+            self.assertEqual(selected["classification"], queue_item["classification"])
+            self.assertEqual(selected["suggested_label"], queue_item["suggested_label"])
+
+    def test_live_review_queue_excludes_locally_stale_messages_no_longer_in_gmail_inbox(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            items = []
+            raw_messages = []
+            for message_id, subject in (("still-in-inbox", "Keep reviewing"), ("now-in-trash", "Deleted in Gmail")):
+                items.append(
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": message_id,
+                        "sender": "Store <store@example.com>",
+                        "subject": subject,
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                )
+                raw_messages.append(
+                    {
+                        "id": message_id,
+                        "internalDate": "1716027383000",
+                        "snippet": "Stored before the Gmail deletion.",
+                        "labelIds": ["INBOX"],
+                        "payload": {
+                            "headers": [
+                                {"name": "From", "value": "Store <store@example.com>"},
+                                {"name": "Subject", "value": subject},
+                                {"name": "Date", "value": "Sat, 18 May 2024 10:16:23 +0000"},
+                            ]
+                        },
+                    }
+                )
+            self._write_batch(storage_dir, "founder-test-batch-1", items, raw_messages)
+            gmail_client = SimpleNamespace(
+                search_message_ids=lambda query, max_results: ["still-in-inbox"]
+            )
+            app = GmailCompanionApp(
+                storage_dir,
+                gmail_client_factory=lambda *args, **kwargs: gmail_client,
+                live_inbox_reconciliation_enabled=True,
+            )
+
+            state = app.harness_state({})
+
+            self.assertEqual(
+                [item["message_id"] for item in state["needs_attention_items"]],
+                ["still-in-inbox"],
+            )
+            self.assertEqual(state["sidebar_state"]["daily_summary"]["needs_attention_count"], 1)
+
+    def test_review_cards_distinguish_same_subject_messages_by_received_time(self) -> None:
+        runtime_item = build_runtime_item(
+            {"provider": "gmail", "account_id": "founder-test", "batch_id": "batch-1"},
+            {
+                "message_id": "message-1",
+                "subject": "Repeated subject",
+                "sender": "sender@example.com",
+                "date": "2024-03-29T21:53:42Z",
+            },
+            {},
+            None,
+            None,
+        )
+        content_js = Path("extensions/gmail_companion/content.js").read_text()
+
+        self.assertEqual(runtime_item["received_at"], "2024-03-29T21:53:42Z")
+        self.assertIn("function reviewReceivedLabel", content_js)
+        self.assertIn('data-ea-review-received-at', content_js)
+        self.assertIn("reviewReceivedLabel(selected.received_at)", content_js)
+
     def test_home_surfaces_analytics_delivery_health_without_claiming_remote_ingestion(self) -> None:
         content_js = Path("extensions/gmail_companion/content.js").read_text()
 
@@ -48,6 +217,13 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("Analytics active", content_js)
         self.assertIn("No SDK delivery errors detected", content_js)
         self.assertIn("PostHog arrival is checked separately", content_js)
+
+    def test_extension_analytics_failure_cannot_block_product_actions(self) -> None:
+        analytics_js = Path("extensions/gmail_companion/analytics.js").read_text()
+
+        self.assertIn("Analytics is an observer and must never block the user workflow.", analytics_js)
+        self.assertIn("catch (_error)", analytics_js)
+        self.assertIn("return false;", analytics_js)
 
     def test_review_identity_does_not_collapse_distinct_gmail_messages_with_the_same_subject(self) -> None:
         content_js = Path("extensions/gmail_companion/content.js").read_text()
@@ -63,6 +239,75 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn('data-ea-action="confirm-handled-and-next"', content_js)
         self.assertIn("Looks right · Next", content_js)
         self.assertIn("confirmHandledAndOpenNext", content_js)
+        self.assertIn('confirmHandledButton.textContent = "Opening next…"', content_js)
+        self.assertIn("currentBelongsToActiveQueue ? activeSummaryFilter", content_js)
+        self.assertIn("Product actions must continue even when optional analytics is unavailable.", content_js)
+        self.assertIn('path: "/api/handled-review-acknowledge"', content_js)
+        self.assertIn("Threadwise will not offer this email again", content_js)
+
+    def test_current_email_apply_reconciles_an_uncertain_transport_result(self) -> None:
+        content_js = Path("extensions/gmail_companion/content.js").read_text()
+
+        self.assertIn("reconcileCurrentApplyAfterTransportFailure", content_js)
+        self.assertIn('type: "email-agent:get-state"', content_js)
+        self.assertIn('selected.details?.write_status === "applied"', content_js)
+        self.assertIn("sameMessage && appliedLabel === targetLabel && writeApplied", content_js)
+        self.assertIn("Threadwise confirmed the completed Gmail change after reconnecting.", content_js)
+
+    def test_opening_a_queue_email_in_gmail_keeps_the_review_context_pinned(self) -> None:
+        content_js = Path("extensions/gmail_companion/content.js").read_text()
+        refresh_body = content_js.split("function refreshSelection(force = false)", 1)[1].split(
+            "function asyncFollowUpIsWorking", 1
+        )[0]
+
+        self.assertIn("const context = chooseRefreshContext();", refresh_body)
+        self.assertNotIn("manualPreviewContext = null", refresh_body)
+        self.assertIn("if (manualPreviewContext)", content_js)
+        self.assertIn("return manualPreviewContext;", content_js)
+
+    def test_clicking_gmail_after_a_completed_queue_receipt_follows_the_new_email(self) -> None:
+        content_js = Path("extensions/gmail_companion/content.js").read_text()
+
+        self.assertIn("releaseCompletedQueuePreviewOnGmailClick(event)", content_js)
+        self.assertIn('[data-ea-selected-state="receipt"]', content_js)
+        self.assertIn('[data-ea-selected-state="teach-result-receipt"]', content_js)
+        self.assertIn("manualPreviewContext = null;", content_js)
+        self.assertIn("resetPerEmailInteraction();", content_js)
+        self.assertIn('document.addEventListener("click", documentClickListener, true);', content_js)
+
+    def test_explicit_home_survives_transient_gmail_identity_changes(self) -> None:
+        content_js = Path("extensions/gmail_companion/content.js").read_text()
+        home_body = content_js.split("function openThreadwiseHome(event)", 1)[1].split(
+            "function handleBrandToggle", 1
+        )[0]
+        refresh_body = content_js.split("function refreshSelection(force = false)", 1)[1].split(
+            "function asyncFollowUpIsWorking", 1
+        )[0]
+
+        self.assertIn("forcedHomeLiveContext = { ...selectedContext() };", home_body)
+        self.assertIn("lastLiveContext.page_url !== forcedHomeLiveContext.page_url", refresh_body)
+        self.assertNotIn("!contextsMatch(lastLiveContext, forcedHomeLiveContext)", refresh_body)
+
+    def test_every_successful_broader_correction_can_continue_the_review_queue(self) -> None:
+        content_js = Path("extensions/gmail_companion/content.js").read_text()
+        receipt_body = content_js.split('workspaceMode === "teach-result-receipt"', 1)[1].split(
+            'workspaceMode === "current-receipt"', 1
+        )[0]
+
+        self.assertIn("remainingNeedsAttentionItems().length > 0", receipt_body)
+        self.assertIn('data-ea-action="open-needs-attention"', receipt_body)
+        self.assertIn("Next email", receipt_body)
+        self.assertIn("Review queue complete.", receipt_body)
+
+    def test_completed_receipt_does_not_pin_the_previous_gmail_message(self) -> None:
+        content_js = Path("extensions/gmail_companion/content.js").read_text()
+        hold_body = content_js.split("function shouldHoldSelectedContext()", 1)[1].split(
+            "function hasTeachDraftChanges", 1
+        )[0]
+
+        self.assertIn('"previewing", "applying", "scope-confirmation"', hold_body)
+        self.assertIn("correctionInProgress", hold_body)
+        self.assertNotIn("hasTeachDraftChanges()", hold_body)
 
     def test_refining_a_rule_preserves_the_founder_note_instead_of_the_model_summary(self) -> None:
         content_js = Path("extensions/gmail_companion/content.js").read_text()
@@ -77,7 +322,7 @@ class GmailCompanionUiTests(unittest.TestCase):
             "items.find((item) => !currentMessageId || item.message_id !== currentMessageId) || items[0]",
             content_js,
         )
-        self.assertIn("No review emails remain. Refreshing Home", content_js)
+        self.assertIn('title: filter === "needs_attention_items" ? "Review queue complete"', content_js)
 
     def test_new_gmail_selection_leaves_home_for_a_reading_transition_immediately(self) -> None:
         content_js = Path("extensions/gmail_companion/content.js").read_text()
@@ -632,6 +877,61 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertEqual(selected["classification"], "EA/Newsletter")
         self.assertEqual(selected["all_classifications"], ["EA/Newsletter", "EA/Travel", "EA/Personal"])
 
+    def test_selected_message_id_wins_over_newer_sender_subject_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            batches_dir = storage_dir / "batches"
+            batches_dir.mkdir(parents=True, exist_ok=True)
+            shared = {
+                "sender": '"return@amazon.com" <return@amazon.com>',
+                "subject": "Let us know how we did - Amazon Product Support",
+            }
+            (batches_dir / "founder-test-batch-1.json").write_text(
+                json.dumps(
+                    {
+                        "batch_id": "founder-test-batch-1",
+                        "provider": "gmail",
+                        "account_id": "founder-test",
+                        "items": [
+                            {
+                                **shared,
+                                "message_id": "older-exact-message",
+                                "review_state": "pending",
+                                "final_labels": [],
+                                "applied_labels": [],
+                            }
+                        ],
+                    }
+                )
+            )
+            (batches_dir / "founder-test-batch-2.json").write_text(
+                json.dumps(
+                    {
+                        "batch_id": "founder-test-batch-2",
+                        "provider": "gmail",
+                        "account_id": "founder-test",
+                        "items": [
+                            {
+                                **shared,
+                                "message_id": "newer-same-subject",
+                                "review_state": "reviewed",
+                                "final_labels": ["spam-low-value"],
+                                "applied_labels": ["spam-low-value"],
+                            }
+                        ],
+                    }
+                )
+            )
+
+            selected = build_selected_email_state(
+                storage_dir,
+                [],
+                {"provider": "gmail", "message_id": "older-exact-message", **shared},
+            )
+
+        self.assertEqual(selected["message_id"], "older-exact-message")
+        self.assertEqual(selected["status"], "needs-attention")
+
     def test_companion_rendering_module_preserves_shared_helpers(self) -> None:
         self.assertEqual(escape_html('<a href="x">Tom & Jerry</a>'), "&lt;a href=&quot;x&quot;&gt;Tom &amp; Jerry&lt;/a&gt;")
         self.assertEqual(server_origin("127.0.0.1:8021"), "http://127.0.0.1:8021")
@@ -918,11 +1218,11 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("teachDraft.targetLabel = previewTargetLabel", content_js)
         self.assertIn("teachPreview?.target_label || teachPreview?.proposed_label", content_js)
         self.assertIn("manualPreviewOriginContext = lastLiveContext ? { ...lastLiveContext } : null", content_js)
-        self.assertIn("!contextsMatch(lastLiveContext, manualPreviewOriginContext)", content_js)
+        self.assertIn("releaseCompletedQueuePreviewOnGmailClick", content_js)
         self.assertIn("function asyncFollowUpIsWorking", content_js)
         self.assertIn("payload === previousPayload && !asyncFollowUpIsWorking()", content_js)
         self.assertIn("liveNeedsAttentionCount", content_js)
-        self.assertIn("No review emails remain. Refreshing Home", content_js)
+        self.assertIn('title: filter === "needs_attention_items" ? "Review queue complete"', content_js)
         self.assertNotIn('selectedDecisionConflict = "Choose a label before previewing the change."', content_js)
         self.assertIn("Fix this email only updates the message you are reviewing.", content_js)
         self.assertIn("Queue unsubscribe review", content_js)
@@ -3325,22 +3625,24 @@ class GmailCompanionUiTests(unittest.TestCase):
                 ],
             )
 
-            result = GmailCompanionApp(
+            app = GmailCompanionApp(
                 storage_dir,
                 gmail_client_factory=lambda account_id, credentials_dir, client_secret_path, required_scope: gmail_client,
-            ).teach_apply(
-                {
-                    "selected_context": {
-                        "provider": "gmail",
-                        "message_id": "gmail-live-001",
-                        "subject": "Interview update",
-                        "sender": "notifications@ashbyhq.com",
-                    },
-                    "target_label": "job-related",
-                    "note": "Ashby interview workflow messages should be job-related and kept visible.",
-                    "mode": "save-future-rule",
-                }
             )
+            with patch.object(app, "_start_teach_apply_follow_up_refresh"):
+                result = app.teach_apply(
+                    {
+                        "selected_context": {
+                            "provider": "gmail",
+                            "message_id": "gmail-live-001",
+                            "subject": "Interview update",
+                            "sender": "notifications@ashbyhq.com",
+                        },
+                        "target_label": "job-related",
+                        "note": "Ashby interview workflow messages should be job-related and kept visible.",
+                        "mode": "save-future-rule",
+                    }
+                )
 
             candidate_payload = json.loads((storage_dir / "candidate_changes.json").read_text())
             batch_one = json.loads((storage_dir / "batches" / "founder-test-batch-1.json").read_text())

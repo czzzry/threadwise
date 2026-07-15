@@ -51,6 +51,7 @@ class GmailBatchReviewStoreTests(unittest.TestCase):
                                 "date": "2024-06-19T08:00:00Z",
                                 "interpretation": "Informational message with no confident category.",
                                 "applied_labels": [],
+                                "final_labels": [],
                                 "near_misses": [],
                                 "confidence_band": "low",
                                 "review_state": "pending",

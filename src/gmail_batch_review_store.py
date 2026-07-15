@@ -12,14 +12,14 @@ from src.trusted_sender_store import TrustedSenderStore
 class GmailBatchReviewStore(StoredBatchReviewStore):
     def __init__(self, storage_dir: Path) -> None:
         super().__init__(storage_dir)
+        self._classifier = FixtureBatchClassifier(
+            fixtures_dir=self._storage_dir,
+            trusted_personal_senders=TrustedSenderStore(self._storage_dir).load_or_rebuild(),
+        )
 
     def to_review_queue(self, stored_batch: dict) -> dict:
         items = stored_batch["items"]
         if stored_batch.get("raw_messages"):
-            classifier = FixtureBatchClassifier(
-                fixtures_dir=self._storage_dir,
-                trusted_personal_senders=TrustedSenderStore(self._storage_dir).load_or_rebuild(),
-            )
             existing_items = {item["message_id"]: item for item in stored_batch["items"]}
             normalized_messages = [
                 normalize_gmail_message(
@@ -29,9 +29,9 @@ class GmailBatchReviewStore(StoredBatchReviewStore):
                 )
                 for raw_message in stored_batch["raw_messages"]
             ]
-            reclassified_queue = classifier.classify_messages(stored_batch["batch_id"], normalized_messages)
+            reclassified_queue = self._classifier.classify_messages(stored_batch["batch_id"], normalized_messages)
             normalized_by_id = {message["message_id"]: message for message in normalized_messages}
-            rules = TeachableRuleMemory(teachable_rules_path(self._storage_dir)).list_rules()
+            rules = self.load_rules()
             items = []
             for item in reclassified_queue["items"]:
                 existing_item = existing_items.get(item["message_id"])
@@ -55,6 +55,22 @@ class GmailBatchReviewStore(StoredBatchReviewStore):
             "account_id": stored_batch["account_id"],
             "items": items,
         }
+
+    def load_rules(self) -> list:
+        return TeachableRuleMemory(teachable_rules_path(self._storage_dir)).list_rules()
+
+    def refresh_pending_item(self, stored_batch: dict, item: dict, raw_message: dict, *, rules: list | None = None) -> dict:
+        normalized = normalize_gmail_message(stored_batch["account_id"], raw_message, item)
+        refreshed = self._classifier.classify_messages(stored_batch["batch_id"], [normalized])["items"][0]
+        message_id = refreshed["message_id"]
+        active_rules = rules if rules is not None else self.load_rules()
+        applicable_rules = [
+            rule
+            for rule in active_rules
+            if not is_rule_message_excluded(self._storage_dir, rule=rule.to_dict(), message_id=message_id)
+        ]
+        refreshed = apply_teachable_rules(refreshed, normalized, applicable_rules)
+        return self._merge_pending_item(refreshed, item)
 
     def _merge_existing_item(self, refreshed_item: dict, existing_item: dict) -> dict:
         merged_item = dict(existing_item)

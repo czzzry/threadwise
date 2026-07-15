@@ -6,7 +6,7 @@ import urllib.request
 from pathlib import Path
 
 from src.gmail_batch_review_store import GmailBatchReviewStore
-from src.gmail_companion_state import find_matching_item
+from src.gmail_companion_state import artifact_path_sort_key, find_matching_item
 from src.label_taxonomy import CANONICAL_LABEL_ORDER, gmail_label_name
 from src.candidate_change_store import CandidateChange, CandidateChangeStore
 from src.local_artifacts import candidate_changes_path, load_json, memory_proposals_path, teachable_rules_path
@@ -100,12 +100,14 @@ def build_sidebar_teach_preview(
     *,
     selected_context: dict,
     target_label: str,
+    target_label_explicit: bool = True,
     note: str,
     scope: str,
     include_existing_impact: bool = True,
 ) -> dict:
     current = load_selected_storage_item(storage_dir, selected_context)
-    intent = interpret_teaching_intent(current=current, target_label=target_label, note=note, scope=scope)
+    intent_label = target_label if target_label_explicit or not note.strip() else ""
+    intent = interpret_teaching_intent(current=current, target_label=intent_label, note=note, scope=scope)
     target_label = intent["target_label"]
     semantic_rule = build_semantic_future_rule(
         current=current,
@@ -596,6 +598,9 @@ def build_semantic_future_rule(*, current: dict, target_label: str, note: str, s
         rule_type = "sender"
         rule_type_label = "Sender rule"
         matching_basis = ["sender", "stored Threadwise data"]
+    excluded_pattern = semantic_pattern.get("excluded_pattern") or ""
+    if excluded_pattern:
+        plain_rule = f"{plain_rule.rstrip('.')} — excluding {excluded_pattern}."
     confidence = "tentative" if not semantic_pattern["has_strong_signal"] else "medium"
     clarifying_question = ""
     if not semantic_pattern["has_strong_signal"] and note:
@@ -614,6 +619,7 @@ def build_semantic_future_rule(*, current: dict, target_label: str, note: str, s
         "matching_basis": matching_basis,
         "include_families": semantic_pattern.get("include_families", []),
         "exclude_families": semantic_pattern.get("exclude_families", []),
+        "excluded_pattern": excluded_pattern,
         "cross_sender": cross_sender,
     }
 
@@ -994,14 +1000,16 @@ def resolve_target_label(target_label: str, note: str) -> str:
 
 def interpret_teaching_intent(*, current: dict, target_label: str, note: str, scope: str) -> dict:
     explicit_label = (target_label or "").strip()
+    note_label = infer_explicit_target_label_from_note(note) if not explicit_label else ""
+    authoritative_label = explicit_label or note_label
     llm_client = OpenAITeachingIntentClient.from_env()
-    if llm_client is not None and (note or not explicit_label):
+    if llm_client is not None and (note or not authoritative_label):
         llm_intent = normalize_llm_teaching_intent(
             llm_client.interpret(
                 {
                     "note": note,
                     "scope": scope,
-                    "explicit_target_label": explicit_label,
+                    "explicit_target_label": authoritative_label,
                     "current_subject": current.get("subject") or "",
                     "current_sender": current.get("sender") or "",
                     "current_snippet": current.get("snippet") or "",
@@ -1012,17 +1020,17 @@ def interpret_teaching_intent(*, current: dict, target_label: str, note: str, sc
             )
         )
         if llm_intent:
-            if explicit_label:
-                llm_intent["target_label"] = explicit_label
+            if authoritative_label:
+                llm_intent["target_label"] = authoritative_label
             return {**llm_intent, "source": "llm"}
 
-    if explicit_label:
+    if authoritative_label:
         return {
-            "target_label": explicit_label,
+            "target_label": authoritative_label,
             "semantic_pattern": "",
             "cross_sender": False,
-            "confidence": "low",
-            "source": "explicit-label",
+            "confidence": "high" if note_label else "low",
+            "source": "explicit-note-label" if note_label else "explicit-label",
         }
 
     inferred = infer_target_label_from_note(note)
@@ -1095,6 +1103,32 @@ def infer_target_label_from_note(note: str) -> str:
     return ""
 
 
+def infer_explicit_target_label_from_note(note: str) -> str:
+    text = " ".join(str(note or "").lower().replace("_", " ").split())
+    label_patterns = (
+        ("spam-low-value", r"\b(?:low[- ]?value|spam|junk)\b"),
+        ("promotions", r"\bpromotions?\b"),
+        ("shopping-order", r"\b(?:orders?|shopping order)\b"),
+        ("receipt-billing", r"\b(?:receipts?|billing)\b"),
+        ("account-security", r"\b(?:account security|security alert)\b"),
+        ("newsletter", r"\bnewsletters?\b"),
+        ("job-related", r"\b(?:job[- ]related|work email)\b"),
+        ("reply-needed", r"\b(?:reply[- ]needed|needs? (?:a )?reply)\b"),
+        ("travel", r"\btravel\b"),
+        ("personal", r"\bpersonal\b"),
+    )
+    matches: list[str] = []
+    for label, pattern in label_patterns:
+        for match in re.finditer(pattern, text):
+            prefix = text[max(0, match.start() - 18):match.start()]
+            if re.search(r"(?:\bnot|isn['’]?t|is not|don['’]?t|do not)\s+$", prefix):
+                continue
+            matches.append(label)
+            break
+    unique_matches = list(dict.fromkeys(matches))
+    return unique_matches[0] if len(unique_matches) == 1 else ""
+
+
 def apply_label_to_message(
     storage_dir: Path,
     *,
@@ -1164,30 +1198,36 @@ def load_items_for_gmail_write_through(
     mode: str,
     preview_matches: list[dict],
 ) -> dict[str, list[dict]]:
+    if mode == "save-future-rule":
+        return {}
     preview_message_ids = {
         match.get("message_id")
         for match in preview_matches
         if match.get("message_id")
     }
-    batches: dict[str, list[dict]] = {}
     batches_dir = storage_dir / "batches"
     if not batches_dir.exists():
-        return batches
-    for batch_path in sorted(batches_dir.glob("*.json")):
+        return {}
+
+    target_message_ids = {selected_message_id}
+    if mode in {"matching-existing", "apply-included"}:
+        target_message_ids.update(preview_message_ids)
+
+    # A message can appear in several stored review snapshots. Gmail must be
+    # mutated once, using the newest decision, rather than replaying every
+    # historical classification for the same provider message.
+    authoritative_items: dict[str, tuple[str, dict]] = {}
+    for batch_path in sorted(batches_dir.glob("*.json"), key=artifact_path_sort_key):
         batch = load_json(batch_path)
         batch_id = batch.get("batch_id", "")
-        matched_items = []
-        if mode == "save-future-rule":
-            continue
         for item in batch.get("items", []):
             message_id = item.get("message_id")
-            if message_id == selected_message_id:
-                matched_items.append(item)
-                continue
-            if mode in {"matching-existing", "apply-included"} and message_id in preview_message_ids:
-                matched_items.append(item)
-        if matched_items:
-            batches[batch_id] = matched_items
+            if message_id in target_message_ids:
+                authoritative_items[message_id] = (batch_id, item)
+
+    batches: dict[str, list[dict]] = {}
+    for batch_id, item in authoritative_items.values():
+        batches.setdefault(batch_id, []).append(item)
     return batches
 
 

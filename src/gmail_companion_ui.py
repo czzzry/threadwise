@@ -24,6 +24,7 @@ from src.attention_rules import (
 )
 from src.gmail_writer import MockGmailLabelWriter
 from src.gmail_message_normalizer import normalize_gmail_message
+from src.handled_review_store import HandledReviewStore
 from src.label_taxonomy import CANONICAL_LABEL_ORDER, gmail_label_name
 from src.live_gmail_client import GMAIL_MODIFY_SCOPE
 from src.local_artifacts import write_json_artifact
@@ -86,6 +87,8 @@ HEALTH_STATUS_SERVICE_NAME = "Threadwise Gmail Companion"
 HARNESS_STATE_CACHE_SECONDS = 120.0
 HEALTH_STATUS_CACHE_SECONDS = 5.0
 COMPANION_DATA_CACHE_SECONDS = 120.0
+LIVE_INBOX_RECONCILIATION_CACHE_SECONDS = 30.0
+LIVE_INBOX_RECONCILIATION_MAX_MESSAGES = 10_000
 INBOX_BACKFILL_CONFIRM_THRESHOLD = 200
 INBOX_BACKFILL_ESTIMATE_CAP = 25
 THREADWISE_APP_VERSION = "0.1.0"
@@ -165,6 +168,7 @@ def create_server(
         storage_dir=storage_dir,
         gmail_write_through_enabled=gmail_write_through_enabled,
         gmail_check_enabled=gmail_check_enabled,
+        live_inbox_reconciliation_enabled=gmail_check_enabled,
     )
 
     class Handler(BaseHTTPRequestHandler):
@@ -193,6 +197,7 @@ class GmailCompanionApp:
         gmail_client_factory=None,
         gmail_write_through_enabled: bool = True,
         gmail_check_enabled: bool = True,
+        live_inbox_reconciliation_enabled: bool = False,
         gmail_run_runner=None,
         attention_model_client: object | None = None,
         analytics: ProductAnalytics | None = None,
@@ -203,16 +208,19 @@ class GmailCompanionApp:
         self._gmail_client_factory = gmail_client_factory or default_gmail_client_factory
         self._gmail_write_through_enabled = gmail_write_through_enabled
         self._gmail_check_enabled = gmail_check_enabled
+        self._live_inbox_reconciliation_enabled = live_inbox_reconciliation_enabled
         self._gmail_run_runner = gmail_run_runner
         self._attention_model_client = attention_model_client
         self._analytics = analytics or ProductAnalytics.from_environment()
         self._analytics_distinct_ids = AnonymousDistinctIdStore(storage_dir)
         self._unsubscribe_store = UnsubscribeInventoryStore(storage_dir)
+        self._handled_review_store = HandledReviewStore(storage_dir)
         self._harness_state_cache: dict[str, tuple[float, dict]] = {}
         self._harness_state_lock = threading.Lock()
         self._health_storage_cache: tuple[float, dict] | None = None
         self._health_storage_lock = threading.Lock()
         self._runtime_payload_cache: tuple[float, dict] | None = None
+        self._live_inbox_ids_cache: tuple[float, set[str]] | None = None
         self._daily_summary_cache: tuple[float, dict] | None = None
         self._unsubscribe_candidates_cache: tuple[float, list[dict]] | None = None
         self._companion_data_lock = threading.Lock()
@@ -256,6 +264,11 @@ class GmailCompanionApp:
             return
 
         if handler.command == "GET" and parsed.path == "/unsubscribe-review":
+            self._capture_workflow_event(
+                handler,
+                "unsubscribe review opened",
+                {"surface": "gmail_companion"},
+            )
             encoded = self.render_unsubscribe_review_page(parse_qs(parsed.query)).encode("utf-8")
             handler.send_response(HTTPStatus.OK)
             handler.send_header("Content-Type", "text/html; charset=utf-8")
@@ -333,9 +346,17 @@ class GmailCompanionApp:
         if handler.command == "POST" and parsed.path == "/api/teach-preview":
             try:
                 payload = self._read_json_body(handler)
-                response = self.teach_preview_initial(payload)
+                response = self.teach_preview_initial(
+                    payload,
+                    analytics_distinct_id=self._analytics_distinct_id_from_request(handler),
+                )
                 return self._write_json(handler, HTTPStatus.OK, response)
             except (KeyError, ValueError, HTTPException) as exc:
+                self._capture_workflow_event(
+                    handler,
+                    "teach/fix failed",
+                    {"surface": "gmail_companion", "error_category": "invalid_request"},
+                )
                 return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
 
         if handler.command == "POST" and parsed.path == "/api/teach-preview-impact":
@@ -344,6 +365,11 @@ class GmailCompanionApp:
                 response = self.teach_preview_impact(payload)
                 return self._write_json(handler, HTTPStatus.OK, response)
             except (KeyError, ValueError, HTTPException) as exc:
+                self._capture_workflow_event(
+                    handler,
+                    "teach/fix failed",
+                    {"surface": "gmail_companion", "error_category": "teaching_model_error"},
+                )
                 return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
 
         if handler.command == "POST" and parsed.path == "/api/teach-apply":
@@ -355,6 +381,11 @@ class GmailCompanionApp:
                 )
                 return self._write_json(handler, HTTPStatus.OK, response)
             except (KeyError, ValueError, HTTPException) as exc:
+                self._capture_workflow_event(
+                    handler,
+                    "teach/fix failed",
+                    {"surface": "gmail_companion", "error_category": "provider_write_error"},
+                )
                 return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
 
         if handler.command == "POST" and parsed.path == "/api/analytics/capture":
@@ -366,6 +397,14 @@ class GmailCompanionApp:
                     properties=payload["properties"],
                 )
                 return self._write_json(handler, HTTPStatus.ACCEPTED, {"captured": captured})
+            except (KeyError, ValueError, HTTPException) as exc:
+                return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+
+        if handler.command == "POST" and parsed.path == "/api/handled-review-acknowledge":
+            try:
+                payload = self._read_json_body(handler)
+                response = self.acknowledge_handled_review(payload)
+                return self._write_json(handler, HTTPStatus.OK, response)
             except (KeyError, ValueError, HTTPException) as exc:
                 return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
 
@@ -396,7 +435,10 @@ class GmailCompanionApp:
         if handler.command == "POST" and parsed.path == "/api/unsubscribe-candidates/selections":
             try:
                 payload = self._read_json_body(handler)
-                response = self.save_unsubscribe_selections(payload)
+                response = self.save_unsubscribe_selections(
+                    payload,
+                    analytics_distinct_id=self._analytics_distinct_id_from_request(handler),
+                )
                 return self._write_json(handler, HTTPStatus.OK, response)
             except (KeyError, ValueError, HTTPException) as exc:
                 return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
@@ -470,6 +512,33 @@ class GmailCompanionApp:
         if supplied:
             return self._analytics_distinct_ids.remember(supplied)
         return self._analytics_distinct_ids.get_or_create()
+
+    def _capture_workflow_event(
+        self,
+        handler: BaseHTTPRequestHandler | None,
+        event: str,
+        properties: dict[str, object],
+        distinct_id: str | None = None,
+    ) -> None:
+        """Capture coarse workflow telemetry without allowing analytics to break the product."""
+        try:
+            distinct_id = distinct_id or (
+                self._analytics_distinct_id_from_request(handler)
+                if handler is not None
+                else self._analytics_distinct_ids.get_or_create()
+            )
+            self._analytics.capture(
+                distinct_id=distinct_id,
+                event=event,
+                properties={
+                    "app_version": THREADWISE_APP_VERSION,
+                    "workflow_version": ANALYTICS_WORKFLOW_VERSION,
+                    "source": "companion_service",
+                    **properties,
+                },
+            )
+        except Exception:
+            return
 
     def _write_json(self, handler: BaseHTTPRequestHandler, status: HTTPStatus, payload: dict) -> None:
         encoded = json.dumps(payload).encode("utf-8")
@@ -558,9 +627,44 @@ class GmailCompanionApp:
                 created_at, payload = self._runtime_payload_cache
                 if now - created_at <= COMPANION_DATA_CACHE_SECONDS:
                     return payload
-            payload = build_companion_runtime_payload(self._storage_dir)
+            payload = build_companion_runtime_payload(
+                self._storage_dir,
+                allowed_review_message_ids=self._cached_live_inbox_message_ids(),
+            )
             self._runtime_payload_cache = (time.monotonic(), payload)
             return payload
+
+    def _cached_live_inbox_message_ids(self) -> set[str] | None:
+        if not self._live_inbox_reconciliation_enabled:
+            return None
+        now = time.monotonic()
+        if self._live_inbox_ids_cache is not None:
+            created_at, message_ids = self._live_inbox_ids_cache
+            if now - created_at <= LIVE_INBOX_RECONCILIATION_CACHE_SECONDS:
+                return message_ids
+        latest_batch = load_latest_batch(self._storage_dir) or {}
+        account_id = str(latest_batch.get("account_id") or "")
+        if not account_id:
+            return None
+        try:
+            gmail_client = self._gmail_client_factory(
+                account_id,
+                self._credentials_dir,
+                self._client_secret_path,
+                GMAIL_MODIFY_SCOPE,
+            )
+            message_ids = {
+                str(message_id)
+                for message_id in gmail_client.search_message_ids(
+                    "in:inbox",
+                    LIVE_INBOX_RECONCILIATION_MAX_MESSAGES,
+                )
+                if message_id
+            }
+        except Exception:
+            return None
+        self._live_inbox_ids_cache = (time.monotonic(), message_ids)
+        return message_ids
 
     def _cached_daily_summary(self) -> dict:
         now = time.monotonic()
@@ -639,6 +743,7 @@ class GmailCompanionApp:
     def _invalidate_companion_caches(self) -> None:
         with self._companion_data_lock:
             self._runtime_payload_cache = None
+            self._live_inbox_ids_cache = None
             self._daily_summary_cache = None
             self._unsubscribe_candidates_cache = None
         with self._harness_state_lock:
@@ -705,17 +810,65 @@ class GmailCompanionApp:
     def _build_harness_state(self, selected_context: dict | None) -> dict:
         runtime = self._cached_runtime_payload()
         items = runtime.get("items", [])
+        unacknowledged_items = [item for item in items if not self._handled_review_store.is_acknowledged(item)]
         selected_context = selected_context or {}
         sidebar_state = self.sidebar_state(selected_context)
         sidebar_state["daily_summary"] = runtime.get("daily_summary") or sidebar_state.get("daily_summary") or {}
+        selected_email = dict(sidebar_state.get("selected_email") or {})
+        selected_message_id = str(selected_context.get("message_id") or "")
+        runtime_selected = next(
+            (
+                item
+                for item in [
+                    *(runtime.get("needs_attention_items") or []),
+                    *(runtime.get("items") or []),
+                ]
+                if str(item.get("message_id") or "") == selected_message_id
+            ),
+            None,
+        )
+        if runtime_selected is not None:
+            for field in (
+                "internal_label",
+                "suggested_label",
+                "classification",
+                "status",
+                "status_label",
+                "action_reason",
+                "reason",
+            ):
+                if runtime_selected.get(field) is not None:
+                    selected_email[field] = runtime_selected[field]
+        selected_email["handled_review_acknowledged"] = self._handled_review_store.is_acknowledged(selected_email)
+        sidebar_state["selected_email"] = selected_email
         return {
             "selected_context": selected_context,
             "sidebar_state": sidebar_state,
-            "recent_items": items[:24],
+            "recent_items": unacknowledged_items[:24],
             "needs_attention_items": list(runtime.get("needs_attention_items") or [])[:12],
-            "auto_handled_items": [item for item in items if item.get("status") == "auto-handled"][:12],
-            "kept_visible_items": [item for item in items if item.get("status") in {"kept-visible", "auto-labeled"}][:12],
+            "auto_handled_items": [item for item in unacknowledged_items if item.get("status") == "auto-handled"][:12],
+            "kept_visible_items": [item for item in unacknowledged_items if item.get("status") in {"kept-visible", "auto-labeled"}][:12],
             "analytics_status": self._analytics.delivery_status(),
+        }
+
+    def acknowledge_handled_review(self, payload: dict) -> dict:
+        selected_context = dict(payload.get("selected_context") or {})
+        selected_email = self.sidebar_state(selected_context).get("selected_email") or {}
+        if not selected_email.get("found"):
+            raise ValueError("Selected email is not available for handled review.")
+        if selected_email.get("status") not in {"auto-handled", "kept-visible", "auto-labeled"}:
+            raise ValueError("Selected email is not a completed handled item.")
+        decision = self._handled_review_store.acknowledge(
+            provider=selected_email.get("provider") or selected_context.get("provider") or "gmail",
+            account_id=selected_email.get("account_id") or selected_context.get("account_id") or "",
+            message_id=selected_email.get("message_id") or selected_context.get("message_id") or "",
+            batch_id=selected_email.get("batch_id") or "",
+        )
+        self._invalidate_companion_caches()
+        return {
+            "acknowledged": True,
+            "decision": decision,
+            "harness_state": self.harness_state(selected_context),
         }
 
     def _with_live_understanding_state(self, payload: dict, selected_context: dict) -> dict:
@@ -732,7 +885,18 @@ class GmailCompanionApp:
     def teach_preview(self, payload: dict) -> dict:
         return self._finish_teach_preview_impact(self._build_teach_preview(payload))
 
-    def teach_preview_initial(self, payload: dict) -> dict:
+    def teach_preview_initial(
+        self,
+        payload: dict,
+        *,
+        analytics_distinct_id: str | None = None,
+    ) -> dict:
+        self._capture_workflow_event(
+            None,
+            "teach/fix flow started",
+            {"surface": "gmail_companion"},
+            distinct_id=analytics_distinct_id,
+        )
         preview = self._build_teach_preview(payload, include_existing_impact=False)
         preview["inbox_backfill"] = {
             "state": "working",
@@ -743,6 +907,12 @@ class GmailCompanionApp:
             "query": "",
             "matches": [],
         }
+        self._capture_workflow_event(
+            None,
+            "teach/fix preview shown",
+            {"surface": "gmail_companion", "preview_outcome": "ready"},
+            distinct_id=analytics_distinct_id,
+        )
         return preview
 
     def teach_preview_impact(self, payload: dict) -> dict:
@@ -763,6 +933,7 @@ class GmailCompanionApp:
             self._storage_dir,
             selected_context=selected_context,
             target_label=target_label,
+            target_label_explicit=bool(payload.get("target_label_explicit", True)),
             note=note,
             scope=scope,
             include_existing_impact=include_existing_impact,
@@ -798,6 +969,14 @@ class GmailCompanionApp:
         note = (payload.get("note") or "").strip()
         scope = payload.get("scope") or "sender"
         mode = payload["mode"]
+        retry_count = payload.get("retry_count", 0)
+        if isinstance(retry_count, int) and retry_count > 0:
+            self._capture_workflow_event(
+                None,
+                "teach/fix retry clicked",
+                {"surface": "gmail_companion", "retry_count": min(retry_count, 100)},
+                distinct_id=analytics_distinct_id,
+            )
         included_message_ids = payload.get("included_message_ids") or []
         if not isinstance(included_message_ids, list) or any(
             not isinstance(message_id, str) or not message_id.strip()
@@ -832,6 +1011,12 @@ class GmailCompanionApp:
             write_through_summary,
         )
         self._start_teach_apply_follow_up_refresh(selected_context)
+        self._capture_workflow_event(
+            None,
+            "teach/fix completed",
+            {"surface": "gmail_companion", "flow_outcome": "completed"},
+            distinct_id=analytics_distinct_id,
+        )
         refreshed = self._fast_sidebar_state(selected_context)
         return {
             "acknowledgment": self._teach_apply_acknowledgment(teaching_result, write_through_summary),
@@ -969,7 +1154,12 @@ class GmailCompanionApp:
             "sidebar_state": refreshed,
         }
 
-    def save_unsubscribe_selections(self, payload: dict) -> dict:
+    def save_unsubscribe_selections(
+        self,
+        payload: dict,
+        *,
+        analytics_distinct_id: str | None = None,
+    ) -> dict:
         candidate_keys = payload.get("candidate_keys")
         selected_candidate_keys = payload.get("selected_candidate_keys")
         if not isinstance(candidate_keys, list) or not isinstance(selected_candidate_keys, list):
@@ -994,6 +1184,16 @@ class GmailCompanionApp:
         saved = self._unsubscribe_store.save_selection_states(candidate_keys, selected_candidate_keys)
         self._invalidate_companion_caches()
         selected_count = sum(1 for candidate in saved if candidate.get("decision_state") == "selected")
+        self._capture_workflow_event(
+            None,
+            "unsubscribe review completed",
+            {
+                "surface": "gmail_companion",
+                "reviewed_count_bucket": bucket_count(len(candidate_keys)),
+                "review_outcome": "saved" if selected_count else "cleared",
+            },
+            distinct_id=analytics_distinct_id,
+        )
         return {
             "acknowledgment": (
                 f"Saved {selected_count} queued selection{'s' if selected_count != 1 else ''}. "
@@ -1738,6 +1938,7 @@ class GmailCompanionApp:
     let lastSelectedMessageId = "";
     let affectedReviewOpen = false;
     let applyInFlight = false;
+    let teachRetryCount = 0;
     let lastApplyMode = "";
     let futureLearningSaved = false;
     let draftLabel = "";
@@ -2734,6 +2935,7 @@ class GmailCompanionApp:
 
     function resetTeachState(clearDraft) {
       teachPreview = null;
+      teachRetryCount = 0;
       previousTeachPreview = null;
       teachResult = null;
       teachError = "";
@@ -2802,6 +3004,7 @@ class GmailCompanionApp:
           note: draftNote,
           scope: "sender",
           mode,
+          retry_count: teachRetryCount,
         });
         if (payload.error) {
           throw new Error(payload.error);
@@ -2829,6 +3032,7 @@ class GmailCompanionApp:
         renderSelectedPanel();
       } finally {
         applyInFlight = false;
+        teachRetryCount = 0;
       }
     }
 
@@ -2977,6 +3181,7 @@ class GmailCompanionApp:
       }
       const retryCurrentChangeButton = event.target.closest("[data-action='retry-current-change']");
       if (retryCurrentChangeButton) {
+        teachRetryCount += 1;
         teachError = "";
         applyTeach("current-only");
         return;
@@ -3007,11 +3212,13 @@ class GmailCompanionApp:
       }
       const retryFutureLearningButton = event.target.closest("[data-action='retry-future-learning']");
       if (retryFutureLearningButton) {
+        teachRetryCount += 1;
         applyTeach("save-future-rule");
         return;
       }
       const retryBroadApplyButton = event.target.closest("[data-action='retry-broad-apply']");
       if (retryBroadApplyButton) {
+        teachRetryCount += 1;
         applyTeach(lastApplyMode || "apply-included");
         return;
       }

@@ -19,6 +19,54 @@ from src.teachable_rule_memory import TeachableRule, TeachableRuleMemory, matchi
 
 
 class TeachingLoopTests(unittest.TestCase):
+    def test_prefilled_label_does_not_override_explicit_label_in_founder_note(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                [
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "welcome-email",
+                        "sender": "AF Marcotec <shop@marcotec-shop.de>",
+                        "subject": "Willkommen bei AF Marcotec",
+                        "snippet": "Welcome to our shop.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                ],
+            )
+            client = Mock()
+            client.interpret.return_value = {
+                "target_label": "promotions",
+                "semantic_pattern": "welcome emails from online shops",
+                "cross_sender": False,
+                "confidence": "high",
+                "rationale": "Marketing welcome message.",
+            }
+
+            with patch("src.teaching_loop.OpenAITeachingIntentClient.from_env", return_value=client):
+                preview = build_sidebar_teach_preview(
+                    storage_dir,
+                    selected_context={"provider": "gmail", "message_id": "welcome-email"},
+                    target_label="promotions",
+                    target_label_explicit=False,
+                    note="low value welcome email. I don't care for these",
+                    scope="sender",
+                )
+
+            self.assertEqual(preview["selected_label_after"], ["spam-low-value"])
+            self.assertEqual(preview["target_label_name"], "EA/LowValue")
+            self.assertEqual(preview["structured_rule"]["semantic_pattern"], "welcome emails from online shops")
+            client.interpret.assert_called_once()
+            llm_payload = client.interpret.call_args.args[0]
+            self.assertEqual(llm_payload["explicit_target_label"], "spam-low-value")
+            self.assertEqual(llm_payload["current_subject"], "Willkommen bei AF Marcotec")
+            self.assertEqual(llm_payload["current_snippet"], "Welcome to our shop.")
+
     def test_teaching_intent_client_has_a_bounded_ui_timeout(self) -> None:
         response = Mock()
         response.read.return_value = json.dumps(
@@ -150,6 +198,167 @@ class TeachingLoopTests(unittest.TestCase):
             self.assertIn("purchase is on its way", llm_payload["current_body"])
             self.assertEqual(preview["selected_label_after"], ["shopping-order"])
             self.assertIn("shipment", preview["semantic_rule"]["semantic_pattern"])
+
+    def test_work_label_preserves_explicit_workspace_administration_boundary(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                [
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "slack-retention",
+                        "sender": "Slack <no-reply@slack.com>",
+                        "subject": "Content older than one year will be deleted",
+                        "snippet": "Your free workspace content retention policy is changing.",
+                        "body": "Workspace messages and files older than one year will be deleted.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                ],
+            )
+            note = (
+                "This is an administrative policy notice for my Slack workspace about content retention. "
+                "Label it Work because it requires a workplace decision; it is not a general Slack promotion."
+            )
+
+            with patch("src.teaching_loop.OpenAITeachingIntentClient.from_env", return_value=None):
+                preview = build_sidebar_teach_preview(
+                    storage_dir,
+                    selected_context={"provider": "gmail", "message_id": "slack-retention"},
+                    target_label="job-related",
+                    note=note,
+                    scope="sender",
+                )
+
+        self.assertEqual(preview["selected_label_after"], ["job-related"])
+        self.assertIn("workspace-policy", preview["plain_english_rule"])
+        self.assertNotIn("recruiter", preview["plain_english_rule"])
+        self.assertEqual(preview["semantic_rule"]["include_families"], ["work-admin"])
+        self.assertIn("promotions", preview["semantic_rule"]["exclude_families"])
+
+    def test_promotions_preview_exposes_discount_rule_exclusions_in_plain_language(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                [
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "hunting-discount",
+                        "sender": "BookYourHunt <no-reply@bookyourhunt.com>",
+                        "subject": "[10% off] It's time to hunt!",
+                        "snippet": "Your personal discount on a trip booking.",
+                        "body": "Use this coupon during checkout before October 2.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                ],
+            )
+            note = (
+                "This is a commercial discount offer for booking a hunting trip. "
+                "Treat future marketing discounts and coupon offers like this as Promotions, "
+                "but do not include booking confirmations, receipts, itinerary changes, or direct support messages."
+            )
+
+            with patch("src.teaching_loop.OpenAITeachingIntentClient.from_env", return_value=None):
+                preview = build_sidebar_teach_preview(
+                    storage_dir,
+                    selected_context={"provider": "gmail", "message_id": "hunting-discount"},
+                    target_label="promotions",
+                    note=note,
+                    scope="sender",
+                )
+
+        plain_rule = preview["plain_english_rule"].lower()
+        self.assertIn("discount", plain_rule)
+        self.assertIn("excluding", plain_rule)
+        self.assertIn("receipt", plain_rule)
+        self.assertIn("travel", plain_rule)
+        self.assertIn("support", plain_rule)
+        self.assertEqual(preview["semantic_rule"]["include_families"], ["promotions"])
+        self.assertEqual(
+            set(preview["semantic_rule"]["exclude_families"]),
+            {"receipts", "travel", "support"},
+        )
+
+    def test_newsletter_preview_keeps_account_security_exclusion_phrase(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                [{
+                    "message_id": "weekly-digest",
+                    "sender": "Quincy Larson <quincy@freecodecamp.org>",
+                    "subject": "This week's coding resources",
+                    "snippet": "Five courses and tutorials worth your time.",
+                    "body": "A recurring editorial digest of coding resources.",
+                    "review_state": "pending",
+                    "final_labels": [],
+                    "applied_labels": [],
+                }],
+            )
+            note = (
+                "Label this kind of weekly educational roundup Newsletter. "
+                "Do not include account or security alerts, donation receipts, or direct support messages."
+            )
+
+            with patch("src.teaching_loop.OpenAITeachingIntentClient.from_env", return_value=None):
+                preview = build_sidebar_teach_preview(
+                    storage_dir,
+                    selected_context={"provider": "gmail", "message_id": "weekly-digest"},
+                    target_label="newsletter",
+                    note=note,
+                    scope="sender",
+                )
+
+        self.assertEqual(
+            set(preview["semantic_rule"]["exclude_families"]),
+            {"account-security", "receipts", "support"},
+        )
+        self.assertIn("account, security", preview["plain_english_rule"].lower())
+
+    def test_zoom_account_rule_keeps_meeting_and_webinar_exclusions(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                [{
+                    "message_id": "zoom-code",
+                    "sender": "Zoom <no-reply@zoom.us>",
+                    "subject": "Code for signing in to Zoom",
+                    "snippet": "We detected an unusual sign-in.",
+                    "body": "Use this code to sign in. It expires soon.",
+                    "review_state": "pending",
+                    "final_labels": [],
+                    "applied_labels": [],
+                }],
+            )
+            note = (
+                "Zoom sign-in codes and password-reset confirmations are Account security notices. "
+                "Exclude meeting invitations, webinars, and promotional offers."
+            )
+
+            with patch("src.teaching_loop.OpenAITeachingIntentClient.from_env", return_value=None):
+                preview = build_sidebar_teach_preview(
+                    storage_dir,
+                    selected_context={"provider": "gmail", "message_id": "zoom-code"},
+                    target_label="account-security",
+                    note=note,
+                    scope="sender",
+                )
+
+        self.assertIn("meetings", preview["semantic_rule"]["exclude_families"])
+        self.assertIn("meeting invitations", preview["plain_english_rule"].lower())
+        self.assertIn("webinar", preview["plain_english_rule"].lower())
 
     def test_account_lifecycle_lesson_stays_narrow_when_llm_suggests_broad_account_rule(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -327,7 +536,8 @@ class TeachingLoopTests(unittest.TestCase):
             }
             self.assertEqual(affected_ids, {"dhl-shipment"})
             self.assertIn("shipment", preview["plain_english_rule"].lower())
-            self.assertNotIn("account, security", preview["plain_english_rule"].lower())
+            self.assertIn("account, security", preview["plain_english_rule"].lower())
+            self.assertIn("account-security", preview["semantic_rule"]["exclude_families"])
 
     def test_low_value_privacy_note_is_not_reduced_to_generic_low_value_mail(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1316,6 +1526,169 @@ class TeachingLoopTests(unittest.TestCase):
             )
 
             self.assertEqual(selected, {})
+
+    def test_insight_pest_semantic_lesson_finds_existing_same_sender_report(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                [
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "insight-selected",
+                        "sender": "service@insightpestsolutions.net",
+                        "subject": "Service Inspection Report",
+                        "snippet": "Your report is attached.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    },
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "insight-existing",
+                        "sender": "service@insightpestsolutions.net",
+                        "subject": "Service Inspection Report",
+                        "snippet": "Open the attached inspection report.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    },
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "insight-unrelated",
+                        "sender": "service@insightpestsolutions.net",
+                        "subject": "Your appointment reminder",
+                        "snippet": "Your scheduled appointment is tomorrow.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    },
+                ],
+            )
+            client = Mock()
+            client.interpret.return_value = {
+                "target_label": "spam-low-value",
+                "semantic_pattern": (
+                    "Emails from unknown or unrequested service providers sending inspection reports "
+                    "or similar attachments, indicating potential phishing or unwanted messages"
+                ),
+                "cross_sender": False,
+                "confidence": "high",
+                "rationale": "Unrequested inspection report.",
+            }
+
+            with patch("src.teaching_loop.OpenAITeachingIntentClient.from_env", return_value=client):
+                preview = build_sidebar_teach_preview(
+                    storage_dir,
+                    selected_context={"provider": "gmail", "message_id": "insight-selected"},
+                    target_label="spam-low-value",
+                    note=(
+                        "This looks like phishing because I have never used this service. Be careful with "
+                        "reports I have not requested and block this sender in the future."
+                    ),
+                    scope="sender",
+                )
+
+            self.assertEqual(
+                {item["message_id"] for item in preview["impact"]["matching_existing_items"]},
+                {"insight-existing"},
+            )
+
+    def test_find_my_device_semantic_lesson_finds_existing_same_sender_update(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                [
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "google-selected",
+                        "sender": "Google <no-reply@accounts.google.com>",
+                        "subject": "Find My Device network update",
+                        "snippet": "Your Android devices will soon join the network.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    },
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "google-existing",
+                        "sender": "Google <no-reply@accounts.google.com>",
+                        "subject": "Find My Device network update",
+                        "snippet": "An informational update about the network.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    },
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "google-unrelated",
+                        "sender": "Google <no-reply@accounts.google.com>",
+                        "subject": "Critical security alert",
+                        "snippet": "A new sign-in was detected on your account.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    },
+                ],
+            )
+            client = Mock()
+            client.interpret.return_value = {
+                "target_label": "spam-low-value",
+                "semantic_pattern": (
+                    "emails from Google's Find My Device about network updates that are informational "
+                    "but do not require user action or attention"
+                ),
+                "cross_sender": False,
+                "confidence": "high",
+                "rationale": "Informational product update.",
+            }
+
+            with patch("src.teaching_loop.OpenAITeachingIntentClient.from_env", return_value=client):
+                preview = build_sidebar_teach_preview(
+                    storage_dir,
+                    selected_context={"provider": "gmail", "message_id": "google-selected"},
+                    target_label="spam-low-value",
+                    note="I do not care about this update, so treat it as low value.",
+                    scope="sender",
+                )
+
+            self.assertEqual(
+                {item["message_id"] for item in preview["impact"]["matching_existing_items"]},
+                {"google-existing"},
+            )
+
+    def test_current_only_write_through_uses_latest_copy_of_repeated_message(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-9",
+                [{"message_id": "repeated-message", "final_labels": ["spam-low-value"]}],
+            )
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-10",
+                [{"message_id": "repeated-message", "final_labels": ["job-related"]}],
+            )
+
+            selected = load_items_for_gmail_write_through(
+                storage_dir,
+                selected_message_id="repeated-message",
+                mode="current-only",
+                preview_matches=[],
+            )
+
+        self.assertEqual(list(selected), ["founder-test-batch-10"])
+        self.assertEqual(selected["founder-test-batch-10"][0]["final_labels"], ["job-related"])
 
     def _write_batch(self, storage_dir: Path, batch_id: str, items: list[dict]) -> None:
         batch_dir = storage_dir / "batches"

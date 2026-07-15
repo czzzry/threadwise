@@ -158,6 +158,7 @@ def build_selected_email_state(storage_dir: Path, unsubscribe_candidates: list[d
         "details": build_selected_email_details(item, write_status, inbox_status, candidate),
         "subject": item.get("subject") or selected_context.get("subject") or "",
         "sender": item.get("sender") or selected_context.get("sender") or "",
+        "received_at": item.get("date") or "",
         "unsubscribe_available": unsubscribe_available,
         "unsubscribe": build_unsubscribe_detail(candidate, storage_dir) if candidate else None,
         **selected_email_understanding_state(selected_context),
@@ -709,6 +710,7 @@ def build_runtime_item(
         "subject": item.get("subject", ""),
         "subject_key": (item.get("subject") or "").strip().lower(),
         "sender": item.get("sender", ""),
+        "received_at": item.get("date", ""),
         "sender_address": sender_address,
         "internal_label": labels[0] if labels else None,
         "suggested_label": suggested_label_for_item(item),
@@ -720,9 +722,35 @@ def build_runtime_item(
         "unsubscribe_available": unsubscribe_candidate is not None,
     }
 
-def build_companion_runtime_payload(storage_dir: Path) -> dict:
+def build_companion_runtime_payload(
+    storage_dir: Path,
+    *,
+    allowed_review_message_ids: set[str] | None = None,
+) -> dict:
+    from src.gmail_batch_review_store import GmailBatchReviewStore
+
     items = []
     batches_dir = storage_dir / "batches"
+    review_store = GmailBatchReviewStore(storage_dir)
+    active_rules = review_store.load_rules()
+    refreshed_items: dict[str, dict] = {}
+
+    def refresh_item_if_needed(batch: dict, item: dict, raw_message: dict) -> dict:
+        message_id = str(item.get("message_id") or "")
+        if message_id in refreshed_items:
+            return refreshed_items[message_id]
+        labels = item.get("final_labels") or item.get("applied_labels") or []
+        if raw_message and not labels and item.get("review_state") != "reviewed":
+            refreshed_items[message_id] = review_store.refresh_pending_item(
+                batch,
+                item,
+                raw_message,
+                rules=active_rules,
+            )
+        else:
+            refreshed_items[message_id] = item
+        return refreshed_items[message_id]
+
     if batches_dir.exists():
         recent_batch_paths = sorted(
             batches_dir.glob("*.json"), key=artifact_path_sort_key, reverse=True
@@ -734,6 +762,7 @@ def build_companion_runtime_payload(storage_dir: Path) -> dict:
             inbox_status_map = load_json_or_default(inbox_removal_status_path(storage_dir, batch_id), {})
             raw_messages = {message.get("id"): message for message in batch.get("raw_messages", [])}
             for item in batch.get("items", [])[:25]:
+                item = refresh_item_if_needed(batch, item, raw_messages.get(item.get("message_id"), {}))
                 items.append(build_runtime_item(
                     batch,
                     item,
@@ -761,6 +790,9 @@ def build_companion_runtime_payload(storage_dir: Path) -> dict:
                 if not message_id or message_id in seen_message_ids:
                     continue
                 seen_message_ids.add(message_id)
+                if allowed_review_message_ids is not None and message_id not in allowed_review_message_ids:
+                    continue
+                item = refresh_item_if_needed(batch, item, raw_messages.get(message_id, {}))
                 runtime_item = build_runtime_item(
                     batch,
                     item,
@@ -828,7 +860,7 @@ def find_matching_item(storage_dir: Path, selected_context: dict) -> dict | None
         for item in batch.get("items", []):
             if message_id and item.get("message_id") == message_id:
                 return {"batch": batch, "item": item, "raw_message": raw_messages.get(item.get("message_id"), {})}
-            if normalized_subject and normalized_selected_sender:
+            if not message_id and normalized_subject and normalized_selected_sender:
                 sender = normalized_sender_email(item.get("sender") or "")
                 subject = (item.get("subject") or "").strip().lower()
                 if sender == normalized_selected_sender and subject == normalized_subject:
