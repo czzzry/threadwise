@@ -257,6 +257,21 @@ def suggested_label_for_item(item: dict) -> str | None:
             return candidate
     return None
 
+
+def review_reason_for_item(item: dict, status: str) -> str:
+    reason = str(item.get("interpretation") or item.get("snippet") or "")
+    suggested_label = suggested_label_for_item(item)
+    if (
+        status == "needs-attention"
+        and suggested_label
+        and (not reason or "no confident category" in reason.lower())
+    ):
+        return (
+            f"Threadwise suggests {gmail_label_name(suggested_label)} from the email content "
+            "and is waiting for your confirmation."
+        )
+    return reason
+
 def find_unsubscribe_candidate(candidates: list[dict], sender: str) -> dict | None:
     sender_address = normalized_sender_email(sender or "")
     if not sender_address:
@@ -718,7 +733,7 @@ def build_runtime_item(
         "status": status,
         "status_label": status_label,
         "action_reason": action_reason_for_status(status),
-        "reason": item.get("interpretation") or item.get("snippet") or "",
+        "reason": review_reason_for_item(item, status),
         "unsubscribe_available": unsubscribe_candidate is not None,
     }
 

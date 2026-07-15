@@ -138,6 +138,8 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertEqual(selected["internal_label"], queue_item["internal_label"])
             self.assertEqual(selected["classification"], queue_item["classification"])
             self.assertEqual(selected["suggested_label"], queue_item["suggested_label"])
+            self.assertIn("EA/Calendar", selected["reason"])
+            self.assertNotIn("no confident category", selected["reason"])
 
     def test_live_review_queue_excludes_locally_stale_messages_no_longer_in_gmail_inbox(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1939,6 +1941,47 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertIn(":focus-visible", page)
             self.assertIn("padding:clamp(8px,3vw,28px)", page)
             self.assertIn("main > .card", page)
+
+    def test_daily_dashboard_uses_live_inbox_reconciliation_for_review_count_and_items(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "still-in-inbox",
+                        "sender": "Current <current@example.com>",
+                        "subject": "Current review email",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    },
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "now-in-trash",
+                        "sender": "Deleted <deleted@example.com>",
+                        "subject": "Deleted review email",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    },
+                ],
+            )
+            app = GmailCompanionApp(storage_dir, live_inbox_reconciliation_enabled=True)
+
+            with patch.object(app, "_cached_live_inbox_message_ids", return_value={"still-in-inbox"}):
+                page = app.render_daily_dashboard_page()
+
+            needs_review = page.split('data-dashboard-section="needs-review"', 1)[1].split(
+                'data-dashboard-section="activity"', 1
+            )[0]
+            self.assertIn("Current review email", needs_review)
+            self.assertNotIn("Deleted review email", needs_review)
+            self.assertIn("<strong>1</strong><span>need attention</span>", page)
 
     def test_daily_dashboard_page_renders_attention_now_and_possible_from_daily_report(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

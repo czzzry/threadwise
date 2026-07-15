@@ -3689,7 +3689,7 @@ class GmailCompanionApp:
 </html>"""
 
     def render_daily_dashboard_page(self) -> str:
-        payload = build_companion_runtime_payload(self._storage_dir)
+        payload = self._cached_runtime_payload()
         summary = payload.get("daily_summary", {})
         attention_summary = build_daily_attention_summary(self._storage_dir)
         run_status = load_gmail_dashboard_run_status(self._storage_dir)
