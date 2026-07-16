@@ -319,9 +319,17 @@ def apply_sidebar_teaching(
     preview_matches = filter_excluded_preview_matches(storage_dir, proposal.to_dict(), preview_matches)
     if mode == "apply-included":
         included_ids = {str(message_id) for message_id in included_message_ids or [] if message_id}
+        current_account_id = str(current.get("account_id") or "")
         preview_matches = [
-            match for match in preview_matches
-            if str(match.get("message_id") or "") in included_ids
+            item
+            for item in _deduplicate_messages(
+                load_storage_items(storage_dir, current.get("provider", "gmail"))
+            )
+            if str(item.get("message_id") or "") in included_ids
+            and (
+                not current_account_id
+                or str(item.get("account_id") or "") == current_account_id
+            )
         ]
 
     current_changed = False

@@ -1259,6 +1259,68 @@ class TeachingLoopTests(unittest.TestCase):
             self.assertEqual(batch["items"][2]["final_labels"], ["job-related"])
             self.assertEqual(len(candidates), 1)
 
+    def test_apply_included_persists_an_explicitly_reviewed_local_message_even_when_semantic_match_is_narrower(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                [
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "shipping-update",
+                        "sender": "Shop <orders@example.com>",
+                        "subject": "Your shipment is on its way",
+                        "snippet": "Tracking number 123",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    },
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "order-confirmation",
+                        "sender": "Shop <orders@example.com>",
+                        "subject": "Order confirmed",
+                        "snippet": "Thank you for your purchase",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    },
+                ],
+            )
+
+            with patch(
+                "src.teaching_loop.interpret_teaching_intent",
+                return_value={
+                    "target_label": "shopping-order",
+                    "semantic_pattern": "shipment tracking updates",
+                    "cross_sender": False,
+                    "confidence": "high",
+                    "source": "test",
+                },
+            ):
+                result = apply_sidebar_teaching(
+                    storage_dir,
+                    selected_context={
+                        "provider": "gmail",
+                        "message_id": "shipping-update",
+                        "sender": "orders@example.com",
+                        "subject": "Your shipment is on its way",
+                    },
+                    target_label="shopping-order",
+                    note="Shipment tracking updates from this shop are Orders.",
+                    scope="sender",
+                    mode="apply-included",
+                    included_message_ids=["order-confirmation"],
+                )
+
+            batch = json.loads((storage_dir / "batches" / "founder-test-batch-1.json").read_text())
+            self.assertEqual(result["matched_existing_count"], 1)
+            self.assertEqual(batch["items"][0]["final_labels"], ["shopping-order"])
+            self.assertEqual(batch["items"][1]["final_labels"], ["shopping-order"])
+
     def test_future_only_activates_the_rule_after_explicit_user_confirmation(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
