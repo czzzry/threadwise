@@ -54,7 +54,9 @@ class TrustedSenderStore:
             for sender_email, count in sorted(counts.items())
             if count >= 2
         ]
-        self._store_path().write_text(
+        store_path = self._store_path()
+        store_path.parent.mkdir(parents=True, exist_ok=True)
+        store_path.write_text(
             json.dumps(
                 {
                     "trusted_personal_senders": trusted_entries,

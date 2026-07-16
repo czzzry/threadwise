@@ -4,9 +4,19 @@ import unittest
 from pathlib import Path
 
 from src.gmail_batch_review_store import GmailBatchReviewStore
+from src.trusted_sender_store import TrustedSenderStore
 
 
 class GmailBatchReviewStoreTests(unittest.TestCase):
+    def test_trusted_sender_rebuild_creates_a_missing_storage_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir) / "missing" / "storage"
+
+            entries = TrustedSenderStore(storage_dir).rebuild_from_batches()
+
+            self.assertEqual(entries, [])
+            self.assertTrue((storage_dir / "trusted_personal_senders.json").exists())
+
     def test_to_review_queue_refreshes_context_from_raw_messages_and_pending_labels(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)

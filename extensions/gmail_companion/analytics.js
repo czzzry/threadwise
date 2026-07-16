@@ -30,24 +30,29 @@
   function capture(event, eventProperties = {}) {
     const eventKeys = EVENT_KEYS[event];
     if (!eventKeys) return false;
-    const properties = {
-      app_version: chrome.runtime.getManifest().version,
-      workflow_version: WORKFLOW_VERSION,
-      source: "extension",
-      ...eventProperties,
-    };
-    const expectedKeys = new Set([...COMMON_KEYS, ...eventKeys]);
-    if (Object.keys(properties).some((key) => !expectedKeys.has(key))) return false;
-    if ([...expectedKeys].some((key) => properties[key] === undefined)) return false;
-    if (Object.values(properties).some((value) => typeof value === "string" && SENSITIVE_VALUE.test(value))) {
+    try {
+      const properties = {
+        app_version: chrome.runtime.getManifest().version,
+        workflow_version: WORKFLOW_VERSION,
+        source: "extension",
+        ...eventProperties,
+      };
+      const expectedKeys = new Set([...COMMON_KEYS, ...eventKeys]);
+      if (Object.keys(properties).some((key) => !expectedKeys.has(key))) return false;
+      if ([...expectedKeys].some((key) => properties[key] === undefined)) return false;
+      if (Object.values(properties).some((value) => typeof value === "string" && SENSITIVE_VALUE.test(value))) {
+        return false;
+      }
+      chrome.runtime.sendMessage({
+        type: "threadwise:analytics",
+        event,
+        properties,
+      });
+      return true;
+    } catch (_error) {
+      // Analytics is an observer and must never block the user workflow.
       return false;
     }
-    chrome.runtime.sendMessage({
-      type: "threadwise:analytics",
-      event,
-      properties,
-    });
-    return true;
   }
 
   function openExtension() {
