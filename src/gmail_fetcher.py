@@ -39,6 +39,18 @@ class _GmailInboxClientAdapter:
         return self._gmail_client.get_message(message_id)
 
 
+class _GmailSearchClientAdapter:
+    def __init__(self, gmail_client: object, query: str) -> None:
+        self._gmail_client = gmail_client
+        self._query = query
+
+    def list_messages(self, max_results: int) -> list[str]:
+        return self._gmail_client.search_message_ids(self._query, max_results)
+
+    def get_message(self, message_id: str) -> dict:
+        return self._gmail_client.get_message(message_id)
+
+
 class GmailBatchFetcher(StoredBatchFetcher):
     def __init__(
         self,
@@ -60,3 +72,32 @@ class GmailBatchFetcher(StoredBatchFetcher):
 
 class MockGmailBatchFetcher(GmailBatchFetcher):
     pass
+
+
+class GmailSearchBatchFetcher(StoredBatchFetcher):
+    """Fetch a bounded Gmail search result, including previously processed mail.
+
+    The query itself is the moving completion boundary (for example, archived
+    messages without any EA label). Once a batch is labeled it naturally drops
+    out of the next search, so the global Inbox processed ledger must not hide it.
+    """
+
+    def __init__(
+        self,
+        gmail_client: object,
+        storage_dir: Path,
+        query: str,
+        classifier: FixtureBatchClassifier | None = None,
+    ) -> None:
+        if not str(query or "").strip():
+            raise ValueError("Gmail search batch requires a query.")
+        super().__init__(
+            mailbox_client=_GmailSearchClientAdapter(gmail_client, query.strip()),
+            storage_dir=storage_dir,
+            provider="gmail",
+            normalize_message=normalize_gmail_message,
+            classifier=classifier,
+        )
+
+    def fetch_gmail_batch(self, account_id: str, batch_size: int) -> dict | None:
+        return self.fetch_batch(account_id, batch_size, reprocess_matching=True)

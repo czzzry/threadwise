@@ -23,6 +23,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--credentials-dir", type=Path, default=DEFAULT_CREDENTIALS_DIR)
     parser.add_argument("--client-secret-path", type=Path)
     parser.add_argument("--batch-size", type=int, default=50)
+    parser.add_argument(
+        "--query",
+        default="",
+        help="Process a bounded Gmail search instead of only Inbox mail; matching messages may be reprocessed.",
+    )
     return parser
 
 
@@ -60,6 +65,7 @@ def main(
             batch_size=args.batch_size,
             storage_dir=storage_dir,
             gmail_client=gmail_client,
+            query=args.query,
         )
         if result is None:
             output.write("No new messages found.\n")

@@ -23,8 +23,8 @@ class StoredBatchFetcher:
         self._normalize_message_fn = normalize_message
         self._classifier = classifier
 
-    def fetch_batch(self, account_id: str, batch_size: int) -> dict | None:
-        processed_keys = self._load_processed_keys()
+    def fetch_batch(self, account_id: str, batch_size: int, *, reprocess_matching: bool = False) -> dict | None:
+        processed_keys = set() if reprocess_matching else self._load_processed_keys()
         candidate_message_ids = self._mailbox_client.list_messages(batch_size + len(processed_keys))
 
         selected_messages: list[dict] = []

@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from src.gmail_automation import (
@@ -11,6 +12,8 @@ from src.gmail_automation import (
     summarize_inbox_removal_candidates,
 )
 from src.gmail_writer import MockGmailLabelClient
+from src.local_artifacts import teachable_rules_path
+from src.teachable_rule_memory import TeachableRuleMemory, parse_teaching_instruction
 
 
 class FakeDailyRunGmailClient(MockGmailLabelClient):
@@ -57,6 +60,42 @@ class FakeAttentionModelClient:
 
 
 class GmailAutomationTests(unittest.TestCase):
+    def test_daily_run_applies_saved_teachable_rules_before_auto_approval(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            rule = parse_teaching_instruction("Anything from friend@example.com should be personal.")
+            TeachableRuleMemory(teachable_rules_path(storage_dir)).save_rule(
+                replace(rule, providers=("gmail",))
+            )
+            client = FakeDailyRunGmailClient(
+                [
+                    {
+                        "id": "saved-rule-match",
+                        "internalDate": "1777504007000",
+                        "snippet": "Hello there.",
+                        "labelIds": ["INBOX"],
+                        "payload": {
+                            "headers": [
+                                {"name": "From", "value": "Friend <friend@example.com>"},
+                                {"name": "Subject", "value": "Hello"},
+                            ]
+                        },
+                    }
+                ]
+            )
+
+            result = run_daily_gmail_automation(
+                account_id="founder-test",
+                batch_size=1,
+                storage_dir=storage_dir,
+                gmail_client=client,
+            )
+
+            self.assertEqual(result.label_write_count, 1)
+            stored = json.loads((storage_dir / "batches" / f"{result.batch_id}.json").read_text())
+            self.assertEqual(stored["items"][0]["final_labels"], ["personal"])
+            self.assertEqual(stored["items"][0]["review_action"], "auto-approve")
+
     def test_auto_approve_items_skips_already_written_auto_approved_messages(self) -> None:
         items = [
             {

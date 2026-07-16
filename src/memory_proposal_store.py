@@ -9,7 +9,7 @@ from src.sender_utils import normalized_sender_email
 from src.teachable_rule_memory import TeachableRule, TeachableRuleMemory, preview_teachable_rule
 
 
-SUPPORTED_MEMORY_SCOPES = {"sender", "sender-cluster", "global"}
+SUPPORTED_MEMORY_SCOPES = {"sender", "sender-domain", "sender-cluster", "global"}
 
 
 @dataclass(frozen=True)
@@ -235,7 +235,15 @@ def rule_from_memory_proposal(proposal: MemoryProposal, existing_count: int) -> 
         enabled=True,
         source_examples=proposal.source_examples,
         scope=proposal.scope,
-        match_mode="sender" if proposal.scope == "sender" else "sender-cluster" if proposal.scope == "sender-cluster" else "term-any",
+        match_mode=(
+            "sender"
+            if proposal.scope == "sender"
+            else "sender-domain"
+            if proposal.scope == "sender-domain"
+            else "sender-cluster"
+            if proposal.scope == "sender-cluster"
+            else "term-any"
+        ),
         provenance={
             "proposal_id": proposal.id,
             "approval_status": "approved",
@@ -291,6 +299,8 @@ def _source_example(item: dict, provider: str) -> dict:
 def _terms_for_scope(scope: str, source_examples: tuple[dict, ...], explanation: str) -> list[str]:
     if scope == "sender":
         return _sender_terms(source_examples)
+    if scope == "sender-domain":
+        return _sender_domain_terms(source_examples)
     if scope == "sender-cluster":
         return _sender_terms(source_examples) + _subject_terms(source_examples)
     return _explanation_terms(explanation)
@@ -305,6 +315,15 @@ def _sender_terms(source_examples: tuple[dict, ...]) -> list[str]:
         if candidate and candidate not in terms:
             terms.append(candidate)
     return terms
+
+
+def _sender_domain_terms(source_examples: tuple[dict, ...]) -> list[str]:
+    domains = []
+    for sender in _sender_terms(source_examples):
+        domain = sender.rsplit("@", 1)[1] if "@" in sender else ""
+        if domain and domain not in domains:
+            domains.append(domain)
+    return domains
 
 
 def _subject_terms(source_examples: tuple[dict, ...]) -> list[str]:
@@ -334,6 +353,9 @@ def _instruction_for(scope: str, source_examples: tuple[dict, ...], label: str, 
     sender_text = ", ".join(_sender_terms(source_examples)) or "selected sender"
     if scope == "sender":
         return f"Anything from {sender_text} should be {label}."
+    if scope == "sender-domain":
+        domain_text = ", ".join(_sender_domain_terms(source_examples)) or "the selected sender domain"
+        return f"Anything from {domain_text} should be {label}."
     if scope == "sender-cluster":
         subject_text = ", ".join(_subject_terms(source_examples)[:3]) or "matching this sender cluster"
         return f"Anything from {sender_text} with subjects like '{subject_text}' should be {label}."

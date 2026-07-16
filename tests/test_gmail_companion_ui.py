@@ -3274,7 +3274,7 @@ class GmailCompanionUiTests(unittest.TestCase):
                 ],
             )
 
-            preview = GmailCompanionApp(storage_dir).teach_preview(
+            preview = GmailCompanionApp(storage_dir, gmail_write_through_enabled=False).teach_preview(
                 {
                     "selected_context": {
                         "provider": "gmail",
@@ -3298,6 +3298,161 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertEqual(preview["structured_rule"]["to_label"], "EA/Personal")
             self.assertEqual(preview["structured_rule"]["applies_to_existing_count"], 1)
             self.assertEqual(preview["impact"]["matching_existing_examples"][0]["labels_after"], ["personal"])
+
+    def test_domain_wide_low_value_instruction_matches_all_existing_domain_messages(self) -> None:
+        class LiveDomainClient(MockGmailLabelClient):
+            def search_message_ids(self, query: str, max_results: int) -> list[str]:
+                self.calls.append(("search_message_ids", query, max_results))
+                return ["bad-axe-current", "bad-axe-same-address", "bad-axe-other-address"]
+
+            def get_message(self, message_id: str) -> dict:
+                senders = {
+                    "bad-axe-same-address": "Martyna <badaxe@badaxe.pl>",
+                    "bad-axe-other-address": "Bookings <bookings@badaxe.pl>",
+                }
+                return {
+                    "id": message_id,
+                    "threadId": f"thread-{message_id}",
+                    "internalDate": "1718784000000",
+                    "snippet": "Unsolicited deposit request.",
+                    "labelIds": ["Label_14"],
+                    "payload": {
+                        "headers": [
+                            {"name": "From", "value": senders[message_id]},
+                            {"name": "Subject", "value": "BAD AXE deposit reminder"},
+                        ]
+                    },
+                }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "bad-axe-current",
+                        "sender": "Piotr <badaxe@badaxe.pl>",
+                        "subject": "Wizyta BAD AXE",
+                        "body": "Unsolicited reservation requiring a deposit.",
+                        "review_state": "reviewed",
+                        "final_labels": ["promotions"],
+                        "applied_labels": ["promotions"],
+                    },
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "bad-axe-same-address",
+                        "sender": "Martyna <badaxe@badaxe.pl>",
+                        "subject": "BAD AXE - przypomnienie o zadatku",
+                        "body": "A second unsolicited request for the same deposit.",
+                        "review_state": "reviewed",
+                        "final_labels": ["promotions"],
+                        "applied_labels": ["promotions"],
+                    },
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "bad-axe-other-address",
+                        "sender": "Bookings <bookings@badaxe.pl>",
+                        "subject": "Another payment request",
+                        "body": "Different wording from another address at the same domain.",
+                        "review_state": "reviewed",
+                        "final_labels": ["promotions"],
+                        "applied_labels": ["promotions"],
+                    },
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "unrelated-domain",
+                        "sender": "Bookings <bookings@example.com>",
+                        "subject": "Another payment request",
+                        "body": "Similar wording, but a different domain.",
+                        "review_state": "reviewed",
+                        "final_labels": ["promotions"],
+                        "applied_labels": ["promotions"],
+                    },
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "bad-axe-deleted",
+                        "sender": "Old record <old@badaxe.pl>",
+                        "subject": "Deleted from Gmail",
+                        "body": "This historical record no longer exists in the mailbox.",
+                        "review_state": "reviewed",
+                        "final_labels": ["promotions"],
+                        "applied_labels": ["promotions"],
+                    },
+                ],
+            )
+
+            with patch("src.teaching_loop.OpenAITeachingIntentClient.from_env", return_value=None):
+                preview = GmailCompanionApp(
+                    storage_dir,
+                    gmail_client_factory=lambda account_id, credentials_dir, client_secret_path, required_scope: LiveDomainClient(),
+                ).teach_preview(
+                    {
+                        "selected_context": {"provider": "gmail", "message_id": "bad-axe-current"},
+                        "target_label": "spam-low-value",
+                        "note": "All emails from this domain are phishing and should be lowvalue.",
+                    }
+                )
+
+            self.assertEqual(preview["semantic_rule"]["scope"], "sender-domain")
+            self.assertEqual(preview["semantic_rule"]["sender_domain"], "badaxe.pl")
+            self.assertEqual(preview["rule_type"], "sender-domain")
+            self.assertEqual(
+                {item["message_id"] for item in preview["impact"]["matching_existing_items"]},
+                {"bad-axe-same-address", "bad-axe-other-address"},
+            )
+
+            query = GmailCompanionApp(storage_dir)._build_gmail_backfill_query(
+                semantic_rule=preview["semantic_rule"],
+                current_subject=preview["selected_subject"],
+                current_sender=preview["selected_sender"],
+            )
+            self.assertEqual(query, "from:badaxe.pl")
+
+    def test_all_messages_from_exact_sender_is_not_narrowed_by_llm_semantics(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                items=[
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "contact-1",
+                        "sender": "Mary <mary@example.com>",
+                        "subject": "Hello",
+                        "body": "A personal note.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                ],
+            )
+            fake_intent = {
+                "target_label": "personal",
+                "semantic_pattern": "personal conversation and informal updates",
+                "cross_sender": False,
+                "confidence": "high",
+            }
+            with patch("src.teaching_loop.interpret_teaching_intent", return_value=fake_intent):
+                preview = GmailCompanionApp(storage_dir, gmail_write_through_enabled=False).teach_preview(
+                    {
+                        "selected_context": {"provider": "gmail", "message_id": "contact-1"},
+                        "target_label": "personal",
+                        "note": "All future emails from this exact sender are personal.",
+                    }
+                )
+
+            self.assertEqual(preview["rule_type"], "sender")
+            self.assertEqual(preview["semantic_rule"]["semantic_pattern"], "")
+            self.assertEqual(preview["plain_english_rule"], "Treat future messages from mary@example.com as EA/Personal.")
 
     def test_unsubscribe_select_current_queues_candidate(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

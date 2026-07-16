@@ -4,7 +4,7 @@ from pathlib import Path
 from src.daily_report import build_gmail_daily_report, write_daily_report
 from src.gmail_attention import DEFAULT_MAX_EVALUATED_MESSAGES, evaluate_gmail_attention
 from src.gmail_batch_review_store import GmailBatchReviewStore
-from src.gmail_fetcher import GmailBatchFetcher
+from src.gmail_fetcher import GmailBatchFetcher, GmailSearchBatchFetcher
 from src.gmail_writer import MockGmailLabelWriter
 from src.label_taxonomy import gmail_label_name
 from src.local_artifacts import load_json_or_default, write_status_path
@@ -189,14 +189,21 @@ def run_daily_gmail_automation(
     gmail_client,
     attention_model_client: object | None = None,
     attention_max_evaluated_messages: int = DEFAULT_MAX_EVALUATED_MESSAGES,
+    query: str = "",
 ) -> DailyGmailRunResult | None:
-    fetcher = GmailBatchFetcher(gmail_client=gmail_client, storage_dir=storage_dir)
+    fetcher = (
+        GmailSearchBatchFetcher(gmail_client=gmail_client, storage_dir=storage_dir, query=query)
+        if query.strip()
+        else GmailBatchFetcher(gmail_client=gmail_client, storage_dir=storage_dir)
+    )
     review_queue = fetcher.fetch_gmail_batch(account_id, batch_size)
     if review_queue is None:
         return None
 
     batch_store = GmailBatchReviewStore(storage_dir)
     stored_batch = batch_store.load_batch(review_queue["batch_id"])
+    refreshed_queue = batch_store.to_review_queue(stored_batch)
+    stored_batch["items"] = refreshed_queue["items"]
     write_status_map = load_write_status_map(storage_dir, review_queue["batch_id"])
     auto_items = auto_approve_items(stored_batch["items"], write_status_map)
     batch_store.persist_reviewed_items(review_queue["batch_id"], stored_batch["items"])

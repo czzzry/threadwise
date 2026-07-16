@@ -247,6 +247,10 @@ def build_semantic_boundary(
 def semantic_rule_matches_message(rule: dict, message: dict) -> bool:
     sender = normalized_sender_email(message.get("sender") or "") or ""
     rule_sender = normalized_sender_email(rule.get("sender") or "") or str(rule.get("sender") or "").lower()
+    if rule.get("scope") == "sender-domain" or rule.get("rule_type") == "sender-domain":
+        sender_domain = sender.rsplit("@", 1)[1] if "@" in sender else ""
+        rule_domain = str(rule.get("sender_domain") or "").strip().lower().lstrip("@")
+        return bool(rule_domain and sender_domain == rule_domain)
     if not rule.get("cross_sender") and rule_sender and sender != rule_sender:
         return False
 

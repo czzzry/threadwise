@@ -177,7 +177,7 @@ def parse_teaching_instruction(
 
 
 def matching_rules_for_message(message: dict, rules: list[TeachableRule]) -> list[TeachableRule]:
-    provider = (message.get("provider") or "").lower()
+    provider = (message.get("provider") or message.get("source") or "").lower()
     return [
         rule
         for rule in rules
@@ -302,10 +302,12 @@ def _message_text(message: dict) -> str:
 
 def _rule_matches_message(rule: TeachableRule, message: dict) -> bool:
     semantic_rule = (rule.provenance or {}).get("semantic_rule") or {}
-    if semantic_rule.get("semantic_pattern"):
+    if semantic_rule.get("semantic_pattern") or semantic_rule.get("scope") == "sender-domain":
         return semantic_rule_matches_message(semantic_rule, message)
     if rule.match_mode == "sender":
         return _sender_rule_matches(rule, message)
+    if rule.match_mode == "sender-domain":
+        return _sender_domain_rule_matches(rule, message)
     if rule.match_mode == "sender-cluster":
         return _shadow_rule_matches_family(rule, message)
     if rule.id.startswith("shadow-") and rule.source_examples:
@@ -317,6 +319,16 @@ def _rule_matches_message(rule: TeachableRule, message: dict) -> bool:
 def _sender_rule_matches(rule: TeachableRule, message: dict) -> bool:
     message_sender = _normalized_sender_key(message.get("sender", ""))
     return any(_normalized_sender_key(example.get("sender", "")) == message_sender for example in rule.source_examples)
+
+
+def _sender_domain_rule_matches(rule: TeachableRule, message: dict) -> bool:
+    message_sender = _normalized_sender_key(message.get("sender", ""))
+    message_domain = message_sender.rsplit("@", 1)[1] if "@" in message_sender else ""
+    return any(
+        "@" in _normalized_sender_key(example.get("sender", ""))
+        and _normalized_sender_key(example.get("sender", "")).rsplit("@", 1)[1] == message_domain
+        for example in rule.source_examples
+    )
 
 
 def _shadow_rule_matches_family(rule: TeachableRule, message: dict) -> bool:

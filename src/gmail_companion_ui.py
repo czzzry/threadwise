@@ -943,6 +943,11 @@ class GmailCompanionApp:
         preview["inbox_backfill"] = self._build_inbox_backfill_preview(preview)
         remote_matches = list(preview["inbox_backfill"].get("matches") or [])
         existing_items = list(preview.get("impact", {}).get("matching_existing_items") or [])
+        if preview["inbox_backfill"].get("available"):
+            # Gmail is authoritative for actionable backfill. Local snapshots are
+            # retained as learning history, but may contain messages since deleted
+            # from the mailbox and must not inflate the preview or be mutated.
+            existing_items = []
         combined_by_id = {
             str(item.get("message_id") or ""): item
             for item in [*existing_items, *remote_matches]
@@ -1477,14 +1482,10 @@ class GmailCompanionApp:
             }
         semantic_rule = preview.get("semantic_rule") or {}
         selected_id = str(preview.get("selected_message_id") or "")
-        local_ids = {
-            str(item.get("message_id") or "")
-            for item in preview.get("impact", {}).get("matching_existing_items") or []
-        }
         seen: set[str] = set()
         inspect_ids: list[str] = []
         for message_id in candidate_ids[:INBOX_BACKFILL_ESTIMATE_CAP]:
-            if not message_id or message_id == selected_id or message_id in local_ids or message_id in seen:
+            if not message_id or message_id == selected_id or message_id in seen:
                 continue
             seen.add(message_id)
             inspect_ids.append(message_id)
@@ -1603,8 +1604,11 @@ class GmailCompanionApp:
 
     def _build_gmail_backfill_query(self, *, semantic_rule: dict, current_subject: str, current_sender: str) -> str:
         sender = (semantic_rule or {}).get("sender") or current_sender or ""
+        sender_domain = str((semantic_rule or {}).get("sender_domain") or "").strip().lower().lstrip("@")
         semantic_pattern = (semantic_rule or {}).get("semantic_pattern") or ""
         rule_type = (semantic_rule or {}).get("rule_type") or ""
+        if rule_type == "sender-domain" and sender_domain:
+            return f"from:{sender_domain}"
         include_clauses, exclude_clauses = semantic_gmail_search_clauses(semantic_rule)
         subject_keywords = semantic_search_keywords(semantic_rule) or self._query_keywords_for_semantic_pattern(semantic_pattern, current_subject)
         parts: list[str] = []

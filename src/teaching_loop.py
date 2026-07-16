@@ -587,6 +587,44 @@ def build_semantic_future_rule(*, current: dict, target_label: str, note: str, s
     label_name = gmail_label_name(target_label)
     sender = normalized_sender_email(current.get("sender") or "") or current.get("sender") or "this sender"
     sender_name = _display_sender(current.get("sender") or "") or sender
+    sender_domain = _email_domain(sender)
+    if sender_domain and _note_requests_entire_sender_domain(note):
+        return {
+            "scope": "sender-domain",
+            "target_label": target_label,
+            "sender": sender,
+            "sender_domain": sender_domain,
+            "semantic_pattern": "",
+            "plain_english_rule": f"Treat all messages from {sender_domain} as {label_name}.",
+            "rule_type": "sender-domain",
+            "rule_type_label": "Sender domain rule",
+            "rule_confidence": "high",
+            "rule_confidence_label": "Future rule",
+            "clarifying_question": "",
+            "matching_basis": ["sender domain", "founder note", "stored Threadwise data"],
+            "include_families": [],
+            "exclude_families": [],
+            "excluded_pattern": "",
+            "cross_sender": False,
+        }
+    if _note_requests_entire_sender(note):
+        return {
+            "scope": "sender",
+            "target_label": target_label,
+            "sender": sender,
+            "semantic_pattern": "",
+            "plain_english_rule": f"Treat future messages from {sender} as {label_name}.",
+            "rule_type": "sender",
+            "rule_type_label": "Sender rule",
+            "rule_confidence": "high",
+            "rule_confidence_label": "Future rule",
+            "clarifying_question": "",
+            "matching_basis": ["sender", "founder note", "stored Threadwise data"],
+            "include_families": [],
+            "exclude_families": [],
+            "excluded_pattern": "",
+            "cross_sender": False,
+        }
     semantic_pattern = infer_semantic_pattern(current, note, target_label, intent=intent)
     cross_sender = semantic_pattern["cross_sender"]
     if semantic_pattern["name"]:
@@ -630,6 +668,29 @@ def build_semantic_future_rule(*, current: dict, target_label: str, note: str, s
         "excluded_pattern": excluded_pattern,
         "cross_sender": cross_sender,
     }
+
+
+def _note_requests_entire_sender_domain(note: str) -> bool:
+    text = " ".join(str(note or "").lower().split())
+    return bool(
+        re.search(
+            r"\b(?:all|any|every|anything)\s+(?:emails?|messages?|mail)\s+from\s+(?:this|the|that|their)\s+domain\b|"
+            r"\b(?:all|any|every|anything)\s+from\s+(?:this|the|that|their)\s+domain\b|"
+            r"\b(?:entire|whole)\s+(?:sender\s+)?domain\b",
+            text,
+        )
+    )
+
+
+def _note_requests_entire_sender(note: str) -> bool:
+    text = " ".join(str(note or "").lower().split())
+    return bool(
+        re.search(
+            r"\b(?:all|any|every|anything)\s+(?:future\s+)?(?:emails?|messages?|mail)\s+from\s+(?:this|the|that)\s+(?:exact\s+)?sender\b|"
+            r"\b(?:all|any|every|anything)\s+(?:future\s+)?(?:emails?|messages?|mail)\s+from\s+[^.\s]+@[^.\s]+\b",
+            text,
+        )
+    )
 
 
 def infer_semantic_pattern(current: dict, note: str, target_label: str, intent: dict | None = None) -> dict:
@@ -784,6 +845,7 @@ def build_companion_memory_proposal(
 ):
     provider = current.get("provider", "gmail")
     semantic_rule = semantic_rule or build_semantic_future_rule(current=current, target_label=target_label, note=note, scope=scope)
+    scope = str(semantic_rule.get("scope") or scope)
     explanation = note or semantic_rule["plain_english_rule"]
     if note and semantic_rule.get("semantic_pattern"):
         explanation = f"{semantic_rule['plain_english_rule']} Founder note: {note}"

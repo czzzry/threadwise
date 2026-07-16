@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from src.gmail_fetcher import MockGmailBatchFetcher, MockGmailClient
+from src.gmail_fetcher import GmailSearchBatchFetcher, MockGmailBatchFetcher, MockGmailClient
 from src.review_loop import FixtureReviewLoop
 
 
@@ -172,6 +172,35 @@ class MockGmailBatchFetcherTests(unittest.TestCase):
                 ("get_message", "gmail-002"),
             ],
         )
+
+    def test_search_batch_uses_the_explicit_query_and_reprocesses_matching_mail(self) -> None:
+        class SearchClient(MockGmailClient):
+            def search_message_ids(self, query: str, max_results: int) -> list[str]:
+                self.calls.append(("search_message_ids", query, max_results))
+                return ["gmail-001", "gmail-002"][:max_results]
+
+        storage_dir = Path(self.temp_dir.name)
+        (storage_dir / "processed_message_ids.json").write_text(
+            json.dumps(["founder-test:gmail-001"])
+        )
+        client = SearchClient(list(self.client._gmail_payloads.values()))
+        fetcher = GmailSearchBatchFetcher(
+            gmail_client=client,
+            storage_dir=storage_dir,
+            query="-in:inbox -label:EA/LowValue",
+        )
+
+        review_queue = fetcher.fetch_gmail_batch("founder-test", batch_size=2)
+
+        self.assertEqual(
+            client.calls[:3],
+            [
+                ("search_message_ids", "-in:inbox -label:EA/LowValue", 2),
+                ("get_message", "gmail-001"),
+                ("get_message", "gmail-002"),
+            ],
+        )
+        self.assertEqual({item["message_id"] for item in review_queue["items"]}, {"gmail-001", "gmail-002"})
 
 
 if __name__ == "__main__":
