@@ -157,7 +157,7 @@ class LocalBrowserReviewRenderingMixin:
       "EA/Personal": "personal",
       "EA/Work": "job-related",
       "EA/LowValue": "spam-low-value",
-      "EA/ReplyNeeded": "reply-needed"
+      "EA/NeedsAction": "reply-needed"
     };
     function selectedLabels(card) {
       return [...card.querySelectorAll(".taxonomy-option.active")].map((button) => labelMap[button.dataset.label]);

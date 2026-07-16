@@ -23,10 +23,11 @@ from src.attention_rules import (
     reject_attention_rule_proposal,
 )
 from src.gmail_writer import MockGmailLabelWriter
+from src.gmail_safety_action import GmailSafetyAction
 from src.gmail_message_normalizer import normalize_gmail_message
 from src.handled_review_store import HandledReviewStore
 from src.label_taxonomy import CANONICAL_LABEL_ORDER, gmail_label_name
-from src.live_gmail_client import GMAIL_MODIFY_SCOPE
+from src.live_gmail_client import GMAIL_MODIFY_SCOPE, GMAIL_SAFETY_SCOPE
 from src.local_artifacts import write_json_artifact
 from src.product_analytics import (
     ANALYTICS_WORKFLOW_VERSION,
@@ -386,6 +387,18 @@ class GmailCompanionApp:
                     "teach/fix failed",
                     {"surface": "gmail_companion", "error_category": "provider_write_error"},
                 )
+                return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+
+        if handler.command == "POST" and parsed.path == "/api/safety-preview":
+            try:
+                return self._write_json(handler, HTTPStatus.OK, self.safety_preview(self._read_json_body(handler)))
+            except (KeyError, ValueError, HTTPException) as exc:
+                return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+
+        if handler.command == "POST" and parsed.path == "/api/safety-apply":
+            try:
+                return self._write_json(handler, HTTPStatus.OK, self.safety_apply(self._read_json_body(handler)))
+            except (KeyError, ValueError, HTTPException, RuntimeError) as exc:
                 return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
 
         if handler.command == "POST" and parsed.path == "/api/analytics/capture":
@@ -971,6 +984,8 @@ class GmailCompanionApp:
     def teach_apply(self, payload: dict, *, analytics_distinct_id: str | None = None) -> dict:
         selected_context = payload.get("selected_context") or {}
         target_label = payload["target_label"]
+        if target_label == "suspicious":
+            raise ValueError("Suspicious email requires the explicit Gmail safety preview and confirmation flow.")
         note = (payload.get("note") or "").strip()
         scope = payload.get("scope") or "sender"
         mode = payload["mode"]
@@ -1031,6 +1046,54 @@ class GmailCompanionApp:
             "gmail_write_through": write_through_summary,
             "outcome": self._teach_apply_outcome(teaching_result, write_through_summary),
             "sidebar_state": refreshed,
+        }
+
+    def safety_preview(self, payload: dict) -> dict:
+        selected = self._selected_gmail_message_for_safety(payload)
+        return GmailSafetyAction(None, self._storage_dir).preview(
+            message_id=selected["message_id"],
+            sender=selected["sender"],
+            scope=payload.get("scope") or "sender",
+        )
+
+    def safety_apply(self, payload: dict) -> dict:
+        if not self._gmail_write_through_enabled:
+            raise ValueError("Gmail safety actions are disabled for this server.")
+        selected = self._selected_gmail_message_for_safety(payload)
+        gmail_client = self._gmail_client_factory(
+            selected["account_id"],
+            self._credentials_dir,
+            self._client_secret_path,
+            GMAIL_SAFETY_SCOPE,
+        )
+        result = GmailSafetyAction(gmail_client, self._storage_dir).apply(
+            account_id=selected["account_id"],
+            message_id=selected["message_id"],
+            sender=selected["sender"],
+            scope=payload.get("scope") or "sender",
+            confirmed=payload.get("confirmed") is True,
+        )
+        self._invalidate_companion_caches()
+        return result
+
+    def _selected_gmail_message_for_safety(self, payload: dict) -> dict:
+        selected_context = payload.get("selected_context") or {}
+        if selected_context.get("provider") != "gmail" or not selected_context.get("message_id"):
+            raise ValueError("Select a Gmail message before applying a suspicious-email action.")
+        selected = build_selected_email_state(
+            self._storage_dir,
+            self._cached_unsubscribe_candidates(),
+            selected_context,
+        )
+        if not selected or selected.get("message_id") != selected_context["message_id"]:
+            raise ValueError("The selected Gmail message is no longer available.")
+        sender = selected.get("sender") or ""
+        if not sender:
+            raise ValueError("The selected Gmail message has no usable sender.")
+        return {
+            "account_id": selected.get("account_id") or infer_gmail_account_id(self._storage_dir),
+            "message_id": selected["message_id"],
+            "sender": sender,
         }
 
     def _capture_label_write_outcomes(

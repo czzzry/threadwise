@@ -107,7 +107,7 @@ function apiTimeoutMs(path) {
   if (path === "/api/gmail-check-run") {
     return GMAIL_CHECK_TIMEOUT_MS;
   }
-  if (path === "/api/teach-apply") {
+  if (path === "/api/teach-apply" || path === "/api/safety-apply") {
     return GMAIL_MUTATION_TIMEOUT_MS;
   }
   return HARNESS_STATE_TIMEOUT_MS;

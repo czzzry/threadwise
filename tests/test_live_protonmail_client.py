@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import tempfile
 import unittest
@@ -27,6 +29,20 @@ class FakeIMAPConnection:
         self.calls.append(("select", mailbox, readonly))
         return ("OK", [b"1"])
 
+    def list(self) -> tuple[str, list[bytes]]:
+        self.calls.append(("list",))
+        return (
+            "OK",
+            [
+                b'(\\HasNoChildren) "/" "INBOX"',
+                b'(\\HasNoChildren) "/" "Labels/EA/Personal"',
+            ],
+        )
+
+    def create(self, mailbox: str) -> tuple[str, list[bytes]]:
+        self.calls.append(("create", mailbox))
+        return ("OK", [b"created"])
+
     def uid(self, command: str, *args: str) -> tuple[str, list[bytes | tuple[bytes, bytes]]]:
         self.calls.append(("uid", command, *args))
         if command.lower() == "search":
@@ -35,6 +51,8 @@ class FakeIMAPConnection:
         if command.lower() == "fetch":
             message_id = args[0]
             return ("OK", [(b"1 (RFC822 {42}", self._messages[message_id])])
+        if command.lower() == "copy":
+            return ("OK", [b"copied"])
         raise AssertionError(f"Unexpected IMAP command: {command}")
 
     def close(self) -> tuple[str, list[bytes]]:
@@ -47,6 +65,49 @@ class FakeIMAPConnection:
 
 
 class LiveProtonMailClientTests(unittest.TestCase):
+    def test_apply_label_copies_to_proton_label_folder_without_moving_or_deleting(self) -> None:
+        connection = FakeIMAPConnection({"101": b"From: person@example.com\r\n\r\nHello"})
+        client = LiveProtonMailClient(
+            "127.0.0.1", 1143, "user", "pass", ssl_enabled=False,
+            imap_factory=lambda host, port: connection,
+        )
+
+        result = client.apply_label("101", "EA/Personal")
+
+        self.assertEqual(result["mailbox"], "Labels/EA-Personal")
+        self.assertIn(("create", "Labels/EA-Personal"), connection.calls)
+        self.assertIn(("select", "INBOX", False), connection.calls)
+        self.assertIn(("uid", "COPY", "101", "Labels/EA-Personal"), connection.calls)
+        self.assertFalse(any(call[0] in {"delete", "store", "move"} for call in connection.calls))
+
+    def test_lists_bridge_mailboxes_without_mutating_them(self) -> None:
+        connection = FakeIMAPConnection({})
+        client = LiveProtonMailClient(
+            "127.0.0.1", 1143, "user", "pass", ssl_enabled=False,
+            imap_factory=lambda host, port: connection,
+        )
+
+        self.assertEqual(client.list_mailboxes(), ["INBOX", "Labels/EA/Personal"])
+        self.assertIn(("select", "INBOX", True), connection.calls)
+
+    def test_full_message_body_is_not_truncated_to_eight_lines(self) -> None:
+        body = "\r\n".join(f"Context line {index}" for index in range(1, 14))
+        raw = (
+            "From: Person <person@example.com>\r\n"
+            "Subject: Detailed message\r\n"
+            "Date: Fri, 19 Jun 2026 08:00:00 +0000\r\n\r\n"
+            + body
+        ).encode()
+        connection = FakeIMAPConnection({"101": raw})
+        client = LiveProtonMailClient(
+            "127.0.0.1", 1143, "user", "pass", ssl_enabled=False,
+            imap_factory=lambda host, port: connection,
+        )
+
+        message = client.get_message("101")
+
+        self.assertIn("Context line 13", message["body"])
+
     def test_from_bridge_config_reads_recent_inbox_messages_via_read_only_imap(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             credentials_dir = Path(temp_dir)

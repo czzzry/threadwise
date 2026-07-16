@@ -230,7 +230,6 @@ def build_semantic_boundary(
     has_strong_signal = bool(positive_families) and (
         bool(excluded_families)
         or cross_sender
-        or (bool(llm_pattern) and str(llm_confidence).lower() in {"medium", "high"})
         or bool(re.search(r"\b(?:only|specifically|apply this to|classify only)\b", normalized_note))
     )
     return {

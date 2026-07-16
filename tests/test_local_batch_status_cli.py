@@ -135,7 +135,7 @@ class LocalBatchStatusCliTests(unittest.TestCase):
             self.assertIn("Review states: pending=1, reviewed=2", rendered)
             self.assertIn("Review actions: approve=1, edit=1", rendered)
             self.assertIn("Final labels: labeled=2, unlabeled=0", rendered)
-            self.assertIn("Label counts: EA/Promotions=1, EA/ReplyNeeded=1", rendered)
+            self.assertIn("Label counts: EA/NeedsAction=1, EA/Promotions=1", rendered)
             self.assertIn("Write status: applied=1, failed=1, missing=1", rendered)
             self.assertIn("Write attempts: messages_with_history=2, total_attempts=3, retried_messages=1", rendered)
             self.assertIn("Inbox removal: applied=1, ineligible=1, missing=1", rendered)
@@ -237,7 +237,7 @@ class LocalBatchStatusCliTests(unittest.TestCase):
 
             self.assertEqual(exit_code, 0)
             self.assertIn("Label counts: EA/Account=1", rendered)
-            self.assertNotIn("EA/ReplyNeeded=1", rendered)
+            self.assertNotIn("EA/NeedsAction=1", rendered)
             self.assertNotIn("EA/Promotions=1", rendered)
 
 

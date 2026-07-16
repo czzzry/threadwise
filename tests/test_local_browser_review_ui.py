@@ -1232,7 +1232,7 @@ class LocalBrowserReviewUiTests(unittest.TestCase):
             self.assertIn("Subject:</strong> Need your approval today", page)
             self.assertIn("Date:</strong> 2024-06-19T08:00:00Z", page)
             self.assertIn("Preview:</strong> Need your approval today", page)
-            self.assertIn("Suggested labels:</strong> EA/ReplyNeeded, EA/Work", page)
+            self.assertIn("Suggested labels:</strong> EA/NeedsAction, EA/Work", page)
             self.assertIn("Why:</strong> Work request that likely needs a response.", page)
             self.assertIn("Approve suggested", page)
             self.assertIn("Save selected labels", page)
@@ -1295,7 +1295,7 @@ class LocalBrowserReviewUiTests(unittest.TestCase):
 
             self.assertIn('class="taxonomy-option"', page)
             self.assertIn('data-label="EA/Account"', page)
-            self.assertIn('data-label="EA/ReplyNeeded"', page)
+            self.assertIn('data-label="EA/NeedsAction"', page)
 
     def test_page_can_open_specific_batch_from_workbench_query(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1441,7 +1441,7 @@ class LocalBrowserReviewUiTests(unittest.TestCase):
             self.assertEqual(response["summary"]["reviewed_items"], 0)
             self.assertEqual(response["summary"]["remaining_items"], 1)
             self.assertEqual(response["items"][0]["message_id"], "gmail-live-001")
-            self.assertEqual(response["items"][0]["suggested_labels"], ["EA/ReplyNeeded", "EA/Work"])
+            self.assertEqual(response["items"][0]["suggested_labels"], ["EA/NeedsAction", "EA/Work"])
             self.assertEqual(response["items"][0]["snippet"], "Need your approval today")
             self.assertEqual(response["items"][0]["body"], "Need your approval today")
             self.assertEqual(response["items"][0]["review_state"], "pending")
@@ -2064,17 +2064,17 @@ class LocalBrowserReviewUiTests(unittest.TestCase):
 
             self.assertEqual(status_code, 200)
             self.assertEqual(response["item"]["review_action"], "edit")
-            self.assertEqual(response["item"]["final_labels"], ["EA/ReplyNeeded", "EA/Account"])
+            self.assertEqual(response["item"]["final_labels"], ["EA/NeedsAction", "EA/Account"])
             self.assertEqual(response["summary"]["reviewed_items"], 1)
             self.assertEqual(response["summary"]["remaining_items"], 0)
-            self.assertEqual(response["summary"]["label_counts"], {"EA/Account": 1, "EA/ReplyNeeded": 1})
+            self.assertEqual(response["summary"]["label_counts"], {"EA/Account": 1, "EA/NeedsAction": 1})
             self.assertEqual(stored_batch["items"][0]["review_state"], "reviewed")
             self.assertEqual(stored_batch["items"][0]["review_action"], "edit")
             self.assertEqual(stored_batch["items"][0]["final_labels"], ["reply-needed", "account-security"])
             self.assertFalse((Path(temp_dir) / "founder-test-batch-1_write_status.json").exists())
             self.assertEqual(reloaded_status, 200)
             self.assertEqual(reloaded["summary"]["reviewed_items"], 1)
-            self.assertEqual(reloaded["items"][0]["final_labels"], ["EA/ReplyNeeded", "EA/Account"])
+            self.assertEqual(reloaded["items"][0]["final_labels"], ["EA/NeedsAction", "EA/Account"])
 
     def test_decision_post_persists_actionability_for_plausible_candidate(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -43,6 +43,79 @@ from src.unsubscribe_execution import UnsubscribeExecutor
 
 
 class GmailCompanionUiTests(unittest.TestCase):
+    def test_suspicious_cannot_use_ordinary_teach_apply_path(self) -> None:
+        with self.assertRaisesRegex(ValueError, "safety"):
+            GmailCompanionApp(Path("/tmp/example")).teach_apply({
+                "selected_context": {"provider": "gmail", "message_id": "phish-1"},
+                "target_label": "suspicious",
+                "note": "phishing",
+                "mode": "current-only",
+            })
+
+    def test_suspicious_preview_uses_authoritative_selected_sender_and_exact_sender_default(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                [{
+                    "source": "gmail",
+                    "account_id": "founder-test",
+                    "message_id": "phish-1",
+                    "sender": "Fake delivery <bait@bad.example>",
+                    "subject": "Delivery suspended",
+                    "review_state": "pending",
+                    "final_labels": [],
+                    "applied_labels": [],
+                }],
+            )
+
+            preview = GmailCompanionApp(storage_dir).safety_preview({
+                "selected_context": {"provider": "gmail", "message_id": "phish-1"},
+                "scope": "sender",
+                "sender": "attacker-controlled@different.example",
+            })
+
+            self.assertEqual(preview["match"], "bait@bad.example")
+            self.assertTrue(preview["requires_confirmation"])
+
+    def test_suspicious_apply_requests_safety_scope_and_applies_confirmed_action(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                [{
+                    "source": "gmail",
+                    "account_id": "founder-test",
+                    "message_id": "phish-1",
+                    "sender": "Fake delivery <bait@bad.example>",
+                    "subject": "Delivery suspended",
+                    "review_state": "pending",
+                    "final_labels": [],
+                    "applied_labels": [],
+                }],
+            )
+            gmail_client = MockGmailLabelClient()
+            gmail_client.create_trash_filter = lambda match, label_id: "filter-1"
+            gmail_client.trash_message = lambda message_id: gmail_client.calls.append(("trash_message", message_id))
+            gmail_client.delete_filter = lambda filter_id: gmail_client.calls.append(("delete_filter", filter_id))
+            requested_scopes = []
+
+            def factory(account_id, credentials_dir, client_secret_path, required_scope):
+                requested_scopes.append(required_scope)
+                return gmail_client
+
+            result = GmailCompanionApp(storage_dir, gmail_client_factory=factory).safety_apply({
+                "selected_context": {"provider": "gmail", "message_id": "phish-1"},
+                "scope": "sender",
+                "confirmed": True,
+            })
+
+            self.assertEqual(result["status"], "applied")
+            self.assertIn("gmail.settings.basic", requested_scopes[0])
+            self.assertIn(("trash_message", "phish-1"), gmail_client.calls)
+
     def test_review_queue_refreshes_five_amazon_variants_without_turning_security_into_orders(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
@@ -3283,7 +3356,7 @@ class GmailCompanionUiTests(unittest.TestCase):
                         "sender": "messages-noreply@linkedin.com",
                     },
                     "target_label": "personal",
-                    "note": "LinkedIn direct messages from real people should be personal.",
+                    "note": "All future emails from this sender should be personal.",
                 }
             )
 
@@ -3906,7 +3979,7 @@ class GmailCompanionUiTests(unittest.TestCase):
                 }
             )
 
-            self.assertIn(("replace_threadwise_labels", "gmail-live-001", [gmail_client.labels["EA/ReplyNeeded"]], "EA/"), gmail_client.calls)
+            self.assertIn(("replace_threadwise_labels", "gmail-live-001", [gmail_client.labels["EA/NeedsAction"]], "EA/"), gmail_client.calls)
             self.assertEqual(result["gmail_write_through"]["messages_written"], 1)
             self.assertEqual(result["gmail_write_through"]["inbox_removed"], 0)
             self.assertEqual(

@@ -10,6 +10,7 @@ from unittest.mock import patch
 from src.live_gmail_client import (
     GMAIL_MODIFY_SCOPE,
     GMAIL_READONLY_SCOPE,
+    GMAIL_SAFETY_SCOPE,
     LiveGmailClient,
     LoopbackCodeReceiver,
     SetupError,
@@ -116,6 +117,102 @@ class FakeHTTPServer:
 
 
 class LiveGmailClientTests(unittest.TestCase):
+    def test_list_filters_returns_provider_filters(self) -> None:
+        client = LiveGmailClient(
+            "token",
+            transport=lambda method, url, params=None, access_token=None: {
+                "filter": [{"id": "filter-1", "criteria": {"from": "sender@example.com"}}]
+            },
+        )
+        self.assertEqual(client.list_filters()[0]["id"], "filter-1")
+
+    def test_urlopen_json_accepts_empty_success_response(self) -> None:
+        class EmptyResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, traceback):
+                return False
+
+            def read(self):
+                return b""
+
+        request = urllib.request.Request("https://example.test/delete", method="DELETE")
+        with patch("src.live_gmail_client.urllib.request.urlopen", return_value=EmptyResponse()):
+            self.assertEqual(_urlopen_json(request), {})
+
+    def test_get_or_create_needs_action_renames_legacy_reply_needed_label_in_place(self) -> None:
+        calls = []
+
+        def transport(method, url, params=None, access_token=None):
+            calls.append((method, url, params or {}, access_token))
+            if method == "GET" and url.endswith("/labels"):
+                return {"labels": [{"id": "Label_legacy", "name": "EA/ReplyNeeded"}]}
+            if method == "PATCH" and url.endswith("/labels/Label_legacy"):
+                return {"id": "Label_legacy", "name": params["name"]}
+            raise AssertionError(f"Unexpected call: {method} {url}")
+
+        client = LiveGmailClient("token", transport=transport)
+
+        label_id = client.get_or_create_label("EA/NeedsAction")
+
+        self.assertEqual(label_id, "Label_legacy")
+        self.assertIn(
+            (
+                "PATCH",
+                "https://gmail.googleapis.com/gmail/v1/users/me/labels/Label_legacy",
+                {"name": "EA/NeedsAction"},
+                "token",
+            ),
+            calls,
+        )
+
+    def test_create_trash_filter_uses_settings_api_and_returns_filter_id(self) -> None:
+        calls = []
+
+        def transport(method, url, params=None, access_token=None):
+            calls.append((method, url, params, access_token))
+            return {"id": "filter-001"}
+
+        client = LiveGmailClient("token", transport=transport)
+
+        filter_id = client.create_trash_filter("alerts@example.com", "Label_suspicious")
+
+        self.assertEqual(filter_id, "filter-001")
+        self.assertEqual(
+            calls,
+            [
+                (
+                    "POST",
+                    "https://gmail.googleapis.com/gmail/v1/users/me/settings/filters",
+                    {
+                        "criteria": {"from": "alerts@example.com"},
+                        "action": {"addLabelIds": ["TRASH", "Label_suspicious"]},
+                    },
+                    "token",
+                )
+            ],
+        )
+
+    def test_trash_message_adds_trash_and_removes_inbox(self) -> None:
+        calls = []
+
+        def transport(method, url, params=None, access_token=None):
+            calls.append((method, url, params, access_token))
+            return {"id": "gmail-live-001"}
+
+        client = LiveGmailClient("token", transport=transport)
+        client.trash_message("gmail-live-001")
+
+        self.assertEqual(
+            calls[0][2],
+            {"addLabelIds": ["TRASH"], "removeLabelIds": ["INBOX"]},
+        )
+
+    def test_safety_scope_contains_modify_and_filter_settings_permissions(self) -> None:
+        self.assertIn(GMAIL_MODIFY_SCOPE, GMAIL_SAFETY_SCOPE.split())
+        self.assertIn("https://www.googleapis.com/auth/gmail.settings.basic", GMAIL_SAFETY_SCOPE.split())
+
     def test_from_local_oauth_uses_existing_token_without_reauthorizing(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             credentials_dir = Path(temp_dir)

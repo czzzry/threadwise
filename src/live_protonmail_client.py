@@ -55,8 +55,8 @@ class LiveProtonMailClient:
             imap_factory=imap_factory,
         )
 
-    def list_messages(self, max_results: int) -> list[str]:
-        connection = self._open_connection()
+    def list_messages(self, max_results: int, mailbox: str = "INBOX") -> list[str]:
+        connection = self._open_connection(mailbox=mailbox)
         try:
             status, data = connection.uid("search", None, "ALL")
             _require_ok(status, "search inbox")
@@ -65,6 +65,19 @@ class LiveProtonMailClient:
                 return []
             message_ids = raw_ids.split()
             return message_ids[-max_results:]
+        finally:
+            _safe_close(connection)
+
+    def list_mailboxes(self) -> list[str]:
+        connection = self._open_connection()
+        try:
+            status, data = connection.list()
+            _require_ok(status, "list mailboxes")
+            return [
+                mailbox
+                for raw_entry in data or []
+                if raw_entry and (mailbox := _mailbox_name_from_list_entry(raw_entry))
+            ]
         finally:
             _safe_close(connection)
 
@@ -96,12 +109,38 @@ class LiveProtonMailClient:
         finally:
             _safe_close(connection)
 
-    def _open_connection(self):
+    def apply_label(self, message_id: str, label_name: str) -> dict:
+        mailbox = _proton_label_mailbox(label_name)
+        connection = self._open_connection(mailbox="INBOX", readonly=False)
+        try:
+            status, data = connection.list()
+            _require_ok(status, "list mailboxes before label write")
+            existing = {
+                parsed
+                for raw_entry in data or []
+                if raw_entry and (parsed := _mailbox_name_from_list_entry(raw_entry))
+            }
+            if mailbox not in existing:
+                status, _ = connection.create(mailbox)
+                _require_ok(status, f"create label {label_name}")
+            status, _ = connection.uid("COPY", message_id, mailbox)
+            _require_ok(status, f"apply label {label_name} to message {message_id}")
+            return {
+                "message_id": message_id,
+                "label": label_name,
+                "mailbox": mailbox,
+                "inbox_preserved": True,
+                "destructive_actions": [],
+            }
+        finally:
+            _safe_close(connection)
+
+    def _open_connection(self, *, mailbox: str = "INBOX", readonly: bool = True):
         connection = self._imap_factory(self._host, self._port)
         if self._security == "STARTTLS":
             connection.starttls(ssl_context=_starttls_context_for_host(self._host))
         connection.login(self._username, self._password)
-        connection.select("INBOX", readonly=True)
+        connection.select(mailbox, readonly=readonly)
         return connection
 
     def _default_imap_factory(self, host: str, port: int):
@@ -190,9 +229,27 @@ def _sanitize_text(value: str) -> str:
         if not line:
             continue
         lines.append(line)
-        if len(lines) >= 8:
-            break
-    return "\n".join(lines)[:1200]
+    return "\n".join(lines)
+
+
+def _mailbox_name_from_list_entry(raw_entry: bytes) -> str:
+    entry = raw_entry.decode("utf-8", errors="replace").strip()
+    quoted = re.search(r'"((?:[^"\\]|\\.)*)"\s*$', entry)
+    if quoted:
+        return quoted.group(1).replace(r'\"', '"').replace(r'\\', '\\')
+    parts = entry.rsplit(" ", 1)
+    return parts[-1].strip('"') if parts else ""
+
+
+def _proton_label_mailbox(label_name: str) -> str:
+    if not label_name.startswith("EA/"):
+        raise ValueError("Threadwise Proton labels must use the EA/ namespace.")
+    suffix = label_name.removeprefix("EA/").strip()
+    if not suffix or not re.fullmatch(r"[A-Za-z][A-Za-z0-9-]*", suffix):
+        raise ValueError("Threadwise Proton label contains unsupported characters.")
+    # Bridge exposes Proton labels beneath Labels/. A hyphen preserves the
+    # Threadwise namespace without turning the slash into a mailbox hierarchy.
+    return f"Labels/EA-{suffix}"
 
 
 def _html_to_text(value: str) -> str:

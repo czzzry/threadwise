@@ -8,7 +8,7 @@ from src.label_taxonomy import CANONICAL_LABEL_ORDER
 from src.sender_utils import normalized_sender_email
 from src.semantic_rule_matching import semantic_rule_matches_message
 
-BLOCKED_TEACHABLE_LABELS = {"promotions", "spam-low-value"}
+BLOCKED_TEACHABLE_LABELS = {"promotions", "spam-low-value", "suspicious"}
 
 
 @dataclass(frozen=True)
@@ -254,6 +254,7 @@ def _label_from_instruction(instruction: str) -> str:
         "travel": ("travel", "trip", "flight", "hotel"),
         "calendar-event": ("calendar", "event", "appointment"),
         "reply-needed": ("reply-needed", "reply needed", "needs reply"),
+        "suspicious": ("suspicious", "phishing", "phish"),
     }
     for label in CANONICAL_LABEL_ORDER:
         if any(alias in lower for alias in label_aliases[label]):

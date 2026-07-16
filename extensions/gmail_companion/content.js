@@ -24,6 +24,8 @@
     details: "Checking the local companion.",
   };
   let teachPreview = null;
+  let safetyPreview = null;
+  let safetyResult = null;
   let teachPreviewRequestId = 0;
   let previousTeachPreview = null;
   let teachResult = null;
@@ -635,7 +637,7 @@
 
   function shouldHoldSelectedContext() {
     const selectedContext = (lastSidebarState && lastSidebarState.selected_context) || {};
-    const correctionInProgress = ["change", "teach-preview", "teach-scope"].includes(selectedDecisionMode)
+    const correctionInProgress = ["change", "teach-preview", "teach-scope", "safety-preview"].includes(selectedDecisionMode)
       || ["previewing", "applying", "scope-confirmation"].includes(teachFlowState);
     if ((!correctionInProgress && !affectedReviewOpen) || !isMeaningfulContext(selectedContext)) {
       return false;
@@ -940,6 +942,8 @@
   function resetPerEmailInteraction() {
     teachPreviewRequestId += 1;
     teachPreview = null;
+    safetyPreview = null;
+    safetyResult = null;
     previousTeachPreview = null;
     teachResult = null;
     teachFlowState = "teaching";
@@ -1068,6 +1072,12 @@
     }
     if (teachFlowState === "applying") {
       return "applying";
+    }
+    if (selectedDecisionMode === "safety-preview") {
+      if (teachFlowState === "safety-applying") return "safety-applying";
+      if (teachFlowState === "safety-result") return "safety-receipt";
+      if (teachFlowState === "safety-error") return "safety-error";
+      return "safety-preview";
     }
     if (selectedDecisionMode === "teach-preview" && (teachPreview || teachResult || teachFlowState === "previewing")) {
       return "teach-preview";
@@ -1483,6 +1493,43 @@
           </div>
         </div>
       `);
+      setHtml(selectedEmailSecondaryNode, "");
+      setHtml(teachPanelNode, "");
+    } else if (workspaceMode === "safety-preview") {
+      const domainSelected = safetyPreview?.scope === "domain";
+      setHtml(selectedEmailNode, `
+        <div data-ea-selected-state="safety-preview" style="display:grid;gap:12px;margin-top:10px;">
+          <div>
+            <div style="color:#9a3412;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;font-weight:820;">Suspicious / phishing</div>
+            <div style="margin-top:6px;font-size:1.3rem;font-weight:840;line-height:1.15;">Protect me from this sender</div>
+            <div style="margin-top:6px;color:#6b6255;font-size:0.88rem;overflow-wrap:anywhere;">${escapeHtml(selected.subject || "(no subject)")}</div>
+          </div>
+          <div style="border-radius:14px;background:#fff4dd;padding:12px;color:#1f1a14;line-height:1.45;">
+            <div><strong>This email:</strong> ${escapeHtml(safetyPreview?.current_email || "Label EA/Suspicious and move to Gmail Trash")}</div>
+            <div style="margin-top:7px;"><strong>Future emails:</strong> ${escapeHtml(safetyPreview?.future_emails || "Filter matching mail to Trash")}</div>
+            <div style="margin-top:7px;"><strong>Match:</strong> ${escapeHtml(safetyPreview?.match || "")}</div>
+          </div>
+          <fieldset style="margin:0;padding:0;border:0;display:grid;gap:8px;">
+            <legend style="font-weight:800;margin-bottom:6px;">Which sender should be filtered?</legend>
+            <button type="button" data-ea-action="safety-sender-scope" aria-pressed="${domainSelected ? "false" : "true"}" style="text-align:left;min-height:44px;border:${domainSelected ? "1px solid rgba(36,24,18,.24)" : "2px solid #241812"};background:${domainSelected ? "#fffdf7" : "#dff8ed"};color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;"><strong>Exact sender (recommended)</strong><br><span style="font-size:.82rem;color:#6b6255;">Safest default; other addresses at the domain remain visible.</span></button>
+            <button type="button" data-ea-action="safety-domain-scope" aria-pressed="${domainSelected ? "true" : "false"}" style="text-align:left;min-height:44px;border:${domainSelected ? "2px solid #241812" : "1px solid rgba(36,24,18,.24)"};background:${domainSelected ? "#fff4dd" : "#fffdf7"};color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;"><strong>Entire domain</strong><br><span style="font-size:.82rem;color:#6b6255;">Broader: legitimate mail from this domain will also go to Trash.</span></button>
+          </fieldset>
+          <button type="button" data-ea-action="confirm-safety-action" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Label, trash, and protect future mail</button>
+          <button type="button" data-ea-action="edit-current-change" style="justify-self:start;border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Back</button>
+        </div>
+      `);
+      setHtml(selectedEmailSecondaryNode, "");
+      setHtml(teachPanelNode, "");
+    } else if (workspaceMode === "safety-applying") {
+      setHtml(selectedEmailNode, `<div data-ea-selected-state="safety-applying" aria-live="polite" style="display:grid;gap:12px;margin-top:10px;"><div style="font-size:1.3rem;font-weight:840;">Applying protection…</div><div style="border-radius:14px;background:#fff4dd;padding:12px;line-height:1.45;">Creating the future Gmail filter, then labeling and moving this email to Trash.</div></div>`);
+      setHtml(selectedEmailSecondaryNode, "");
+      setHtml(teachPanelNode, "");
+    } else if (workspaceMode === "safety-receipt") {
+      setHtml(selectedEmailNode, `<div data-ea-selected-state="safety-receipt" style="display:grid;gap:12px;margin-top:10px;"><div style="font-size:1.3rem;font-weight:840;">Protected</div><div role="status" style="border-radius:14px;background:#dff8ed;padding:12px;line-height:1.45;">This email is labeled EA/Suspicious and is in Gmail Trash. Future mail matching <strong>${escapeHtml(safetyResult?.match || "this sender")}</strong> will go directly to Trash.</div><button type="button" data-ea-action="finish-safety-next" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Review next</button></div>`);
+      setHtml(selectedEmailSecondaryNode, "");
+      setHtml(teachPanelNode, "");
+    } else if (workspaceMode === "safety-error") {
+      setHtml(selectedEmailNode, `<div data-ea-selected-state="safety-error" style="display:grid;gap:12px;margin-top:10px;"><div style="font-size:1.3rem;font-weight:840;">Protection was not completed</div><div role="alert" style="border-radius:14px;background:#f7e2e2;padding:12px;color:#8a1f1f;line-height:1.45;">${escapeHtml(safetyResult?.error || "Threadwise could not complete the Gmail safety action. The new future filter was not left active after a partial failure.")}</div><button type="button" data-ea-action="confirm-safety-action" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Try again</button><button type="button" data-ea-action="edit-current-change" style="justify-self:start;border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Back</button></div>`);
       setHtml(selectedEmailSecondaryNode, "");
       setHtml(teachPanelNode, "");
     } else if (workspaceMode === "teach-preview") {
@@ -3139,6 +3186,30 @@
       document.getElementById("ea-target-label")?.focus();
       return;
     }
+    const safetySenderScopeButton = event.target.closest("[data-ea-action='safety-sender-scope']");
+    if (safetySenderScopeButton) {
+      event.preventDefault();
+      return previewSafety("sender");
+    }
+    const safetyDomainScopeButton = event.target.closest("[data-ea-action='safety-domain-scope']");
+    if (safetyDomainScopeButton) {
+      event.preventDefault();
+      return previewSafety("domain");
+    }
+    const confirmSafetyButton = event.target.closest("[data-ea-action='confirm-safety-action']");
+    if (confirmSafetyButton) {
+      event.preventDefault();
+      return applySafety();
+    }
+    const finishSafetyNextButton = event.target.closest("[data-ea-action='finish-safety-next']");
+    if (finishSafetyNextButton) {
+      event.preventDefault();
+      resetPerEmailInteraction();
+      previousPayload = "";
+      refreshSelection(true);
+      window.setTimeout(() => openFirstSummaryItemIfHelpful("needs_attention_items"), 500);
+      return;
+    }
     const retryPreviewButton = event.target.closest("[data-ea-action='retry-preview-teach']");
     if (retryPreviewButton) {
       event.preventDefault();
@@ -3427,6 +3498,10 @@
         if (previewTargetLabel) {
           teachDraft.targetLabel = previewTargetLabel;
         }
+        if (previewTargetLabel === "suspicious") {
+          previewSafety("sender");
+          return;
+        }
         teachFlowState = "rule-proposed";
         inboxApplyConfirmOpen = false;
         teachOutcome = null;
@@ -3438,6 +3513,55 @@
       if (teachPreview && requestId === teachPreviewRequestId) {
         loadTeachPreviewImpact(teachPreview, requestId);
       }
+    });
+  }
+
+  function previewSafety(scope) {
+    selectedDecisionMode = "safety-preview";
+    teachFlowState = "previewing";
+    safetyResult = null;
+    renderState(lastHarnessState || lastSidebarState);
+    chrome.runtime.sendMessage({
+      type: "email-agent:api",
+      path: "/api/safety-preview",
+      method: "POST",
+      body: { selected_context: lastSidebarState?.selected_context || {}, scope },
+    }, (response) => {
+      if (chrome.runtime.lastError || !response?.ok) {
+        safetyResult = { error: response?.payload?.error || chrome.runtime.lastError?.message || "Could not preview the safety action." };
+        teachFlowState = "safety-error";
+      } else {
+        safetyPreview = response.payload;
+        teachFlowState = "rule-proposed";
+      }
+      renderState(lastHarnessState || lastSidebarState);
+    });
+  }
+
+  function applySafety() {
+    if (applyInFlight) return;
+    applyInFlight = true;
+    teachFlowState = "safety-applying";
+    renderState(lastHarnessState || lastSidebarState);
+    chrome.runtime.sendMessage({
+      type: "email-agent:api",
+      path: "/api/safety-apply",
+      method: "POST",
+      body: {
+        selected_context: lastSidebarState?.selected_context || {},
+        scope: safetyPreview?.scope || "sender",
+        confirmed: true,
+      },
+    }, (response) => {
+      applyInFlight = false;
+      if (chrome.runtime.lastError || !response?.ok) {
+        safetyResult = { error: response?.payload?.error || chrome.runtime.lastError?.message || "Could not complete the safety action." };
+        teachFlowState = "safety-error";
+      } else {
+        safetyResult = response.payload;
+        teachFlowState = "safety-result";
+      }
+      renderState(lastHarnessState || lastSidebarState);
     });
   }
 

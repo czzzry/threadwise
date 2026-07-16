@@ -18,6 +18,8 @@ from pathlib import Path
 
 GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
 GMAIL_MODIFY_SCOPE = "https://www.googleapis.com/auth/gmail.modify"
+GMAIL_SETTINGS_BASIC_SCOPE = "https://www.googleapis.com/auth/gmail.settings.basic"
+GMAIL_SAFETY_SCOPE = f"{GMAIL_MODIFY_SCOPE} {GMAIL_SETTINGS_BASIC_SCOPE}"
 DEFAULT_HTTP_TIMEOUT_SECONDS = 15
 DEFAULT_HTTP_MAX_ATTEMPTS = 3
 TRANSIENT_HTTP_STATUS_CODES = {408, 429, 500, 502, 503, 504}
@@ -158,6 +160,19 @@ class LiveGmailClient:
         for label in response.get("labels", []):
             if label.get("name") == label_name:
                 return label["id"]
+        if label_name == "EA/NeedsAction":
+            legacy = next(
+                (label for label in response.get("labels", []) if label.get("name") == "EA/ReplyNeeded"),
+                None,
+            )
+            if legacy:
+                renamed = self._transport(
+                    "PATCH",
+                    f"https://gmail.googleapis.com/gmail/v1/users/me/labels/{legacy['id']}",
+                    params={"name": label_name},
+                    access_token=self._access_token,
+                )
+                return renamed["id"]
 
         created_label = self._transport(
             "POST",
@@ -212,6 +227,41 @@ class LiveGmailClient:
             "POST",
             f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{message_id}/modify",
             params={"removeLabelIds": ["INBOX"]},
+            access_token=self._access_token,
+        )
+
+    def create_trash_filter(self, sender_query: str, suspicious_label_id: str) -> str:
+        response = self._transport(
+            "POST",
+            "https://gmail.googleapis.com/gmail/v1/users/me/settings/filters",
+            params={
+                "criteria": {"from": sender_query},
+                "action": {"addLabelIds": ["TRASH", suspicious_label_id]},
+            },
+            access_token=self._access_token,
+        )
+        return response["id"]
+
+    def list_filters(self) -> list[dict]:
+        response = self._transport(
+            "GET",
+            "https://gmail.googleapis.com/gmail/v1/users/me/settings/filters",
+            access_token=self._access_token,
+        )
+        return list(response.get("filter") or [])
+
+    def trash_message(self, message_id: str) -> None:
+        self._transport(
+            "POST",
+            f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{message_id}/modify",
+            params={"addLabelIds": ["TRASH"], "removeLabelIds": ["INBOX"]},
+            access_token=self._access_token,
+        )
+
+    def delete_filter(self, filter_id: str) -> None:
+        self._transport(
+            "DELETE",
+            f"https://gmail.googleapis.com/gmail/v1/users/me/settings/filters/{filter_id}",
             access_token=self._access_token,
         )
 
@@ -544,7 +594,8 @@ def _urlopen_json(
                 context=_build_verified_ssl_context(),
                 timeout=timeout_seconds,
             ) as response:
-                return json.loads(response.read())
+                body = response.read()
+                return json.loads(body) if body else {}
         except Exception as exc:
             if _is_ssl_certificate_error(exc):
                 raise SetupError(_certificate_verification_error_message()) from exc

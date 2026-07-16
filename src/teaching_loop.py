@@ -694,6 +694,15 @@ def _note_requests_entire_sender(note: str) -> bool:
 
 
 def infer_semantic_pattern(current: dict, note: str, target_label: str, intent: dict | None = None) -> dict:
+    if target_label == "suspicious":
+        return {
+            "name": "suspicious or phishing messages from this sender",
+            "cross_sender": False,
+            "has_strong_signal": True,
+            "include_families": [],
+            "exclude_families": [],
+            "excluded_pattern": "",
+        }
     boundary = build_semantic_boundary(
         note=note,
         target_label=target_label,
@@ -1071,7 +1080,10 @@ def resolve_target_label(target_label: str, note: str) -> str:
 def interpret_teaching_intent(*, current: dict, target_label: str, note: str, scope: str) -> dict:
     explicit_label = (target_label or "").strip()
     note_label = infer_explicit_target_label_from_note(note) if not explicit_label else ""
-    authoritative_label = explicit_label or note_label
+    deterministic_label = infer_target_label_from_note(note) if not explicit_label and not note_label else ""
+    authoritative_label = explicit_label or note_label or deterministic_label
+    if not authoritative_label:
+        raise ValueError("Choose a label or describe the correction more clearly, for example 'this is spam' or 'this needs a reply'.")
     llm_client = OpenAITeachingIntentClient.from_env()
     if llm_client is not None and (note or not authoritative_label):
         llm_intent = normalize_llm_teaching_intent(
@@ -1103,10 +1115,9 @@ def interpret_teaching_intent(*, current: dict, target_label: str, note: str, sc
             "source": "explicit-note-label" if note_label else "explicit-label",
         }
 
-    inferred = infer_target_label_from_note(note)
-    if inferred:
+    if deterministic_label:
         return {
-            "target_label": inferred,
+            "target_label": deterministic_label,
             "semantic_pattern": "",
             "cross_sender": False,
             "confidence": "medium",
@@ -1133,7 +1144,8 @@ def normalize_llm_teaching_intent(payload: dict) -> dict:
 def infer_target_label_from_note(note: str) -> str:
     text = f" {str(note or '').lower()} "
     checks = [
-        (("spam", "junk", "scam", "phishing", "phish", "suspicious", "low value", "low-value", "delete this", "garbage"), "spam-low-value"),
+        (("phishing", "phish", "suspicious", "credential theft", "impersonation"), "suspicious"),
+        (("spam", "junk", "scam", "low value", "low-value", "delete this", "garbage"), "spam-low-value"),
         (("newsletter", "digest", "mailing list"), "newsletter"),
         (("promotion", "promo", "sale", "discount", "marketing"), "promotions"),
         (("receipt", "invoice", "billing", "bill", "payment", "charged"), "receipt-billing"),

@@ -32,6 +32,10 @@ tmp/
 .lavish/*.png
 .lavish/current-ui-*.html
 .lavish/demo-ui-storage/
+# Treat every local data artifact as private by default. Public fixtures belong
+# under examples/ and must use synthetic identities and message content.
+data/*
+!data/.gitkeep
 data/gmail_companion_simulator/
 data/gmail_fetch/
 data/gmail_credentials/
@@ -43,6 +47,11 @@ data/protonmail_fetch/
 data/protonmail_credentials/
 data/private/
 outputs/private/
+*.eml
+*.mbox
+*.mbx
+*.pst
+*.ost
 *.db
 *.sqlite
 *.sqlite3

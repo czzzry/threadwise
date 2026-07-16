@@ -652,7 +652,7 @@ class TeachingLoopTests(unittest.TestCase):
                     "subject": "Sophie Friend sent you a message",
                 },
                 target_label="personal",
-                note="LinkedIn direct messages from real people should be personal.",
+                note="All future emails from this sender should be personal.",
                 scope="sender",
             )
 
@@ -734,9 +734,9 @@ class TeachingLoopTests(unittest.TestCase):
                 scope="sender",
             )
 
-            self.assertEqual(preview["selected_label_after"], ["spam-low-value"])
-            self.assertEqual(preview["target_label_name"], "EA/LowValue")
-            self.assertIn("EA/LowValue", preview["acknowledgment"])
+            self.assertEqual(preview["selected_label_after"], ["suspicious"])
+            self.assertEqual(preview["target_label_name"], "EA/Suspicious")
+            self.assertIn("EA/Suspicious", preview["acknowledgment"])
 
     def test_preview_proposes_semantic_sender_rule_instead_of_all_sender_rule(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -902,9 +902,9 @@ class TeachingLoopTests(unittest.TestCase):
                 scope="sender",
             )
 
-            self.assertEqual(preview["rule_type"], "cross-sender-semantic")
-            self.assertEqual(preview["rule_type_label"], "Cross-sender semantic rule")
-            self.assertIn("payment or account notices that look suspicious", preview["plain_english_rule"])
+            self.assertEqual(preview["rule_type"], "sender-semantic")
+            self.assertEqual(preview["rule_type_label"], "Sender + semantic rule")
+            self.assertIn("suspicious or phishing messages from this sender", preview["plain_english_rule"])
 
     def test_preview_surfaces_broader_similar_candidates_separately_from_exact_sender_matches(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -968,7 +968,7 @@ class TeachingLoopTests(unittest.TestCase):
             self.assertEqual(preview["impact"]["matching_existing_count"], 0)
             self.assertEqual(preview["impact"]["similar_candidate_count"], 1)
             self.assertEqual(preview["impact"]["similar_candidate_examples"][0]["message_id"], "gmail-live-phish-002")
-            self.assertEqual(preview["impact"]["similar_candidate_examples"][0]["labels_after"], ["spam-low-value"])
+            self.assertEqual(preview["impact"]["similar_candidate_examples"][0]["labels_after"], ["suspicious"])
             group_ids = {group["id"] for group in preview["impact"]["similar_candidate_groups"]}
             self.assertIn("same-domain", group_ids)
             self.assertIn("subject-pattern", group_ids)
@@ -1506,7 +1506,7 @@ class TeachingLoopTests(unittest.TestCase):
             self.assertEqual(preview["impact"]["matching_existing_count"], 0)
             self.assertEqual(preview["impact"]["similar_candidate_count"], 1)
             self.assertEqual(result["matched_existing_count"], 0)
-            self.assertEqual(batch["items"][0]["final_labels"], ["spam-low-value"])
+            self.assertEqual(batch["items"][0]["final_labels"], ["suspicious"])
             self.assertEqual(batch["items"][1]["final_labels"], [])
 
     def test_save_future_rule_only_saves_rule_without_relabeling_existing_messages(self) -> None:

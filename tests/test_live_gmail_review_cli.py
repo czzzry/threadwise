@@ -103,7 +103,7 @@ class LiveGmailReviewCliTests(unittest.TestCase):
             self.assertIn("Allowed labels:", rendered)
             self.assertIn("1. EA/Travel", rendered)
             self.assertIn("7. EA/Account", rendered)
-            self.assertIn("12. EA/ReplyNeeded", rendered)
+            self.assertIn("12. EA/NeedsAction", rendered)
             self.assertIn("Dry run summary:", rendered)
             self.assertIn("Approved writes: 1", rendered)
             self.assertIn("Rejected: 0", rendered)
@@ -683,7 +683,7 @@ class LiveGmailReviewCliTests(unittest.TestCase):
             self.assertEqual(
                 gmail_client.calls,
                 [
-                    ("get_or_create_label", "EA/ReplyNeeded"),
+                    ("get_or_create_label", "EA/NeedsAction"),
                     ("get_or_create_label", "EA/Work"),
                     ("apply_labels", "gmail-live-001", ["Label_1", "Label_2"]),
                 ],
@@ -890,7 +890,7 @@ class LiveGmailReviewCliTests(unittest.TestCase):
             self.assertEqual(
                 gmail_client.calls,
                 [
-                    ("get_or_create_label", "EA/ReplyNeeded"),
+                    ("get_or_create_label", "EA/NeedsAction"),
                     ("get_or_create_label", "EA/Account"),
                     ("apply_labels", "gmail-live-001", ["Label_1", "Label_2"]),
                 ],

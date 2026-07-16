@@ -11,6 +11,7 @@ CANONICAL_LABEL_ORDER = [
     "job-related",
     "spam-low-value",
     "reply-needed",
+    "suspicious",
 ]
 
 # Canonical internal taxonomy from docs/archive/alignment-v1-gmail-mvp.md and docs/archive/prd-v1-gmail-mvp.md.
@@ -26,7 +27,8 @@ DEFAULT_GMAIL_LABEL_NAMES = {
     "personal": "EA/Personal",
     "job-related": "EA/Work",
     "spam-low-value": "EA/LowValue",
-    "reply-needed": "EA/ReplyNeeded",
+    "reply-needed": "EA/NeedsAction",
+    "suspicious": "EA/Suspicious",
 }
 
 

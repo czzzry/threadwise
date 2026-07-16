@@ -117,7 +117,7 @@ class LiveGmailRetryCliTests(unittest.TestCase):
             self.assertEqual(
                 gmail_client.calls,
                 [
-                    ("get_or_create_label", "EA/ReplyNeeded"),
+                    ("get_or_create_label", "EA/NeedsAction"),
                     ("apply_labels", "gmail-live-001", ["Label_1"]),
                 ],
             )
