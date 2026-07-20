@@ -238,6 +238,50 @@ pre {
   font-size: 0.95rem;
 }
 
+.architecture-diagram {
+  margin-top: 18px;
+  padding: 20px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--paper);
+  box-shadow: 0 16px 40px rgba(31, 26, 20, 0.06);
+}
+
+.architecture-diagram .mermaid {
+  min-width: 680px;
+  text-align: center;
+}
+
+.verdict {
+  border-left: 6px solid var(--accent);
+}
+
+.data-no {
+  color: #8b2f20;
+}
+
+.data-yes {
+  color: var(--accent);
+}
+
+details {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #f7f3eb;
+}
+
+summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+code {
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 720px) {
   main {
     padding: 24px 14px 40px;

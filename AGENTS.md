@@ -183,3 +183,14 @@ At the end of repo-editing or implementation tasks, provide a plain-English summ
 - validation performed
 - risks or open questions
 - recommended next step
+
+## Learning capture
+
+- Do not interrupt ordinary implementation with lessons, quizzes, or review of
+  the learning ledger.
+- If `.learning/INBOX.md` exists, after a substantial implementation task append
+  at most three terse learning candidates when they are novel, recurring,
+  architecturally important, or substantially delegated to Codex. Skip this
+  when nothing qualifies.
+- Do not read other `.learning/` files or run the teaching workflow unless the
+  founder explicitly invokes `$learn-from-work`.

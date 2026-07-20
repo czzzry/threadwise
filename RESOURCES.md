@@ -22,6 +22,22 @@
   Use for: the product-facing state machine, recent activity surface, and extension behavior the founder actually sees.
 - Local: `tests/test_gmail_companion_ui.py`
   Use for: the executable proof of the architecture and the intended product semantics.
+- Local: `src/product_analytics.py`
+  Use for: the authoritative event schema, privacy boundary, anonymous identity, PostHog client configuration, and fail-open behavior.
+- Local: `extensions/gmail_companion/analytics.js`
+  Use for: the extension-side manual event vocabulary, count bucketing, timing, and first privacy check.
+- Local: `extensions/gmail_companion/background.js`
+  Use for: the anonymous installation ID and the extension-to-local-companion analytics transport.
+- Local: `scripts/run_gmail_companion_simulator.py`
+  Use for: the controlled simulator boundary, including its deliberate disabling of live Gmail checks and write-through.
+- Local: `scripts/live_gmail_companion_acceptance_cdp.mjs`
+  Use for: the automated live-Gmail actions and evidence checks exercised by the acceptance harness.
+- Local: `docs/handoff/2026-06-29-live-gmail-acceptance-harness-and-trusted-types-hardening.md`
+  Use for: the authoritative distinction between live harness evidence and normal installed-extension parity.
+- External primary: [PostHog — Capturing events](https://posthog.com/docs/product-analytics/capture-events)
+  Use for: the upstream model of custom events, event properties, and distinct IDs that Threadwise deliberately narrows.
+- External primary: [PostHog — Python SDK](https://posthog.com/docs/libraries/python)
+  Use for: the official SDK mechanism used by Threadwise's local companion.
 
 ## Wisdom (Communities)
 
@@ -30,5 +46,5 @@
 
 ## Gaps
 
-- We do not yet have a curated external reading list for browser extension UX latency, async state-machine design, or queue/job architectures.
+- We do not yet have a curated external reading list for browser extension UX latency, async state-machine design, or queue/job architectures. PostHog sources now cover the observability slice.
 - When this teaching workspace expands, add a small set of high-trust external resources instead of relying on generic internet takes.

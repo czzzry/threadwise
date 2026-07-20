@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Lesson 0003: Test Fidelity in Threadwise</title>
+    <link rel="stylesheet" href="../assets/teaching-pack.css">
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <p class="eyebrow">Lesson 0003 · QA + architectural reasoning</p>
+        <h1>A test proves only the path it actually exercised.</h1>
+        <p class="lede">Your tangible win: you will be able to hear “all tests passed” and ask the one question that prevents false confidence: “Which real path did those tests exercise?”</p>
+        <div class="link-row">
+          <a href="0002-posthog-as-an-observer-in-threadwise.html">Previous: PostHog as observer</a>
+          <a href="../reference/0003-threadwise-test-fidelity-reference.html">Open the test-fidelity reference</a>
+        </div>
+      </section>
+
+      <section id="lesson-body">
+        <h2>The answer</h2>
+        <div class="callout verdict">
+          <strong>Test fidelity means how closely the test path matches the claim you want to make.</strong>
+          A lower-fidelity test can be excellent evidence for logic and still be irrelevant to whether the real first screen opens.
+        </div>
+
+        <h2>The Threadwise evidence ladder</h2>
+        <table class="reference-table">
+          <thead><tr><th>Evidence</th><th>What it actually exercises</th><th>What it can support</th><th>What it cannot support alone</th></tr></thead>
+          <tbody>
+            <tr><td>Backend or unit test</td><td>Functions, state, and local service behavior</td><td>“This logic behaves as specified.”</td><td>“The Gmail extension opens and feels usable.”</td></tr>
+            <tr><td>Simulator browser test</td><td>Real clicks against a safe, controlled Gmail-like page and stored data</td><td>“This visible flow works in the simulator.”</td><td>“Google's real page and the installed extension integrate correctly.”</td></tr>
+            <tr><td>Live Gmail harness</td><td>A real signed-in Gmail page with automated Threadwise injection and actions</td><td>“This flow can work against live Gmail conditions.”</td><td>“The founder's normal installed-extension entry path is identical.”</td></tr>
+            <tr><td>Founder click-through</td><td>The normal installed product, real entry point, and human-visible experience</td><td>“The actual founder path worked in this run.”</td><td>Broad logic coverage or every edge case.</td></tr>
+          </tbody>
+        </table>
+
+        <p class="callout warn"><strong>Higher is not universally “better.”</strong> Each layer catches different failures. The mistake is using evidence from one layer to make a claim about another.</p>
+
+        <h2>Why your failure was possible</h2>
+        <div class="flow">
+          <div class="flow-step"><div class="flow-index">1</div><div><h3>The shortcut exercised real code</h3><p>Threadwise's simulator launches a safe local inbox and deliberately disables Gmail checks and Gmail write-through. It is useful and fast, but Google is absent from that path.</p></div></div>
+          <div class="flow-step"><div class="flow-index">2</div><div><h3>The claim quietly became too large</h3><p>“The simulator flow passed” became “Threadwise works from a user's perspective.” The test result may have been accurate; the conclusion was not.</p></div></div>
+          <div class="flow-step"><div class="flow-index">3</div><div><h3>Your first click crossed an untested boundary</h3><p>Your normal browser, installed extension, Gmail page, local companion, and current state all had to connect. A backend simulation could not detect a failure at that entry point.</p></div></div>
+        </div>
+
+        <h2>A worked example</h2>
+        <div class="compare-grid">
+          <div class="grid-card"><h3>Claim</h3><p>“A founder can click <em>Edit suggestion</em> in Gmail and see the correction flow.”</p></div>
+          <div class="grid-card"><h3>Insufficient evidence</h3><p>A backend test calls the correction function and gets the expected result. That proves the correction logic, not the Gmail click or extension connection.</p></div>
+          <div class="grid-card"><h3>Matching evidence</h3><p>Start from the normal Gmail entry point, click the actual control, observe the next state, and retain a screenshot or browser trace.</p></div>
+        </div>
+
+        <h2>The important Threadwise nuance</h2>
+        <p>The repo's live Gmail harness is more realistic than the simulator: it attaches to a real signed-in Gmail page. But it currently uses host-driven sidebar injection and message fulfillment. The project documentation explicitly says this differs from the founder's normal installed-extension path. So “LIVE” is valuable evidence, but the exact entry path must still be named.</p>
+
+        <h2>Your four-question QA contract</h2>
+        <div class="callout work">
+          <ol>
+            <li><strong>Environment:</strong> Was this backend-only, simulator, live Gmail harness, or my normal installed browser?</li>
+            <li><strong>Entry point:</strong> Where did you begin the test?</li>
+            <li><strong>Actions:</strong> What did you actually click or type?</li>
+            <li><strong>Evidence:</strong> What proves each step passed: assertion, screenshot, trace, or visible result?</li>
+          </ol>
+        </div>
+
+        <h2>Return to Codex for assessment</h2>
+        <p>Study this page first, then answer the questions in the Codex conversation by voice or text. Do not self-grade from a model answer here; the teacher will evaluate your reasoning and decide what needs retesting.</p>
+        <div class="quiz">
+          <p><strong>Closed-book retrieval:</strong> if PostHog is down, what still works and why? How can a backend test pass while the first Gmail screen fails? Which test best supports the claim that the installed extension opens for the founder today?</p>
+          <p><strong>Transfer task:</strong> Codex reports, “The simulator opened, the correction request returned success, and all unit tests passed. Therefore the installed Gmail extension is ready.” What part is valid, and what additional test is required?</p>
+        </div>
+
+        <h2>Primary project evidence</h2>
+        <p>Read the short “Remaining caveat” section in <a href="../docs/handoff/2026-06-29-live-gmail-acceptance-harness-and-trusted-types-hardening.md">the live Gmail acceptance handoff</a>. It is the clearest source for what the live harness proves and where it still differs from normal use.</p>
+
+        <p class="footer-note">Ask any follow-up question in the chat. Your answers, not a self-revealed answer key, determine whether this becomes demonstrated learning rather than material merely covered.</p>
+      </section>
+    </main>
+  </body>
+</html>

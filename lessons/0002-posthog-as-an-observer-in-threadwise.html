@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Lesson 0002: PostHog as an Observer in Threadwise</title>
+    <link rel="stylesheet" href="../assets/teaching-pack.css">
+    <script type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+      mermaid.initialize({ startOnLoad: true, theme: "base", themeVariables: {
+        primaryColor: "#e8f6f1", primaryTextColor: "#1f1a14", primaryBorderColor: "#1d5c4a",
+        lineColor: "#665d50", secondaryColor: "#eef3ff", tertiaryColor: "#fff4dd",
+        fontFamily: "Georgia, serif"
+      }});
+    </script>
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <p class="eyebrow">Lesson 0002 · Architecture + observability</p>
+        <h1>PostHog watches Threadwise. It does not run Threadwise.</h1>
+        <p class="lede">Your tangible win: after this lesson, you should be able to trace one user action from Gmail to PostHog, name exactly what crosses the boundary, and explain why analytics failure cannot block an email review or Gmail label write.</p>
+        <div class="link-row">
+          <a href="0001-async-threadwise-extension-architecture.html">Previous: async architecture</a>
+          <a href="../reference/0002-threadwise-posthog-reference.html">Open the PostHog reference sheet</a>
+        </div>
+      </section>
+
+      <h2>The answer first</h2>
+      <div class="callout verdict">
+        <strong>PostHog adds an observability side channel; it does not change Threadwise's decision architecture.</strong>
+        The extension and local companion already had to communicate. We attached small, privacy-checked event messages to that existing boundary. The core path still works without PostHog.
+      </div>
+
+      <h2>Start with the three planes</h2>
+      <div class="card-grid">
+        <div class="grid-card">
+          <h3>1. Product plane</h3>
+          <p>Gmail selection, Threadwise classification, review UI, teach/fix decisions, stored rules, and Gmail label writes. This is the product doing work.</p>
+        </div>
+        <div class="grid-card">
+          <h3>2. Observability plane</h3>
+          <p>Small events such as “suggestion decision made,” plus safe properties such as <code>decision_type=edit</code>. This is evidence about the work.</p>
+        </div>
+        <div class="grid-card">
+          <h3>3. Analysis plane</h3>
+          <p>PostHog stores events so we can build trends and funnels. This is where we ask whether real users complete the intended path.</p>
+        </div>
+      </div>
+
+      <div class="architecture-diagram">
+        <pre class="mermaid">
+flowchart LR
+  subgraph Browser["Chrome / Brave inside Gmail"]
+    Gmail["Gmail page"] --> UI["Threadwise content script"]
+    UI --> SafeEvent["analytics.js creates a safe event"]
+    SafeEvent --> Worker["Extension background worker"]
+  end
+
+  subgraph Local["Local Threadwise companion · 127.0.0.1:8021"]
+    API["/api/analytics/capture"] --> Gate["Strict event + privacy validator"]
+    Core["Classification / teach / Gmail writes"] --> Outcome["Write outcome events"]
+    Outcome --> Gate
+  end
+
+  Worker -->|"event + allowed properties + anonymous ID"| API
+  UI -->|"normal product requests"| Core
+  Gate -. "only if valid and enabled" .-> PH["PostHog EU ingestion"]
+  PH --> Insight["Funnels, trends, completion evidence"]
+  Gate -. "failure returns false" .-> Drop["Product keeps working"]
+
+  classDef product fill:#eef3ff,stroke:#2146b7,color:#1f1a14;
+  classDef observe fill:#e8f6f1,stroke:#1d5c4a,color:#1f1a14;
+  classDef safety fill:#fff4dd,stroke:#8a4b00,color:#1f1a14;
+  class UI,Core,Gmail product;
+  class SafeEvent,Worker,API,PH,Insight observe;
+  class Gate,Drop,Outcome safety;
+        </pre>
+      </div>
+
+      <h2>How we connected it, step by step</h2>
+      <div class="flow">
+        <div class="flow-step">
+          <div class="flow-index">1</div>
+          <div><h3>The extension declares meaningful moments</h3><p><code>analytics.js</code> exposes a tiny API: extension opened, queue opened, review started, suggestion decided, rule confirmed, and batch completed. <code>content.js</code> calls those functions at specific UI transitions. We chose manual custom events rather than generic click autocapture.</p></div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-index">2</div>
+          <div><h3>The extension strips detail before sending</h3><p>The browser code constructs only approved properties. Counts become ranges such as <code>2-5</code>; it sends the choice <code>approve/edit/reject</code>, not the email or the user's instruction. Unknown properties and strings resembling email addresses or authorization values are rejected in the browser.</p></div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-index">3</div>
+          <div><h3>The background worker crosses the local boundary</h3><p>The Gmail content script cannot—and should not—hold the PostHog project token. It asks the extension background worker to POST to Threadwise's existing local companion at <code>/api/analytics/capture</code>.</p></div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-index">4</div>
+          <div><h3>The local companion validates everything again</h3><p><code>ProductAnalytics</code> is the only module allowed to call the PostHog SDK. It checks the event name, exact required and optional keys, enum values, numeric limits, anonymous ID format, and a prohibited-data list. This is the real trust boundary; browser validation is helpful but not sufficient.</p></div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-index">5</div>
+          <div><h3>The Python SDK sends to EU PostHog</h3><p>The local <code>.env</code> supplies the project token, EU ingestion host, environment, and enabled switch. The companion creates the PostHog client with exception autocapture off, GeoIP disabled, and person profiles disabled per event.</p></div>
+        </div>
+      </div>
+
+      <h2>One concrete journey: “I changed the suggestion”</h2>
+      <div class="architecture-diagram">
+        <pre class="mermaid">
+sequenceDiagram
+  actor Founder
+  participant UI as Threadwise UI
+  participant A as analytics.js
+  participant BG as Extension worker
+  participant LC as Local companion
+  participant PH as PostHog EU
+
+  Founder->>UI: clicks Change / edits suggestion
+  UI->>A: decideSuggestion("edit")
+  A->>A: calculate duration; allowlist fields
+  A-->>BG: threadwise:analytics message
+  BG->>BG: load/create anonymous installation ID
+  BG->>LC: POST /api/analytics/capture
+  LC->>LC: validate event, ID, properties, privacy
+  LC-->>BG: 202 {captured: true/false}
+  LC-->>PH: suggestion decision made
+  Note over UI,LC: Product action continues independently
+        </pre>
+      </div>
+
+      <h2>What PostHog reads today</h2>
+      <table class="reference-table">
+        <thead><tr><th>It receives</th><th>Example</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr><td class="data-yes">Named workflow events</td><td><code>review queue opened</code></td><td>Build a real journey and funnel.</td></tr>
+          <tr><td class="data-yes">Coarse choices</td><td><code>decision_type=edit</code></td><td>See whether suggestions are accepted or corrected.</td></tr>
+          <tr><td class="data-yes">Bucketed counts</td><td><code>queue_size_bucket=11-25</code></td><td>Measure scale without sending exact mailbox counts.</td></tr>
+          <tr><td class="data-yes">Timing</td><td><code>duration_ms=8421</code></td><td>See friction between review start and decision.</td></tr>
+          <tr><td class="data-yes">Scope and outcomes</td><td><code>rule_scope=future_email</code></td><td>Understand which correction paths people actually use.</td></tr>
+          <tr><td class="data-yes">Anonymous installation ID</td><td><code>tw_anon_…</code></td><td>Relate events from one installation without Gmail identity.</td></tr>
+        </tbody>
+      </table>
+
+      <h2>What it deliberately does not read</h2>
+      <div class="card-grid">
+        <div class="grid-card"><h3 class="data-no">No email content</h3><p>No subject, sender, recipient, body, preview text, message ID, or thread ID.</p></div>
+        <div class="grid-card"><h3 class="data-no">No teaching prose</h3><p>No rule text, LLM prompt, model output, or generated explanation.</p></div>
+        <div class="grid-card"><h3 class="data-no">No credentials</h3><p>No OAuth value, authorization header, token, or Gmail identity.</p></div>
+        <div class="grid-card"><h3 class="data-no">No passive surveillance</h3><p>No session replay, DOM autocapture, page-view capture, clickstream scraping, or exception stack capture in this implementation.</p></div>
+      </div>
+
+      <div class="callout warn">
+        <strong>Architectural nuance:</strong> the extension itself can read the selected Gmail context because that is required for Threadwise to work. PostHog does not automatically inherit that access. Only the small event payload explicitly constructed by Threadwise crosses the analytics boundary.
+      </div>
+
+      <h2>Does this change our architecture?</h2>
+      <div class="compare-grid">
+        <div class="grid-card">
+          <h3>Yes, structurally</h3>
+          <p>We added an external service dependency, a local analytics adapter, a schema contract, anonymous installation identity, configuration, and an outbound network path.</p>
+        </div>
+        <div class="grid-card">
+          <h3>No, operationally</h3>
+          <p>Classification, sidebar state, teaching, Gmail writes, and retry behavior do not depend on PostHog responses. Analytics capture catches failures and returns false.</p>
+        </div>
+        <div class="grid-card">
+          <h3>The best description</h3>
+          <p>PostHog is a <strong>non-authoritative observer</strong>: architecturally present, operationally optional, never the source of truth.</p>
+        </div>
+      </div>
+
+      <h2>Why this belongs with the async lesson</h2>
+      <p>Async UI tells the founder what Threadwise believes is happening. PostHog tells the product team what users actually experienced across many interactions. Those are complementary feedback loops:</p>
+      <div class="architecture-diagram">
+        <pre class="mermaid">
+flowchart TD
+  S["Async state model"] --> U["User sees accepted → working → done/retry"]
+  U --> E["Meaningful transition emits a safe event"]
+  E --> P["PostHog reconstructs aggregate journeys"]
+  P --> D["Product decision: where is friction or abandonment?"]
+  D --> S
+  T["Automated tests"] -->|"Does code match design?"| S
+  V["Classifier eval set"] -->|"Are judgments correct?"| D
+        </pre>
+      </div>
+
+      <table class="reference-table">
+        <thead><tr><th>System</th><th>Question it answers</th><th>Authority</th></tr></thead>
+        <tbody>
+          <tr><td>Automated tests</td><td>Does the implementation behave as specified?</td><td>Code correctness evidence.</td></tr>
+          <tr><td>Classifier eval set</td><td>Are email classifications and rule interpretations good?</td><td>Model-quality evidence.</td></tr>
+          <tr><td>PostHog</td><td>Which real product paths happen, complete, stall, or fail?</td><td>Usage evidence—not business logic.</td></tr>
+        </tbody>
+      </table>
+
+      <h2>What PostHog can tell us—and what it cannot</h2>
+      <div class="card-grid">
+        <div class="grid-card"><h3>Can answer</h3><p>Of installations that opened a review queue, how many started a review, made a decision, confirmed a future rule, and completed the batch?</p></div>
+        <div class="grid-card"><h3>Cannot answer</h3><p>Was a specific Amazon email correctly classified as Orders? That belongs to the eval set and live QA, because PostHog never receives the email or suggested category.</p></div>
+        <div class="grid-card"><h3>Cannot prove causality</h3><p>If completions rise after a redesign, that is evidence—not automatic proof that the redesign alone caused the change.</p></div>
+      </div>
+
+      <h2>Retrieval practice</h2>
+      <div class="quiz">
+        <h3>Answer before opening the hints</h3>
+        <ol>
+          <li>Why does the project token live in the local companion rather than the Gmail content script?</li>
+          <li>If PostHog is unavailable, which Threadwise behaviors should stop?</li>
+          <li>What is the difference between the extension reading an email and PostHog reading an email?</li>
+          <li>Why do we bucket counts instead of sending exact counts?</li>
+          <li>Which system judges classification quality: PostHog, tests, or the eval set?</li>
+        </ol>
+        <details><summary>Check your mental model</summary><p>The token stays behind the local boundary; no core behavior should stop; access by one component is not automatic data transmission to another; buckets reduce unnecessary specificity; the eval set judges classification quality.</p></details>
+      </div>
+
+      <h2>Your memory aid: S-I-D-E</h2>
+      <div class="card">
+        <p><strong>S — Select</strong> a few meaningful product events.</p>
+        <p><strong>I — Isolate</strong> the external SDK behind the local companion.</p>
+        <p><strong>D — Deny</strong> every unapproved or sensitive property.</p>
+        <p><strong>E — Ensure</strong> analytics failure never becomes product failure.</p>
+      </div>
+
+      <h2>Primary source</h2>
+      <p>PostHog's official <a href="https://posthog.com/docs/product-analytics/capture-events">Capturing events documentation</a> explains custom events, properties, and distinct IDs. Compare its general mechanism with Threadwise's deliberately narrower, manual event contract.</p>
+
+      <p class="footer-note">Ask me follow-up questions from the page. A useful next exercise is for you to explain one event journey in your own words, then I will correct the model rather than the vocabulary.</p>
+    </main>
+  </body>
+</html>

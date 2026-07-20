@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Threadwise PostHog Reference</title><link rel="stylesheet" href="../assets/teaching-pack.css"></head>
+  <body><main>
+    <section class="hero"><p class="eyebrow">Reference 0002</p><h1>Threadwise × PostHog architecture sheet</h1><p class="lede">The compressed mental model: PostHog is a privacy-gated, non-authoritative observer attached to the existing extension → local companion boundary.</p><div class="link-row"><a href="../lessons/0002-posthog-as-an-observer-in-threadwise.html">Return to lesson</a><a href="0001-async-threadwise-extension-reference.html">Async reference</a></div></section>
+    <h2>The path</h2><pre>User transition
+  → analytics.js chooses approved event + safe properties
+  → extension background worker attaches anonymous installation ID
+  → POST http://127.0.0.1:8021/api/analytics/capture
+  → ProductAnalytics validates again
+  → Python PostHog SDK
+  → https://eu.i.posthog.com
+
+Any analytics failure → false / dropped event → core product continues</pre>
+    <h2>Architectural role</h2><table class="reference-table"><tbody><tr><th>Pattern</th><td>Observability side channel</td></tr><tr><th>Authority</th><td>Non-authoritative; never source of truth</td></tr><tr><th>Identity</th><td>Random <code>tw_anon_…</code> installation ID, not Gmail identity</td></tr><tr><th>Privacy</th><td>Manual event allowlist + browser check + server validation</td></tr><tr><th>Failure policy</th><td>Fail open for product behavior; analytics may be absent</td></tr><tr><th>Cloud region</th><td>Official PostHog EU ingestion host</td></tr></tbody></table>
+    <h2>Tracked events</h2><table class="reference-table"><thead><tr><th>Event</th><th>Key safe detail</th></tr></thead><tbody><tr><td>extension opened</td><td>surface</td></tr><tr><td>review queue opened</td><td>bucketed queue size</td></tr><tr><td>email review started</td><td>origin + bucketed size</td></tr><tr><td>suggestion decision made</td><td>approve/edit/reject + duration</td></tr><tr><td>rule confirmed</td><td>scope + bucketed affected count</td></tr><tr><td>label write completed/failed/retried</td><td>scope + bucketed outcome or safe error category</td></tr><tr><td>review batch completed</td><td>bucketed review count + duration</td></tr></tbody></table>
+    <h2>Never send</h2><p>Email subject/body/sender/recipient; message or thread IDs; OAuth or tokens; rule text; LLM input/output; exception messages or stacks.</p>
+    <h2>Three feedback systems</h2><table class="reference-table"><tbody><tr><th>Tests</th><td>Did the software behave as designed?</td></tr><tr><th>Eval set</th><td>Was the classification judgment good?</td></tr><tr><th>PostHog</th><td>What paths did real users take?</td></tr></tbody></table>
+    <div class="callout"><strong>Resume-safe explanation:</strong> “I integrated privacy-gated product analytics as a non-blocking observability side channel. The extension emits a fixed vocabulary of coarse events through a local service, which performs server-side schema and sensitive-data validation before sending anonymous, personless events to PostHog EU.”</div>
+  </main></body>
+</html>
