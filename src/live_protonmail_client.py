@@ -4,12 +4,11 @@ import ssl
 from collections.abc import Callable
 from datetime import UTC, datetime
 from email import message_from_bytes
-from email.message import Message
 from email.utils import parsedate_to_datetime
-from html import unescape
-from html.parser import HTMLParser
 from pathlib import Path
 import re
+
+from src.rfc822_readable_content import extract_readable_content
 
 
 class SetupError(Exception):
@@ -88,7 +87,7 @@ class LiveProtonMailClient:
             _require_ok(status, f"fetch message {message_id}")
             raw_message = _extract_rfc822_bytes(data)
             parsed_message = message_from_bytes(raw_message)
-            body = _extract_readable_body(parsed_message)
+            body = extract_readable_content(parsed_message)
             snippet = body.splitlines()[0][:160] if body else parsed_message.get("Subject", "")[:160]
             date_header = parsed_message.get("Date", "")
             if date_header:
@@ -97,6 +96,7 @@ class LiveProtonMailClient:
                 date = datetime.now(tz=UTC)
             return {
                 "id": message_id,
+                "rfc_message_id": parsed_message.get("Message-ID", ""),
                 "mailbox": "inbox",
                 "sender": parsed_message.get("From", ""),
                 "subject": parsed_message.get("Subject", ""),
@@ -106,6 +106,19 @@ class LiveProtonMailClient:
                 "list_unsubscribe": parsed_message.get("List-Unsubscribe"),
                 "precedence": parsed_message.get("Precedence", ""),
             }
+        finally:
+            _safe_close(connection)
+
+    def message_has_label(self, rfc_message_id: str, label_name: str) -> bool:
+        if not rfc_message_id.strip():
+            return False
+        mailbox = _proton_label_mailbox(label_name)
+        connection = self._open_connection(mailbox=mailbox)
+        try:
+            status, data = connection.uid("SEARCH", None, "HEADER", "Message-ID", rfc_message_id)
+            _require_ok(status, f"verify label {label_name}")
+            raw_ids = data[0].decode("utf-8").strip() if data and data[0] else ""
+            return bool(raw_ids)
         finally:
             _safe_close(connection)
 
@@ -194,44 +207,6 @@ def _safe_close(connection) -> None:
         connection.logout()
 
 
-def _extract_readable_body(message: Message) -> str:
-    plain_text = _extract_first_part_text(message, "text/plain")
-    if plain_text:
-        return _sanitize_text(plain_text)
-
-    html_text = _extract_first_part_text(message, "text/html")
-    if html_text:
-        return _sanitize_text(_html_to_text(html_text))
-
-    return ""
-
-
-def _extract_first_part_text(message: Message, content_type: str) -> str:
-    if message.is_multipart():
-        for part in message.walk():
-            if part.get_content_type() == content_type:
-                payload = part.get_payload(decode=True) or b""
-                return payload.decode(part.get_content_charset() or "utf-8", errors="replace").strip()
-        return ""
-
-    if message.get_content_type() != content_type:
-        return ""
-
-    payload = message.get_payload(decode=True) or b""
-    return payload.decode(message.get_content_charset() or "utf-8", errors="replace").strip()
-
-
-def _sanitize_text(value: str) -> str:
-    text = value.replace("\r\n", "\n").replace("\r", "\n")
-    lines: list[str] = []
-    for raw_line in text.split("\n"):
-        line = re.sub(r"\s+", " ", raw_line).strip()
-        if not line:
-            continue
-        lines.append(line)
-    return "\n".join(lines)
-
-
 def _mailbox_name_from_list_entry(raw_entry: bytes) -> str:
     entry = raw_entry.decode("utf-8", errors="replace").strip()
     quoted = re.search(r'"((?:[^"\\]|\\.)*)"\s*$', entry)
@@ -250,36 +225,3 @@ def _proton_label_mailbox(label_name: str) -> str:
     # Bridge exposes Proton labels beneath Labels/. A hyphen preserves the
     # Threadwise namespace without turning the slash into a mailbox hierarchy.
     return f"Labels/EA-{suffix}"
-
-
-def _html_to_text(value: str) -> str:
-    parser = _HtmlTextExtractor()
-    parser.feed(value)
-    parser.close()
-    return re.sub(r"\s+([.,!?;:])", r"\1", parser.text()).strip()
-
-
-class _HtmlTextExtractor(HTMLParser):
-    def __init__(self) -> None:
-        super().__init__()
-        self._chunks: list[str] = []
-        self._block_tags = {"p", "div", "br", "li", "ul", "ol", "section", "tr", "td", "h1", "h2", "h3", "h4"}
-
-    def handle_data(self, data: str) -> None:
-        cleaned = unescape(data).strip()
-        if cleaned:
-            if self._chunks and self._chunks[-1] and self._chunks[-1][-1].isalnum() and cleaned[0].isalnum():
-                self._chunks.append(" ")
-            self._chunks.append(cleaned)
-
-    def handle_starttag(self, tag: str, attrs) -> None:
-        del attrs
-        if tag in self._block_tags:
-            self._chunks.append("\n")
-
-    def handle_endtag(self, tag: str) -> None:
-        if tag in self._block_tags:
-            self._chunks.append("\n")
-
-    def text(self) -> str:
-        return "".join(self._chunks)

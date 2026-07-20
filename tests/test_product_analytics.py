@@ -25,6 +25,61 @@ class FakePostHogClient:
 
 
 class ProductAnalyticsTests(unittest.TestCase):
+    def test_new_async_and_unsubscribe_events_match_the_tracking_plan(self) -> None:
+        analytics = ProductAnalytics(client=FakePostHogClient(), environment="production", enabled=True)
+        common = {
+            "app_version": "0.1.0",
+            "workflow_version": "gmail-companion-v1",
+            "source": "companion_service",
+        }
+        events = [
+            ("teach/fix flow started", {"surface": "gmail_companion"}),
+            ("teach/fix preview shown", {"surface": "gmail_companion", "preview_outcome": "ready"}),
+            ("teach/fix completed", {"surface": "gmail_companion", "flow_outcome": "completed"}),
+            ("teach/fix failed", {"surface": "gmail_companion", "error_category": "teaching_model_error"}),
+            ("teach/fix retry clicked", {"surface": "gmail_companion", "retry_count": 1}),
+            ("unsubscribe review opened", {"surface": "gmail_companion"}),
+            (
+                "unsubscribe review completed",
+                {
+                    "surface": "gmail_companion",
+                    "reviewed_count_bucket": "2-5",
+                    "review_outcome": "saved",
+                },
+            ),
+            (
+                "proton review opened",
+                {"surface": "proton_review", "queue_size_bucket": "11-25"},
+            ),
+            (
+                "proton review completed",
+                {
+                    "surface": "proton_review",
+                    "decision_type": "looks_right",
+                    "queue_size_bucket": "6-10",
+                    "provider_verified": False,
+                },
+            ),
+            (
+                "proton review failed",
+                {
+                    "surface": "proton_review",
+                    "decision_type": "add_label",
+                    "error_category": "provider_write_error",
+                },
+            ),
+        ]
+
+        for event, properties in events:
+            with self.subTest(event=event):
+                self.assertTrue(
+                    analytics.capture(
+                        distinct_id="tw_anon_12345678-1234-4234-8234-123456789abc",
+                        event=event,
+                        properties={**common, **properties},
+                    )
+                )
+
     def test_delivery_status_distinguishes_disabled_configured_active_and_degraded(self) -> None:
         disabled = ProductAnalytics(environment="production")
         self.assertEqual(disabled.delivery_status()["state"], "disabled")

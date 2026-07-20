@@ -8,7 +8,29 @@ const GMAIL_CHECK_TIMEOUT_MS = 180000;
 // Teaching can include bounded Gmail label mutations across matching inbox messages.
 const GMAIL_MUTATION_TIMEOUT_MS = 180000;
 const ANALYTICS_DISTINCT_ID_KEY = "threadwise_analytics_distinct_id";
+const ACTIVE_EXTENSION_VERSION_KEY = "threadwise_active_extension_version";
 const ANONYMOUS_ID_PATTERN = /^tw_anon_[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+async function refreshOpenGmailTabsAfterVersionChange() {
+  const version = chrome.runtime.getManifest().version;
+  const stored = await chrome.storage.local.get(ACTIVE_EXTENSION_VERSION_KEY);
+  if (stored[ACTIVE_EXTENSION_VERSION_KEY] === version) {
+    return;
+  }
+
+  // Content scripts already injected into Gmail do not update when an unpacked
+  // extension is refreshed. Reload each open Gmail tab once per extension
+  // version so the visible panel and its click handlers cannot remain stale.
+  const gmailTabs = await chrome.tabs.query({ url: "https://mail.google.com/*" });
+  await chrome.storage.local.set({ [ACTIVE_EXTENSION_VERSION_KEY]: version });
+  await Promise.all(
+    gmailTabs
+      .filter((tab) => Number.isInteger(tab.id))
+      .map((tab) => chrome.tabs.reload(tab.id).catch(() => undefined)),
+  );
+}
+
+refreshOpenGmailTabsAfterVersionChange().catch(() => undefined);
 
 async function analyticsDistinctId() {
   const stored = await chrome.storage.local.get(ANALYTICS_DISTINCT_ID_KEY);

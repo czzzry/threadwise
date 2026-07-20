@@ -6,6 +6,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import TextIO
 
+from src.cli_paths import resolve_path
 from src.local_artifacts import load_json, weekly_report_path, write_json
 
 
@@ -32,7 +33,7 @@ def main(
 
     output = stdout or sys.stdout
     repo_root = cwd or Path.cwd()
-    storage_dir = _resolve_path(args.storage_dir, repo_root)
+    storage_dir = resolve_path(args.storage_dir, repo_root)
     reports_dir = storage_dir / "reports"
     window_end = date.fromisoformat(args.end_date)
     window_start = window_end - timedelta(days=6)
@@ -42,10 +43,6 @@ def main(
     _write_weekly_report(reports_dir, report)
     _print_summary(report, output)
     return 0
-
-
-def _resolve_path(path: Path, repo_root: Path) -> Path:
-    return path if path.is_absolute() else repo_root / path
 
 
 def _load_reports_for_window(

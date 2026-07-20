@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TextIO
 
+from src.cli_paths import resolve_path
 from src.live_outlookmail_browser_client import LiveOutlookMailBrowserClient, SetupError
 from src.outlookmail_fetcher import OutlookMailBatchFetcher
 
@@ -36,7 +37,7 @@ def main(
     output = stdout or sys.stdout
     error_output = stderr or sys.stderr
     repo_root = cwd or Path.cwd()
-    storage_dir = _resolve_path(args.storage_dir, repo_root)
+    storage_dir = resolve_path(args.storage_dir, repo_root)
     storage_dir.mkdir(parents=True, exist_ok=True)
 
     outlookmail_client_factory = outlookmail_client_factory or _default_outlookmail_client_factory
@@ -79,10 +80,6 @@ def main(
 
 def _default_outlookmail_client_factory(debug_base_url: str) -> object:
     return LiveOutlookMailBrowserClient(debug_base_url=debug_base_url)
-
-
-def _resolve_path(path: Path, repo_root: Path) -> Path:
-    return path if path.is_absolute() else repo_root / path
 
 
 if __name__ == "__main__":

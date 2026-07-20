@@ -1,7 +1,7 @@
 # Current Operating Model Checkpoint
 
 Status: Current checkpoint
-Current as of: 2026-06-29
+Current as of: 2026-07-16
 Builds on: `docs/v2-alignment.md`
 Current bounded PRD: `docs/prd.md` for the MVP+1 portfolio demo release
 Historical predecessors: `docs/archive/alignment-v1-gmail-mvp.md`, `docs/archive/prd-v1-gmail-mvp.md`, and `docs/archive/mvp-checkpoint-v1-issues-001-027.md`
@@ -29,14 +29,14 @@ The repo now also includes a deterministic live Gmail acceptance harness that ca
 
 ### ProtonMail
 
-The ProtonMail path is currently read-only:
+The ProtonMail batch/report path remains read-only by default:
 
 1. fetch through Proton Mail Bridge or import a local export
 2. normalize into the same provider-aware local batch model
 3. classify messages and write daily report artifacts
 4. leave unresolved exceptions for manual follow-up
 
-No provider-side ProtonMail mutation is part of the current operating model.
+The founder-approved Proton review-console experiment adds one narrower capability: a user may confirm a review locally or add one canonical `EA/` label through Bridge. Threadwise must read that label back, preserve Inbox, and report no destructive actions before advancing. Label replacement, move, archive, Trash, Spam, send, and provider filter/rule changes remain outside the operating model.
 
 ### Reporting and workbench
 
@@ -81,7 +81,7 @@ Still out of scope by default:
 - trashing mail
 - broad archiving
 - unsubscribing without explicit user choice
-- provider-side ProtonMail mutation
+- ProtonMail mutation beyond the bounded, verified, additive label-only review-console operation
 - background scheduling or always-on syncing
 
 ## What looks solid now

@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TextIO
 
+from src.cli_paths import resolve_path
 from src.local_artifacts import (
     batch_path,
     inbox_removal_status_path,
@@ -38,7 +39,7 @@ def main(
 
     output = stdout or sys.stdout
     repo_root = cwd or Path.cwd()
-    storage_dir = _resolve_path(args.storage_dir, repo_root)
+    storage_dir = resolve_path(args.storage_dir, repo_root)
 
     matching_reports = _load_reports(storage_dir, args.account_id)
     report = _select_report(matching_reports, args.batch_id)
@@ -54,10 +55,6 @@ def main(
     output.write(f"Unlabeled exceptions: {report['unlabeled_count']}\n")
     output.write(f"Exception rate: {_exception_rate(report) * 100:.2f}%\n")
     return 0
-
-
-def _resolve_path(path: Path, repo_root: Path) -> Path:
-    return path if path.is_absolute() else repo_root / path
 
 
 def _load_reports(storage_dir: Path, account_id: str) -> list[dict]:

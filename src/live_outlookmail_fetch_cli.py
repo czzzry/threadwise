@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TextIO
 
+from src.cli_paths import resolve_optional_path, resolve_path
 from src.live_outlookmail_client import LiveOutlookMailClient, SetupError
 from src.outlookmail_fetcher import OutlookMailBatchFetcher
 
@@ -42,9 +43,9 @@ def main(
     output = stdout or sys.stdout
     error_output = stderr or sys.stderr
     repo_root = cwd or Path.cwd()
-    storage_dir = _resolve_path(args.storage_dir, repo_root)
-    credentials_dir = _resolve_path(args.credentials_dir, repo_root)
-    imap_config_path = _resolve_optional_path(args.imap_config_path, repo_root)
+    storage_dir = resolve_path(args.storage_dir, repo_root)
+    credentials_dir = resolve_path(args.credentials_dir, repo_root)
+    imap_config_path = resolve_optional_path(args.imap_config_path, repo_root)
 
     storage_dir.mkdir(parents=True, exist_ok=True)
     credentials_dir.mkdir(parents=True, exist_ok=True)
@@ -85,16 +86,6 @@ def _default_outlookmail_client_factory(
         config_path=imap_config_path,
         password_override=password_override,
     )
-
-
-def _resolve_path(path: Path, repo_root: Path) -> Path:
-    return path if path.is_absolute() else repo_root / path
-
-
-def _resolve_optional_path(path: Path | None, repo_root: Path) -> Path | None:
-    if path is None:
-        return None
-    return _resolve_path(path, repo_root)
 
 
 def _resolve_password_override(

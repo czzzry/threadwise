@@ -115,6 +115,25 @@ class LiveOutlookMailClientTests(unittest.TestCase):
             self.assertEqual(message_ids, ["101"])
             self.assertTrue(imap_connection.started_tls)
 
+    def test_html_body_omits_embedded_styles_and_scripts(self) -> None:
+        raw = (
+            "From: Person <person@example.com>\r\n"
+            "Subject: Styled message\r\n"
+            "Content-Type: text/html; charset=utf-8\r\n\r\n"
+            "<html><head><style>table { display:none; }</style>"
+            "<script>window.tracker = true;</script></head>"
+            "<body><p>Hello from the readable message.</p></body></html>"
+        ).encode()
+        connection = FakeIMAPConnection({"101": raw})
+        client = LiveOutlookMailClient(
+            "outlook.office365.com", 993, "user", "pass",
+            imap_factory=lambda host, port: connection,
+        )
+
+        message = client.get_message("101")
+
+        self.assertEqual(message["body"], "Hello from the readable message.")
+
     def test_from_imap_config_raises_setup_error_when_config_missing(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             with self.assertRaises(SetupError) as raised:

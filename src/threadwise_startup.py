@@ -52,6 +52,7 @@ def build_launch_agent_plist(
             str(port),
         ],
         "RunAtLoad": True,
+        "KeepAlive": True,
         "WorkingDirectory": str(repo_root.resolve()),
         "StandardOutPath": str(log_dir / "companion.out.log"),
         "StandardErrorPath": str(log_dir / "companion.err.log"),
@@ -218,6 +219,13 @@ def install_launch_agent(
     if platform.system() != "Darwin":
         raise RuntimeError("LaunchAgent installation is only supported on macOS.")
     uid = subprocess.check_output(["id", "-u"], text=True).strip()
+    service_target = f"gui/{uid}/{LAUNCH_AGENT_LABEL}"
+    subprocess.run(
+        ["launchctl", "bootout", service_target],
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
     subprocess.run(["launchctl", "bootstrap", f"gui/{uid}", str(plist_path)], check=True)
     result["launchctl_executed"] = True
     return result

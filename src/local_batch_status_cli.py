@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TextIO
 
+from src.cli_paths import resolve_path
 from src.local_batch_summary import format_counter, load_batch, summarize_batch
 
 
@@ -29,7 +30,7 @@ def main(
 
     output = stdout or sys.stdout
     repo_root = cwd or Path.cwd()
-    storage_dir = _resolve_path(args.storage_dir, repo_root)
+    storage_dir = resolve_path(args.storage_dir, repo_root)
 
     batch = load_batch(storage_dir / "batches" / f"{args.batch_id}.json")
     summary = summarize_batch(storage_dir, batch)
@@ -57,10 +58,6 @@ def main(
         f"retried_messages={summary['inbox_removal_retried_messages']}\n"
     )
     return 0
-
-
-def _resolve_path(path: Path, repo_root: Path) -> Path:
-    return path if path.is_absolute() else repo_root / path
 
 
 if __name__ == "__main__":

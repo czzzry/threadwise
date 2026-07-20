@@ -1,7 +1,7 @@
 # V2 Alignment
 
 Status: Current product-direction alignment
-Current as of: 2026-07-01
+Current as of: 2026-07-16
 Builds on: `docs/archive/alignment-v1-gmail-mvp.md` and `docs/archive/prd-v1-gmail-mvp.md` as historical Gmail V1 artifacts
 Completed bounded milestone: `docs/archive/prd-memory-runtime-milestone-completed-2026-06-29.md`
 Current bounded PRD: `docs/prd.md` for MVP+2 Gmail daily usefulness
@@ -25,7 +25,7 @@ The repo already proves more than the original Gmail MVP:
 - daily per-run operational reports
 - weekly per-inbox analytical reports
 - provider/account-aware local run artifacts
-- ProtonMail read-only import, live fetch, and daily run paths
+- ProtonMail import, live fetch, daily run paths, and a first bounded label-only review console through Bridge
 - unsubscribe inventory, supported execution, and manual follow-up paths
 - local browser review and inspection tools for exceptions and spot checks
 
@@ -149,7 +149,7 @@ Still out of scope for default autonomy:
 - trashing mail
 - archiving mail broadly
 - unsubscribing from lists without explicit user selection or confirmation
-- provider-side ProtonMail mutation
+- ProtonMail label replacement, moving, archiving, Trash, Spam, sending, or provider-side filter/rule management; the approved Proton trial may only add and read back one `EA/` label while preserving Inbox
 
 ## Teaching Loop Rules
 

@@ -108,6 +108,73 @@ class LiveProtonMailClientTests(unittest.TestCase):
 
         self.assertIn("Context line 13", message["body"])
 
+    def test_message_exposes_rfc_message_id_for_cross_mailbox_verification(self) -> None:
+        raw = (
+            "From: Person <person@example.com>\r\n"
+            "Subject: Detailed message\r\n"
+            "Message-ID: <stable-message@example.com>\r\n\r\n"
+            "Complete context"
+        ).encode()
+        connection = FakeIMAPConnection({"101": raw})
+        client = LiveProtonMailClient(
+            "127.0.0.1", 1143, "user", "pass", ssl_enabled=False,
+            imap_factory=lambda host, port: connection,
+        )
+
+        message = client.get_message("101")
+
+        self.assertEqual(message["rfc_message_id"], "<stable-message@example.com>")
+
+    def test_html_body_omits_embedded_styles_and_scripts(self) -> None:
+        raw = (
+            "From: Person <person@example.com>\r\n"
+            "Subject: Styled message\r\n"
+            "Content-Type: text/html; charset=utf-8\r\n\r\n"
+            "<html><head><style>table { display:none; }</style>"
+            "<script>window.tracker = true;</script></head>"
+            "<body><p>Hello from the readable message.</p></body></html>"
+        ).encode()
+        connection = FakeIMAPConnection({"101": raw})
+        client = LiveProtonMailClient(
+            "127.0.0.1", 1143, "user", "pass", ssl_enabled=False,
+            imap_factory=lambda host, port: connection,
+        )
+
+        message = client.get_message("101")
+
+        self.assertEqual(message["body"], "Hello from the readable message.")
+
+    def test_html_body_survives_an_unclosed_head_element(self) -> None:
+        raw = (
+            "From: Person <person@example.com>\r\n"
+            "Subject: Malformed message\r\n"
+            "Content-Type: text/html; charset=utf-8\r\n\r\n"
+            "<html><head><style>table { display:none; }</style>"
+            "<body><p>Visible content must survive.</p></body></html>"
+        ).encode()
+        connection = FakeIMAPConnection({"101": raw})
+        client = LiveProtonMailClient(
+            "127.0.0.1", 1143, "user", "pass", ssl_enabled=False,
+            imap_factory=lambda host, port: connection,
+        )
+
+        message = client.get_message("101")
+
+        self.assertEqual(message["body"], "Visible content must survive.")
+
+    def test_verifies_label_by_searching_the_label_mailbox_for_rfc_message_id(self) -> None:
+        connection = FakeIMAPConnection({"201": b"From: person@example.com\r\n\r\nHello"})
+        client = LiveProtonMailClient(
+            "127.0.0.1", 1143, "user", "pass", ssl_enabled=False,
+            imap_factory=lambda host, port: connection,
+        )
+
+        verified = client.message_has_label("<stable-message@example.com>", "EA/Personal")
+
+        self.assertTrue(verified)
+        self.assertIn(("select", "Labels/EA-Personal", True), connection.calls)
+        self.assertIn(("uid", "SEARCH", None, "HEADER", "Message-ID", "<stable-message@example.com>"), connection.calls)
+
     def test_from_bridge_config_reads_recent_inbox_messages_via_read_only_imap(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             credentials_dir = Path(temp_dir)

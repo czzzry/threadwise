@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TextIO
 
+from src.cli_paths import resolve_path
 from src.unlabeled_exception_report import collect_recurring_unlabeled_exceptions
 
 
@@ -30,7 +31,7 @@ def main(
 
     output = stdout or sys.stdout
     repo_root = cwd or Path.cwd()
-    storage_dir = _resolve_path(args.storage_dir, repo_root)
+    storage_dir = resolve_path(args.storage_dir, repo_root)
     report = collect_recurring_unlabeled_exceptions(
         storage_dir=storage_dir,
         account_id=args.account_id,
@@ -57,10 +58,6 @@ def main(
             output.write(f"{example['batch_id']} || {example['subject']}\n")
 
     return 0
-
-
-def _resolve_path(path: Path, repo_root: Path) -> Path:
-    return path if path.is_absolute() else repo_root / path
 
 
 if __name__ == "__main__":

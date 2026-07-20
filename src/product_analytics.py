@@ -30,6 +30,16 @@ AnalyticsEventName = Literal[
     "label write failed",
     "label write retried",
     "review batch completed",
+    "teach/fix flow started",
+    "teach/fix preview shown",
+    "teach/fix completed",
+    "teach/fix failed",
+    "teach/fix retry clicked",
+    "unsubscribe review opened",
+    "unsubscribe review completed",
+    "proton review opened",
+    "proton review completed",
+    "proton review failed",
 ]
 
 
@@ -50,6 +60,10 @@ class AnalyticsProperties(TypedDict, total=False):
     dry_run: bool
     error_category: str
     retry_outcome: str
+    preview_outcome: str
+    flow_outcome: str
+    review_outcome: str
+    provider_verified: bool
     synthetic: bool
 
 
@@ -96,16 +110,43 @@ EVENT_SPECS: dict[str, EventSpec] = {
     "review batch completed": EventSpec(
         COMMON_REQUIRED | {"reviewed_count_bucket", "duration_ms"}, COMMON_OPTIONAL
     ),
+    "teach/fix flow started": EventSpec(COMMON_REQUIRED | {"surface"}, COMMON_OPTIONAL),
+    "teach/fix preview shown": EventSpec(
+        COMMON_REQUIRED | {"surface", "preview_outcome"}, COMMON_OPTIONAL
+    ),
+    "teach/fix completed": EventSpec(
+        COMMON_REQUIRED | {"surface", "flow_outcome"}, COMMON_OPTIONAL
+    ),
+    "teach/fix failed": EventSpec(
+        COMMON_REQUIRED | {"surface", "error_category"}, COMMON_OPTIONAL
+    ),
+    "teach/fix retry clicked": EventSpec(
+        COMMON_REQUIRED | {"surface", "retry_count"}, COMMON_OPTIONAL
+    ),
+    "unsubscribe review opened": EventSpec(COMMON_REQUIRED | {"surface"}, COMMON_OPTIONAL),
+    "unsubscribe review completed": EventSpec(
+        COMMON_REQUIRED | {"surface", "reviewed_count_bucket", "review_outcome"}, COMMON_OPTIONAL
+    ),
+    "proton review opened": EventSpec(
+        COMMON_REQUIRED | {"surface", "queue_size_bucket"}, COMMON_OPTIONAL
+    ),
+    "proton review completed": EventSpec(
+        COMMON_REQUIRED | {"surface", "decision_type", "queue_size_bucket", "provider_verified"},
+        COMMON_OPTIONAL,
+    ),
+    "proton review failed": EventSpec(
+        COMMON_REQUIRED | {"surface", "decision_type", "error_category"}, COMMON_OPTIONAL
+    ),
 }
 
 COUNT_BUCKETS = frozenset({"0", "1", "2-5", "6-10", "11-25", "26-50", "51+"})
 PROPERTY_ENUMS: dict[str, frozenset[str]] = {
     "workflow_version": frozenset({ANALYTICS_WORKFLOW_VERSION}),
     "source": frozenset({"extension", "companion_service", "retry_cli", "synthetic"}),
-    "surface": frozenset({"gmail_companion", "validation_script"}),
+    "surface": frozenset({"gmail_companion", "proton_review", "validation_script"}),
     "queue_size_bucket": COUNT_BUCKETS,
     "review_origin": frozenset({"gmail_selected_email", "needs_attention_queue"}),
-    "decision_type": frozenset({"approve", "edit", "reject"}),
+    "decision_type": frozenset({"approve", "edit", "reject", "open", "looks_right", "add_label"}),
     "rule_scope": frozenset({"current_email", "included_existing", "future_email"}),
     "affected_count_bucket": COUNT_BUCKETS,
     "write_count_bucket": COUNT_BUCKETS,
@@ -116,10 +157,15 @@ PROPERTY_ENUMS: dict[str, frozenset[str]] = {
             "provider_write_error",
             "changed_labels",
             "not_retryable",
+            "invalid_request",
+            "teaching_model_error",
             "unknown_safe_category",
         }
     ),
     "retry_outcome": frozenset({"completed", "failed", "blocked"}),
+    "preview_outcome": frozenset({"ready", "needs_clarification", "failed"}),
+    "flow_outcome": frozenset({"completed", "failed"}),
+    "review_outcome": frozenset({"saved", "cleared"}),
 }
 
 PROHIBITED_KEY_PARTS = frozenset(
@@ -196,7 +242,7 @@ def _validate_property_value(name: str, value: object) -> None:
         isinstance(value, bool) or not isinstance(value, int) or value < 0 or value > 100
     ):
         raise AnalyticsValidationError("retry_count must be an integer between 0 and 100")
-    if name in {"dry_run", "synthetic"} and not isinstance(value, bool):
+    if name in {"dry_run", "synthetic", "provider_verified"} and not isinstance(value, bool):
         raise AnalyticsValidationError(f"{name} must be a boolean")
 
 

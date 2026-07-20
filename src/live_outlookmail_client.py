@@ -4,12 +4,10 @@ import ssl
 from collections.abc import Callable
 from datetime import UTC, datetime
 from email import message_from_bytes
-from email.message import Message
 from email.utils import parsedate_to_datetime
-from html import unescape
-from html.parser import HTMLParser
 from pathlib import Path
-import re
+
+from src.rfc822_readable_content import extract_readable_content
 
 
 DEFAULT_IMAP_HOST = "outlook.office365.com"
@@ -81,7 +79,7 @@ class LiveOutlookMailClient:
             _require_ok(status, f"fetch message {message_id}")
             raw_message = _extract_rfc822_bytes(data)
             parsed_message = message_from_bytes(raw_message)
-            body = _extract_readable_body(parsed_message)
+            body = extract_readable_content(parsed_message, max_lines=8, max_chars=1200)
             snippet = body.splitlines()[0][:160] if body else parsed_message.get("Subject", "")[:160]
             date_header = parsed_message.get("Date", "")
             if date_header:
@@ -159,76 +157,3 @@ def _safe_close(connection) -> None:
         connection.close()
     finally:
         connection.logout()
-
-
-def _extract_readable_body(message: Message) -> str:
-    plain_text = _extract_first_part_text(message, "text/plain")
-    if plain_text:
-        return _sanitize_text(plain_text)
-
-    html_text = _extract_first_part_text(message, "text/html")
-    if html_text:
-        return _sanitize_text(_html_to_text(html_text))
-
-    return ""
-
-
-def _extract_first_part_text(message: Message, content_type: str) -> str:
-    if message.is_multipart():
-        for part in message.walk():
-            if part.get_content_type() == content_type:
-                payload = part.get_payload(decode=True) or b""
-                return payload.decode(part.get_content_charset() or "utf-8", errors="replace").strip()
-        return ""
-
-    if message.get_content_type() != content_type:
-        return ""
-
-    payload = message.get_payload(decode=True) or b""
-    return payload.decode(message.get_content_charset() or "utf-8", errors="replace").strip()
-
-
-def _sanitize_text(value: str) -> str:
-    text = value.replace("\r\n", "\n").replace("\r", "\n")
-    lines: list[str] = []
-    for raw_line in text.split("\n"):
-        line = re.sub(r"\s+", " ", raw_line).strip()
-        if not line:
-            continue
-        lines.append(line)
-        if len(lines) >= 8:
-            break
-    return "\n".join(lines)[:1200]
-
-
-def _html_to_text(value: str) -> str:
-    parser = _HtmlTextExtractor()
-    parser.feed(value)
-    parser.close()
-    return re.sub(r"\s+([.,!?;:])", r"\1", parser.text()).strip()
-
-
-class _HtmlTextExtractor(HTMLParser):
-    def __init__(self) -> None:
-        super().__init__()
-        self._chunks: list[str] = []
-        self._block_tags = {"p", "div", "br", "li", "ul", "ol", "section", "tr", "td", "h1", "h2", "h3", "h4"}
-
-    def handle_data(self, data: str) -> None:
-        cleaned = unescape(data).strip()
-        if cleaned:
-            if self._chunks and self._chunks[-1] and self._chunks[-1][-1].isalnum() and cleaned[0].isalnum():
-                self._chunks.append(" ")
-            self._chunks.append(cleaned)
-
-    def handle_starttag(self, tag: str, attrs) -> None:
-        del attrs
-        if tag in self._block_tags:
-            self._chunks.append("\n")
-
-    def handle_endtag(self, tag: str) -> None:
-        if tag in self._block_tags:
-            self._chunks.append("\n")
-
-    def text(self) -> str:
-        return "".join(self._chunks)

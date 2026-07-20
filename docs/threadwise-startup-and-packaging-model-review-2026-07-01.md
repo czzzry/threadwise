@@ -1,7 +1,7 @@
 # Threadwise Startup and Packaging Model Review
 
-Status: Current HITL review output
-Current as of: 2026-07-01
+Status: Current startup contract
+Current as of: 2026-07-17
 GitHub issue: `#16`
 Parent: `docs/prd.md`
 Scope: Product and architecture review only. This review did not install startup services, alter browser settings, inspect credentials, or run live Gmail.
@@ -13,7 +13,7 @@ Threadwise should stay browser-first and local-first for the next startup milest
 The next implementation should be **Threadwise Personal Startup**:
 
 - one-time setup command installs a macOS user LaunchAgent
-- LaunchAgent starts the existing local companion at login
+- LaunchAgent starts the existing local companion at login and keeps it running after termination or failure
 - companion binds only to `127.0.0.1:8021`
 - Brave Gmail extension keeps using the local companion
 - Gmail shows Threadwise minimized by default
@@ -134,7 +134,7 @@ Use these defaults for the implementation issues:
 - process logs: `~/Library/Logs/Threadwise/`
 - app support location reserved for later: `~/Library/Application Support/Threadwise/`
 - existing email artifacts remain where they are for now
-- no silent crash restart in the first slice
+- keep the personal companion running through LaunchAgent; uninstall remains the explicit way to stop automatic restarts
 - disconnected state stays ultra-minimal until expanded
 - urgent/attention state uses badge or indicator only, not auto-expand
 - setup command owns local helper install/status/uninstall

@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TextIO
 
+from src.cli_paths import resolve_path
 from src.shadow_label_eval import OpenAIShadowLabelClient, ShadowLabelEvaluator
 
 DEFAULT_STORAGE_DIR = Path("data/gmail_fetch")
@@ -33,7 +34,7 @@ def main(
     output = stdout or sys.stdout
     error_output = stderr or sys.stderr
     repo_root = cwd or Path.cwd()
-    storage_dir = _resolve_path(args.storage_dir, repo_root)
+    storage_dir = resolve_path(args.storage_dir, repo_root)
 
     model_client = None
     if not args.no_model:
@@ -64,10 +65,6 @@ def main(
         )
     output.write(f"Saved report: {report['report_path']}\n")
     return 0
-
-
-def _resolve_path(path: Path, repo_root: Path) -> Path:
-    return path if path.is_absolute() else repo_root / path
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Email Agent Gmail Companion",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Shows the Email Agent companion sidebar inside Gmail using the local companion server.",
   "permissions": [
     "tabs",

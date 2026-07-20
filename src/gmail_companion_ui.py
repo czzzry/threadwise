@@ -28,7 +28,9 @@ from src.gmail_message_normalizer import normalize_gmail_message
 from src.handled_review_store import HandledReviewStore
 from src.label_taxonomy import CANONICAL_LABEL_ORDER, gmail_label_name
 from src.live_gmail_client import GMAIL_MODIFY_SCOPE, GMAIL_SAFETY_SCOPE
+from src.live_protonmail_client import LiveProtonMailClient, SetupError as ProtonSetupError
 from src.local_artifacts import write_json_artifact
+from src.proton_review_console import ProtonReviewConsole, render_proton_review_page
 from src.product_analytics import (
     ANALYTICS_WORKFLOW_VERSION,
     AnonymousDistinctIdStore,
@@ -80,6 +82,9 @@ from src.semantic_rule_matching import semantic_gmail_search_clauses, semantic_r
 
 DEFAULT_STORAGE_DIR = Path("data/gmail_fetch")
 DEFAULT_CREDENTIALS_DIR = Path("data/gmail_credentials")
+DEFAULT_PROTON_STORAGE_DIR = Path("data/protonmail_fetch")
+DEFAULT_PROTON_CREDENTIALS_DIR = Path("data/protonmail_credentials")
+DEFAULT_PROTON_ACCOUNT_ID = "founder-proton"
 THREADWISE_APP_ICON_PATH = Path("docs/assets/brand/threadwise-app-icon.png")
 HEALTH_STATUS_SCHEMA_VERSION = 1
 HEALTH_STATUS_PATH = "/api/health"
@@ -112,6 +117,10 @@ def infer_gmail_account_id(storage_dir: Path) -> str:
     if latest_batch and latest_batch.get("account_id"):
         return latest_batch["account_id"]
     return ""
+
+
+def default_proton_client_factory(account_id: str, credentials_dir: Path) -> LiveProtonMailClient:
+    return LiveProtonMailClient.from_bridge_config(account_id, credentials_dir)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -202,6 +211,11 @@ class GmailCompanionApp:
         gmail_run_runner=None,
         attention_model_client: object | None = None,
         analytics: ProductAnalytics | None = None,
+        proton_storage_dir: Path = DEFAULT_PROTON_STORAGE_DIR,
+        proton_credentials_dir: Path = DEFAULT_PROTON_CREDENTIALS_DIR,
+        proton_account_id: str = DEFAULT_PROTON_ACCOUNT_ID,
+        proton_client_factory=None,
+        proton_review_console: object | None = None,
     ) -> None:
         self._storage_dir = storage_dir
         self._credentials_dir = credentials_dir
@@ -213,6 +227,12 @@ class GmailCompanionApp:
         self._gmail_run_runner = gmail_run_runner
         self._attention_model_client = attention_model_client
         self._analytics = analytics or ProductAnalytics.from_environment()
+        self._proton_storage_dir = proton_storage_dir
+        self._proton_credentials_dir = proton_credentials_dir
+        self._proton_account_id = proton_account_id
+        self._proton_client_factory = proton_client_factory or default_proton_client_factory
+        self._proton_review_console_instance = proton_review_console
+        self._proton_review_console_lock = threading.Lock()
         self._analytics_distinct_ids = AnonymousDistinctIdStore(storage_dir)
         self._unsubscribe_store = UnsubscribeInventoryStore(storage_dir)
         self._handled_review_store = HandledReviewStore(storage_dir)
@@ -281,6 +301,48 @@ class GmailCompanionApp:
 
         if handler.command == "GET" and parsed.path == "/daily-dashboard":
             encoded = self.render_daily_dashboard_page().encode("utf-8")
+            handler.send_response(HTTPStatus.OK)
+            handler.send_header("Content-Type", "text/html; charset=utf-8")
+            handler.send_header("Content-Length", str(len(encoded)))
+            self._write_cors_headers(handler)
+            handler.end_headers()
+            handler.wfile.write(encoded)
+            return
+
+        if handler.command == "GET" and parsed.path == "/proton-review":
+            try:
+                state = self.proton_review_state()
+                self._capture_workflow_event(
+                    handler,
+                    "proton review opened",
+                    {
+                        "surface": "proton_review",
+                        "queue_size_bucket": bucket_count(state.get("remaining_count", 0)),
+                    },
+                )
+                encoded = render_proton_review_page(state).encode("utf-8")
+            except (OSError, ValueError, RuntimeError, ProtonSetupError) as exc:
+                self._capture_workflow_event(
+                    handler,
+                    "proton review failed",
+                    {
+                        "surface": "proton_review",
+                        "decision_type": "open",
+                        "error_category": "provider_write_error",
+                    },
+                )
+                encoded = render_proton_review_page({
+                    "remaining_count": 0,
+                    "reviewed_count": 0,
+                    "current": None,
+                    "allowed_labels": [],
+                }).replace(
+                    "Nothing else needs a double check",
+                    "Proton review is not available",
+                ).replace(
+                    "Threadwise will not re-offer the messages you reviewed in this console.",
+                    escape_html(str(exc)),
+                ).encode("utf-8")
             handler.send_response(HTTPStatus.OK)
             handler.send_header("Content-Type", "text/html; charset=utf-8")
             handler.send_header("Content-Length", str(len(encoded)))
@@ -498,6 +560,63 @@ class GmailCompanionApp:
             except (KeyError, ValueError, HTTPException, json.JSONDecodeError) as exc:
                 return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
 
+        if handler.command == "POST" and parsed.path == "/api/proton-review/acknowledge":
+            try:
+                payload = self._read_json_body(handler)
+                response = self._proton_console().acknowledge(str(payload.get("message_id") or ""))
+                self._capture_workflow_event(
+                    handler,
+                    "proton review completed",
+                    {
+                        "surface": "proton_review",
+                        "decision_type": "looks_right",
+                        "queue_size_bucket": bucket_count(response.get("remaining_count", 0)),
+                        "provider_verified": False,
+                    },
+                )
+                return self._write_json(handler, HTTPStatus.OK, response)
+            except (KeyError, ValueError, RuntimeError, ProtonSetupError) as exc:
+                self._capture_workflow_event(
+                    handler,
+                    "proton review failed",
+                    {
+                        "surface": "proton_review",
+                        "decision_type": "looks_right",
+                        "error_category": "invalid_request" if isinstance(exc, (KeyError, ValueError)) else "provider_write_error",
+                    },
+                )
+                return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+
+        if handler.command == "POST" and parsed.path == "/api/proton-review/apply-label":
+            try:
+                payload = self._read_json_body(handler)
+                response = self._proton_console().apply_label(
+                    str(payload.get("message_id") or ""),
+                    str(payload.get("internal_label") or ""),
+                )
+                self._capture_workflow_event(
+                    handler,
+                    "proton review completed",
+                    {
+                        "surface": "proton_review",
+                        "decision_type": "add_label",
+                        "queue_size_bucket": bucket_count(response.get("remaining_count", 0)),
+                        "provider_verified": True,
+                    },
+                )
+                return self._write_json(handler, HTTPStatus.OK, response)
+            except (KeyError, ValueError, RuntimeError, ProtonSetupError) as exc:
+                self._capture_workflow_event(
+                    handler,
+                    "proton review failed",
+                    {
+                        "surface": "proton_review",
+                        "decision_type": "add_label",
+                        "error_category": "invalid_request" if isinstance(exc, (KeyError, ValueError)) else "provider_write_error",
+                    },
+                )
+                return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+
         self._write_json(handler, HTTPStatus.NOT_FOUND, {"error": "Not found"})
 
     def _read_json_body(self, handler: BaseHTTPRequestHandler) -> dict:
@@ -507,6 +626,23 @@ class GmailCompanionApp:
         if not isinstance(payload, dict):
             raise ValueError("JSON body must be an object.")
         return payload
+
+    def _proton_console(self):
+        with self._proton_review_console_lock:
+            if self._proton_review_console_instance is None:
+                proton_client = self._proton_client_factory(
+                    self._proton_account_id,
+                    self._proton_credentials_dir,
+                )
+                self._proton_review_console_instance = ProtonReviewConsole(
+                    proton_client=proton_client,
+                    classification_ledger_path=self._proton_storage_dir / "live_manual_review_ledger.json",
+                    review_state_path=self._proton_storage_dir / "review_console_state.json",
+                )
+            return self._proton_review_console_instance
+
+    def proton_review_state(self) -> dict:
+        return self._proton_console().state()
 
     def _read_request_payload(self, handler: BaseHTTPRequestHandler) -> dict:
         content_length = int(handler.headers.get("Content-Length", "0") or "0")
@@ -592,6 +728,7 @@ class GmailCompanionApp:
                 "gmail-check",
                 "attention-feedback",
                 "unsubscribe-review",
+                "proton-review",
             ],
         }
 
@@ -4070,6 +4207,12 @@ class GmailCompanionApp:
       <p>The inbox sidebar can queue subscriptions for later review. This page shows the currently queued families.</p>
       <div class="stack">{unsubscribe_html}</div>
       <a class="action action--primary" data-dashboard-primary-action href="/unsubscribe-review" target="_blank" rel="noreferrer">Open unsubscribe review</a>
+    </section>
+    <section class="card" data-dashboard-section="proton-review">
+      <div class="eyebrow">Proton Mail</div>
+      <h2>Review uncertain Proton labels</h2>
+      <p>Open the local Bridge-backed review console. This trial can confirm a review or apply a verified label; it cannot archive, delete, move, or send email.</p>
+      <a class="action action--primary" data-dashboard-primary-action href="/proton-review">Open Proton review</a>
     </section>
     <details data-dashboard-diagnostics class="card">
       <summary>Diagnostics and label distribution</summary>

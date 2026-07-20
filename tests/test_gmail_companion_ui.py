@@ -1364,6 +1364,31 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn('selectedTeachScope === "apply-included"', content_js)
         self.assertIn('requires_confirmation && !affectedReviewOpen', content_js)
 
+    def test_extension_update_refreshes_open_gmail_tabs_once_so_stale_content_scripts_cannot_survive(self) -> None:
+        repo_root = Path(__file__).resolve().parent.parent
+        manifest = json.loads((repo_root / "extensions" / "gmail_companion" / "manifest.json").read_text())
+        background_js = (repo_root / "extensions" / "gmail_companion" / "background.js").read_text()
+
+        self.assertEqual(manifest["version"], "0.2.0")
+        self.assertIn("threadwise_active_extension_version", background_js)
+        self.assertIn("chrome.runtime.getManifest().version", background_js)
+        self.assertIn('chrome.tabs.query({ url: "https://mail.google.com/*" })', background_js)
+        self.assertIn("chrome.tabs.reload(tab.id)", background_js)
+        self.assertIn("await chrome.storage.local.set", background_js)
+
+    def test_suspicious_preview_routes_to_the_dedicated_destructive_confirmation(self) -> None:
+        content_js = (Path(__file__).parent.parent / "extensions" / "gmail_companion" / "content.js").read_text()
+        preview_success = content_js.split("function previewTeach()", 1)[1].split(
+            "function previewSafety", 1
+        )[0]
+
+        self.assertIn('previewTargetLabel === "suspicious"', preview_success)
+        self.assertIn('previewSafety("sender")', preview_success)
+        self.assertIn('data-ea-action="confirm-safety-action"', content_js)
+        self.assertIn("Label, trash, and protect future mail", content_js)
+        self.assertIn('path: "/api/safety-apply"', content_js)
+        self.assertIn("confirmed: true", content_js)
+
     def test_companion_script_runs_from_repo_root_without_pythonpath(self) -> None:
         repo_root = Path(__file__).resolve().parent.parent
         result = subprocess.run(
@@ -1914,7 +1939,7 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertEqual(invalid_subset.code, 400)
         self.assertIn("must be a subset", subset_error["error"])
 
-    def test_daily_dashboard_page_has_three_default_sections_in_operational_order(self) -> None:
+    def test_daily_dashboard_page_has_four_default_sections_in_operational_order(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
             self._write_batch(
@@ -1997,8 +2022,9 @@ class GmailCompanionUiTests(unittest.TestCase):
                 'data-dashboard-section="needs-review"',
                 'data-dashboard-section="activity"',
                 'data-dashboard-section="subscriptions"',
+                'data-dashboard-section="proton-review"',
             ]
-            self.assertEqual([page.count(marker) for marker in section_markers], [1, 1, 1])
+            self.assertEqual([page.count(marker) for marker in section_markers], [1, 1, 1, 1])
             self.assertEqual(
                 sorted(page.index(marker) for marker in section_markers),
                 [page.index(marker) for marker in section_markers],
@@ -2008,8 +2034,9 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertNotIn('data-dashboard-section="recent-queue"', page)
             self.assertEqual(page.count("<details data-dashboard-diagnostics"), 1)
             self.assertIn("Open unsubscribe review", page)
+            self.assertIn("Open Proton review", page)
             self.assertIn("<main data-dashboard-shell>", page)
-            self.assertEqual(page.count("data-dashboard-primary-action"), 2)
+            self.assertEqual(page.count("data-dashboard-primary-action"), 3)
             self.assertIn(".action--primary", page)
             self.assertIn(":focus-visible", page)
             self.assertIn("padding:clamp(8px,3vw,28px)", page)

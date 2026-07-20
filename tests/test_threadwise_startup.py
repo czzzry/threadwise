@@ -45,6 +45,7 @@ class ThreadwiseStartupTests(unittest.TestCase):
                 ],
             )
             self.assertTrue(payload["RunAtLoad"])
+            self.assertTrue(payload["KeepAlive"])
             self.assertEqual(payload["WorkingDirectory"], str(repo_root.resolve()))
             self.assertEqual(payload["StandardOutPath"], str(log_dir / "companion.out.log"))
             self.assertEqual(payload["StandardErrorPath"], str(log_dir / "companion.err.log"))
@@ -60,6 +61,29 @@ class ThreadwiseStartupTests(unittest.TestCase):
 
             uninstall_result = uninstall_launch_agent(plist_path=plist_path, dry_run=True)
             self.assertTrue(uninstall_result["removed"])
+
+    def test_install_refreshes_an_existing_launch_agent_before_bootstrap(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            plist_path = repo_root / "com.threadwise.companion.plist"
+
+            with (
+                patch("src.threadwise_startup.platform.system", return_value="Darwin"),
+                patch("src.threadwise_startup.subprocess.check_output", return_value="501\n"),
+                patch("src.threadwise_startup.subprocess.run") as run_mock,
+            ):
+                result = install_launch_agent(repo_root, plist_path=plist_path)
+
+            self.assertTrue(result["launchctl_executed"])
+            self.assertEqual(
+                [call.args[0] for call in run_mock.call_args_list],
+                [
+                    ["launchctl", "bootout", "gui/501/com.threadwise.companion"],
+                    ["launchctl", "bootstrap", "gui/501", str(plist_path)],
+                ],
+            )
+            self.assertFalse(run_mock.call_args_list[0].kwargs["check"])
+            self.assertTrue(run_mock.call_args_list[1].kwargs["check"])
 
     def test_build_status_report_uses_health_probe(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

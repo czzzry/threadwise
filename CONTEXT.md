@@ -1,7 +1,7 @@
 # CONTEXT.md
 
 Status: Current repo context
-Current as of: 2026-07-10
+Current as of: 2026-07-16
 
 This file is the short "you are here" guide for the repo.
 
@@ -41,7 +41,7 @@ The repo already proves:
 - browser-based Gmail companion flows
 - dashboard and workbench surfaces
 - unsubscribe review and explicit execution support
-- ProtonMail read-only paths
+- ProtonMail read paths plus a bounded Bridge-backed, label-only review console
 - local artifact, reporting, and review tooling
 
 The current branch state has completed the async Gmail companion extension slices `133` through `137`, including:
@@ -64,6 +64,8 @@ For the just-completed async extension work, use:
 4. `docs/issues/135-move-slower-follow-up-work-off-the-main-sidebar-path.md`
 5. `docs/issues/136-add-recent-activity-and-retry-surface-for-async-operations.md`
 6. `docs/issues/137-build-comprehensive-teaching-pack-for-async-threadwise-extension.md`
+
+For the founder-approved bounded Proton review-console experiment, use `docs/issues/138-add-proton-bridge-review-console.md`. It is the authority for the narrow label-only Proton write boundary.
 
 For repo workflow and guardrails, use `AGENTS.md`.
 
@@ -94,7 +96,7 @@ Use this order:
 ## Current Trust Boundaries
 
 - Gmail mutation must stay bounded and auditable
-- ProtonMail remains read-only
+- ProtonMail mutation is limited to the founder-approved review-console slice: add one `EA/` label, verify it through Bridge, and preserve Inbox; no label replacement, move, archive, Trash, Spam, send, or provider rule changes
 - unsubscribe execution must remain explicit and reviewable
 - broad autonomous inbox actions remain out of scope by default
 - private email, credentials, OAuth, and live inbox data remain sensitive
