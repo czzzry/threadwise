@@ -1,15 +1,15 @@
-# Threadwise Portfolio Overview
+# Threadwise Product Overview
 
-Status: Public portfolio framing
+Status: Public product overview
 Current as of: 2026-06-30
 
 ## One-Line Summary
 
 Threadwise is a local-first AI inbox triage prototype that combines rules, model-assisted classification, inbox-native correction, and explicit human approval before broader provider-side action.
 
-## Recruiter Demo
+## Product Walkthrough
 
-![Threadwise recruiter demo](assets/threadwise-recruiter-story.gif)
+![Threadwise product walkthrough](assets/threadwise-recruiter-story.gif)
 
 The public demo uses synthetic Gmail-style data. It shows the core product loop without requiring setup:
 
@@ -89,9 +89,7 @@ Current boundaries:
 - Delete, trash, broad archive, send, and reply automation are out of scope.
 - This repo does not claim phishing detection or security-grade classification.
 
-## What I Personally Built / Directed
-
-This repository is intended to show builder-operator work more than classic software-engineering branding.
+## Ownership
 
 The work represented here includes:
 
@@ -108,7 +106,7 @@ The work represented here includes:
 - Single-user focus, not team/shared inboxes
 - Gmail is the main release target; ProtonMail write-side behavior is not implemented
 - Public README demo asset exists; static screenshot packaging is still a follow-up
-- The repo still contains historical internal planning and handoff material that is useful for process evidence but not all recruiter-readable
+- Historical planning and handoff material remains available for traceability, while the README and current product docs provide the shortest path through the project
 - Some operational tooling is intentionally rough because it exists to prove workflows, not to present a finished commercial product
 
 ## What This Repo Does Not Claim To Be
@@ -118,9 +116,8 @@ The work represented here includes:
 - not a security product
 - not a shipping-ready multi-tenant architecture
 - not proof of enterprise deployment or large-scale ML operations
-- not an attempt to present the author as a pure professional SWE or ML engineer
 
-## Public Demo Assets
+## Demo Assets
 
 - Primary README GIF: `docs/assets/threadwise-recruiter-story.gif`
 - Selected slower/prominent variant: `docs/assets/threadwise-recruiter-story-v2-slower-prominent.gif`
@@ -130,7 +127,7 @@ The work represented here includes:
 
 Static screenshots can still be added after the GIF direction is fully accepted in README context.
 
-## Best Public Reading Order
+## Recommended Reading Order
 
 1. [README.md](../README.md)
 2. [docs/portfolio.md](portfolio.md)

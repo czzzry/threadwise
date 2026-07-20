@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/threadwise-recruiter-story.gif" alt="Threadwise demo showing Gmail triage, teaching, approved unsubscribe cleanup, and roadmap." width="820">
+  <img src="docs/assets/threadwise-recruiter-story.gif" alt="Threadwise demo showing Gmail triage, teaching, approved unsubscribe cleanup, and roadmap." width="720">
 </p>
 
 <p align="center">
@@ -18,9 +18,9 @@ Threadwise is a local-first prototype for AI-assisted inbox triage. It combines 
 
 The product bet is simple: let the agent do the repetitive first pass, but keep the user in control when a decision could affect real inbox state. The strongest loop is the one shown above: classify an email, explain the decision, accept a correction in context, preview broader impact, and wait for confirmation before changing more than the current message.
 
-Start here if you want the public project story:
+Start here for the product story and the current operating model:
 
-- [Portfolio overview](docs/portfolio.md)
+- [Product overview](docs/portfolio.md)
 - [Current product direction](docs/v2-alignment.md)
 - [Current bounded PRD](docs/prd.md)
 - [Current operating checkpoint](docs/checkpoints/current-operating-model-2026-06-22.md)
@@ -98,10 +98,10 @@ Key choices:
 - ProtonMail is currently read-only.
 - Broader existing-message rewrites are previewed first and require confirmation.
 
-## Proof Points For Reviewers
+## Product And Engineering Notes
 
-- Product loop: [demo GIF](docs/assets/threadwise-recruiter-story.gif)
-- Portfolio framing: [docs/portfolio.md](docs/portfolio.md)
+- Product walkthrough: [demo GIF](docs/assets/threadwise-recruiter-story.gif)
+- Product overview: [docs/portfolio.md](docs/portfolio.md)
 - Current product direction: [docs/v2-alignment.md](docs/v2-alignment.md)
 - Current bounded PRD: [docs/prd.md](docs/prd.md)
 - Operating checkpoint: [docs/checkpoints/current-operating-model-2026-06-22.md](docs/checkpoints/current-operating-model-2026-06-22.md)
@@ -113,14 +113,14 @@ Key choices:
 - `scripts/`: runnable entrypoints for Gmail, ProtonMail, reports, harnesses, and local tools
 - `extensions/`: browser companion code
 - `tests/`: behavior and contract tests
-- `docs/`: product docs, PRDs, checkpoints, issues, handoffs, and portfolio framing
+- `docs/`: product docs, PRDs, checkpoints, issues, handoffs, and decision history
 - `examples/`: safe sample inputs and config examples
 
 ## Running It Locally
 
 ### Safe synthetic demo
 
-The fastest reviewer path runs only the committed synthetic inbox. It disables Gmail write-through and live Gmail checks by construction.
+The fastest local demo runs only the committed synthetic inbox. It disables Gmail write-through and live Gmail checks by construction.
 
 With Docker:
 
