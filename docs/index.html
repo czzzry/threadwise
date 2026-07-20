@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Try Threadwise with a synthetic inbox. No login, private email, or provider access required.">
+    <title>Threadwise synthetic inbox demo</title>
+    <link rel="stylesheet" href="demo/styles.css">
+  </head>
+  <body>
+    <a class="skip-link" href="#demo">Skip to the demo</a>
+
+    <header class="site-header">
+      <a class="brand" href="https://github.com/czzzry/threadwise" aria-label="Threadwise on GitHub">
+        <img src="assets/brand/threadwise-primary-logo.png" alt="Threadwise">
+      </a>
+      <div class="header-actions">
+        <span class="demo-badge">Synthetic demo</span>
+        <a href="https://github.com/czzzry/threadwise">View repository</a>
+      </div>
+    </header>
+
+    <main id="demo">
+      <section class="intro" aria-labelledby="page-title">
+        <div>
+          <p class="intro-label">No login or inbox access</p>
+          <h1 id="page-title">Teach the inbox without giving up control.</h1>
+        </div>
+        <p>
+          Pick an email, inspect Threadwise’s reasoning, and correct one decision.
+          The impact preview appears before anything broader changes.
+        </p>
+      </section>
+
+      <section class="workspace" aria-label="Interactive synthetic inbox">
+        <div class="mailbox">
+          <div class="mail-toolbar">
+            <button class="compose" type="button" disabled>Compose</button>
+            <div class="search" aria-hidden="true">Search synthetic mail</div>
+            <span class="mail-count">12 messages</span>
+          </div>
+
+          <div class="mail-layout">
+            <nav class="mail-nav" aria-label="Demo mailbox folders">
+              <strong>Inbox <span>12</span></strong>
+              <span>Starred</span>
+              <span>Snoozed</span>
+              <span>Sent</span>
+              <span>Drafts</span>
+              <hr>
+              <span>EA/Work</span>
+              <span>EA/Promotions</span>
+              <span>EA/LowValue</span>
+            </nav>
+
+            <div class="message-list-shell">
+              <div class="tabs" aria-hidden="true">
+                <strong>Primary</strong>
+                <span>Promotions</span>
+                <span>Updates</span>
+              </div>
+              <div id="message-list" class="message-list" aria-label="Synthetic messages"></div>
+            </div>
+          </div>
+        </div>
+
+        <aside class="companion" aria-label="Threadwise companion">
+          <div class="companion-header">
+            <img src="assets/brand/threadwise-app-icon.png" alt="">
+            <div>
+              <strong>Threadwise</strong>
+              <span>Clear threads. Better inbox.</span>
+            </div>
+            <span class="ready">Ready</span>
+          </div>
+          <div id="companion-content" class="companion-content" aria-live="polite"></div>
+        </aside>
+      </section>
+
+      <p class="safety-note">
+        Everything on this page is synthetic and runs in your browser.
+        The demo makes no network request, has no credentials, and cannot change an inbox.
+      </p>
+    </main>
+
+    <script src="demo/app.js"></script>
+  </body>
+</html>

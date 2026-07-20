@@ -7,6 +7,12 @@
 </p>
 
 <p align="center">
+  <a href="https://czzzry.github.io/threadwise/"><strong>Try the hosted synthetic demo</strong></a>
+  ·
+  <a href="docs/portfolio.md">Read the product overview</a>
+</p>
+
+<p align="center">
   <img src="docs/assets/threadwise-recruiter-story.gif" alt="Threadwise demo showing Gmail triage, teaching, approved unsubscribe cleanup, and roadmap." width="720">
 </p>
 
@@ -20,6 +26,7 @@ The product bet is simple: let the agent do the repetitive first pass, but keep 
 
 Start here for the product story and the current operating model:
 
+- [Hosted synthetic demo](https://czzzry.github.io/threadwise/)
 - [Product overview](docs/portfolio.md)
 - [Current product direction](docs/v2-alignment.md)
 - [Current bounded PRD](docs/prd.md)
@@ -101,6 +108,7 @@ Key choices:
 ## Product And Engineering Notes
 
 - Product walkthrough: [demo GIF](docs/assets/threadwise-recruiter-story.gif)
+- Hosted interaction: [synthetic inbox demo](https://czzzry.github.io/threadwise/)
 - Product overview: [docs/portfolio.md](docs/portfolio.md)
 - Current product direction: [docs/v2-alignment.md](docs/v2-alignment.md)
 - Current bounded PRD: [docs/prd.md](docs/prd.md)
