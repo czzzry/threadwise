@@ -1,0 +1,10 @@
+services:
+  threadwise-demo:
+    build:
+      context: .
+      dockerfile: Dockerfile.demo
+    ports:
+      - "8031:8031"
+    init: true
+    security_opt:
+      - no-new-privileges:true

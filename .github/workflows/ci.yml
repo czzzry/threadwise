@@ -13,10 +13,10 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -25,3 +25,28 @@ jobs:
 
       - name: Check public-data hygiene
         run: python3 scripts/check_public_data_hygiene.py
+
+  demo-container:
+    name: Synthetic demo container
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Build synthetic demo image
+        run: docker build --file Dockerfile.demo --tag threadwise-demo:ci .
+
+      - name: Start synthetic demo
+        run: docker run --detach --name threadwise-demo --publish 8031:8031 threadwise-demo:ci
+
+      - name: Wait for healthy demo
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8031/api/health >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs threadwise-demo
+          exit 1
