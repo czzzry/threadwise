@@ -1,7 +1,7 @@
 # CONTEXT.md
 
 Status: Current repo context
-Current as of: 2026-07-16
+Current as of: 2026-07-20
 
 This file is the short "you are here" guide for the repo.
 
@@ -44,7 +44,7 @@ The repo already proves:
 - ProtonMail read paths plus a bounded Bridge-backed, label-only review console
 - local artifact, reporting, and review tooling
 
-The current branch state has completed the async Gmail companion extension slices `133` through `137`, including:
+The current branch state includes the completed async Gmail companion extension slices `133` through `137`, including:
 
 - visible selected-email understanding states
 - explicit async teach / fix lifecycle states
@@ -52,7 +52,7 @@ The current branch state has completed the async Gmail companion extension slice
 - compact recent-activity and retry visibility
 - a founder-facing teaching pack for this async architecture
 
-These changes are implemented on `codex/eval-promotion-pipeline` and are ready for PR review / merge flow.
+The current architecture checkpoint on `codex/runtime-a042b03` also completes a behavior-preserving refactor of the companion application. Rendering, teaching, Gmail teaching writes, and cached runtime state now live in deep modules with narrow interfaces. See `docs/handoff/2026-07-20-architecture-refactor-closeout.md`.
 
 ## Current Source Of Truth
 
@@ -66,6 +66,8 @@ For the just-completed async extension work, use:
 6. `docs/issues/137-build-comprehensive-teaching-pack-for-async-threadwise-extension.md`
 
 For the founder-approved bounded Proton review-console experiment, use `docs/issues/138-add-proton-bridge-review-console.md`. It is the authority for the narrow label-only Proton write boundary.
+
+For the current implementation architecture, use `docs/handoff/2026-07-20-architecture-refactor-closeout.md` and the linked bounded handoffs.
 
 For repo workflow and guardrails, use `AGENTS.md`.
 

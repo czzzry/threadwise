@@ -35,7 +35,8 @@ The application module decreased from 1,419 to 1,196 lines. The runtime module i
 - `python3 -m unittest discover -s tests`: 730 tests passed.
 - Python compilation and diff whitespace checks passed.
 
-## Remaining architecture opportunities
+## Final re-audit
 
-- Provider message normalization still repeats canonical message assembly; preserve provider-specific parsing while testing whether shared assembly passes the deletion test.
-- HTTP transport extraction remains speculative because it may only move the route tree without increasing depth.
+- Provider message normalization failed the deletion test: the proposed canonical interface would be nearly as wide as its dictionary implementation and would introduce a generic provider framework rejected by current product direction.
+- HTTP transport extraction failed the deletion test: the apparent one-method interface would still leak the full set of application commands into the router and merely move the route tree.
+- See `docs/handoff/2026-07-20-architecture-refactor-closeout.md` for the completed review.
