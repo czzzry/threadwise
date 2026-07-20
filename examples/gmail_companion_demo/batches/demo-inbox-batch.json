@@ -9,7 +9,7 @@
       "snippet": "Senior AI product roles this week from companies hiring now.",
       "payload": {
         "headers": [
-          {"name": "From", "value": "LinkedIn Jobs <jobalerts-noreply@linkedin.com>"},
+          {"name": "From", "value": "RoleScout Jobs <jobs@example.test>"},
           {"name": "Subject", "value": "Senior AI product roles this week"},
           {"name": "Date", "value": "Tue, 30 Jun 2026 09:18:00 +0000"}
         ]
@@ -149,7 +149,7 @@
       "snippet": "Weekly product management roles matching your alerts.",
       "payload": {
         "headers": [
-          {"name": "From", "value": "LinkedIn Jobs <jobalerts-noreply@linkedin.com>"},
+          {"name": "From", "value": "RoleScout Jobs <jobs@example.test>"},
           {"name": "Subject", "value": "Product leadership roles matching your alerts"},
           {"name": "Date", "value": "Tue, 30 Jun 2026 04:40:00 +0000"},
           {"name": "List-Unsubscribe", "value": "<https://linkedin.example/unsubscribe/demo>"},
@@ -164,7 +164,7 @@
       "source": "gmail",
       "account_id": "demo-account",
       "message_id": "demo-001",
-      "sender": "LinkedIn Jobs <jobalerts-noreply@linkedin.com>",
+      "sender": "RoleScout Jobs <jobs@example.test>",
       "subject": "Senior AI product roles this week",
       "date": "2026-06-30T09:18:00Z",
       "snippet": "Senior AI product roles this week from companies hiring now.",
@@ -334,7 +334,7 @@
       "source": "gmail",
       "account_id": "demo-account",
       "message_id": "demo-012",
-      "sender": "LinkedIn Jobs <jobalerts-noreply@linkedin.com>",
+      "sender": "RoleScout Jobs <jobs@example.test>",
       "subject": "Product leadership roles matching your alerts",
       "date": "2026-06-30T04:40:00Z",
       "snippet": "Weekly product management roles matching your alerts.",

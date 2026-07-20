@@ -185,7 +185,7 @@ Near-term product work now looks more like:
 4. use the current workbench/review infrastructure as supporting product plumbing, not the destination UX
 5. package the Gmail release as a recruiter-ready portfolio demo
 6. make the Gmail daily loop genuinely useful with a teachable Needs attention lane and product-triggered Gmail check flow
-7. add the founder's ProtonMail inbox after the Gmail daily-use loop and public demo story are solid
+7. add the same user's second-provider inbox after the Gmail daily-use loop and public demo story are solid
 
 ## Non-goals for now
 

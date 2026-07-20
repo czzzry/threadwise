@@ -700,7 +700,7 @@ curl -sS http://127.0.0.1:8031/daily-dashboard
 ## What Could Not Be Inspected
 
 - I did not open live Gmail or inspect private email content.
-- I did not capture the actual installed extension inside the founder's real Gmail tab.
+- I did not capture the installed extension against private inbox data.
 - The safe simulator captures the sidebar flows and supporting pages, but the extension-only floating feedback "Note" affordance and offline companion-server error state were assessed from `extensions/gmail_companion/content.js` rather than screenshot-tested in live Gmail.
 
 ## Biggest UI Risks

@@ -1,0 +1,23 @@
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+RUN addgroup --system threadwise && adduser --system --ingroup threadwise threadwise
+
+COPY --chown=threadwise:threadwise src/ src/
+COPY --chown=threadwise:threadwise scripts/ scripts/
+COPY --chown=threadwise:threadwise extensions/ extensions/
+COPY --chown=threadwise:threadwise examples/gmail_companion_demo/ examples/gmail_companion_demo/
+COPY --chown=threadwise:threadwise docs/assets/brand/threadwise-app-icon.png docs/assets/brand/threadwise-app-icon.png
+
+USER threadwise
+
+EXPOSE 8031
+
+HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
+    CMD ["python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8031/api/health', timeout=2).read()"]
+
+CMD ["python3", "scripts/run_gmail_companion_simulator.py", "--host", "0.0.0.0", "--port", "8031"]

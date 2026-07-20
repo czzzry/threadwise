@@ -118,30 +118,52 @@ Key choices:
 
 ## Running It Locally
 
-Current preferred commands stay here, lower in the README because this repo is also a portfolio artifact.
+### Safe synthetic demo
+
+The fastest reviewer path runs only the committed synthetic inbox. It disables Gmail write-through and live Gmail checks by construction.
+
+With Docker:
+
+```bash
+make demo
+```
+
+Then open [http://localhost:8031/simulator](http://localhost:8031/simulator). Stop it with `make demo-down`.
+
+Without Docker:
+
+```bash
+python3 scripts/run_gmail_companion_simulator.py
+```
+
+The Docker image is intentionally limited to the simulator. The real extension, OAuth, and local provider bridges remain native because containerizing those paths would add access friction without improving their safety or fidelity.
+
+### Private local workflows
+
+The commands below operate only after the user supplies their own local credentials and account identifiers. They are not required for the public demo.
 
 Gmail daily workflow:
 
 ```bash
-python3 scripts/daily_live_gmail_run.py --account-id founder-test --batch-size 50
+python3 scripts/daily_live_gmail_run.py --account-id <local-gmail-id> --batch-size 50
 ```
 
 ProtonMail read-only daily workflow:
 
 ```bash
-python3 scripts/daily_live_protonmail_run.py --account-id founder-proton --batch-size 25
+python3 scripts/daily_live_protonmail_run.py --account-id <local-proton-id> --batch-size 25
 ```
 
 Weekly per-inbox report:
 
 ```bash
-python3 scripts/weekly_inbox_report.py --account-id founder-test --storage-dir data/gmail_fetch --end-date 2026-06-20
+python3 scripts/weekly_inbox_report.py --account-id <local-gmail-id> --storage-dir data/gmail_fetch --end-date 2026-06-20
 ```
 
 Local browser review / workbench:
 
 ```bash
-python3 scripts/review_local_batch_in_browser.py --batch-id founder-test-batch-N --port 8001
+python3 scripts/review_local_batch_in_browser.py --batch-id <local-batch-id> --port 8001
 ```
 
 Operational readiness check:

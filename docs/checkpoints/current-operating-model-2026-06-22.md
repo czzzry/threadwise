@@ -25,7 +25,7 @@ The Gmail path is now a usable supervised release workflow for one inbox:
 
 Manual browser review, explicit review/apply flows, retries, and local inspection commands remain available as fallback and verification paths.
 
-The repo now also includes a deterministic live Gmail acceptance harness that can attach to the real Gmail page target, inject the sidebar when needed, and exercise queue-preview and teaching-preview flows against the founder's real inbox context.
+The repo now also includes a deterministic Gmail acceptance harness that can attach to a controlled Gmail page target, inject the sidebar when needed, and exercise queue-preview and teaching-preview flows against synthetic test data.
 
 ### ProtonMail
 
