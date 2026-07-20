@@ -49,10 +49,10 @@ from src.gmail_companion_rendering import (
     render_dashboard_email_cards,
     render_dashboard_section,
     render_dashboard_unsubscribe_cards,
-    render_unsubscribe_row,
-    render_unsubscribe_section,
+    render_install_page as render_install_page_html,
+    render_unsubscribe_review_page as render_unsubscribe_review_page_html,
+    script_safe_json,
     server_origin,
-    unsubscribe_section_key,
 )
 from src.gmail_companion_state import (
     build_companion_runtime_payload,
@@ -98,15 +98,6 @@ LIVE_INBOX_RECONCILIATION_MAX_MESSAGES = 10_000
 INBOX_BACKFILL_CONFIRM_THRESHOLD = 200
 INBOX_BACKFILL_ESTIMATE_CAP = 25
 THREADWISE_APP_VERSION = "0.1.0"
-
-
-def script_safe_json(value: object) -> str:
-    return (
-        json.dumps(value)
-        .replace("&", "\\u0026")
-        .replace("<", "\\u003c")
-        .replace(">", "\\u003e")
-    )
 
 
 def infer_gmail_account_id(storage_dir: Path) -> str:
@@ -3615,282 +3606,22 @@ class GmailCompanionApp:
 </html>"""
 
     def render_install_page(self, host_header: str) -> str:
-        origin = server_origin(host_header)
-        extension_path = str((Path.cwd() / "extensions" / "gmail_companion").resolve())
-        return f"""<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Threadwise Gmail Companion</title>
-  <style>
-    :root {{
-      color-scheme: light;
-      --ink: #1d1a16;
-      --muted: #6b6255;
-      --line: #d9cfbf;
-      --panel: #fffdf8;
-      --soft: #f4ecdd;
-      --accent: #0f766e;
-      --accent-soft: #d8f3ef;
-    }}
-    * {{ box-sizing: border-box; }}
-    body {{ margin: 0; font-family: Georgia, 'Times New Roman', serif; background: linear-gradient(180deg, #efe3cb 0%, #f6f0e4 42%, #f8f4eb 100%); color: var(--ink); }}
-    main {{ max-width: 980px; margin: 0 auto; padding: 36px 20px 56px; display: grid; gap: 18px; }}
-    .hero {{ background: var(--panel); border: 1px solid var(--line); border-radius: 22px; padding: 24px; box-shadow: 0 18px 40px rgba(29, 26, 22, 0.08); }}
-    .eyebrow {{ color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.72rem; }}
-    h1 {{ margin: 10px 0 12px; font-size: 2rem; line-height: 1.05; }}
-    p {{ line-height: 1.5; }}
-    .grid {{ display: grid; gap: 18px; grid-template-columns: 1.2fr 0.8fr; }}
-    .card {{ background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 18px; }}
-    ol {{ margin: 10px 0 0; padding-left: 22px; }}
-    li + li {{ margin-top: 8px; }}
-    .path {{ margin-top: 12px; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--line); background: #fcfaf5; font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }}
-    .pill {{ display: inline-block; padding: 6px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 0.84rem; }}
-    .meta {{ color: var(--muted); }}
-    @media (max-width: 820px) {{
-      .grid {{ grid-template-columns: 1fr; }}
-    }}
-  </style>
-</head>
-<body>
-  <main>
-    <section class="hero">
-      <div class="eyebrow">Gmail Companion</div>
-      <h1>Install the local Gmail sidebar once, then use it inside Gmail.</h1>
-      <p>The old bookmark launcher path has been retired. The current setup is the local Brave extension plus the companion server on <span class="pill">{origin}</span>.</p>
-    </section>
-    <section class="grid">
-      <section class="card">
-        <div class="eyebrow">Brave Setup</div>
-        <ol>
-          <li>Open <code>brave://extensions</code>.</li>
-          <li>Turn on <strong>Developer mode</strong>.</li>
-          <li>Choose <strong>Load unpacked</strong>.</li>
-          <li>Select this folder:</li>
-        </ol>
-        <div class="path">{extension_path}</div>
-        <ol start="5">
-          <li>Keep the companion server running at <code>{origin}</code>.</li>
-          <li>Open Gmail and refresh once.</li>
-        </ol>
-      </section>
-      <section class="card">
-        <div class="eyebrow">What You Should See</div>
-        <p>A right-side panel inside Gmail that shows:</p>
-        <ol>
-          <li>the current email’s category</li>
-          <li>whether it was auto-handled or still needs attention</li>
-          <li>a short reason</li>
-          <li>a compact view of today’s activity</li>
-        </ol>
-        <p class="meta">This page is now only for installation and troubleshooting. The product itself lives in Gmail.</p>
-      </section>
-    </section>
-  </main>
-</body>
-</html>"""
+        return render_install_page_html(
+            origin=server_origin(host_header),
+            extension_path=str((Path.cwd() / "extensions" / "gmail_companion").resolve()),
+        )
 
     def render_unsubscribe_review_page(self, query: dict[str, list[str]] | None = None) -> str:
         query = query or {}
         focus_list_key = first_query_value(query, "list_key")
-        candidates = self._unsubscribe_store.list_candidates()
-        rows_by_section = {
-            "ready": [],
-            "queued": [],
-            "manual": [],
-        }
-        for candidate in candidates:
-            detail = build_unsubscribe_detail(candidate, self._storage_dir)
-            candidate_preview = detail["preview"]
-            is_focused = bool(focus_list_key and detail.get("list_key") == focus_list_key)
-            action_html = ""
-            preview_url = candidate_preview.get("url") or ""
-            if preview_url.startswith("mailto:"):
-                action_html = f'<a class="row-link" href="{escape_html(preview_url)}">Open mail app · does not execute here</a>'
-            elif preview_url.startswith("http") and candidate_preview.get("status") == "ready":
-                action_html = '<span class="row-note">Ready for a separately confirmed action</span>'
-            elif preview_url.startswith("http"):
-                action_html = (
-                    f'<a class="row-link" href="{escape_html(preview_url)}" target="_blank" rel="noreferrer">'
-                    'Open provider page · does not execute here</a>'
-                )
-            section_key = unsubscribe_section_key(detail, candidate_preview)
-            rows_by_section[section_key].append(
-                render_unsubscribe_row(
-                    detail,
-                    candidate_preview,
-                    action_html=action_html,
-                    focused=is_focused,
-                )
-            )
-
-        sections_html = "".join(
-            render_unsubscribe_section(key, title, description, rows_by_section[key])
-            for key, title, description in [
-                ("ready", "Ready now", "Supported one-click paths that are not queued yet."),
-                ("queued", "Queued", "Subscriptions selected for later review."),
-                ("manual", "Manual follow-up", "Subscriptions whose provider or mail flow needs a manual step."),
-            ]
-            if rows_by_section[key]
+        details = [
+            build_unsubscribe_detail(candidate, self._storage_dir)
+            for candidate in self._unsubscribe_store.list_candidates()
+        ]
+        return render_unsubscribe_review_page_html(
+            details,
+            focus_list_key=focus_list_key,
         )
-        empty_html = (
-            '<div class="empty-state">No unsubscribe candidates are stored yet.</div>'
-            if not candidates
-            else ""
-        )
-        group_counts = {key: len(rows) for key, rows in rows_by_section.items()}
-        candidate_keys_json = script_safe_json(
-            [candidate.get("list_key") for candidate in candidates if candidate.get("list_key")]
-        )
-        return f"""<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Threadwise Unsubscribe Review</title>
-  <style>
-    body {{ margin:0; min-height:100vh; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: radial-gradient(circle at 18px 18px, rgba(36,24,18,.05) 2px, transparent 2px) 0 0 / 36px 36px, linear-gradient(135deg,#f7efe0 0%,#fdfaf2 52%,#e7f3ee 100%); color:#241812; }}
-    main {{ max-width: 1180px; margin: 0 auto; padding: 34px; display:grid; gap:18px; }}
-    .hero {{ background:#fff7e8; border:2px solid #241812; border-radius:18px; padding:18px; }}
-    .hero-heading {{ display:flex; align-items:center; gap:12px; }}
-    .brand-mark {{ width:42px; height:42px; border-radius:12px; border:1px solid #9e9486; flex:0 0 auto; background:#fff8df; }}
-    .review-form,.section {{ display:grid; gap:18px; }}
-    .unsubscribe-group {{ background:#fffdf7; border:1px solid #9e9486; border-radius:14px; padding:16px; }}
-    .unsubscribe-list {{ display:grid; border-top:1px solid #d7cfbf; }}
-    .unsubscribe-row {{ display:grid; grid-template-columns:32px minmax(190px,1.4fr) minmax(72px,.45fr) minmax(190px,1.2fr) minmax(170px,1fr) minmax(150px,.9fr); gap:12px; align-items:center; padding:12px 4px; border-bottom:1px solid #d7cfbf; }}
-    .unsubscribe-row h3 {{ margin:0; font-size:.98rem; }}
-    .identity-cell,.readiness-cell,.attempt-cell,.evidence-cell {{ min-width:0; display:grid; gap:4px; }}
-    .address,.readiness-cell span,.attempt-cell span,.row-note,.row-link {{ color:#6b6255; font-size:.82rem; line-height:1.35; overflow-wrap:anywhere; word-break:break-word; }}
-    .evidence-cell span {{ color:#6b6255; font-size:.76rem; }}
-    .row-link {{ color:#315f55; font-weight:760; }}
-    .eyebrow {{ color:#6b6255; font-size:0.72rem; text-transform:uppercase; letter-spacing:0.14em; font-weight:820; }}
-    h1,h2 {{ margin:8px 0 10px; }}
-    h1 {{ font-size:2rem; line-height:1.05; }}
-    p {{ line-height:1.45; }}
-    .safety-note {{ border:1px solid #9e9486; border-radius:12px; background:#fffdf7; padding:10px 12px; color:#4d4134; }}
-    .pill-row {{ display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }}
-    .pill {{ border:1px solid #9e9486; border-radius:999px; padding:6px 10px; background:#f1eadf; color:#241812; font-size:0.8rem; font-weight:760; }}
-    .focused {{ border-color:#2eb67d; background:#f5fbfa; }}
-    .focus-note {{ display:inline-flex; align-items:center; padding:6px 10px; border:2px solid #241812; border-radius:999px; background:#dff8ed; color:#09633c; font-size:0.82rem; font-weight:760; }}
-    .batch-bar {{ position:sticky; bottom:12px; z-index:2; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 14px; border:1px solid #241812; border-radius:14px; background:#fffdf7; box-shadow:0 8px 24px rgba(36,24,18,.14); }}
-    .batch-bar[hidden] {{ display:none; }}
-    .save-selection {{ border:2px solid #241812; border-radius:10px; background:#2eb67d; color:#241812; padding:9px 12px; font-weight:800; box-shadow:3px 3px 0 #241812; }}
-    .clear-selection {{ border:0; background:transparent; color:#5d5342; text-decoration:underline; font-weight:760; }}
-    @media (max-width: 880px) {{
-      main {{ padding:18px; }}
-      .unsubscribe-row {{ grid-template-columns:28px minmax(0,1fr); align-items:start; }}
-      .evidence-cell,.readiness-cell,.attempt-cell,.row-action-cell {{ grid-column:2; }}
-      .batch-bar {{ flex-wrap:wrap; }}
-    }}
-  </style>
-</head>
-<body>
-  <main>
-    <section class="hero">
-      <div class="hero-heading">
-        <img class="brand-mark" src="/assets/brand/threadwise-app-icon.png" alt="" aria-hidden="true">
-        <div>
-          <div class="eyebrow">Unsubscribe Review</div>
-          <h1>Subscription cleanup</h1>
-        </div>
-      </div>
-      <p>Review subscription families and choose which ones to queue. Selection never executes an unsubscribe.</p>
-      <div class="pill-row">
-        <span class="pill">Ready now: {group_counts["ready"]}</span>
-        <span class="pill">Queued: {group_counts["queued"]}</span>
-        <span class="pill">Manual follow-up: {group_counts["manual"]}</span>
-        <span class="pill">All candidates: {len(candidates)}</span>
-      </div>
-    </section>
-    <aside class="safety-note" data-unsubscribe-safety-note>
-      Queueing or clearing a selection does not execute an unsubscribe. Ready one-click HTTPS actions require a separate explicit confirmation. Manual mail or provider links leave Threadwise and do not count as execution.
-    </aside>
-    <form class="review-form" id="unsubscribe-selection-form">
-      <section class="section">
-        {sections_html}
-        {empty_html}
-      </section>
-      <div class="batch-bar" data-unsubscribe-batch-bar {'hidden' if group_counts["queued"] < 1 else ''}>
-        <strong><span data-unsubscribe-selected-count>{group_counts["queued"]}</span> selected</strong>
-        <div>
-          <button class="clear-selection" type="button" data-clear-unsubscribe-selection>Clear queued selections</button>
-          <button class="save-selection" type="button" data-save-unsubscribe-selection>Save selection</button>
-        </div>
-        <span class="row-note" data-unsubscribe-selection-status aria-live="polite"></span>
-      </div>
-    </form>
-  </main>
-  <script>
-    const candidateKeys = {candidate_keys_json};
-    const selectionInputs = [...document.querySelectorAll('[data-unsubscribe-selection]')];
-    const batchBar = document.querySelector('[data-unsubscribe-batch-bar]');
-    const selectedCount = document.querySelector('[data-unsubscribe-selected-count]');
-    const selectionStatus = document.querySelector('[data-unsubscribe-selection-status]');
-    const saveSelectionButton = document.querySelector('[data-save-unsubscribe-selection]');
-    const clearSelectionButton = document.querySelector('[data-clear-unsubscribe-selection]');
-    let selectionSaveInFlight = false;
-    let reloadScheduled = false;
-
-    function selectedKeys() {{
-      return selectionInputs.filter((input) => input.checked).map((input) => input.value);
-    }}
-
-    function updateBatchBar() {{
-      const count = selectedKeys().length;
-      selectedCount.textContent = String(count);
-      batchBar.hidden = count < 1;
-    }}
-
-    async function persistSelection(keys) {{
-      if (selectionSaveInFlight) {{
-        return;
-      }}
-      selectionSaveInFlight = true;
-      saveSelectionButton.disabled = true;
-      clearSelectionButton.disabled = true;
-      selectionStatus.textContent = 'Saving selection…';
-      try {{
-        const response = await fetch('/api/unsubscribe-candidates/selections', {{
-          method: 'POST',
-          headers: {{ 'Content-Type': 'application/json' }},
-          body: JSON.stringify({{
-            candidate_keys: candidateKeys,
-            selected_candidate_keys: keys,
-          }}),
-        }});
-        const payload = await response.json();
-        if (!response.ok) {{
-          selectionStatus.textContent = payload.error || 'Could not save selection.';
-          return;
-        }}
-        selectionStatus.textContent = payload.acknowledgment;
-        updateBatchBar();
-        reloadScheduled = true;
-        window.setTimeout(() => window.location.reload(), 350);
-      }} catch (_error) {{
-        selectionStatus.textContent = 'Could not reach Threadwise. Selection was not saved.';
-      }} finally {{
-        if (!reloadScheduled) {{
-          selectionSaveInFlight = false;
-          saveSelectionButton.disabled = false;
-          clearSelectionButton.disabled = false;
-        }}
-      }}
-    }}
-
-    selectionInputs.forEach((input) => input.addEventListener('change', updateBatchBar));
-    saveSelectionButton.addEventListener('click', () => {{
-      persistSelection(selectedKeys());
-    }});
-    clearSelectionButton.addEventListener('click', () => {{
-      selectionInputs.forEach((input) => {{ input.checked = false; }});
-      persistSelection([]);
-    }});
-    updateBatchBar();
-  </script>
-</body>
-</html>"""
 
     def render_daily_dashboard_page(self) -> str:
         payload = self._cached_runtime_payload()
