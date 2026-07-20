@@ -63,12 +63,12 @@ class HandledReviewStoreTests(unittest.TestCase):
                 message_id="message-1",
             )
 
-            with patch.object(app, "_cached_runtime_payload", return_value={"items": [item], "daily_summary": {}}), patch.object(
-                app,
-                "sidebar_state",
+            with patch.object(app._runtime_state, "runtime_payload", return_value={"items": [item], "daily_summary": {}}), patch.object(
+                app._runtime_state,
+                "sidebar",
                 return_value={"selected_email": {"found": True, **item}, "daily_summary": {}},
             ):
-                payload = app._build_harness_state({"provider": "gmail", "message_id": "message-1"})
+                payload = app.harness_state({"provider": "gmail", "message_id": "message-1"})
 
             self.assertEqual(payload["recent_items"], [])
             self.assertEqual(payload["auto_handled_items"], [])

@@ -2,7 +2,6 @@ import argparse
 import json
 import threading
 import time
-from datetime import UTC, datetime
 from http.client import HTTPException
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -22,7 +21,6 @@ from src.attention_rules import (
 )
 from src.gmail_safety_action import GmailSafetyAction
 from src.handled_review_store import HandledReviewStore
-from src.label_taxonomy import CANONICAL_LABEL_ORDER, gmail_label_name
 from src.live_gmail_client import GMAIL_MODIFY_SCOPE, GMAIL_SAFETY_SCOPE
 from src.live_protonmail_client import LiveProtonMailClient, SetupError as ProtonSetupError
 from src.proton_review_console import ProtonReviewConsole, render_proton_review_page
@@ -46,9 +44,7 @@ from src.gmail_companion_rendering import (
     server_origin,
 )
 from src.gmail_companion_state import (
-    build_companion_runtime_payload,
     build_daily_attention_summary,
-    build_daily_summary,
     build_selected_email_state,
     build_unsubscribe_detail,
     find_matching_item,
@@ -58,9 +54,9 @@ from src.gmail_companion_state import (
     load_latest_report,
     selected_context_from_query,
     selected_email_contract,
-    selected_email_understanding_state,
 )
 from src.companion_teaching_workflow import CompanionTeachingWorkflow
+from src.companion_runtime_state import CompanionRuntimeState
 from src.gmail_teaching_adapter import GmailTeachingAdapter, INBOX_BACKFILL_ESTIMATE_CAP
 
 
@@ -74,10 +70,7 @@ HEALTH_STATUS_SCHEMA_VERSION = 1
 HEALTH_STATUS_PATH = "/api/health"
 HEALTH_STATUS_SERVICE_ID = "threadwise-gmail-companion"
 HEALTH_STATUS_SERVICE_NAME = "Threadwise Gmail Companion"
-HARNESS_STATE_CACHE_SECONDS = 120.0
 HEALTH_STATUS_CACHE_SECONDS = 5.0
-COMPANION_DATA_CACHE_SECONDS = 120.0
-LIVE_INBOX_RECONCILIATION_CACHE_SECONDS = 30.0
 LIVE_INBOX_RECONCILIATION_MAX_MESSAGES = 10_000
 THREADWISE_APP_VERSION = "0.1.0"
 
@@ -209,17 +202,15 @@ class GmailCompanionApp:
         self._analytics_distinct_ids = AnonymousDistinctIdStore(storage_dir)
         self._unsubscribe_store = UnsubscribeInventoryStore(storage_dir)
         self._handled_review_store = HandledReviewStore(storage_dir)
-        self._harness_state_cache: dict[str, tuple[float, dict]] = {}
-        self._harness_state_lock = threading.Lock()
         self._health_storage_cache: tuple[float, dict] | None = None
         self._health_storage_lock = threading.Lock()
-        self._runtime_payload_cache: tuple[float, dict] | None = None
-        self._live_inbox_ids_cache: tuple[float, set[str]] | None = None
-        self._daily_summary_cache: tuple[float, dict] | None = None
-        self._unsubscribe_candidates_cache: tuple[float, list[dict]] | None = None
-        self._companion_data_lock = threading.Lock()
-        self._async_follow_up_state: dict | None = None
-        self._async_follow_up_lock = threading.Lock()
+        self._runtime_state = CompanionRuntimeState(
+            storage_dir,
+            unsubscribe_store=self._unsubscribe_store,
+            handled_review_store=self._handled_review_store,
+            analytics_status=self._analytics.delivery_status,
+            live_inbox_ids_loader=self._load_live_inbox_message_ids,
+        )
         self._gmail_teaching_adapter = GmailTeachingAdapter(
             storage_dir,
             credentials_dir=credentials_dir,
@@ -754,28 +745,10 @@ class GmailCompanionApp:
             "fetch_failure_count": len(list(fetch_failures_dir.glob("*.json"))) if fetch_failures_dir.exists() else 0,
         }
 
-    def _cached_runtime_payload(self) -> dict:
-        now = time.monotonic()
-        with self._companion_data_lock:
-            if self._runtime_payload_cache is not None:
-                created_at, payload = self._runtime_payload_cache
-                if now - created_at <= COMPANION_DATA_CACHE_SECONDS:
-                    return payload
-            payload = build_companion_runtime_payload(
-                self._storage_dir,
-                allowed_review_message_ids=self._cached_live_inbox_message_ids(),
-            )
-            self._runtime_payload_cache = (time.monotonic(), payload)
-            return payload
 
-    def _cached_live_inbox_message_ids(self) -> set[str] | None:
+    def _load_live_inbox_message_ids(self) -> set[str] | None:
         if not self._live_inbox_reconciliation_enabled:
             return None
-        now = time.monotonic()
-        if self._live_inbox_ids_cache is not None:
-            created_at, message_ids = self._live_inbox_ids_cache
-            if now - created_at <= LIVE_INBOX_RECONCILIATION_CACHE_SECONDS:
-                return message_ids
         latest_batch = load_latest_batch(self._storage_dir) or {}
         account_id = str(latest_batch.get("account_id") or "")
         if not account_id:
@@ -797,224 +770,28 @@ class GmailCompanionApp:
             }
         except Exception:
             return None
-        self._live_inbox_ids_cache = (time.monotonic(), message_ids)
         return message_ids
 
-    def _cached_daily_summary(self) -> dict:
-        now = time.monotonic()
-        with self._companion_data_lock:
-            if self._daily_summary_cache is not None:
-                created_at, payload = self._daily_summary_cache
-                if now - created_at <= COMPANION_DATA_CACHE_SECONDS:
-                    return payload
-            payload = build_daily_summary(self._storage_dir)
-            self._daily_summary_cache = (time.monotonic(), payload)
-            return payload
 
-    def _cached_unsubscribe_candidates(self) -> list[dict]:
-        now = time.monotonic()
-        with self._companion_data_lock:
-            if self._unsubscribe_candidates_cache is not None:
-                created_at, payload = self._unsubscribe_candidates_cache
-                if now - created_at <= COMPANION_DATA_CACHE_SECONDS:
-                    return payload
-            payload = self._unsubscribe_store.list_candidates()
-            self._unsubscribe_candidates_cache = (time.monotonic(), payload)
-            return payload
 
-    def _async_follow_up_payload(self) -> dict | None:
-        with self._async_follow_up_lock:
-            if self._async_follow_up_state is None:
-                return None
-            return dict(self._async_follow_up_state)
 
-    def _set_async_follow_up_state(self, payload: dict | None) -> None:
-        with self._async_follow_up_lock:
-            self._async_follow_up_state = dict(payload) if payload else None
 
-    def _recent_activity_feed(self) -> list[dict]:
-        follow_up = self._async_follow_up_payload()
-        if not follow_up:
-            return []
-        return [
-            {
-                "id": follow_up.get("kind") or "async-follow-up",
-                "kind": follow_up.get("kind") or "async-follow-up",
-                "state": follow_up.get("state") or "working",
-                "label": follow_up.get("label") or "Background refresh",
-                "message": follow_up.get("message") or "",
-            }
-        ]
 
-    def _sidebar_ui_state(self) -> dict:
-        return {
-            "default_mode": "expanded",
-            "can_minimize": True,
-            "panel_title": "Threadwise",
-            "allowed_labels": [
-                {"id": label, "name": gmail_label_name(label)}
-                for label in CANONICAL_LABEL_ORDER
-            ],
-            "async_follow_up": self._async_follow_up_payload(),
-            "activity_feed": self._recent_activity_feed(),
-        }
 
-    def _fast_sidebar_state(self, selected_context: dict | None) -> dict:
-        return {
-            "contract_version": "gmail-companion-sidebar-v1",
-            "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
-            "selected_context": selected_context or {},
-            "selected_email": build_selected_email_state(
-                self._storage_dir,
-                self._cached_unsubscribe_candidates(),
-                selected_context or {},
-            ),
-            "daily_summary": self._cached_daily_summary(),
-            "run_status": load_gmail_dashboard_run_status(self._storage_dir),
-            "ui_state": self._sidebar_ui_state(),
-        }
 
-    def _invalidate_companion_caches(self) -> None:
-        with self._companion_data_lock:
-            self._runtime_payload_cache = None
-            self._live_inbox_ids_cache = None
-            self._daily_summary_cache = None
-            self._unsubscribe_candidates_cache = None
-        with self._harness_state_lock:
-            self._harness_state_cache.clear()
 
-    def _run_teach_apply_follow_up_refresh(self, selected_context: dict) -> None:
-        try:
-            self._invalidate_companion_caches()
-            self.sidebar_state(selected_context)
-            self._set_async_follow_up_state(
-                {
-                    "kind": "teach-apply-refresh",
-                    "state": "done",
-                    "label": "Background refresh done",
-                    "message": "Queue summary and follow-up context are ready.",
-                }
-            )
-            cache_key = json.dumps(selected_context or {}, sort_keys=True)
-            payload = self._build_harness_state(selected_context)
-            with self._harness_state_lock:
-                self._harness_state_cache[cache_key] = (time.monotonic(), payload)
-        except Exception as exc:
-            self._set_async_follow_up_state(
-                {
-                    "kind": "teach-apply-refresh",
-                    "state": "retry",
-                    "label": "Background refresh stalled",
-                    "message": f"Queue summary refresh stalled: {exc}",
-                }
-            )
 
-    def _start_teach_apply_follow_up_refresh(self, selected_context: dict) -> None:
-        self._set_async_follow_up_state(
-            {
-                "kind": "teach-apply-refresh",
-                "state": "working",
-                "label": "Background refresh running",
-                "message": "Refreshing the queue summary and follow-up context in the background.",
-            }
-        )
-        threading.Thread(
-            target=self._run_teach_apply_follow_up_refresh,
-            args=(dict(selected_context or {}),),
-            daemon=True,
-        ).start()
 
     def sidebar_state(self, selected_context: dict | None) -> dict:
-        return self._fast_sidebar_state(selected_context)
+        return self._runtime_state.sidebar(selected_context)
 
     def harness_state(self, selected_context: dict | None) -> dict:
-        cache_key = json.dumps(selected_context or {}, sort_keys=True)
-        now = time.monotonic()
-        with self._harness_state_lock:
-            cached = self._harness_state_cache.get(cache_key)
-            if cached is not None:
-                created_at, payload = cached
-                if now - created_at <= HARNESS_STATE_CACHE_SECONDS:
-                    return self._with_live_understanding_state(payload, selected_context or {})
+        return self._runtime_state.harness(selected_context)
 
-            payload = self._build_harness_state(selected_context)
-            self._harness_state_cache[cache_key] = (time.monotonic(), payload)
-            return self._with_live_understanding_state(payload, selected_context or {})
-
-    def _build_harness_state(self, selected_context: dict | None) -> dict:
-        runtime = self._cached_runtime_payload()
-        items = runtime.get("items", [])
-        unacknowledged_items = [item for item in items if not self._handled_review_store.is_acknowledged(item)]
-        selected_context = selected_context or {}
-        sidebar_state = self.sidebar_state(selected_context)
-        sidebar_state["daily_summary"] = runtime.get("daily_summary") or sidebar_state.get("daily_summary") or {}
-        selected_email = dict(sidebar_state.get("selected_email") or {})
-        selected_message_id = str(selected_context.get("message_id") or "")
-        runtime_selected = next(
-            (
-                item
-                for item in [
-                    *(runtime.get("needs_attention_items") or []),
-                    *(runtime.get("items") or []),
-                ]
-                if str(item.get("message_id") or "") == selected_message_id
-            ),
-            None,
-        )
-        if runtime_selected is not None:
-            for field in (
-                "internal_label",
-                "suggested_label",
-                "classification",
-                "status",
-                "status_label",
-                "action_reason",
-                "reason",
-            ):
-                if runtime_selected.get(field) is not None:
-                    selected_email[field] = runtime_selected[field]
-        selected_email["handled_review_acknowledged"] = self._handled_review_store.is_acknowledged(selected_email)
-        sidebar_state["selected_email"] = selected_email
-        return {
-            "selected_context": selected_context,
-            "sidebar_state": sidebar_state,
-            "recent_items": unacknowledged_items[:24],
-            "needs_attention_items": list(runtime.get("needs_attention_items") or [])[:12],
-            "auto_handled_items": [item for item in unacknowledged_items if item.get("status") == "auto-handled"][:12],
-            "kept_visible_items": [item for item in unacknowledged_items if item.get("status") in {"kept-visible", "auto-labeled"}][:12],
-            "analytics_status": self._analytics.delivery_status(),
-        }
 
     def acknowledge_handled_review(self, payload: dict) -> dict:
-        selected_context = dict(payload.get("selected_context") or {})
-        selected_email = self.sidebar_state(selected_context).get("selected_email") or {}
-        if not selected_email.get("found"):
-            raise ValueError("Selected email is not available for handled review.")
-        if selected_email.get("status") not in {"auto-handled", "kept-visible", "auto-labeled"}:
-            raise ValueError("Selected email is not a completed handled item.")
-        decision = self._handled_review_store.acknowledge(
-            provider=selected_email.get("provider") or selected_context.get("provider") or "gmail",
-            account_id=selected_email.get("account_id") or selected_context.get("account_id") or "",
-            message_id=selected_email.get("message_id") or selected_context.get("message_id") or "",
-            batch_id=selected_email.get("batch_id") or "",
-        )
-        self._invalidate_companion_caches()
-        return {
-            "acknowledged": True,
-            "decision": decision,
-            "harness_state": self.harness_state(selected_context),
-        }
+        return self._runtime_state.acknowledge_handled_review(payload)
 
-    def _with_live_understanding_state(self, payload: dict, selected_context: dict) -> dict:
-        sidebar_state = dict(payload.get("sidebar_state") or {})
-        selected_email = dict(sidebar_state.get("selected_email") or {})
-        live_context = selected_context or payload.get("selected_context") or {}
-        selected_email.update(selected_email_understanding_state(live_context))
-        sidebar_state["selected_email"] = selected_email
-        return {
-            **payload,
-            "sidebar_state": sidebar_state,
-        }
 
     def teach_preview(self, payload: dict) -> dict:
         return self._finish_teach_preview_impact(self._build_teach_preview(payload))
@@ -1105,14 +882,14 @@ class GmailCompanionApp:
             workflow_result.response["mode"],
             workflow_result.write_summary,
         )
-        self._start_teach_apply_follow_up_refresh(workflow_result.selected_context)
+        self._runtime_state.start_teaching_refresh(workflow_result.selected_context)
         self._capture_workflow_event(
             None,
             "teach/fix completed",
             {"surface": "gmail_companion", "flow_outcome": "completed"},
             distinct_id=analytics_distinct_id,
         )
-        refreshed = self._fast_sidebar_state(workflow_result.selected_context)
+        refreshed = self._runtime_state.sidebar(workflow_result.selected_context)
         return {
             **workflow_result.response,
             "sidebar_state": refreshed,
@@ -1143,7 +920,7 @@ class GmailCompanionApp:
             scope=payload.get("scope") or "sender",
             confirmed=payload.get("confirmed") is True,
         )
-        self._invalidate_companion_caches()
+        self._runtime_state.invalidate()
         return result
 
     def _selected_gmail_message_for_safety(self, payload: dict) -> dict:
@@ -1152,7 +929,7 @@ class GmailCompanionApp:
             raise ValueError("Select a Gmail message before applying a suspicious-email action.")
         selected = build_selected_email_state(
             self._storage_dir,
-            self._cached_unsubscribe_candidates(),
+            self._runtime_state.unsubscribe_candidates(),
             selected_context,
         )
         if not selected or selected.get("message_id") != selected_context["message_id"]:
@@ -1276,7 +1053,7 @@ class GmailCompanionApp:
             raise ValueError("candidate_keys contains an unknown unsubscribe candidate.")
 
         saved = self._unsubscribe_store.save_selection_states(candidate_keys, selected_candidate_keys)
-        self._invalidate_companion_caches()
+        self._runtime_state.invalidate()
         selected_count = sum(1 for candidate in saved if candidate.get("decision_state") == "selected")
         self._capture_workflow_event(
             None,
@@ -1326,7 +1103,7 @@ class GmailCompanionApp:
         payload.setdefault("account_id", infer_gmail_account_id(self._storage_dir))
         runner = self._gmail_run_runner or self._run_daily_gmail_check
         response = trigger_dashboard_gmail_check(self._storage_dir, payload, runner)
-        self._invalidate_companion_caches()
+        self._runtime_state.invalidate()
         return response
 
     def preview_attention_rule_proposal(self, payload: dict) -> dict:
@@ -1408,7 +1185,7 @@ class GmailCompanionApp:
 
     def render_daily_dashboard_page(self) -> str:
         return render_daily_dashboard_page_html(
-            payload=self._cached_runtime_payload(),
+            payload=self._runtime_state.runtime_payload(),
             attention_summary=build_daily_attention_summary(self._storage_dir),
             run_status=load_gmail_dashboard_run_status(self._storage_dir),
             inferred_account_id=infer_gmail_account_id(self._storage_dir),

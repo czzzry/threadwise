@@ -351,7 +351,7 @@ class ProductAnalyticsTests(unittest.TestCase):
             app = GmailCompanionApp(Path(temp_dir), analytics=analytics)
 
             self.assertEqual(app.health_status()["analytics"]["state"], "configured")
-            self.assertEqual(app._build_harness_state(None)["analytics_status"]["state"], "configured")
+            self.assertEqual(app.harness_state(None)["analytics_status"]["state"], "configured")
 
 
 if __name__ == "__main__":

@@ -34,6 +34,6 @@ The application module decreased from 1,793 to 1,419 lines. The adapter is 377 l
 
 ## Remaining architecture opportunities
 
-- Companion runtime state and cache invalidation remain split across the application and pure state helpers; deepen them only if characterization yields a smaller snapshot interface.
+- The companion runtime-state candidate was completed in `docs/handoff/2026-07-20-companion-runtime-state-refactor.md`.
 - Provider message normalization still repeats canonical message assembly; preserve provider-specific parsing while testing whether shared assembly passes the deletion test.
 - HTTP transport extraction remains speculative because it may only move the route tree without increasing depth.
