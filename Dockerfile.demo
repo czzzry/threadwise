@@ -13,6 +13,8 @@ COPY --chown=threadwise:threadwise extensions/ extensions/
 COPY --chown=threadwise:threadwise examples/gmail_companion_demo/ examples/gmail_companion_demo/
 COPY --chown=threadwise:threadwise docs/assets/brand/threadwise-app-icon.png docs/assets/brand/threadwise-app-icon.png
 
+RUN mkdir -p /app/data && chown threadwise:threadwise /app/data
+
 USER threadwise
 
 EXPOSE 8031
