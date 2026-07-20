@@ -687,25 +687,6 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertGreater(gmail_client.max_active, 1)
             self.assertEqual(preview["inbox_backfill"]["estimated_count"], 12)
 
-    def test_semantic_gmail_query_uses_subject_boundaries_and_exclusions(self) -> None:
-        query = GmailCompanionApp(Path("unused"))._build_gmail_backfill_query(
-            semantic_rule={
-                "sender": "orders@amazon.example",
-                "rule_type": "cross-sender-semantic",
-                "include_families": ["orders"],
-                "exclude_families": ["account-security", "privacy-legal", "promotions"],
-            },
-            current_subject="Your order shipped",
-            current_sender="orders@amazon.example",
-        )
-
-        self.assertIn('subject:"order confirmation"', query)
-        self.assertIn("subject:shipment", query)
-        self.assertIn('-subject:"account security"', query)
-        self.assertIn('-subject:"privacy policy"', query)
-        self.assertIn("-subject:promotion", query)
-        self.assertNotIn("from:orders@amazon.example", query)
-
     def test_combined_local_and_live_preview_is_capped_to_reviewable_exact_ids(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
@@ -3509,12 +3490,7 @@ class GmailCompanionUiTests(unittest.TestCase):
                 {"bad-axe-same-address", "bad-axe-other-address"},
             )
 
-            query = GmailCompanionApp(storage_dir)._build_gmail_backfill_query(
-                semantic_rule=preview["semantic_rule"],
-                current_subject=preview["selected_subject"],
-                current_sender=preview["selected_sender"],
-            )
-            self.assertEqual(query, "from:badaxe.pl")
+            self.assertEqual(preview["inbox_backfill"]["query"], "from:badaxe.pl")
 
     def test_all_messages_from_exact_sender_is_not_narrowed_by_llm_semantics(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

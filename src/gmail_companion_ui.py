@@ -2,7 +2,6 @@ import argparse
 import json
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from http.client import HTTPException
 from http import HTTPStatus
@@ -10,7 +9,6 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import sys
 from urllib.parse import parse_qs, urlparse
-from uuid import uuid4
 
 from src.attention_feedback import record_attention_feedback
 from src.gmail_automation import run_daily_gmail_automation
@@ -22,14 +20,11 @@ from src.attention_rules import (
     build_attention_rule_proposal,
     reject_attention_rule_proposal,
 )
-from src.gmail_writer import MockGmailLabelWriter
 from src.gmail_safety_action import GmailSafetyAction
-from src.gmail_message_normalizer import normalize_gmail_message
 from src.handled_review_store import HandledReviewStore
 from src.label_taxonomy import CANONICAL_LABEL_ORDER, gmail_label_name
 from src.live_gmail_client import GMAIL_MODIFY_SCOPE, GMAIL_SAFETY_SCOPE
 from src.live_protonmail_client import LiveProtonMailClient, SetupError as ProtonSetupError
-from src.local_artifacts import write_json_artifact
 from src.proton_review_console import ProtonReviewConsole, render_proton_review_page
 from src.product_analytics import (
     ANALYTICS_WORKFLOW_VERSION,
@@ -65,11 +60,8 @@ from src.gmail_companion_state import (
     selected_email_contract,
     selected_email_understanding_state,
 )
-from src.companion_teaching_workflow import CompanionTeachingWorkflow, TeachingWriteRequest
-from src.teaching_loop import (
-    load_items_for_gmail_write_through,
-)
-from src.semantic_rule_matching import semantic_gmail_search_clauses, semantic_rule_matches_message, semantic_search_keywords
+from src.companion_teaching_workflow import CompanionTeachingWorkflow
+from src.gmail_teaching_adapter import GmailTeachingAdapter, INBOX_BACKFILL_ESTIMATE_CAP
 
 
 DEFAULT_STORAGE_DIR = Path("data/gmail_fetch")
@@ -87,8 +79,6 @@ HEALTH_STATUS_CACHE_SECONDS = 5.0
 COMPANION_DATA_CACHE_SECONDS = 120.0
 LIVE_INBOX_RECONCILIATION_CACHE_SECONDS = 30.0
 LIVE_INBOX_RECONCILIATION_MAX_MESSAGES = 10_000
-INBOX_BACKFILL_CONFIRM_THRESHOLD = 200
-INBOX_BACKFILL_ESTIMATE_CAP = 25
 THREADWISE_APP_VERSION = "0.1.0"
 
 
@@ -230,9 +220,16 @@ class GmailCompanionApp:
         self._companion_data_lock = threading.Lock()
         self._async_follow_up_state: dict | None = None
         self._async_follow_up_lock = threading.Lock()
+        self._gmail_teaching_adapter = GmailTeachingAdapter(
+            storage_dir,
+            credentials_dir=credentials_dir,
+            client_secret_path=client_secret_path,
+            gmail_client_factory=self._gmail_client_factory,
+            write_enabled=gmail_write_through_enabled,
+        )
         self._teaching_workflow = CompanionTeachingWorkflow(
             storage_dir,
-            write_through=lambda request: self._write_teaching_request_to_gmail(request),
+            write_through=self._gmail_teaching_adapter.apply,
         )
 
     def handle_request(self, handler: BaseHTTPRequestHandler) -> None:
@@ -1065,7 +1062,7 @@ class GmailCompanionApp:
         )
 
     def _finish_teach_preview_impact(self, preview: dict) -> dict:
-        preview["inbox_backfill"] = self._build_inbox_backfill_preview(preview)
+        preview["inbox_backfill"] = self._gmail_teaching_adapter.preview_backfill(preview)
         remote_matches = list(preview["inbox_backfill"].get("matches") or [])
         existing_items = list(preview.get("impact", {}).get("matching_existing_items") or [])
         if preview["inbox_backfill"].get("available"):
@@ -1381,383 +1378,12 @@ class GmailCompanionApp:
             attention_model_client=self._attention_model_client,
         )
 
-    def _write_teach_result_to_gmail(
-        self,
-        account_id: str,
-        selected_message_id: str,
-        mode: str,
-        preview_matches: list[dict],
-        *,
-        semantic_rule: dict | None = None,
-        current_subject: str = "",
-        current_sender: str = "",
-        included_message_ids: set[str] | None = None,
-    ) -> dict:
-        if mode == "save-future-rule":
-            return {
-                "messages_written": 0,
-                "inbox_removed": 0,
-                "label_write_failed": 0,
-                "label_write_skipped": 0,
-                "inbox_remove_failed": 0,
-                "inbox_remove_skipped": 0,
-                "inbox_remove_ineligible": 0,
-                "mode": "no-gmail-write-future-rule-only",
-            }
 
-        if not self._gmail_write_through_enabled:
-            return {
-                "messages_written": 0,
-                "inbox_removed": 0,
-                "label_write_failed": 0,
-                "label_write_skipped": 0,
-                "inbox_remove_failed": 0,
-                "inbox_remove_skipped": 0,
-                "inbox_remove_ineligible": 0,
-                "mode": "disabled",
-            }
-        try:
-            gmail_client = self._gmail_client_factory(
-                account_id,
-                self._credentials_dir,
-                self._client_secret_path,
-                GMAIL_MODIFY_SCOPE,
-            )
-        except Exception as exc:
-            return {
-                "messages_written": 0,
-                "inbox_removed": 0,
-                "label_write_failed": 0,
-                "label_write_skipped": 0,
-                "inbox_remove_failed": 0,
-                "inbox_remove_skipped": 0,
-                "inbox_remove_ineligible": 0,
-                "mode": "gmail-write-failed",
-                "error": str(exc),
-            }
-        writer = MockGmailLabelWriter(
-            gmail_client=gmail_client,
-            storage_dir=self._storage_dir,
-            label_name_resolver=gmail_label_name,
-        )
-        batch_items = load_items_for_gmail_write_through(
-            self._storage_dir,
-            selected_message_id=selected_message_id,
-            mode=mode,
-            preview_matches=preview_matches,
-        )
-        write_applied = 0
-        write_failed = 0
-        write_skipped = 0
-        inbox_removed = 0
-        inbox_failed = 0
-        inbox_skipped = 0
-        inbox_ineligible = 0
-        for batch_id, items in batch_items.items():
-            mutation = writer.apply_reviewed_mutations(batch_id, items)
-            write_summary = mutation["write_summary"]
-            inbox_summary = mutation["inbox_summary"]
-            write_applied += write_summary["applied_count"]
-            write_failed += write_summary["failed_count"]
-            write_skipped += write_summary["skipped_count"]
-            inbox_removed += inbox_summary["applied_count"]
-            inbox_failed += inbox_summary["failed_count"]
-            inbox_skipped += inbox_summary["skipped_count"]
-            inbox_ineligible += inbox_summary["ineligible_count"]
-        remote_search_count = 0
-        remote_applied = 0
-        remote_failed = 0
-        remote_skipped = 0
-        remote_batch_id = ""
-        remote_inbox_removed = 0
-        remote_inbox_failed = 0
-        remote_inbox_skipped = 0
-        remote_inbox_ineligible = 0
-        if mode == "apply-included":
-            local_ids = {
-                item.get("message_id")
-                for items in batch_items.values()
-                for item in items
-                if item.get("message_id")
-            }
-            remote_summary = self._apply_rule_to_matching_inbox_messages(
-                gmail_client,
-                account_id=account_id,
-                semantic_rule=semantic_rule or {},
-                current_subject=current_subject,
-                current_sender=current_sender,
-                excluded_message_ids=local_ids,
-                included_message_ids=included_message_ids or set(),
-            )
-            remote_search_count = remote_summary["matched_count"]
-            remote_applied = remote_summary["applied_count"]
-            remote_failed = remote_summary["failed_count"]
-            remote_skipped = remote_summary["skipped_count"]
-            remote_batch_id = remote_summary["batch_id"]
-            remote_inbox_removed = remote_summary["inbox_removed_count"]
-            remote_inbox_failed = remote_summary["inbox_failed_count"]
-            remote_inbox_skipped = remote_summary["inbox_skipped_count"]
-            remote_inbox_ineligible = remote_summary["inbox_ineligible_count"]
-            write_applied += remote_applied
-            write_failed += remote_failed
-            write_skipped += remote_skipped
-            inbox_removed += remote_inbox_removed
-            inbox_failed += remote_inbox_failed
-            inbox_skipped += remote_inbox_skipped
-            inbox_ineligible += remote_inbox_ineligible
-        return {
-            "messages_written": write_applied,
-            "inbox_removed": inbox_removed,
-            "label_write_failed": write_failed,
-            "label_write_skipped": write_skipped,
-            "inbox_remove_failed": inbox_failed,
-            "inbox_remove_skipped": inbox_skipped,
-            "inbox_remove_ineligible": inbox_ineligible,
-            "remote_match_count": remote_search_count,
-            "remote_applied_count": remote_applied,
-            "remote_failed_count": remote_failed,
-            "remote_skipped_count": remote_skipped,
-            "remote_batch_id": remote_batch_id,
-            "remote_inbox_removed_count": remote_inbox_removed,
-            "remote_inbox_failed_count": remote_inbox_failed,
-            "remote_inbox_skipped_count": remote_inbox_skipped,
-            "remote_inbox_ineligible_count": remote_inbox_ineligible,
-            "mode": "applied",
-        }
 
-    def _write_teaching_request_to_gmail(self, request: TeachingWriteRequest) -> dict:
-        return self._write_teach_result_to_gmail(
-            request.account_id,
-            request.current_message_id,
-            request.mode,
-            request.preview_matches,
-            semantic_rule=request.semantic_rule,
-            current_subject=request.current_subject,
-            current_sender=request.current_sender,
-            included_message_ids=set(request.included_message_ids),
-        )
 
-    def _build_inbox_backfill_preview(self, preview: dict) -> dict:
-        if not self._gmail_write_through_enabled:
-            return {
-                "available": False,
-                "estimated_count": 0,
-                "requires_confirmation": False,
-                "query": "",
-                "matches": [],
-            }
-        account_id = preview.get("selected_account_id") or ""
-        query = self._build_gmail_backfill_query(
-            semantic_rule=preview.get("semantic_rule") or {},
-            current_subject=preview.get("selected_subject") or "",
-            current_sender=preview.get("selected_sender") or "",
-        )
-        if not account_id or not query:
-            return {
-                "available": False,
-                "estimated_count": 0,
-                "requires_confirmation": False,
-                "query": query,
-                "matches": [],
-            }
-        try:
-            gmail_client = self._gmail_client_factory(
-                account_id,
-                self._credentials_dir,
-                self._client_secret_path,
-                GMAIL_MODIFY_SCOPE,
-            )
-            candidate_ids = gmail_client.search_message_ids(query, INBOX_BACKFILL_ESTIMATE_CAP + 1)
-        except Exception:
-            return {
-                "available": False,
-                "estimated_count": 0,
-                "requires_confirmation": False,
-                "query": query,
-                "matches": [],
-            }
-        if not hasattr(gmail_client, "get_message"):
-            return {
-                "available": False,
-                "estimated_count": 0,
-                "is_capped": len(candidate_ids) > INBOX_BACKFILL_ESTIMATE_CAP,
-                "requires_confirmation": False,
-                "query": query,
-                "matches": [],
-            }
-        semantic_rule = preview.get("semantic_rule") or {}
-        selected_id = str(preview.get("selected_message_id") or "")
-        seen: set[str] = set()
-        inspect_ids: list[str] = []
-        for message_id in candidate_ids[:INBOX_BACKFILL_ESTIMATE_CAP]:
-            if not message_id or message_id == selected_id or message_id in seen:
-                continue
-            seen.add(message_id)
-            inspect_ids.append(message_id)
 
-        def inspect_message(message_id: str) -> dict | None:
-            try:
-                normalized = normalize_gmail_message(account_id, gmail_client.get_message(message_id))
-            except Exception:
-                return None
-            if not semantic_rule_matches_message(semantic_rule, normalized):
-                return None
-            return {
-                **normalized,
-                "labels_before": [],
-                "labels_after": [preview.get("semantic_rule", {}).get("target_label") or (preview.get("selected_label_after") or [""])[0]],
-                "source": "gmail-live-preview",
-            }
 
-        inspected_matches: list[dict] = []
-        if inspect_ids:
-            worker_count = min(16, len(inspect_ids))
-            with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="threadwise-preview") as executor:
-                inspected_matches = [match for match in executor.map(inspect_message, inspect_ids) if match]
-        estimated_count = len(inspected_matches)
-        capped = len(candidate_ids) > INBOX_BACKFILL_ESTIMATE_CAP
-        return {
-            "available": True,
-            "estimated_count": estimated_count,
-            "is_capped": capped,
-            "requires_confirmation": estimated_count > INBOX_BACKFILL_CONFIRM_THRESHOLD or capped,
-            "query": query,
-            "matches": inspected_matches,
-        }
 
-    def _apply_rule_to_matching_inbox_messages(
-        self,
-        gmail_client,
-        *,
-        account_id: str,
-        semantic_rule: dict,
-        current_subject: str,
-        current_sender: str,
-        excluded_message_ids: set[str],
-        included_message_ids: set[str],
-    ) -> dict:
-        filtered_ids = sorted(
-            message_id
-            for message_id in included_message_ids
-            if message_id and message_id not in excluded_message_ids
-        )
-        target_label = (semantic_rule or {}).get("target_label") or ""
-        if not gmail_label_name(target_label):
-            return {
-                **self._empty_remote_mutation_summary(),
-                "matched_count": len(filtered_ids),
-                "skipped_count": len(filtered_ids),
-            }
-        if not filtered_ids:
-            return self._empty_remote_mutation_summary()
-        batch_id = f"gmail-companion-backfill-{uuid4().hex}"
-        reviewed_items = [
-            {
-                "source": "gmail",
-                "account_id": account_id,
-                "message_id": message_id,
-                "review_state": "reviewed",
-                "review_action": "sidebar-remote-backfill",
-                "applied_labels": [target_label],
-                "final_labels": [target_label],
-            }
-            for message_id in filtered_ids
-        ]
-        write_json_artifact(
-            "gmail_mutation_batch",
-            self._storage_dir,
-            {
-                "batch_id": batch_id,
-                "provider": "gmail",
-                "account_id": account_id,
-                "items": reviewed_items,
-            },
-            batch_id,
-        )
-        writer = MockGmailLabelWriter(
-            gmail_client=gmail_client,
-            storage_dir=self._storage_dir,
-            label_name_resolver=gmail_label_name,
-        )
-        mutation = writer.apply_reviewed_mutations(batch_id, reviewed_items)
-        write_summary = mutation["write_summary"]
-        inbox_summary = mutation["inbox_summary"]
-        return {
-            "matched_count": len(filtered_ids),
-            "applied_count": write_summary["applied_count"],
-            "failed_count": write_summary["failed_count"],
-            "skipped_count": write_summary["skipped_count"],
-            "batch_id": batch_id,
-            "inbox_removed_count": inbox_summary["applied_count"],
-            "inbox_failed_count": inbox_summary["failed_count"],
-            "inbox_skipped_count": inbox_summary["skipped_count"],
-            "inbox_ineligible_count": inbox_summary["ineligible_count"],
-        }
-
-    def _empty_remote_mutation_summary(self) -> dict:
-        return {
-            "matched_count": 0,
-            "applied_count": 0,
-            "failed_count": 0,
-            "skipped_count": 0,
-            "batch_id": "",
-            "inbox_removed_count": 0,
-            "inbox_failed_count": 0,
-            "inbox_skipped_count": 0,
-            "inbox_ineligible_count": 0,
-        }
-
-    def _build_gmail_backfill_query(self, *, semantic_rule: dict, current_subject: str, current_sender: str) -> str:
-        sender = (semantic_rule or {}).get("sender") or current_sender or ""
-        sender_domain = str((semantic_rule or {}).get("sender_domain") or "").strip().lower().lstrip("@")
-        semantic_pattern = (semantic_rule or {}).get("semantic_pattern") or ""
-        rule_type = (semantic_rule or {}).get("rule_type") or ""
-        if rule_type == "sender-domain" and sender_domain:
-            return f"from:{sender_domain}"
-        include_clauses, exclude_clauses = semantic_gmail_search_clauses(semantic_rule)
-        subject_keywords = semantic_search_keywords(semantic_rule) or self._query_keywords_for_semantic_pattern(semantic_pattern, current_subject)
-        parts: list[str] = []
-        if sender and "@" in sender and rule_type != "cross-sender-semantic":
-            parts.append(f"from:{sender}")
-        if include_clauses:
-            if len(include_clauses) == 1:
-                parts.append(include_clauses[0])
-            else:
-                parts.append("{" + " ".join(include_clauses) + "}")
-            parts.extend(exclude_clauses)
-        elif subject_keywords:
-            if len(subject_keywords) == 1:
-                parts.append(subject_keywords[0])
-            else:
-                parts.append("{" + " ".join(subject_keywords) + "}")
-        elif rule_type == "sender":
-            return " ".join(parts)
-        return " ".join(part for part in parts if part).strip()
-
-    def _query_keywords_for_semantic_pattern(self, semantic_pattern: str, current_subject: str) -> list[str]:
-        pattern = str(semantic_pattern or "").lower()
-        mappings = {
-            "job, recruiter, or interview emails": ["job", "jobs", "recruiter", "interview", "application"],
-            "billing, receipt, or payment notices": ["receipt", "invoice", "payment", "billing"],
-            "travel and booking emails": ["travel", "flight", "hotel", "booking"],
-            "newsletter or marketing emails": ["newsletter", "promo", "sale", "digest"],
-            "account, security, or statement notices": ["security", "account", "statement", "login"],
-            "financial account notices": ["account", "statement", "payment"],
-            "low-value or suspicious emails": ["alert", "promo", "notice"],
-        }
-        if pattern in mappings:
-            return mappings[pattern]
-        words = []
-        for raw in (current_subject or "").lower().split():
-            clean = "".join(ch for ch in raw if ch.isalnum())
-            if len(clean) < 4:
-                continue
-            if clean in {"this", "that", "from", "with", "more", "your", "have"}:
-                continue
-            words.append(clean)
-            if len(words) == 3:
-                break
-        return words
 
     def render_simulator(self) -> str:
         return render_simulator_html()

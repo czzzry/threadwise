@@ -41,5 +41,5 @@ The application module decreased from 1,942 lines after the rendering refactor t
 
 ## Remaining architecture opportunities
 
-- The Gmail write-through implementation is still a sizeable provider-specific method. Extract it only as a separately triaged slice with mock-client characterization of label and inbox-removal semantics.
+- The Gmail write-through candidate was completed in `docs/handoff/2026-07-20-gmail-teaching-adapter-refactor.md`.
 - Local artifact access and classifier-decision locality remain broader, higher-risk follow-up candidates.
