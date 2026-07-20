@@ -16,6 +16,7 @@ from scripts.run_gmail_companion_simulator import main as run_simulator_main
 from src.attention_feedback import load_attention_feedback
 from src.attention_rules import attention_rules_path
 from src.candidate_change_store import CandidateChange, CandidateChangeStore
+from src.companion_teaching_workflow import TeachingWorkflowResult
 from src.founder_feedback import load_founder_feedback
 from src.gmail_run_control import load_gmail_dashboard_run_status, write_gmail_dashboard_run_status
 from src.gmail_companion_rendering import (
@@ -4397,20 +4398,6 @@ class GmailCompanionUiTests(unittest.TestCase):
             "subject": "Need a response",
             "sender": "boss@example.com",
         }
-        teaching_result = {
-            "mode": "current-only",
-            "matched_existing_count": 0,
-            "proposal": None,
-            "preview_matches": [],
-            "semantic_rule": {"target_label": "reply-needed", "sender": "boss@example.com"},
-            "current": {
-                "account_id": "founder-test",
-                "message_id": "gmail-live-001",
-                "subject": "Need a response",
-                "sender": "boss@example.com",
-            },
-            "future_rule_saved": False,
-        }
         write_through = {
             "mode": "mock",
             "messages_written": 1,
@@ -4419,6 +4406,18 @@ class GmailCompanionUiTests(unittest.TestCase):
             "inbox_removed": 0,
             "inbox_remove_failed": 0,
         }
+        workflow_result = TeachingWorkflowResult(
+            response={
+                "acknowledgment": "Lesson applied.",
+                "mode": "current-only",
+                "matched_existing_count": 0,
+                "proposal": None,
+                "gmail_write_through": write_through,
+                "outcome": {"future_rule_saved": False},
+            },
+            selected_context=selected_context,
+            write_summary=write_through,
+        )
         fast_sidebar = {
             "selected_email": {"message_id": "gmail-live-001"},
             "daily_summary": {"processed_count": 12},
@@ -4433,10 +4432,7 @@ class GmailCompanionUiTests(unittest.TestCase):
         }
 
         with (
-            patch("src.gmail_companion_ui.apply_sidebar_teaching", return_value=teaching_result),
-            patch.object(app, "_write_teach_result_to_gmail", return_value=write_through),
-            patch.object(app, "_teach_apply_acknowledgment", return_value="Lesson applied."),
-            patch.object(app, "_teach_apply_outcome", return_value={"future_rule_saved": False}),
+            patch.object(app._teaching_workflow, "apply", return_value=workflow_result),
             patch.object(app, "_start_teach_apply_follow_up_refresh") as start_follow_up_mock,
             patch.object(app, "_fast_sidebar_state", return_value=fast_sidebar) as fast_sidebar_mock,
         ):

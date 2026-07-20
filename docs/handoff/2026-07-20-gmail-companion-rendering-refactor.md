@@ -43,5 +43,5 @@ No live inbox, credentials, extension session, or provider mutation was accessed
 ## Remaining architecture opportunities
 
 - The rendering module is intentionally deep and large; splitting it by file size alone would recreate shallow modules. Extract static assets only if a concrete build or browser-cache need appears.
-- The next high-leverage candidate is the teaching preview-to-outcome workflow, but it approaches Gmail mutation semantics and should be a separately triaged sensitive slice.
+- The teaching preview-to-outcome candidate was completed in `docs/handoff/2026-07-20-companion-teaching-workflow-refactor.md`.
 - Local artifact access and classifier-decision locality remain broader, higher-risk follow-up candidates.

@@ -65,9 +65,9 @@ from src.gmail_companion_state import (
     selected_email_contract,
     selected_email_understanding_state,
 )
+from src.companion_teaching_workflow import CompanionTeachingWorkflow, TeachingWriteRequest
 from src.teaching_loop import (
     apply_rule_amendment_decision,
-    apply_sidebar_teaching,
     build_sidebar_teach_preview,
     exclude_sidebar_teaching_match,
     finish_sidebar_teach_preview_impact,
@@ -234,6 +234,10 @@ class GmailCompanionApp:
         self._companion_data_lock = threading.Lock()
         self._async_follow_up_state: dict | None = None
         self._async_follow_up_lock = threading.Lock()
+        self._teaching_workflow = CompanionTeachingWorkflow(
+            storage_dir,
+            write_through=lambda request: self._write_teaching_request_to_gmail(request),
+        )
 
     def handle_request(self, handler: BaseHTTPRequestHandler) -> None:
         parsed = urlparse(handler.path)
@@ -1106,13 +1110,6 @@ class GmailCompanionApp:
         return preview
 
     def teach_apply(self, payload: dict, *, analytics_distinct_id: str | None = None) -> dict:
-        selected_context = payload.get("selected_context") or {}
-        target_label = payload["target_label"]
-        if target_label == "suspicious":
-            raise ValueError("Suspicious email requires the explicit Gmail safety preview and confirmation flow.")
-        note = (payload.get("note") or "").strip()
-        scope = payload.get("scope") or "sender"
-        mode = payload["mode"]
         retry_count = payload.get("retry_count", 0)
         if isinstance(retry_count, int) and retry_count > 0:
             self._capture_workflow_event(
@@ -1121,54 +1118,22 @@ class GmailCompanionApp:
                 {"surface": "gmail_companion", "retry_count": min(retry_count, 100)},
                 distinct_id=analytics_distinct_id,
             )
-        included_message_ids = payload.get("included_message_ids") or []
-        if not isinstance(included_message_ids, list) or any(
-            not isinstance(message_id, str) or not message_id.strip()
-            for message_id in included_message_ids
-        ):
-            raise ValueError("included_message_ids must be a list of message ids.")
-        teaching_result = apply_sidebar_teaching(
-            self._storage_dir,
-            selected_context=selected_context,
-            target_label=target_label,
-            note=note,
-            scope=scope,
-            mode=mode,
-            included_message_ids=included_message_ids,
-        )
-        write_through_summary = self._write_teach_result_to_gmail(
-            teaching_result["current"]["account_id"],
-            teaching_result["current"]["message_id"],
-            teaching_result["mode"],
-            teaching_result["preview_matches"],
-            semantic_rule={
-                **(teaching_result.get("semantic_rule") or {}),
-                "target_label": target_label,
-            },
-            current_subject=teaching_result["current"].get("subject") or "",
-            current_sender=teaching_result["current"].get("sender") or "",
-            included_message_ids=set(included_message_ids),
-        )
+        workflow_result = self._teaching_workflow.apply(payload)
         self._capture_label_write_outcomes(
             analytics_distinct_id or self._analytics_distinct_ids.get_or_create(),
-            teaching_result["mode"],
-            write_through_summary,
+            workflow_result.response["mode"],
+            workflow_result.write_summary,
         )
-        self._start_teach_apply_follow_up_refresh(selected_context)
+        self._start_teach_apply_follow_up_refresh(workflow_result.selected_context)
         self._capture_workflow_event(
             None,
             "teach/fix completed",
             {"surface": "gmail_companion", "flow_outcome": "completed"},
             distinct_id=analytics_distinct_id,
         )
-        refreshed = self._fast_sidebar_state(selected_context)
+        refreshed = self._fast_sidebar_state(workflow_result.selected_context)
         return {
-            "acknowledgment": self._teach_apply_acknowledgment(teaching_result, write_through_summary),
-            "mode": teaching_result["mode"],
-            "matched_existing_count": teaching_result["matched_existing_count"],
-            "proposal": teaching_result["proposal"],
-            "gmail_write_through": write_through_summary,
-            "outcome": self._teach_apply_outcome(teaching_result, write_through_summary),
+            **workflow_result.response,
             "sidebar_state": refreshed,
         }
 
@@ -1499,6 +1464,7 @@ class GmailCompanionApp:
                 "inbox_remove_ineligible": 0,
                 "mode": "no-gmail-write-future-rule-only",
             }
+
         if not self._gmail_write_through_enabled:
             return {
                 "messages_written": 0,
@@ -1618,6 +1584,18 @@ class GmailCompanionApp:
             "remote_inbox_ineligible_count": remote_inbox_ineligible,
             "mode": "applied",
         }
+
+    def _write_teaching_request_to_gmail(self, request: TeachingWriteRequest) -> dict:
+        return self._write_teach_result_to_gmail(
+            request.account_id,
+            request.current_message_id,
+            request.mode,
+            request.preview_matches,
+            semantic_rule=request.semantic_rule,
+            current_subject=request.current_subject,
+            current_sender=request.current_sender,
+            included_message_ids=set(request.included_message_ids),
+        )
 
     def _build_inbox_backfill_preview(self, preview: dict) -> dict:
         if not self._gmail_write_through_enabled:
@@ -1840,73 +1818,6 @@ class GmailCompanionApp:
             if len(words) == 3:
                 break
         return words
-
-    def _teach_apply_acknowledgment(self, teaching_result: dict, write_through_summary: dict) -> str:
-        base = teaching_result["acknowledgment"]
-        mode = write_through_summary.get("mode")
-        local_changed = int(bool(teaching_result.get("current_changed"))) + int(teaching_result.get("matched_existing_count") or 0)
-        if mode == "no-gmail-write-future-rule-only":
-            return f"{base} Gmail was not changed because this action only saved future behavior."
-        if mode == "disabled":
-            return f"{base} Stored locally for {local_changed} email{'' if local_changed == 1 else 's'}. Gmail write-through is disabled here."
-        if mode == "gmail-write-failed":
-            error = write_through_summary.get("error") or "unknown Gmail write error"
-            return (
-                f"{base} Stored locally for {local_changed} email{'' if local_changed == 1 else 's'}, "
-                f"but Gmail was not updated: {error}. Retry Gmail write-through after the connection is healthy."
-            )
-        messages_written = int(write_through_summary.get("messages_written") or 0)
-        label_failed = int(write_through_summary.get("label_write_failed") or 0)
-        label_skipped = int(write_through_summary.get("label_write_skipped") or 0)
-        inbox_removed = int(write_through_summary.get("inbox_removed") or 0)
-        inbox_failed = int(write_through_summary.get("inbox_remove_failed") or 0)
-        if label_failed or inbox_failed:
-            return (
-                f"{base} Stored locally for {local_changed} email{'' if local_changed == 1 else 's'}. "
-                f"Gmail label writes: {messages_written} applied, {label_failed} failed"
-                f"{f', {label_skipped} skipped' if label_skipped else ''}. "
-                f"Inbox removal: {inbox_removed} applied, {inbox_failed} failed. Retry failed Gmail writes when ready."
-            )
-        return (
-            f"{base} Gmail label writes: {messages_written} applied"
-            f"{f', {label_skipped} skipped' if label_skipped else ''}. "
-            f"Inbox removal: {inbox_removed} applied."
-        )
-
-    def _teach_apply_outcome(self, teaching_result: dict, write_through_summary: dict) -> dict:
-        mode = teaching_result.get("mode") or ""
-        gmail_mode = write_through_summary.get("mode") or ""
-        label_failed = int(write_through_summary.get("label_write_failed") or 0)
-        messages_written = int(write_through_summary.get("messages_written") or 0)
-        current_changed = bool(teaching_result.get("current_changed"))
-        future_rule_saved = bool(teaching_result.get("future_rule_saved"))
-        current_written = current_changed and gmail_mode == "applied" and messages_written > 0 and label_failed == 0
-        scope = {
-            "current-only": "current-email",
-            "matching-existing": "matching-existing",
-            "save-future-rule": "future-rule",
-            "future-only": "current-email-and-future-rule",
-            "apply-included": "included-existing",
-        }.get(mode, mode or "unknown")
-        changed_count = int(current_changed) + int(teaching_result.get("matched_existing_count") or 0)
-        if future_rule_saved and not changed_count:
-            state = "future-rule-saved"
-        elif changed_count and label_failed:
-            state = "partially-changed"
-        elif changed_count:
-            state = "changed"
-        else:
-            state = "unchanged"
-        return {
-            "state": state,
-            "scope": scope,
-            "current_email_changed_locally": current_changed,
-            "current_email_written_to_gmail": current_written,
-            "matching_existing_changed_locally": int(teaching_result.get("matched_existing_count") or 0),
-            "future_rule_saved": future_rule_saved,
-            "gmail_write_mode": gmail_mode,
-            "gmail_label_write_failed": label_failed,
-        }
 
     def render_simulator(self) -> str:
         return render_simulator_html()
