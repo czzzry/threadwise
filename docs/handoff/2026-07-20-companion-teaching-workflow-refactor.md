@@ -6,18 +6,21 @@ Builds on: `CONTEXT.md`, `docs/v2-alignment.md`, and `docs/handoff/2026-07-20-gm
 
 ## Outcome
 
-The companion's teaching apply path now delegates the complete local lesson-to-outcome workflow to `CompanionTeachingWorkflow`.
+The companion now delegates its complete local teaching lifecycle to `CompanionTeachingWorkflow`.
 
 The workflow owns:
 
 - safety and included-message validation
+- preview construction and deferred local impact completion
+- match exclusion and refreshed amendment proposals
+- rule-amendment decisions and their user-facing outcomes
 - application of the local teaching lesson
 - construction of one typed provider write request
 - user-facing acknowledgment and structured outcome semantics
 
 `GmailCompanionApp` retains transport concerns, analytics, asynchronous sidebar refresh, and the Gmail-specific mutation implementation. The provider mutation crosses an injected callable boundary, so workflow tests do not need credentials, a Gmail client, or a live inbox.
 
-The application module decreased from 1,942 lines after the rendering refactor to 1,853 lines.
+The application module decreased from 1,942 lines after the rendering refactor to 1,793 lines.
 
 ## Behavior and safety decisions
 
@@ -30,9 +33,9 @@ The application module decreased from 1,942 lines after the rendering refactor t
 ## Validation
 
 - Failing-first tests characterized the missing workflow module and provider boundary.
-- Dedicated workflow tests cover request construction, exact outcome semantics, and rejection before mutation.
+- Dedicated workflow tests cover preview construction, deferred impact completion, exclusions, amendments, provider request construction, exact outcome semantics, and rejection before mutation.
 - Companion coordination tests now substitute the workflow result rather than patching internal teaching functions and response helpers.
-- `python3 -m unittest discover -s tests`: 724 tests passed.
+- `python3 -m unittest discover -s tests`: 727 tests passed.
 - Python compilation passed for the workflow and application modules.
 - Diff whitespace checks passed.
 

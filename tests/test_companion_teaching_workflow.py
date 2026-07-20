@@ -9,6 +9,99 @@ from src.companion_teaching_workflow import (
 
 
 class CompanionTeachingWorkflowTests(unittest.TestCase):
+    def test_build_and_finish_preview_keep_local_teaching_contract_together(self) -> None:
+        workflow = CompanionTeachingWorkflow(
+            Path("/tmp/threadwise-test"),
+            write_through=lambda request: self.fail(f"unexpected write: {request}"),
+        )
+        preview = {"selected_message_id": "message-1", "impact": {"state": "deferred"}}
+        completed = {"selected_message_id": "message-1", "impact": {"state": "complete"}}
+        payload = {
+            "selected_context": {"provider": "gmail", "message_id": "message-1"},
+            "target_label": "reply-needed",
+            "target_label_explicit": False,
+            "note": "Needs my answer",
+            "scope": "sender",
+        }
+
+        with (
+            patch(
+                "src.companion_teaching_workflow.build_sidebar_teach_preview",
+                return_value=preview,
+            ) as build_preview,
+            patch(
+                "src.companion_teaching_workflow.finish_sidebar_teach_preview_impact",
+                return_value=completed,
+            ) as finish_impact,
+        ):
+            self.assertIs(
+                workflow.build_preview(payload, include_existing_impact=False),
+                preview,
+            )
+            self.assertIs(workflow.finish_preview_impact(dict(preview)), completed)
+
+        self.assertFalse(build_preview.call_args.kwargs["target_label_explicit"])
+        self.assertFalse(build_preview.call_args.kwargs["include_existing_impact"])
+        finish_impact.assert_called_once_with(Path("/tmp/threadwise-test"), preview)
+
+    def test_exclude_match_rebuilds_preview_with_amendment_proposal(self) -> None:
+        workflow = CompanionTeachingWorkflow(
+            Path("/tmp/threadwise-test"),
+            write_through=lambda request: self.fail(f"unexpected write: {request}"),
+        )
+        exclusion = {
+            "excluded_message_id": "message-2",
+            "amendment_proposal": {"proposal_id": "proposal-1"},
+        }
+
+        with (
+            patch(
+                "src.companion_teaching_workflow.exclude_sidebar_teaching_match",
+                return_value=exclusion,
+            ),
+            patch(
+                "src.companion_teaching_workflow.build_sidebar_teach_preview",
+                return_value={"selected_message_id": "message-1"},
+            ),
+        ):
+            result = workflow.exclude_match(
+                {
+                    "selected_context": {"provider": "gmail", "message_id": "message-1"},
+                    "target_label": "reply-needed",
+                    "note": "Needs my answer",
+                    "scope": "sender",
+                    "excluded_message_id": "message-2",
+                    "reason": "Automated notice",
+                }
+            )
+
+        self.assertEqual(result["excluded_message_id"], "message-2")
+        self.assertEqual(result["preview"]["amendment_proposal"]["proposal_id"], "proposal-1")
+
+    def test_decide_amendment_owns_the_user_facing_outcome(self) -> None:
+        workflow = CompanionTeachingWorkflow(
+            Path("/tmp/threadwise-test"),
+            write_through=lambda request: self.fail(f"unexpected write: {request}"),
+        )
+
+        with patch(
+            "src.companion_teaching_workflow.apply_rule_amendment_decision",
+            return_value={"amendment_status": "accepted", "preview": {}},
+        ):
+            result = workflow.decide_amendment(
+                {
+                    "selected_context": {"provider": "gmail", "message_id": "message-1"},
+                    "target_label": "reply-needed",
+                    "note": "Needs my answer",
+                    "scope": "sender",
+                    "amendment": {"proposal_id": "proposal-1"},
+                    "decision": "accept",
+                }
+            )
+
+        self.assertEqual(result["amendment_status"], "accepted")
+        self.assertIn("Updated the proposed rule boundary", result["acknowledgment"])
+
     def test_apply_concentrates_local_teaching_write_request_and_exact_outcome(self) -> None:
         write_requests: list[TeachingWriteRequest] = []
         write_summary = {

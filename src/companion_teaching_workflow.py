@@ -2,7 +2,13 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from src.teaching_loop import apply_sidebar_teaching
+from src.teaching_loop import (
+    apply_rule_amendment_decision,
+    apply_sidebar_teaching,
+    build_sidebar_teach_preview,
+    exclude_sidebar_teaching_match,
+    finish_sidebar_teach_preview_impact,
+)
 
 
 @dataclass(frozen=True)
@@ -35,6 +41,75 @@ class CompanionTeachingWorkflow:
     ) -> None:
         self._storage_dir = storage_dir
         self._write_through = write_through
+
+    def build_preview(
+        self,
+        payload: dict,
+        *,
+        include_existing_impact: bool = True,
+    ) -> dict:
+        return build_sidebar_teach_preview(
+            self._storage_dir,
+            selected_context=payload.get("selected_context") or {},
+            target_label=payload["target_label"],
+            target_label_explicit=bool(payload.get("target_label_explicit", True)),
+            note=(payload.get("note") or "").strip(),
+            scope=payload.get("scope") or "sender",
+            include_existing_impact=include_existing_impact,
+        )
+
+    def finish_preview_impact(self, preview: dict) -> dict:
+        if not isinstance(preview, dict):
+            raise ValueError("preview must be an object")
+        return finish_sidebar_teach_preview_impact(self._storage_dir, dict(preview))
+
+    def exclude_match(self, payload: dict) -> dict:
+        selected_context = payload.get("selected_context") or {}
+        target_label = payload["target_label"]
+        note = (payload.get("note") or "").strip()
+        scope = payload.get("scope") or "sender"
+        exclusion_result = exclude_sidebar_teaching_match(
+            self._storage_dir,
+            selected_context=selected_context,
+            target_label=target_label,
+            note=note,
+            scope=scope,
+            excluded_message_id=payload["excluded_message_id"],
+            reason=(payload.get("reason") or "").strip(),
+        )
+        refreshed_preview = build_sidebar_teach_preview(
+            self._storage_dir,
+            selected_context=selected_context,
+            target_label=target_label,
+            note=note,
+            scope=scope,
+        )
+        return {
+            **exclusion_result,
+            "preview": {
+                **refreshed_preview,
+                "amendment_proposal": exclusion_result.get("amendment_proposal"),
+            },
+        }
+
+    def decide_amendment(self, payload: dict) -> dict:
+        result = apply_rule_amendment_decision(
+            self._storage_dir,
+            selected_context=payload.get("selected_context") or {},
+            target_label=payload["target_label"],
+            note=(payload.get("note") or "").strip(),
+            scope=payload.get("scope") or "sender",
+            amendment=payload.get("amendment") or {},
+            decision=payload["decision"],
+        )
+        return {
+            **result,
+            "acknowledgment": (
+                "Updated the proposed rule boundary and recomputed affected emails."
+                if result["amendment_status"] == "accepted"
+                else "Kept the original proposed rule. No amendment was applied."
+            ),
+        }
 
     def apply(self, payload: dict) -> TeachingWorkflowResult:
         selected_context = dict(payload.get("selected_context") or {})

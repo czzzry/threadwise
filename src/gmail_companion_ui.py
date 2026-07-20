@@ -67,10 +67,6 @@ from src.gmail_companion_state import (
 )
 from src.companion_teaching_workflow import CompanionTeachingWorkflow, TeachingWriteRequest
 from src.teaching_loop import (
-    apply_rule_amendment_decision,
-    build_sidebar_teach_preview,
-    exclude_sidebar_teaching_match,
-    finish_sidebar_teach_preview_impact,
     load_items_for_gmail_write_through,
 )
 from src.semantic_rule_matching import semantic_gmail_search_clauses, semantic_rule_matches_message, semantic_search_keywords
@@ -1057,26 +1053,14 @@ class GmailCompanionApp:
         return preview
 
     def teach_preview_impact(self, payload: dict) -> dict:
-        preview = payload.get("preview")
-        if not isinstance(preview, dict):
-            raise ValueError("preview must be an object")
-        completed = finish_sidebar_teach_preview_impact(self._storage_dir, dict(preview))
+        completed = self._teaching_workflow.finish_preview_impact(payload.get("preview"))
         completed = self._finish_teach_preview_impact(completed)
         completed["inbox_backfill"]["state"] = "ready"
         return completed
 
     def _build_teach_preview(self, payload: dict, *, include_existing_impact: bool = True) -> dict:
-        selected_context = payload.get("selected_context") or {}
-        target_label = payload["target_label"]
-        note = (payload.get("note") or "").strip()
-        scope = payload.get("scope") or "sender"
-        return build_sidebar_teach_preview(
-            self._storage_dir,
-            selected_context=selected_context,
-            target_label=target_label,
-            target_label_explicit=bool(payload.get("target_label_explicit", True)),
-            note=note,
-            scope=scope,
+        return self._teaching_workflow.build_preview(
+            payload,
             include_existing_impact=include_existing_impact,
         )
 
@@ -1229,59 +1213,15 @@ class GmailCompanionApp:
 
     def teach_exclude(self, payload: dict) -> dict:
         selected_context = payload.get("selected_context") or {}
-        target_label = payload["target_label"]
-        note = (payload.get("note") or "").strip()
-        scope = payload.get("scope") or "sender"
-        excluded_message_id = payload["excluded_message_id"]
-        reason = (payload.get("reason") or "").strip()
-        exclusion_result = exclude_sidebar_teaching_match(
-            self._storage_dir,
-            selected_context=selected_context,
-            target_label=target_label,
-            note=note,
-            scope=scope,
-            excluded_message_id=excluded_message_id,
-            reason=reason,
-        )
-        refreshed_preview = build_sidebar_teach_preview(
-            self._storage_dir,
-            selected_context=selected_context,
-            target_label=target_label,
-            note=note,
-            scope=scope,
-        )
         return {
-            **exclusion_result,
-            "preview": {
-                **refreshed_preview,
-                "amendment_proposal": exclusion_result.get("amendment_proposal"),
-            },
+            **self._teaching_workflow.exclude_match(payload),
             "sidebar_state": self.sidebar_state(selected_context),
         }
 
     def teach_amendment(self, payload: dict) -> dict:
         selected_context = payload.get("selected_context") or {}
-        target_label = payload["target_label"]
-        note = (payload.get("note") or "").strip()
-        scope = payload.get("scope") or "sender"
-        amendment = payload.get("amendment") or {}
-        decision = payload["decision"]
-        result = apply_rule_amendment_decision(
-            self._storage_dir,
-            selected_context=selected_context,
-            target_label=target_label,
-            note=note,
-            scope=scope,
-            amendment=amendment,
-            decision=decision,
-        )
         return {
-            **result,
-            "acknowledgment": (
-                "Updated the proposed rule boundary and recomputed affected emails."
-                if result["amendment_status"] == "accepted"
-                else "Kept the original proposed rule. No amendment was applied."
-            ),
+            **self._teaching_workflow.decide_amendment(payload),
             "sidebar_state": self.sidebar_state(selected_context),
         }
 
