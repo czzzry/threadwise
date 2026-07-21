@@ -7,7 +7,7 @@ The skills speak in terms of five canonical triage roles. This file maps those r
 | `needs-triage`             | `needs-triage`       | Maintainer needs to evaluate this issue  |
 | `needs-info`               | `needs-info`         | Waiting on reporter for more information |
 | `ready-for-agent`          | `ready`              | Fully specified and ready to implement   |
-| `ready-for-human`          | `needs-verification` | Needs a product decision or live check   |
+| `ready-for-human`          | `needs-verification` | Needs human action before completion     |
 | `wontfix`                  | `wontfix`            | Will not be actioned                     |
 
 When a skill mentions a role, use the corresponding label string from this table.

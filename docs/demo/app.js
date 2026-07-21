@@ -1,3 +1,12 @@
+const roleScoutTeaching = Object.freeze({
+  initialLabel: "Promotions",
+  initialReason: "A recurring recommendation email with a promotional format. Threadwise kept it visible because the sender also matches your job-search context.",
+  targetLabel: "EA/Work",
+  defaultNote: "Job recommendations from RoleScout belong in Work, not Promotions.",
+  matchCount: 4,
+  appliedReason: "A recurring job recommendation that supports the active search workflow. The user confirmed that RoleScout belongs with Work.",
+});
+
 const messages = [
   {
     id: "rolescout",
@@ -6,8 +15,9 @@ const messages = [
     subject: "Senior AI product roles this week",
     preview: "New recommendations based on your saved search.",
     time: "9:42 AM",
-    label: "Promotions",
-    reason: "A recurring recommendation email with a promotional format. Threadwise kept it visible because the sender also matches your job-search context.",
+    label: roleScoutTeaching.initialLabel,
+    reason: roleScoutTeaching.initialReason,
+    teaching: roleScoutTeaching,
   },
   {
     id: "project-partner",
@@ -65,6 +75,8 @@ const state = {
   selectedId: messages[0].id,
   mode: "current",
   corrected: false,
+  teachingNote: "",
+  receiptAction: null,
 };
 
 const messageList = document.querySelector("#message-list");
@@ -72,6 +84,23 @@ const companion = document.querySelector("#companion-content");
 
 function selectedMessage() {
   return messages.find((message) => message.id === state.selectedId);
+}
+
+function escapeHtml(value) {
+  return value.replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#039;",
+  })[character]);
+}
+
+function beginTeaching(message) {
+  if (!message.teaching) return;
+  state.teachingNote = message.teaching.defaultNote;
+  state.receiptAction = null;
+  state.mode = "teach";
 }
 
 function renderMessages() {
@@ -99,6 +128,15 @@ function panelHeading(message) {
 }
 
 function renderCurrent(message) {
+  const teachingHint = message.teaching
+    ? state.corrected
+      ? "The guided correction is complete. You can run it again or inspect another synthetic email."
+      : "Try the flow: this job alert belongs with Work, not Promotions."
+    : "This message is available for inspection. The guided teaching scenario uses the RoleScout job alert.";
+  const teachingAction = message.teaching
+    ? '<button class="action primary" type="button" data-action="correct">Correct / teach</button>'
+    : '<button class="action primary" type="button" data-action="open-guided-teaching">Try RoleScout correction</button>';
+
   companion.innerHTML = `
     ${panelHeading(message)}
     <div class="pill-row">
@@ -109,20 +147,25 @@ function renderCurrent(message) {
       <p class="section-label">Why</p>
       ${message.reason}
     </div>
-    <p class="flow-hint">${message.id === "rolescout" && !state.corrected ? "Try the flow: this job alert belongs with Work, not Promotions." : "Choose another synthetic email, or inspect how this decision was made."}</p>
+    <p class="flow-hint">${teachingHint}</p>
     <div class="button-row">
-      <button class="action primary" type="button" data-action="correct">Correct / teach</button>
+      ${teachingAction}
       <button class="action quiet" type="button" data-action="looks-right">Looks right</button>
     </div>
   `;
 }
 
 function renderTeach(message) {
+  if (!message.teaching) {
+    renderCurrent(message);
+    return;
+  }
+
   companion.innerHTML = `
     ${panelHeading(message)}
     <form class="teach-form" data-form="teach">
       <label for="teaching-note">What should Threadwise understand?</label>
-      <textarea id="teaching-note" name="teaching-note">${message.id === "rolescout" ? "Job recommendations from RoleScout belong in Work, not Promotions." : `Messages like this from ${message.sender} should use a different label.`}</textarea>
+      <textarea id="teaching-note" name="teaching-note">${escapeHtml(state.teachingNote)}</textarea>
     </form>
     <div class="reason">
       <p class="section-label">Nothing has changed yet</p>
@@ -136,35 +179,52 @@ function renderTeach(message) {
 }
 
 function renderPreview(message) {
+  if (!message.teaching) {
+    renderCurrent(message);
+    return;
+  }
+
+  const earlierMatches = message.teaching.matchCount - 1;
   companion.innerHTML = `
     ${panelHeading(message)}
     <div class="pill-row">
       <span class="pill">${message.label}</span>
-      <span class="pill success">→ EA/Work</span>
+      <span class="pill success">→ ${message.teaching.targetLabel}</span>
     </div>
     <div class="impact">
-      <strong>I found 4 matching emails before changing anything.</strong>
-      The current email will move to EA/Work. Three earlier RoleScout recommendations match the same proposed rule.
+      <strong>I found ${message.teaching.matchCount} matching emails before changing anything.</strong>
+      The current email will move to ${message.teaching.targetLabel}. ${earlierMatches} earlier ${message.sender} recommendations match the same proposed rule.
     </div>
     <p class="flow-hint">Choose the scope explicitly. The hosted demo changes only this synthetic page.</p>
     <div class="button-row">
-      <button class="action confirm" type="button" data-action="apply-matches">Apply to 4</button>
+      <button class="action confirm" type="button" data-action="apply-matches">Apply to ${message.teaching.matchCount}</button>
       <button class="action" type="button" data-action="future-only">Use for future only</button>
-      <button class="action quiet" type="button" data-action="cancel">Keep discussing</button>
+      <button class="action quiet" type="button" data-action="keep-discussing">Keep discussing</button>
     </div>
   `;
 }
 
 function renderReceipt(message) {
+  if (!message.teaching) {
+    renderCurrent(message);
+    return;
+  }
+
+  const futureOnly = state.receiptAction === "future-only";
+  const receiptHeading = futureOnly ? "Future lesson saved." : "Updated in the synthetic inbox.";
+  const receiptBody = futureOnly
+    ? `Threadwise saved the lesson for future ${message.sender} recommendations. The current email and all other existing demo messages were unchanged.`
+    : `Threadwise changed the ${message.teaching.matchCount} matching demo messages to ${message.teaching.targetLabel} and saved the lesson for future ${message.sender} recommendations.`;
+
   companion.innerHTML = `
     ${panelHeading(message)}
     <div class="pill-row">
-      <span class="pill success">EA/Work</span>
+      <span class="pill ${futureOnly ? "" : "success"}">${message.label}</span>
       <span class="pill success">Kept visible</span>
     </div>
     <div class="receipt">
-      <strong>Updated in the synthetic inbox.</strong>
-      Threadwise changed the four matching demo messages to EA/Work and saved the lesson for future RoleScout recommendations.
+      <strong>${receiptHeading}</strong>
+      ${receiptBody}
     </div>
     <p class="flow-hint">In the real product this receipt appears only after provider-side verification. No provider exists on this page.</p>
     <div class="button-row">
@@ -200,23 +260,38 @@ companion.addEventListener("click", (event) => {
   if (!button) return;
 
   const action = button.dataset.action;
-  if (action === "correct") state.mode = "teach";
-  if (action === "preview") state.mode = "preview";
-  if (action === "cancel" || action === "looks-right") state.mode = "current";
-  if (action === "future-only") state.mode = "receipt";
-  if (action === "apply-matches") {
-    const message = selectedMessage();
-    message.label = "EA/Work";
-    message.reason = "A recurring job recommendation that supports the active search workflow. The user confirmed that RoleScout belongs with Work.";
-    state.corrected = true;
+  const message = selectedMessage();
+  if (action === "correct") {
+    beginTeaching(message);
+  } else if (action === "open-guided-teaching") {
+    const guidedMessage = messages.find((item) => item.teaching);
+    state.selectedId = guidedMessage.id;
+    beginTeaching(guidedMessage);
+  } else if (action === "preview" && message.teaching) {
+    const note = companion.querySelector("[name='teaching-note']");
+    state.teachingNote = note.value;
+    state.mode = "preview";
+  } else if (action === "keep-discussing" && message.teaching) {
+    state.mode = "teach";
+  } else if (action === "cancel" || action === "looks-right") {
+    state.mode = "current";
+  } else if (action === "future-only" && message.teaching) {
+    state.receiptAction = "future-only";
     state.mode = "receipt";
-  }
-  if (action === "restart") {
+  } else if (action === "apply-matches" && message.teaching) {
+    message.label = message.teaching.targetLabel;
+    message.reason = message.teaching.appliedReason;
+    state.corrected = true;
+    state.receiptAction = "apply-matches";
+    state.mode = "receipt";
+  } else if (action === "restart") {
     const message = messages.find((item) => item.id === "rolescout");
-    message.label = "Promotions";
-    message.reason = "A recurring recommendation email with a promotional format. Threadwise kept it visible because the sender also matches your job-search context.";
+    message.label = message.teaching.initialLabel;
+    message.reason = message.teaching.initialReason;
     state.selectedId = message.id;
     state.corrected = false;
+    state.teachingNote = "";
+    state.receiptAction = null;
     state.mode = "current";
   }
 
