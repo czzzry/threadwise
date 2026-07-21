@@ -4,6 +4,7 @@ import {
   createDemoState,
   folderCounts,
   matchingMessages,
+  matchingMessagesNeedingUpdate,
   saveTeachingForFuture,
 } from "./model.mjs";
 
@@ -174,7 +175,11 @@ function renderPreview(message) {
   }
 
   const matchCount = matchingMessages(state, message.id).length;
-  const earlierMatches = matchCount - 1;
+  const affectedCount = matchingMessagesNeedingUpdate(state, message.id).length;
+  const impactCopy = affectedCount > 0
+    ? `${affectedCount} of them will move to ${escapeHtml(message.teaching.targetLabel)}. The future lesson will also be ${state.futureRules.some((rule) => rule.matchKey === message.teaching.matchKey) ? "kept" : "saved"}.`
+    : `All ${matchCount} already show ${escapeHtml(message.teaching.targetLabel)}. Applying again will leave the inbox labels and folder counts unchanged.`;
+  const applyLabel = affectedCount > 0 ? `Apply to ${affectedCount}` : "Confirm no inbox changes";
   companion.innerHTML = `
     ${panelHeading(message)}
     <div class="pill-row">
@@ -183,11 +188,11 @@ function renderPreview(message) {
     </div>
     <div class="impact">
       <strong>I found ${matchCount} matching emails before changing anything.</strong>
-      The current email will move to ${escapeHtml(message.teaching.targetLabel)}. ${earlierMatches} earlier ${escapeHtml(message.sender)} recommendations match the same proposed rule.
+      ${impactCopy}
     </div>
     <p class="flow-hint">Choose the scope explicitly. The hosted demo changes only this synthetic page.</p>
     <div class="button-row">
-      <button class="action confirm" type="button" data-action="apply-matches">Apply to ${matchCount}</button>
+      <button class="action confirm" type="button" data-action="apply-matches">${applyLabel}</button>
       <button class="action" type="button" data-action="future-only">Use for future only</button>
       <button class="action quiet" type="button" data-action="keep-discussing">Keep discussing</button>
     </div>
@@ -202,10 +207,20 @@ function renderReceipt(message) {
 
   const futureOnly = state.receiptAction === "future-only";
   const affectedCount = state.lastAffectedIds.length;
-  const receiptHeading = futureOnly ? "Future lesson saved." : "Updated in the synthetic inbox.";
-  const receiptBody = futureOnly
-    ? `Future ${escapeHtml(message.sender)} recommendations will go to ${escapeHtml(message.teaching.targetLabel)}. Existing demo messages remain unchanged, as shown by the inbox labels and folder counts.`
-    : `${affectedCount} matching demo messages now show ${escapeHtml(message.teaching.targetLabel)} in the inbox. The folder count increased by ${affectedCount}, and the future lesson was saved.`;
+  let receiptHeading;
+  let receiptBody;
+  if (futureOnly) {
+    receiptHeading = state.lastRuleAdded ? "Future lesson saved." : "Future lesson already saved.";
+    receiptBody = state.lastRuleAdded
+      ? `Future ${escapeHtml(message.sender)} recommendations will go to ${escapeHtml(message.teaching.targetLabel)}. Existing demo messages remain unchanged, as shown by the inbox labels and folder counts.`
+      : `The existing future lesson remains active for ${escapeHtml(message.sender)} recommendations. Existing demo messages and folder counts stayed unchanged.`;
+  } else if (affectedCount > 0) {
+    receiptHeading = "Updated in the synthetic inbox.";
+    receiptBody = `${affectedCount} matching demo messages now show ${escapeHtml(message.teaching.targetLabel)} in the inbox. The folder count increased by ${affectedCount}, and the future lesson was ${state.lastRuleAdded ? "saved" : "already saved"}.`;
+  } else {
+    receiptHeading = state.lastRuleAdded ? "Future lesson saved." : "No additional changes needed.";
+    receiptBody = `All ${matchingMessages(state, message.id).length} matching demo messages already show ${escapeHtml(message.teaching.targetLabel)}. Folder counts stayed unchanged, and the future lesson was ${state.lastRuleAdded ? "saved" : "already saved"}.`;
+  }
 
   companion.innerHTML = `
     ${panelHeading(message)}
@@ -225,6 +240,10 @@ function renderReceipt(message) {
 }
 
 function renderAcknowledged(message) {
+  const receiptHeading = state.lastConfirmationAdded ? "Decision confirmed." : "Decision already confirmed.";
+  const receiptBody = state.lastConfirmationAdded
+    ? `Threadwise kept the existing ${escapeHtml(message.label)} decision. The inbox row now shows Confirmed; no label or provider data changed.`
+    : `The inbox row already showed Confirmed for this ${escapeHtml(message.label)} decision, so no inbox or provider data changed.`;
   companion.innerHTML = `
     ${panelHeading(message)}
     <div class="pill-row">
@@ -233,8 +252,8 @@ function renderAcknowledged(message) {
       <span class="pill confirmed">✓ Confirmed</span>
     </div>
     <div class="receipt" role="status">
-      <strong>Decision confirmed.</strong>
-      Threadwise kept the existing ${escapeHtml(message.label)} decision. The inbox row now shows Confirmed; no label or provider data changed.
+      <strong>${receiptHeading}</strong>
+      ${receiptBody}
     </div>
     <p class="flow-hint">Continue inspecting this message or choose another synthetic email.</p>
     <div class="button-row">
@@ -292,7 +311,7 @@ companion.addEventListener("click", (event) => {
     if (normalizeTeachingNote(state.teachingNote) === normalizeTeachingNote(message.teaching.defaultNote)) {
       state.teachingError = "";
       state.mode = "preview";
-      state.mailboxStatus = `Previewing ${matchingMessages(state, message.id).length} matches · inbox unchanged`;
+      state.mailboxStatus = `Previewing ${matchingMessagesNeedingUpdate(state, message.id).length} inbox changes · inbox unchanged`;
       focusSelector = "[data-action='apply-matches']";
     } else {
       state.teachingError = state.teachingNote.trim()

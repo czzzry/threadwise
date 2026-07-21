@@ -136,13 +136,14 @@ const messageDefinitions = Object.freeze([
 ]);
 
 function addFutureRule(state, teaching) {
-  if (!state.futureRules.some((rule) => rule.matchKey === teaching.matchKey)) {
-    state.futureRules.push({
-      matchKey: teaching.matchKey,
-      sender: "RoleScout Jobs",
-      targetLabel: teaching.targetLabel,
-    });
-  }
+  if (state.futureRules.some((rule) => rule.matchKey === teaching.matchKey)) return false;
+
+  state.futureRules.push({
+    matchKey: teaching.matchKey,
+    sender: "RoleScout Jobs",
+    targetLabel: teaching.targetLabel,
+  });
+  return true;
 }
 
 export function createDemoState() {
@@ -156,6 +157,8 @@ export function createDemoState() {
     receiptAction: null,
     futureRules: [],
     lastAffectedIds: [],
+    lastRuleAdded: false,
+    lastConfirmationAdded: false,
     mailboxStatus: "No demo changes yet",
   };
 }
@@ -164,6 +167,12 @@ export function matchingMessages(state, messageId) {
   const source = state.messages.find((message) => message.id === messageId);
   if (!source?.teaching) return [];
   return state.messages.filter((message) => message.matchKey === source.teaching.matchKey);
+}
+
+export function matchingMessagesNeedingUpdate(state, messageId) {
+  const source = state.messages.find((message) => message.id === messageId);
+  if (!source?.teaching) return [];
+  return matchingMessages(state, messageId).filter((message) => message.label !== source.teaching.targetLabel);
 }
 
 export function folderCounts(state) {
@@ -179,15 +188,16 @@ export function applyTeachingToMatches(state, messageId) {
   const source = state.messages.find((message) => message.id === messageId);
   if (!source?.teaching) return [];
 
-  const matches = matchingMessages(state, messageId);
-  matches.forEach((message) => {
+  const affectedMessages = matchingMessagesNeedingUpdate(state, messageId);
+  affectedMessages.forEach((message) => {
     message.label = source.teaching.targetLabel;
     message.reason = source.teaching.appliedReason;
   });
-  addFutureRule(state, source.teaching);
-  state.lastAffectedIds = matches.map((message) => message.id);
+  state.lastRuleAdded = addFutureRule(state, source.teaching);
+  state.lastAffectedIds = affectedMessages.map((message) => message.id);
   state.corrected = true;
-  state.mailboxStatus = `${matches.length} emails moved to ${source.teaching.targetLabel} · future rule saved`;
+  const ruleStatus = state.lastRuleAdded ? "future rule saved" : "future rule already saved";
+  state.mailboxStatus = `${affectedMessages.length} emails moved to ${source.teaching.targetLabel} · ${ruleStatus}`;
   return [...state.lastAffectedIds];
 }
 
@@ -195,18 +205,23 @@ export function saveTeachingForFuture(state, messageId) {
   const source = state.messages.find((message) => message.id === messageId);
   if (!source?.teaching) return false;
 
-  addFutureRule(state, source.teaching);
+  state.lastRuleAdded = addFutureRule(state, source.teaching);
   state.lastAffectedIds = [];
-  state.mailboxStatus = "Future rule saved · existing inbox unchanged";
-  return true;
+  state.mailboxStatus = state.lastRuleAdded
+    ? "Future rule saved · existing inbox unchanged"
+    : "Future rule already saved · existing inbox unchanged";
+  return state.lastRuleAdded;
 }
 
 export function confirmMessage(state, messageId) {
   const message = state.messages.find((item) => item.id === messageId);
   if (!message) return false;
 
+  state.lastConfirmationAdded = !message.confirmed;
   message.confirmed = true;
   state.lastAffectedIds = [];
-  state.mailboxStatus = "Decision confirmed · inbox labels unchanged";
-  return true;
+  state.mailboxStatus = state.lastConfirmationAdded
+    ? "Decision confirmed · inbox labels unchanged"
+    : "Decision already confirmed · inbox labels unchanged";
+  return state.lastConfirmationAdded;
 }

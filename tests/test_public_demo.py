@@ -63,7 +63,9 @@ class PublicDemoTests(unittest.TestCase):
         self.assertIn('state.receiptAction = "apply-matches"', script)
         self.assertIn("saveTeachingForFuture", script)
         self.assertIn("applyTeachingToMatches", script)
+        self.assertIn("matchingMessagesNeedingUpdate", script)
         self.assertIn("Future rule saved · existing inbox unchanged", model)
+        self.assertIn("Future rule already saved · existing inbox unchanged", model)
 
     def test_demo_renders_labels_and_derived_mailbox_counts(self) -> None:
         page = (ROOT / "docs" / "index.html").read_text(encoding="utf-8")
