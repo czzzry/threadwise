@@ -1,7 +1,7 @@
 # CONTEXT.md
 
 Status: Current repo context
-Current as of: 2026-07-20
+Current as of: 2026-07-21
 
 This file is the short "you are here" guide for the repo.
 
@@ -43,6 +43,7 @@ The repo already proves:
 - unsubscribe review and explicit execution support
 - ProtonMail read paths plus a bounded Bridge-backed, label-only review console
 - local artifact, reporting, and review tooling
+- a public no-login demo that runs entirely on synthetic browser-local data
 
 The current branch state includes the completed async Gmail companion extension slices `133` through `137`, including:
 

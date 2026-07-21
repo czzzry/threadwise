@@ -103,7 +103,7 @@ Still out of scope by default:
 ## What still looks partial
 
 - roadmap docs can still drift unless checkpoints and handoffs are refreshed
-- ProtonMail write-side behavior is still unresolved product scope
+- ProtonMail behavior beyond the bounded label-only review console is still unresolved product scope
 - the local artifact model is central enough that it likely needs stronger explicit versioning and decision notes over time
 - the isolated automation-browser path still relies on host-driven injection/message fulfillment for deterministic live Gmail acceptance instead of unpacked-extension parity by itself
 - the live acceptance harness still proves the inbox companion through host-driven injection rather than a pure unpacked-extension parity path
