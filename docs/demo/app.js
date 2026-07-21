@@ -1,90 +1,22 @@
-const roleScoutTeaching = Object.freeze({
-  initialLabel: "Promotions",
-  initialReason: "A recurring recommendation email with a promotional format. Threadwise kept it visible because the sender also matches your job-search context.",
-  targetLabel: "EA/Work",
-  defaultNote: "Job recommendations from RoleScout belong in Work, not Promotions.",
-  matchCount: 4,
-  appliedReason: "A recurring job recommendation that supports the active search workflow. The user confirmed that RoleScout belongs with Work.",
-});
+import {
+  applyTeachingToMatches,
+  confirmMessage,
+  createDemoState,
+  folderCounts,
+  matchingMessages,
+  matchingMessagesNeedingUpdate,
+  saveTeachingForFuture,
+} from "./model.mjs";
 
-const messages = [
-  {
-    id: "rolescout",
-    sender: "RoleScout Jobs",
-    address: "jobs@example.test",
-    subject: "Senior AI product roles this week",
-    preview: "New recommendations based on your saved search.",
-    time: "9:42 AM",
-    label: roleScoutTeaching.initialLabel,
-    reason: roleScoutTeaching.initialReason,
-    teaching: roleScoutTeaching,
-  },
-  {
-    id: "project-partner",
-    sender: "Project Partner",
-    address: "partner@example.test",
-    subject: "Can you approve the demo copy?",
-    preview: "Please confirm the final wording before release.",
-    time: "9:31 AM",
-    label: "EA/Work",
-    reason: "A direct request from a known collaborator with a clear decision needed.",
-  },
-  {
-    id: "northstar",
-    sender: "Northstar Weekly",
-    address: "digest@example.test",
-    subject: "Five useful essays worth reading",
-    preview: "A concise roundup from a sender you usually keep.",
-    time: "8:21 AM",
-    label: "Updates",
-    reason: "A recurring editorial digest. It is useful, but no immediate action is required.",
-  },
-  {
-    id: "daily-deals",
-    sender: "Daily Deals Outlet",
-    address: "offers@example.test",
-    subject: "Final hours: workspace gear sale",
-    preview: "The offer ends tonight.",
-    time: "7:55 AM",
-    label: "EA/LowValue",
-    reason: "A time-limited retail promotion from a high-volume sender with no prior engagement.",
-  },
-  {
-    id: "repo-security",
-    sender: "Repo Security",
-    address: "alerts@example.test",
-    subject: "Dependency alert resolved",
-    preview: "The patched version is now on the default branch.",
-    time: "7:18 AM",
-    label: "EA/Work",
-    reason: "A project notification that confirms a security-sensitive task has been resolved.",
-  },
-  {
-    id: "city-rail",
-    sender: "City Rail",
-    address: "tickets@example.test",
-    subject: "Your trip receipt",
-    preview: "Booking confirmation and travel details.",
-    time: "6:44 AM",
-    label: "Receipts",
-    reason: "A transactional message containing a purchase receipt and travel record.",
-  },
-];
-
-const state = {
-  selectedId: messages[0].id,
-  mode: "current",
-  corrected: false,
-  teachingNote: "",
-  teachingError: "",
-  receiptAction: null,
-};
+let state = createDemoState();
 
 const messageList = document.querySelector("#message-list");
 const companion = document.querySelector("#companion-content");
+const mailboxStatus = document.querySelector("#mailbox-status");
+const mailCount = document.querySelector("#mail-count");
 
 function selectedMessage() {
-  return messages.find((message) => message.id === state.selectedId);
+  return state.messages.find((message) => message.id === state.selectedId);
 }
 
 function escapeHtml(value) {
@@ -107,16 +39,23 @@ function beginTeaching(message) {
   state.teachingError = "";
   state.receiptAction = null;
   state.mode = "teach";
+  state.mailboxStatus = "Drafting a correction · inbox unchanged";
 }
 
 function renderMessages() {
-  messageList.innerHTML = messages
+  messageList.innerHTML = state.messages
     .map(
       (message) => `
         <button class="message-row" type="button" data-message-id="${message.id}" aria-pressed="${message.id === state.selectedId}">
-          <strong>${message.sender}</strong>
-          <span class="subject">${message.subject} <span aria-hidden="true">-</span> ${message.preview}</span>
-          <time>${message.time}</time>
+          <strong>${escapeHtml(message.sender)}</strong>
+          <span class="message-content">
+            <span class="subject">${escapeHtml(message.subject)} <span aria-hidden="true">-</span> <span class="preview">${escapeHtml(message.preview)}</span></span>
+            <span class="row-tags">
+              <span class="message-label" data-message-label>${escapeHtml(message.label)}</span>
+              <span class="confirmed-badge" data-confirmed hidden>✓ Confirmed</span>
+            </span>
+          </span>
+          <time>${escapeHtml(message.time)}</time>
         </button>
       `,
     )
@@ -129,6 +68,23 @@ function updateMessageSelection() {
   });
 }
 
+function updateInboxVisualState() {
+  const counts = folderCounts(state);
+  mailCount.textContent = `${counts.inbox} messages`;
+  mailboxStatus.textContent = state.mailboxStatus;
+
+  document.querySelectorAll("[data-folder-count]").forEach((count) => {
+    count.textContent = counts[count.dataset.folderCount];
+  });
+
+  messageList.querySelectorAll("[data-message-id]").forEach((row) => {
+    const message = state.messages.find((item) => item.id === row.dataset.messageId);
+    row.querySelector("[data-message-label]").textContent = message.label;
+    row.querySelector("[data-confirmed]").hidden = !message.confirmed;
+    row.classList.toggle("is-updated", state.lastAffectedIds.includes(message.id));
+  });
+}
+
 function focusCompanion(selector) {
   const target = companion.querySelector(selector);
   if (target) target.focus();
@@ -138,8 +94,8 @@ function panelHeading(message) {
   return `
     <div>
       <p class="section-label">Selected email</p>
-      <h2 class="email-title">${message.subject}</h2>
-      <p class="sender">${message.sender} &lt;${message.address}&gt;</p>
+      <h2 class="email-title">${escapeHtml(message.subject)}</h2>
+      <p class="sender">${escapeHtml(message.sender)} &lt;${escapeHtml(message.address)}&gt;</p>
     </div>
   `;
 }
@@ -147,26 +103,31 @@ function panelHeading(message) {
 function renderCurrent(message) {
   const teachingHint = message.teaching
     ? state.corrected
-      ? "The guided correction is complete. You can run it again or inspect another synthetic email."
+      ? "The four matching messages now show their new labels in the inbox. You can restart or inspect another email."
       : "Try the flow: this job alert belongs with Work, not Promotions."
-    : "This message is available for inspection. The guided teaching scenario uses the RoleScout job alert.";
+    : "This message is available for inspection. The guided teaching scenario uses the first RoleScout job alert.";
   const teachingAction = message.teaching
     ? '<button class="action primary" type="button" data-action="correct">Correct / teach</button>'
     : '<button class="action primary" type="button" data-action="open-guided-teaching">Try RoleScout correction</button>';
   const looksRightAction = !message.teaching || state.corrected
     ? '<button class="action quiet" type="button" data-action="looks-right">Looks right</button>'
     : "";
+  const notice = state.mailboxStatus !== "No demo changes yet"
+    ? `<div class="inline-status" role="status">${escapeHtml(state.mailboxStatus)}</div>`
+    : "";
 
   companion.innerHTML = `
     ${panelHeading(message)}
     <div class="pill-row">
-      <span class="pill ${state.corrected && message.id === "rolescout" ? "success" : ""}">${message.label}</span>
+      <span class="pill ${state.lastAffectedIds.includes(message.id) ? "success" : ""}">${escapeHtml(message.label)}</span>
       <span class="pill success">Kept visible</span>
+      ${message.confirmed ? '<span class="pill confirmed">✓ Confirmed</span>' : ""}
     </div>
     <div class="reason">
       <p class="section-label">Why</p>
-      ${message.reason}
+      ${escapeHtml(message.reason)}
     </div>
+    ${notice}
     <p class="flow-hint">${teachingHint}</p>
     <div class="button-row">
       ${teachingAction}
@@ -182,7 +143,7 @@ function renderTeach(message) {
   }
 
   const error = state.teachingError
-    ? `<p id="teaching-error" class="form-error" role="alert">${state.teachingError}</p>`
+    ? `<p id="teaching-error" class="form-error" role="alert">${escapeHtml(state.teachingError)}</p>`
     : "";
   const restoreAction = state.teachingError
     ? '<button class="action" type="button" data-action="restore-note">Restore example</button>'
@@ -213,20 +174,25 @@ function renderPreview(message) {
     return;
   }
 
-  const earlierMatches = message.teaching.matchCount - 1;
+  const matchCount = matchingMessages(state, message.id).length;
+  const affectedCount = matchingMessagesNeedingUpdate(state, message.id).length;
+  const impactCopy = affectedCount > 0
+    ? `${affectedCount} of them will move to ${escapeHtml(message.teaching.targetLabel)}. The future lesson will also be ${state.futureRules.some((rule) => rule.matchKey === message.teaching.matchKey) ? "kept" : "saved"}.`
+    : `All ${matchCount} already show ${escapeHtml(message.teaching.targetLabel)}. Applying again will leave the inbox labels and folder counts unchanged.`;
+  const applyLabel = affectedCount > 0 ? `Apply to ${affectedCount}` : "Confirm no inbox changes";
   companion.innerHTML = `
     ${panelHeading(message)}
     <div class="pill-row">
-      <span class="pill">${message.label}</span>
-      <span class="pill success">→ ${message.teaching.targetLabel}</span>
+      <span class="pill">${escapeHtml(message.label)}</span>
+      <span class="pill success">→ ${escapeHtml(message.teaching.targetLabel)}</span>
     </div>
     <div class="impact">
-      <strong>I found ${message.teaching.matchCount} matching emails before changing anything.</strong>
-      The current email will move to ${message.teaching.targetLabel}. ${earlierMatches} earlier ${message.sender} recommendations match the same proposed rule.
+      <strong>I found ${matchCount} matching emails before changing anything.</strong>
+      ${impactCopy}
     </div>
     <p class="flow-hint">Choose the scope explicitly. The hosted demo changes only this synthetic page.</p>
     <div class="button-row">
-      <button class="action confirm" type="button" data-action="apply-matches">Apply to ${message.teaching.matchCount}</button>
+      <button class="action confirm" type="button" data-action="apply-matches">${applyLabel}</button>
       <button class="action" type="button" data-action="future-only">Use for future only</button>
       <button class="action quiet" type="button" data-action="keep-discussing">Keep discussing</button>
     </div>
@@ -240,18 +206,29 @@ function renderReceipt(message) {
   }
 
   const futureOnly = state.receiptAction === "future-only";
-  const receiptHeading = futureOnly ? "Future lesson saved." : "Updated in the synthetic inbox.";
-  const receiptBody = futureOnly
-    ? `Threadwise saved the lesson for future ${message.sender} recommendations. The current email and all other existing demo messages were unchanged.`
-    : `Threadwise changed the ${message.teaching.matchCount} matching demo messages to ${message.teaching.targetLabel} and saved the lesson for future ${message.sender} recommendations.`;
+  const affectedCount = state.lastAffectedIds.length;
+  let receiptHeading;
+  let receiptBody;
+  if (futureOnly) {
+    receiptHeading = state.lastRuleAdded ? "Future lesson saved." : "Future lesson already saved.";
+    receiptBody = state.lastRuleAdded
+      ? `Future ${escapeHtml(message.sender)} recommendations will go to ${escapeHtml(message.teaching.targetLabel)}. Existing demo messages remain unchanged, as shown by the inbox labels and folder counts.`
+      : `The existing future lesson remains active for ${escapeHtml(message.sender)} recommendations. Existing demo messages and folder counts stayed unchanged.`;
+  } else if (affectedCount > 0) {
+    receiptHeading = "Updated in the synthetic inbox.";
+    receiptBody = `${affectedCount} matching demo messages now show ${escapeHtml(message.teaching.targetLabel)} in the inbox. The folder count increased by ${affectedCount}, and the future lesson was ${state.lastRuleAdded ? "saved" : "already saved"}.`;
+  } else {
+    receiptHeading = state.lastRuleAdded ? "Future lesson saved." : "No additional changes needed.";
+    receiptBody = `All ${matchingMessages(state, message.id).length} matching demo messages already show ${escapeHtml(message.teaching.targetLabel)}. Folder counts stayed unchanged, and the future lesson was ${state.lastRuleAdded ? "saved" : "already saved"}.`;
+  }
 
   companion.innerHTML = `
     ${panelHeading(message)}
     <div class="pill-row">
-      <span class="pill ${futureOnly ? "" : "success"}">${message.label}</span>
+      <span class="pill ${futureOnly ? "" : "success"}">${escapeHtml(message.label)}</span>
       <span class="pill success">Kept visible</span>
     </div>
-    <div class="receipt">
+    <div class="receipt" role="status">
       <strong>${receiptHeading}</strong>
       ${receiptBody}
     </div>
@@ -263,15 +240,20 @@ function renderReceipt(message) {
 }
 
 function renderAcknowledged(message) {
+  const receiptHeading = state.lastConfirmationAdded ? "Decision confirmed." : "Decision already confirmed.";
+  const receiptBody = state.lastConfirmationAdded
+    ? `Threadwise kept the existing ${escapeHtml(message.label)} decision. The inbox row now shows Confirmed; no label or provider data changed.`
+    : `The inbox row already showed Confirmed for this ${escapeHtml(message.label)} decision, so no inbox or provider data changed.`;
   companion.innerHTML = `
     ${panelHeading(message)}
     <div class="pill-row">
-      <span class="pill">${message.label}</span>
+      <span class="pill">${escapeHtml(message.label)}</span>
       <span class="pill success">Kept visible</span>
+      <span class="pill confirmed">✓ Confirmed</span>
     </div>
     <div class="receipt" role="status">
-      <strong>Decision confirmed.</strong>
-      Threadwise kept the existing ${message.label} decision for this synthetic message. No inbox or provider was changed.
+      <strong>${receiptHeading}</strong>
+      ${receiptBody}
     </div>
     <p class="flow-hint">Continue inspecting this message or choose another synthetic email.</p>
     <div class="button-row">
@@ -318,7 +300,7 @@ companion.addEventListener("click", (event) => {
     beginTeaching(message);
     focusSelector = "#teaching-note";
   } else if (action === "open-guided-teaching") {
-    const guidedMessage = messages.find((item) => item.teaching);
+    const guidedMessage = state.messages.find((item) => item.teaching);
     state.selectedId = guidedMessage.id;
     beginTeaching(guidedMessage);
     selectionChanged = true;
@@ -329,53 +311,50 @@ companion.addEventListener("click", (event) => {
     if (normalizeTeachingNote(state.teachingNote) === normalizeTeachingNote(message.teaching.defaultNote)) {
       state.teachingError = "";
       state.mode = "preview";
+      state.mailboxStatus = `Previewing ${matchingMessagesNeedingUpdate(state, message.id).length} inbox changes · inbox unchanged`;
       focusSelector = "[data-action='apply-matches']";
     } else {
       state.teachingError = state.teachingNote.trim()
         ? "This deterministic demo can preview only the example RoleScout lesson. Restore the example wording to continue."
         : "Enter the example RoleScout lesson to preview the change.";
       state.mode = "teach";
+      state.mailboxStatus = "Lesson needs the example wording · inbox unchanged";
       focusSelector = "#teaching-note";
     }
   } else if (action === "restore-note" && message.teaching) {
     state.teachingNote = message.teaching.defaultNote;
     state.teachingError = "";
     state.mode = "teach";
+    state.mailboxStatus = "Drafting a correction · inbox unchanged";
     focusSelector = "#teaching-note";
   } else if (action === "keep-discussing" && message.teaching) {
     state.mode = "teach";
+    state.mailboxStatus = "Refining the lesson · inbox unchanged";
     focusSelector = "#teaching-note";
   } else if (action === "cancel") {
     state.teachingError = "";
     state.mode = "current";
+    state.mailboxStatus = "Correction canceled · inbox unchanged";
     focusSelector = "[data-action='correct'], [data-action='open-guided-teaching']";
   } else if (action === "looks-right") {
+    confirmMessage(state, message.id);
     state.mode = "acknowledged";
     focusSelector = "[data-action='continue-inspecting']";
   } else if (action === "continue-inspecting") {
     state.mode = "current";
     focusSelector = "[data-action='correct'], [data-action='open-guided-teaching']";
   } else if (action === "future-only" && message.teaching) {
+    saveTeachingForFuture(state, message.id);
     state.receiptAction = "future-only";
     state.mode = "receipt";
     focusSelector = "[data-action='restart']";
   } else if (action === "apply-matches" && message.teaching) {
-    message.label = message.teaching.targetLabel;
-    message.reason = message.teaching.appliedReason;
-    state.corrected = true;
+    applyTeachingToMatches(state, message.id);
     state.receiptAction = "apply-matches";
     state.mode = "receipt";
     focusSelector = "[data-action='restart']";
   } else if (action === "restart") {
-    const message = messages.find((item) => item.id === "rolescout");
-    message.label = message.teaching.initialLabel;
-    message.reason = message.teaching.initialReason;
-    state.selectedId = message.id;
-    state.corrected = false;
-    state.teachingNote = "";
-    state.teachingError = "";
-    state.receiptAction = null;
-    state.mode = "current";
+    state = createDemoState();
     selectionChanged = true;
     focusSelector = "[data-action='correct']";
   } else {
@@ -383,9 +362,11 @@ companion.addEventListener("click", (event) => {
   }
 
   if (selectionChanged) updateMessageSelection();
+  updateInboxVisualState();
   renderPanel();
   if (focusSelector) focusCompanion(focusSelector);
 });
 
 renderMessages();
+updateInboxVisualState();
 renderPanel();

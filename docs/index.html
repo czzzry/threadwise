@@ -38,20 +38,23 @@
           <div class="mail-toolbar">
             <button class="compose" type="button" disabled>Compose</button>
             <div class="search" aria-hidden="true">Search synthetic mail</div>
-            <span class="mail-count">12 messages</span>
+            <div class="mail-summary">
+              <span id="mail-count" class="mail-count">12 messages</span>
+              <span id="mailbox-status" class="mailbox-status" role="status" aria-live="polite">No demo changes yet</span>
+            </div>
           </div>
 
           <div class="mail-layout">
             <nav class="mail-nav" aria-label="Demo mailbox folders">
-              <strong>Inbox <span>12</span></strong>
+              <strong>Inbox <span data-folder-count="inbox">12</span></strong>
               <span>Starred</span>
               <span>Snoozed</span>
               <span>Sent</span>
               <span>Drafts</span>
               <hr>
-              <span>EA/Work</span>
-              <span>EA/Promotions</span>
-              <span>EA/LowValue</span>
+              <span>EA/Work <b data-folder-count="EA/Work">2</b></span>
+              <span>EA/Promotions <b data-folder-count="EA/Promotions">5</b></span>
+              <span>EA/LowValue <b data-folder-count="EA/LowValue">1</b></span>
             </nav>
 
             <div class="message-list-shell">
@@ -80,10 +83,10 @@
 
       <p class="safety-note">
         Everything on this page is synthetic and runs in your browser.
-        The demo makes no network request, has no credentials, and cannot change an inbox.
+        The demo makes no network request, has no credentials, and cannot access or change a provider inbox.
       </p>
     </main>
 
-    <script src="demo/app.js"></script>
+    <script type="module" src="demo/app.js"></script>
   </body>
 </html>
