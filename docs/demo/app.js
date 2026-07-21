@@ -76,6 +76,7 @@ const state = {
   mode: "current",
   corrected: false,
   teachingNote: "",
+  teachingError: "",
   receiptAction: null,
 };
 
@@ -96,9 +97,14 @@ function escapeHtml(value) {
   })[character]);
 }
 
+function normalizeTeachingNote(value) {
+  return value.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
 function beginTeaching(message) {
   if (!message.teaching) return;
   state.teachingNote = message.teaching.defaultNote;
+  state.teachingError = "";
   state.receiptAction = null;
   state.mode = "teach";
 }
@@ -115,6 +121,17 @@ function renderMessages() {
       `,
     )
     .join("");
+}
+
+function updateMessageSelection() {
+  messageList.querySelectorAll("[data-message-id]").forEach((row) => {
+    row.setAttribute("aria-pressed", String(row.dataset.messageId === state.selectedId));
+  });
+}
+
+function focusCompanion(selector) {
+  const target = companion.querySelector(selector);
+  if (target) target.focus();
 }
 
 function panelHeading(message) {
@@ -136,6 +153,9 @@ function renderCurrent(message) {
   const teachingAction = message.teaching
     ? '<button class="action primary" type="button" data-action="correct">Correct / teach</button>'
     : '<button class="action primary" type="button" data-action="open-guided-teaching">Try RoleScout correction</button>';
+  const looksRightAction = !message.teaching || state.corrected
+    ? '<button class="action quiet" type="button" data-action="looks-right">Looks right</button>'
+    : "";
 
   companion.innerHTML = `
     ${panelHeading(message)}
@@ -150,7 +170,7 @@ function renderCurrent(message) {
     <p class="flow-hint">${teachingHint}</p>
     <div class="button-row">
       ${teachingAction}
-      <button class="action quiet" type="button" data-action="looks-right">Looks right</button>
+      ${looksRightAction}
     </div>
   `;
 }
@@ -161,18 +181,27 @@ function renderTeach(message) {
     return;
   }
 
+  const error = state.teachingError
+    ? `<p id="teaching-error" class="form-error" role="alert">${state.teachingError}</p>`
+    : "";
+  const restoreAction = state.teachingError
+    ? '<button class="action" type="button" data-action="restore-note">Restore example</button>'
+    : "";
+
   companion.innerHTML = `
     ${panelHeading(message)}
     <form class="teach-form" data-form="teach">
       <label for="teaching-note">What should Threadwise understand?</label>
-      <textarea id="teaching-note" name="teaching-note">${escapeHtml(state.teachingNote)}</textarea>
+      <textarea id="teaching-note" name="teaching-note" aria-invalid="${Boolean(state.teachingError)}" aria-describedby="teaching-guidance${state.teachingError ? " teaching-error" : ""}">${escapeHtml(state.teachingNote)}</textarea>
     </form>
     <div class="reason">
       <p class="section-label">Nothing has changed yet</p>
-      Threadwise will first turn your note into a proposed rule and check how many other messages it would affect.
+      <span id="teaching-guidance">This deterministic demo recognizes the example RoleScout lesson, then shows its fixed impact preview. Other wording is not interpreted.</span>
     </div>
+    ${error}
     <div class="button-row">
       <button class="action primary" type="button" data-action="preview">Preview change</button>
+      ${restoreAction}
       <button class="action quiet" type="button" data-action="cancel">Cancel</button>
     </div>
   `;
@@ -233,6 +262,24 @@ function renderReceipt(message) {
   `;
 }
 
+function renderAcknowledged(message) {
+  companion.innerHTML = `
+    ${panelHeading(message)}
+    <div class="pill-row">
+      <span class="pill">${message.label}</span>
+      <span class="pill success">Kept visible</span>
+    </div>
+    <div class="receipt" role="status">
+      <strong>Decision confirmed.</strong>
+      Threadwise kept the existing ${message.label} decision for this synthetic message. No inbox or provider was changed.
+    </div>
+    <p class="flow-hint">Continue inspecting this message or choose another synthetic email.</p>
+    <div class="button-row">
+      <button class="action primary" type="button" data-action="continue-inspecting">Continue inspecting</button>
+    </div>
+  `;
+}
+
 function renderPanel() {
   const message = selectedMessage();
   if (state.mode === "teach") {
@@ -241,6 +288,8 @@ function renderPanel() {
     renderPreview(message);
   } else if (state.mode === "receipt") {
     renderReceipt(message);
+  } else if (state.mode === "acknowledged") {
+    renderAcknowledged(message);
   } else {
     renderCurrent(message);
   }
@@ -251,7 +300,8 @@ messageList.addEventListener("click", (event) => {
   if (!row) return;
   state.selectedId = row.dataset.messageId;
   state.mode = "current";
-  renderMessages();
+  state.teachingError = "";
+  updateMessageSelection();
   renderPanel();
 });
 
@@ -261,29 +311,61 @@ companion.addEventListener("click", (event) => {
 
   const action = button.dataset.action;
   const message = selectedMessage();
-  if (action === "correct") {
+  let focusSelector = null;
+  let selectionChanged = false;
+
+  if (action === "correct" && message.teaching) {
     beginTeaching(message);
+    focusSelector = "#teaching-note";
   } else if (action === "open-guided-teaching") {
     const guidedMessage = messages.find((item) => item.teaching);
     state.selectedId = guidedMessage.id;
     beginTeaching(guidedMessage);
+    selectionChanged = true;
+    focusSelector = "#teaching-note";
   } else if (action === "preview" && message.teaching) {
     const note = companion.querySelector("[name='teaching-note']");
     state.teachingNote = note.value;
-    state.mode = "preview";
+    if (normalizeTeachingNote(state.teachingNote) === normalizeTeachingNote(message.teaching.defaultNote)) {
+      state.teachingError = "";
+      state.mode = "preview";
+      focusSelector = "[data-action='apply-matches']";
+    } else {
+      state.teachingError = state.teachingNote.trim()
+        ? "This deterministic demo can preview only the example RoleScout lesson. Restore the example wording to continue."
+        : "Enter the example RoleScout lesson to preview the change.";
+      state.mode = "teach";
+      focusSelector = "#teaching-note";
+    }
+  } else if (action === "restore-note" && message.teaching) {
+    state.teachingNote = message.teaching.defaultNote;
+    state.teachingError = "";
+    state.mode = "teach";
+    focusSelector = "#teaching-note";
   } else if (action === "keep-discussing" && message.teaching) {
     state.mode = "teach";
-  } else if (action === "cancel" || action === "looks-right") {
+    focusSelector = "#teaching-note";
+  } else if (action === "cancel") {
+    state.teachingError = "";
     state.mode = "current";
+    focusSelector = "[data-action='correct'], [data-action='open-guided-teaching']";
+  } else if (action === "looks-right") {
+    state.mode = "acknowledged";
+    focusSelector = "[data-action='continue-inspecting']";
+  } else if (action === "continue-inspecting") {
+    state.mode = "current";
+    focusSelector = "[data-action='correct'], [data-action='open-guided-teaching']";
   } else if (action === "future-only" && message.teaching) {
     state.receiptAction = "future-only";
     state.mode = "receipt";
+    focusSelector = "[data-action='restart']";
   } else if (action === "apply-matches" && message.teaching) {
     message.label = message.teaching.targetLabel;
     message.reason = message.teaching.appliedReason;
     state.corrected = true;
     state.receiptAction = "apply-matches";
     state.mode = "receipt";
+    focusSelector = "[data-action='restart']";
   } else if (action === "restart") {
     const message = messages.find((item) => item.id === "rolescout");
     message.label = message.teaching.initialLabel;
@@ -291,12 +373,18 @@ companion.addEventListener("click", (event) => {
     state.selectedId = message.id;
     state.corrected = false;
     state.teachingNote = "";
+    state.teachingError = "";
     state.receiptAction = null;
     state.mode = "current";
+    selectionChanged = true;
+    focusSelector = "[data-action='correct']";
+  } else {
+    return;
   }
 
-  renderMessages();
+  if (selectionChanged) updateMessageSelection();
   renderPanel();
+  if (focusSelector) focusCompanion(focusSelector);
 });
 
 renderMessages();
