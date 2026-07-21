@@ -43,7 +43,7 @@ The recorded walkthrough above covers:
 - Unsubscribe cleanup that waits for confirmation
 - Roadmap framing for future inbox-agnostic support without claiming it is already shipped
 
-The hosted synthetic demo focuses on selected-email reasoning, guided correction, broader-impact preview, and explicit scope choice. Approved changes appear on the matching inbox rows and in derived folder counts; future-only and confirmation paths show their outcome without pretending to relabel existing mail. It runs entirely on browser-local synthetic data and cannot access an inbox.
+The hosted synthetic demo focuses on selected-email reasoning, guided correction, broader-impact preview, and explicit scope choice. Approved changes appear on the matching inbox rows and in derived folder counts; future-only and confirmation paths show their outcome without pretending to relabel existing mail. It runs entirely on browser-local synthetic data and cannot access a provider inbox.
 
 ## What It Does Today
 
