@@ -13,7 +13,7 @@ class PublicDemoTests(unittest.TestCase):
 
         self.assertIn("Synthetic demo", page)
         self.assertIn("No login or inbox access", page)
-        self.assertIn("cannot change an inbox", page)
+        self.assertIn("cannot access or change a provider inbox", page)
         self.assertIn("@example.test", model)
 
     def test_demo_has_no_network_capability(self) -> None:
