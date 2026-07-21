@@ -22,8 +22,11 @@ class PublicDemoTests(unittest.TestCase):
             self.assertNotIn(network_primitive, script)
 
     def test_demo_brand_assets_exist(self) -> None:
+        page = (ROOT / "docs" / "index.html").read_text(encoding="utf-8")
+
         self.assertTrue((ROOT / "docs" / "assets" / "brand" / "threadwise-primary-logo.png").is_file())
         self.assertTrue((ROOT / "docs" / "assets" / "brand" / "threadwise-app-icon.png").is_file())
+        self.assertIn('<link rel="icon" href="assets/brand/threadwise-app-icon.png">', page)
 
     def test_demo_scopes_validates_and_preserves_the_guided_teaching_flow(self) -> None:
         script = (ROOT / "docs" / "demo" / "app.js").read_text(encoding="utf-8")

@@ -104,7 +104,7 @@ Issues for this repo are tracked in GitHub Issues. See `docs/agents/issue-tracke
 
 ### Triage labels
 
-This repo maps the default triage roles to public-facing labels: `needs-triage`, `needs-info`, `ready`, `needs-verification`, and `wontfix`. See `docs/agents/triage-labels.md`.
+This repo maps the default triage roles to neutral public-facing labels. See `docs/agents/triage-labels.md` for the authoritative mapping.
 
 ### Domain docs
 

@@ -1,10 +1,11 @@
 # Threadwise MVP+1 Demo Script
 
-Status: Current demo script for issue 070
-Current as of: 2026-06-30
+Status: Historical capture script for completed issue 070
+Historical context as of: 2026-06-30
+Current demo entry points: [README.md](../README.md)
 Builds on: `docs/prd.md`, `docs/issues/068-mvp-plus-one-design-review-and-aesthetic-direction.md`
 
-This script defines the deterministic capture plan for the recruiter-facing Threadwise MVP+1 demo. Capture must use a Gmail test account populated only with synthetic messages. Do not show private email, credentials, OAuth screens, account settings, real unsubscribe execution, delete, trash, archive, send, or reply actions.
+This script preserves the deterministic capture plan for the recruiter-facing Threadwise MVP+1 recorded walkthrough. Capture must use a Gmail test account populated only with synthetic messages. Do not show private email, credentials, OAuth screens, account settings, real unsubscribe execution, delete, trash, archive, send, or reply actions.
 
 The approved visual direction is warm ink-and-paper Threadwise inside the real Gmail surface. The product story is Gmail-first; any ProtonMail or Outlook/Hotmail visual is roadmap-only.
 

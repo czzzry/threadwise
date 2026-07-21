@@ -1,9 +1,10 @@
 # V2 Issue Map
 
-Status: Current candidate next-slice map
-Current as of: 2026-06-29
+Status: Historical candidate next-slice map
+Historical context as of: 2026-06-29
+Current stage: [CONTEXT.md](../CONTEXT.md)
 Builds on: `docs/checkpoints/current-operating-model-2026-06-22.md`
-Current bounded PRD: `docs/prd.md`
+Bounded PRD at the time: `docs/prd.md`
 
 This file is a candidate map, not an approved implementation sequence.
 
