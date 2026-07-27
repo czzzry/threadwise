@@ -62,8 +62,12 @@ class StoredBatchFetcher:
             trusted_personal_senders=TrustedSenderStore(self._storage_dir).load_or_rebuild(),
         )
         review_queue = classifier.classify_messages(batch_id, normalized_messages)
+        review_queue = self._postprocess_review_queue(review_queue, normalized_messages)
         self._persist_batch(batch_id, account_id, selected_messages, review_queue, fetch_failures)
         self._mark_processed(account_id, [message["id"] for message in selected_messages])
+        return review_queue
+
+    def _postprocess_review_queue(self, review_queue: dict, normalized_messages: list[dict]) -> dict:
         return review_queue
 
     def mark_processed(self, batch_id: str, message_ids: list[str]) -> None:

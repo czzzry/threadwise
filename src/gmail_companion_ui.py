@@ -594,6 +594,33 @@ class GmailCompanionApp:
                 )
                 return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
 
+        if handler.command == "POST" and parsed.path == "/api/proton-review/apply-primary":
+            try:
+                payload = self._read_json_body(handler)
+                response = self._proton_console().apply_primary(str(payload.get("message_id") or ""))
+                self._capture_workflow_event(
+                    handler,
+                    "proton review completed",
+                    {
+                        "surface": "proton_review",
+                        "decision_type": "approve",
+                        "queue_size_bucket": bucket_count(response.get("remaining_count", 0)),
+                        "provider_verified": True,
+                    },
+                )
+                return self._write_json(handler, HTTPStatus.OK, response)
+            except (KeyError, ValueError, RuntimeError, ProtonSetupError) as exc:
+                self._capture_workflow_event(
+                    handler,
+                    "proton review failed",
+                    {
+                        "surface": "proton_review",
+                        "decision_type": "approve",
+                        "error_category": "invalid_request" if isinstance(exc, (KeyError, ValueError)) else "provider_write_error",
+                    },
+                )
+                return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+
         if handler.command == "POST" and parsed.path == "/api/proton-review/apply-label":
             try:
                 payload = self._read_json_body(handler)

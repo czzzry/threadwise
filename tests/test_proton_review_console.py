@@ -152,6 +152,28 @@ class ProtonReviewConsoleTests(unittest.TestCase):
             self.assertEqual(saved["messages"]["101"]["decision"], "suggested-labels-applied")
             self.assertTrue(saved["messages"]["101"]["provider_verified"])
 
+    def test_accepting_primary_label_writes_only_the_primary_suggestion(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "classification.json").write_text(json.dumps({
+                "provider": "protonmail",
+                "messages": {
+                    "101": {
+                        "status": "suggested",
+                        "internal_labels": ["newsletter", "personal"],
+                        "labels": ["EA/Newsletter", "EA/Personal"],
+                        "reason": "An opted-in digest.",
+                    },
+                },
+            }))
+            client = FakeProtonClient(message_ids=["101"])
+            state = self._console(root, client).apply_primary("101")
+
+            self.assertEqual(client.label_calls, [("101", "EA/Newsletter")])
+            self.assertEqual(state["remaining_count"], 0)
+            saved = json.loads((root / "console.json").read_text())
+            self.assertEqual(saved["messages"]["101"]["decision"], "primary-label-applied")
+
     def test_message_missing_from_live_inbox_is_not_offered(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -192,6 +214,25 @@ class ProtonReviewConsoleTests(unittest.TestCase):
             self.assertIn("Apply label · Next", page)
             self.assertNotIn("Keep local suggestion", page)
             self.assertIn("No email will be archived, deleted, moved, or sent", page)
+
+    def test_page_exposes_apply_all_only_when_multiple_labels_are_suggested(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "classification.json").write_text(json.dumps({
+                "provider": "protonmail",
+                "messages": {
+                    "101": {
+                        "status": "suggested",
+                        "internal_labels": ["newsletter", "personal"],
+                        "labels": ["EA/Newsletter", "EA/Personal"],
+                    },
+                },
+            }))
+
+            page = render_proton_review_page(self._console(root, FakeProtonClient(message_ids=["101"])).state())
+
+            self.assertIn("Accept EA/Newsletter · Next", page)
+            self.assertIn("Apply all 2 suggested labels · Next", page)
 
     def test_provider_applied_messages_are_completed_and_not_reoffered(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

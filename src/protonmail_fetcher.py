@@ -3,7 +3,9 @@ from pathlib import Path
 
 from src.fixture_classifier import FixtureBatchClassifier
 from src.protonmail_message_normalizer import normalize_protonmail_message
+from src.proton_feedback_memory import load_rules
 from src.stored_batch_fetcher import StoredBatchFetcher
+from src.teachable_rule_memory import apply_teachable_rules
 
 
 class ProtonMailExportClient:
@@ -44,6 +46,17 @@ class ProtonMailBatchFetcher(StoredBatchFetcher):
 
     def fetch_protonmail_batch(self, account_id: str, batch_size: int) -> dict | None:
         return self.fetch_batch(account_id, batch_size)
+
+    def _postprocess_review_queue(self, review_queue: dict, normalized_messages: list[dict]) -> dict:
+        rules = load_rules(self._storage_dir)
+        if not rules:
+            return review_queue
+        messages_by_id = {message.get("message_id"): message for message in normalized_messages}
+        review_queue["items"] = [
+            apply_teachable_rules(item, messages_by_id.get(item.get("message_id"), {}), rules)
+            for item in review_queue.get("items", [])
+        ]
+        return review_queue
 
 
 class MockProtonMailBatchFetcher(ProtonMailBatchFetcher):

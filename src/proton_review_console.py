@@ -8,6 +8,7 @@ from pathlib import Path
 from src.gmail_companion_rendering import escape_html
 from src.label_taxonomy import CANONICAL_LABEL_ORDER, gmail_label_name
 from src.local_artifacts import load_json_or_default, write_json
+from src.proton_feedback_memory import migrate_review_feedback, save_feedback_rule
 
 
 def sync_proton_review_ledger(storage_dir: Path, batch_id: str) -> dict:
@@ -62,6 +63,7 @@ class ProtonReviewConsole:
         self._review_state_path = review_state_path
         self._max_results = max_results
         self._lock = threading.Lock()
+        migrate_review_feedback(self._classification_ledger_path.parent, self._review_state_path)
 
     def state(self) -> dict:
         with self._lock:
@@ -84,28 +86,39 @@ class ProtonReviewConsole:
             current = self._require_pending_unlocked(message_id)
             internal_labels = list(current.get("suggested_internal_labels") or [])
             if not internal_labels:
-                raise ValueError("This email has no suggested label. Choose a label or keep it unresolved.")
+                raise ValueError("This email has no suggested label. Choose a label or leave it unresolved.")
+            return self._apply_labels_unlocked(current, internal_labels, decision="suggested-labels-applied")
 
-            provider_mailboxes: list[str] = []
-            for internal_label in internal_labels:
-                label_name = gmail_label_name(internal_label)
-                write_result = self._proton.apply_label(message_id, label_name)
-                if not write_result.get("inbox_preserved") or write_result.get("destructive_actions"):
-                    raise RuntimeError("Proton label write violated the label-only safety contract.")
-                rfc_message_id = str(current.get("rfc_message_id") or "").strip()
-                if not rfc_message_id or not self._proton.message_has_label(rfc_message_id, label_name):
-                    raise RuntimeError("Proton did not confirm the label after the write; the review item was not advanced.")
-                provider_mailboxes.append(str(write_result.get("mailbox") or ""))
+    def apply_primary(self, message_id: str) -> dict:
+        """Apply only the primary suggestion; additional suggestions require an explicit action."""
+        with self._lock:
+            current = self._require_pending_unlocked(message_id)
+            internal_labels = list(current.get("suggested_internal_labels") or [])
+            if not internal_labels:
+                raise ValueError("This email has no suggested label. Choose a label or leave it unresolved.")
+            return self._apply_labels_unlocked(current, internal_labels[:1], decision="primary-label-applied")
 
-            self._record_decision_unlocked(
-                message_id,
-                decision="suggested-labels-applied",
-                provider_verified=True,
-                internal_labels=internal_labels,
-                labels=[gmail_label_name(label) for label in internal_labels],
-                provider_mailboxes=provider_mailboxes,
-            )
-            return self._state_unlocked()
+    def _apply_labels_unlocked(self, current: dict, internal_labels: list[str], *, decision: str) -> dict:
+        provider_mailboxes: list[str] = []
+        for internal_label in internal_labels:
+            label_name = gmail_label_name(internal_label)
+            write_result = self._proton.apply_label(current["message_id"], label_name)
+            if not write_result.get("inbox_preserved") or write_result.get("destructive_actions"):
+                raise RuntimeError("Proton label write violated the label-only safety contract.")
+            rfc_message_id = str(current.get("rfc_message_id") or "").strip()
+            if not rfc_message_id or not self._proton.message_has_label(rfc_message_id, label_name):
+                raise RuntimeError("Proton did not confirm the label after the write; the review item was not advanced.")
+            provider_mailboxes.append(str(write_result.get("mailbox") or ""))
+
+        self._record_decision_unlocked(
+            current["message_id"],
+            decision=decision,
+            provider_verified=True,
+            internal_labels=internal_labels,
+            labels=[gmail_label_name(label) for label in internal_labels],
+            provider_mailboxes=provider_mailboxes,
+        )
+        return self._state_unlocked()
 
     def apply_label(self, message_id: str, internal_label: str, note: str = "") -> dict:
         if internal_label not in CANONICAL_LABEL_ORDER:
@@ -132,6 +145,15 @@ class ProtonReviewConsole:
                 provider_mailbox=str(write_result.get("mailbox") or ""),
                 note=str(note or "").strip()[:500],
             )
+            if note:
+                save_feedback_rule(
+                    self._classification_ledger_path.parent,
+                    message_id=message_id,
+                    sender=str(current.get("sender") or ""),
+                    subject=str(current.get("subject") or ""),
+                    note=note,
+                    internal_label=internal_label,
+                )
             return self._state_unlocked()
 
     def _state_unlocked(self) -> dict:
@@ -254,7 +276,8 @@ def render_proton_review_page(state: dict) -> str:
             <pre>{escape_html(current.get('body') or 'No readable body was available.')}</pre>
           </details>
           <div id="action-status" class="status" role="status" aria-live="polite"></div>
-          {f'<button id="apply-suggested" class="action primary" type="button">Accept {escape_html((current.get("suggested_labels") or ["label"])[0])} · Next</button>' if current.get('suggested_labels') else '<button id="looks-right" class="action primary" type="button">Leave unlabeled · Next</button>'}
+          {f'<button id="apply-primary" class="action primary" type="button">Accept {escape_html((current.get("suggested_labels") or ["label"])[0])} · Next</button>' if current.get('suggested_labels') else '<button id="looks-right" class="action primary" type="button">Leave unlabeled · Next</button>'}
+          {f'<button id="apply-suggested" class="action quiet" type="button">Apply all {len(current.get("suggested_labels") or [])} suggested labels · Next</button>' if len(current.get('suggested_labels') or []) > 1 else ''}
           <button id="change-label-toggle" class="action secondary" type="button">Change label</button>
           <div id="correction" class="correction" hidden>
             <label for="target-label">Choose a different label</label>
@@ -345,6 +368,7 @@ def render_proton_review_page(state: dict) -> str:
       }}
     }}
     document.getElementById('looks-right')?.addEventListener('click', () => submit('/api/proton-review/acknowledge', {{message_id:current.message_id, note:document.getElementById('review-note')?.value || ''}}, 'Saving this decision…'));
+    document.getElementById('apply-primary')?.addEventListener('click', () => submit('/api/proton-review/apply-primary', {{message_id:current.message_id}}, 'Applying and verifying the primary Proton label…'));
     document.getElementById('apply-suggested')?.addEventListener('click', () => submit('/api/proton-review/apply-suggested', {{message_id:current.message_id}}, 'Applying and verifying the suggested Proton label(s)…'));
     document.getElementById('apply-label')?.addEventListener('click', () => submit('/api/proton-review/apply-label', {{message_id:current.message_id, internal_label:document.getElementById('target-label').value, note:document.getElementById('review-note')?.value || ''}}, 'Applying and verifying the Proton label…'));
   </script>
