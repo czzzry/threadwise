@@ -116,6 +116,7 @@ def build_sidebar_teach_preview(
         scope=scope,
         intent=intent,
     )
+    future_rule_allowed = bool(semantic_rule.get("future_rule_allowed", True))
     storage_items = load_storage_items(storage_dir, current.get("provider", "gmail")) if include_existing_impact else []
     proposal = build_companion_memory_proposal(
         storage_dir,
@@ -193,6 +194,7 @@ def build_sidebar_teach_preview(
         "clarifying_question": semantic_rule["clarifying_question"],
         "structured_rule": structured_rule,
         "semantic_rule": semantic_rule,
+        "future_rule_allowed": future_rule_allowed,
         "proposal": proposal.to_dict(),
         "impact": {
             "current_message_will_change": True,
@@ -302,6 +304,11 @@ def apply_sidebar_teaching(
 
     current = load_selected_storage_item(storage_dir, selected_context)
     semantic_rule = build_semantic_future_rule(current=current, target_label=target_label, note=note, scope=scope, intent=intent)
+    if semantic_rule.get("future_rule_allowed") is False and mode != "current-only":
+        raise ValueError(
+            "This note describes a one-off or uncertain email, so Threadwise will only change this email. "
+            "Describe a recurring pattern explicitly before teaching a future or Inbox rule."
+        )
     proposal = build_companion_memory_proposal(
         storage_dir,
         current=current,
@@ -588,6 +595,26 @@ def build_semantic_future_rule(*, current: dict, target_label: str, note: str, s
     sender = normalized_sender_email(current.get("sender") or "") or current.get("sender") or "this sender"
     sender_name = _display_sender(current.get("sender") or "") or sender
     sender_domain = _email_domain(sender)
+    if _note_is_one_off_or_uncertain(note):
+        return {
+            "scope": scope,
+            "application_scope": "current-email",
+            "target_label": target_label,
+            "sender": sender,
+            "semantic_pattern": "",
+            "plain_english_rule": "No future rule proposed: your note describes a rare or one-time email.",
+            "rule_type": "current-only",
+            "rule_type_label": "This email only",
+            "rule_confidence": "high",
+            "rule_confidence_label": "Current email only",
+            "clarifying_question": "If this should apply to recurring Google emails, describe that recurring pattern explicitly.",
+            "matching_basis": ["current email", "founder note"],
+            "include_families": [],
+            "exclude_families": [],
+            "excluded_pattern": "",
+            "cross_sender": False,
+            "future_rule_allowed": False,
+        }
     if sender_domain and _note_requests_entire_sender_domain(note):
         return {
             "scope": "sender-domain",
@@ -667,7 +694,22 @@ def build_semantic_future_rule(*, current: dict, target_label: str, note: str, s
         "exclude_families": semantic_pattern.get("exclude_families", []),
         "excluded_pattern": excluded_pattern,
         "cross_sender": cross_sender,
+        "future_rule_allowed": True,
     }
+
+
+def _note_is_one_off_or_uncertain(note: str) -> bool:
+    text = " ".join(str(note or "").lower().split())
+    if not text:
+        return False
+    return bool(
+        re.search(
+            r"\b(?:one[- ]time|one[- ]off|rare|just this email|this email only|only this email)\b|"
+            r"\b(?:could|maybe|might)\s+(?:also\s+)?(?:be|have|need)\b|"
+            r"\bshould we\s+(?:also\s+)?add\b",
+            text,
+        )
+    )
 
 
 def _note_requests_entire_sender_domain(note: str) -> bool:
@@ -797,6 +839,8 @@ def _authoritative_preview_matches(
     semantic_rule: dict,
     storage_items: list[dict] | None = None,
 ) -> list[dict]:
+    if semantic_rule.get("future_rule_allowed") is False:
+        return []
     storage_items = storage_items if storage_items is not None else load_storage_items(storage_dir, current.get("provider", "gmail"))
     if semantic_rule.get("semantic_pattern"):
         return [

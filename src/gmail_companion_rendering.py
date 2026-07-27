@@ -775,6 +775,7 @@ function renderPreviousTeachPreview(previousPreview) {
 
 function renderTeachPreview(preview) {
   const impact = preview.impact || {};
+  const futureRuleAllowed = preview.future_rule_allowed !== false;
   const matchingCount = impact.matching_existing_count || 0;
   const affectedReviewHtml = renderAffectedReview(preview);
   const examples = (impact.matching_existing_examples || []).map((item) =>
@@ -798,7 +799,7 @@ function renderTeachPreview(preview) {
       <div style="margin-top:12px;border:2px solid #241812;border-radius:11px;background:#fffdf7;padding:10px 12px;">
         <div class="reason-label">Future rule</div>
         <div style="font-weight:700;margin-top:6px;">${escapeHtml(preview.plain_english_rule || "No future rule proposal was generated.")}</div>
-        ${ruleMeta}
+        ${futureRuleAllowed ? ruleMeta : '<div class="empty" style="margin-top:8px;">Threadwise will keep this correction to the current email. A future rule needs an explicit recurring pattern.</div>'}
         <details class="empty" style="margin-top:8px;">
           <summary style="cursor:pointer;font-weight:800;color:#241812;">Structured rule</summary>
           <div style="margin-top:8px;">Hidden until needed.</div>
@@ -2016,7 +2017,7 @@ function renderTeachPreview(preview) {
       </div>
       ${affectedReviewHtml}
       <div class="button-row" style="margin-top:10px;">
-        <button type="button" class="action-button future" data-apply-mode="future-only">Teach future rule</button>
+        ${futureRuleAllowed ? '<button type="button" class="action-button future" data-apply-mode="future-only">Teach future rule</button>' : ''}
         <button type="button" class="action-button secondary" data-action="refine-teach">Keep discussing</button>
       </div>
     </div>
@@ -2157,18 +2158,19 @@ function renderTeachProposal(preview) {
 
 function renderTeachScope(preview) {
   const backfill = preview.inbox_backfill || {};
+  const futureRuleAllowed = preview.future_rule_allowed !== false;
   return `
     <div class="preview-card" data-teach-state="${teachFlowState}">
       <div class="reason-label">Accepted rule</div>
       <div class="reason" style="font-weight:800;">${escapeHtml(preview.plain_english_rule || "No rule proposed.")}</div>
-      <div class="empty">Choose how broadly to apply this rule.</div>
+      <div class="empty">${futureRuleAllowed ? 'Choose how broadly to apply this rule.' : 'This note describes a one-off or uncertain email, so only this email can be changed.'}</div>
       <div class="button-row" style="margin-top:12px;">
         <button type="button" class="action-button primary" data-apply-mode="current-only">Fix email</button>
-        <button type="button" class="action-button secondary" data-apply-mode="future-only">Fix + future</button>
-        <button type="button" class="action-button info" data-apply-mode="apply-included">Fix + inbox</button>
+        ${futureRuleAllowed ? '<button type="button" class="action-button secondary" data-apply-mode="future-only">Fix + future</button>' : ''}
+        ${futureRuleAllowed ? '<button type="button" class="action-button info" data-apply-mode="apply-included">Fix + inbox</button>' : ''}
       </div>
-      <div class="empty">Fix email applies only to this email. Fix + future also saves the rule. Fix + inbox also applies it to matching inbox emails.</div>
-      ${backfill.available ? `<div class="empty">Will update about ${escapeHtml(String(backfill.estimated_count || 0))} matching inbox emails.</div>` : ""}
+      <div class="empty">${futureRuleAllowed ? 'Fix email applies only to this email. Fix + future also saves the rule. Fix + inbox also applies it to matching inbox emails.' : 'No future or Inbox rule is available for this correction until you describe a recurring pattern.'}</div>
+      ${futureRuleAllowed && backfill.available ? `<div class="empty">Will update about ${escapeHtml(String(backfill.estimated_count || 0))} matching Inbox emails.</div>` : ""}
       ${inboxApplyConfirmOpen ? `
         <div class="error-card">
           <div style="font-weight:800;">Apply to inbox?</div>

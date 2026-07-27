@@ -780,6 +780,72 @@ class TeachingLoopTests(unittest.TestCase):
             self.assertIn("wealthsimple", preview["plain_english_rule"])
             self.assertNotIn("future messages from notifications@m.wealthsimple.com", preview["plain_english_rule"])
 
+    def test_rare_one_time_note_does_not_generalize_to_a_sender_rule(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                [
+                    {
+                        "source": "gmail",
+                        "account_id": "founder-test",
+                        "message_id": "google-archive-001",
+                        "sender": "Google <noreply@google.com>",
+                        "subject": "Your Google data is ready to download",
+                        "snippet": "Your archive is ready.",
+                        "interpretation": "No confident category.",
+                        "review_state": "pending",
+                        "final_labels": [],
+                        "applied_labels": [],
+                    }
+                ],
+            )
+
+            preview = build_sidebar_teach_preview(
+                storage_dir,
+                selected_context={"provider": "gmail", "message_id": "google-archive-001"},
+                target_label="personal",
+                note=(
+                    "This is a one time Google archive download. Personal seems right, but it could also be "
+                    "another category. Should we also add account? Note this will be a rare email."
+                ),
+                scope="sender",
+            )
+
+            self.assertFalse(preview["future_rule_allowed"])
+            self.assertEqual(preview["rule_type"], "current-only")
+            self.assertEqual(preview["impact"]["matching_existing_count"], 0)
+            self.assertIn("one-time", preview["plain_english_rule"])
+
+    def test_one_off_note_cannot_be_applied_to_future_or_inbox(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                [{
+                    "source": "gmail",
+                    "account_id": "founder-test",
+                    "message_id": "google-archive-001",
+                    "sender": "noreply@google.com",
+                    "subject": "Your Google data is ready to download",
+                    "review_state": "pending",
+                    "final_labels": [],
+                    "applied_labels": [],
+                }],
+            )
+
+            with self.assertRaisesRegex(ValueError, "one-off or uncertain"):
+                apply_sidebar_teaching(
+                    storage_dir,
+                    selected_context={"provider": "gmail", "message_id": "google-archive-001"},
+                    target_label="personal",
+                    note="This is a one time archive; this will be a rare email.",
+                    scope="sender",
+                    mode="future-only",
+                )
+
     def test_preview_accepts_explicitly_narrowed_newsletter_boundary_without_reasking(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
