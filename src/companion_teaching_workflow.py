@@ -57,6 +57,7 @@ class CompanionTeachingWorkflow:
             note=(payload.get("note") or "").strip(),
             scope=payload.get("scope") or "sender",
             include_existing_impact=include_existing_impact,
+            force_llm_review=bool(payload.get("force_llm_review")),
         )
 
     def finish_preview_impact(self, preview: dict) -> dict:

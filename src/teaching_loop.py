@@ -104,10 +104,17 @@ def build_sidebar_teach_preview(
     note: str,
     scope: str,
     include_existing_impact: bool = True,
+    force_llm_review: bool = False,
 ) -> dict:
     current = load_selected_storage_item(storage_dir, selected_context)
     intent_label = target_label if target_label_explicit or not note.strip() else ""
-    intent = interpret_teaching_intent(current=current, target_label=intent_label, note=note, scope=scope)
+    intent = interpret_teaching_intent(
+        current=current,
+        target_label=intent_label,
+        note=note,
+        scope=scope,
+        force_llm_review=force_llm_review,
+    )
     target_label = intent["target_label"]
     semantic_rule = build_semantic_future_rule(
         current=current,
@@ -169,6 +176,12 @@ def build_sidebar_teach_preview(
         "matching_basis": semantic_rule["matching_basis"],
         "applies_to_existing_count": len(affected_existing),
     }
+    human_explanation = build_human_teaching_explanation(
+        current=current,
+        target_label=target_label,
+        semantic_rule=semantic_rule,
+        intent_source=intent.get("source") or "deterministic-fallback",
+    )
     return {
         "acknowledgment": build_teach_acknowledgment(
             current=current,
@@ -187,6 +200,7 @@ def build_sidebar_teach_preview(
         "current_label_name": current_label_name,
         "target_label_name": target_label_name,
         "plain_english_rule": semantic_rule["plain_english_rule"],
+        "human_explanation": human_explanation,
         "rule_type": semantic_rule["rule_type"],
         "rule_type_label": semantic_rule["rule_type_label"],
         "rule_confidence": semantic_rule["rule_confidence"],
@@ -699,6 +713,25 @@ def build_semantic_future_rule(*, current: dict, target_label: str, note: str, s
     }
 
 
+def build_human_teaching_explanation(*, current: dict, target_label: str, semantic_rule: dict, intent_source: str) -> str:
+    label_name = gmail_label_name(target_label)
+    sender = _display_sender(current.get("sender") or "") or normalized_sender_email(current.get("sender") or "") or "this sender"
+    if semantic_rule.get("future_rule_allowed") is False:
+        explanation = f"I will change only this email to {label_name}. I will not create a broader rule."
+    elif semantic_rule.get("rule_type") == "sender":
+        explanation = f"I read this as: future emails from {sender} should be {label_name}."
+    elif semantic_rule.get("rule_type") == "sender-domain":
+        explanation = f"I read this as: emails from this sender domain should be {label_name}."
+    else:
+        pattern = str(semantic_rule.get("semantic_pattern") or "similar emails")
+        explanation = f"I read this as: {pattern} should be {label_name}."
+        if sender and semantic_rule.get("rule_type") == "sender-semantic":
+            explanation = f"I read this as: {pattern} from {sender} should be {label_name}."
+    if intent_source == "llm":
+        return f"{explanation} LLM reviewed your note with this email's context."
+    return f"{explanation} This used Threadwise's fallback interpretation because LLM review was unavailable."
+
+
 def _note_is_one_off_or_uncertain(note: str) -> bool:
     text = " ".join(str(note or "").lower().split())
     if not text:
@@ -1122,7 +1155,14 @@ def resolve_target_label(target_label: str, note: str) -> str:
     raise ValueError("Choose a label or describe the correction more clearly, for example 'this is spam' or 'this needs a reply'.")
 
 
-def interpret_teaching_intent(*, current: dict, target_label: str, note: str, scope: str) -> dict:
+def interpret_teaching_intent(
+    *,
+    current: dict,
+    target_label: str,
+    note: str,
+    scope: str,
+    force_llm_review: bool = False,
+) -> dict:
     explicit_label = (target_label or "").strip()
     note_label = infer_explicit_target_label_from_note(note) if not explicit_label else ""
     deterministic_label = infer_target_label_from_note(note) if not explicit_label and not note_label else ""
@@ -1130,6 +1170,8 @@ def interpret_teaching_intent(*, current: dict, target_label: str, note: str, sc
     if not authoritative_label:
         raise ValueError("Choose a label or describe the correction more clearly, for example 'this is spam' or 'this needs a reply'.")
     llm_client = OpenAITeachingIntentClient.from_env()
+    if force_llm_review and llm_client is None:
+        raise ValueError("LLM review is not configured for this Threadwise companion.")
     if llm_client is not None and (note or not authoritative_label):
         llm_intent = normalize_llm_teaching_intent(
             llm_client.interpret(
@@ -1150,6 +1192,8 @@ def interpret_teaching_intent(*, current: dict, target_label: str, note: str, sc
             if authoritative_label:
                 llm_intent["target_label"] = authoritative_label
             return {**llm_intent, "source": "llm"}
+        if force_llm_review:
+            raise ValueError("LLM review was unavailable. Nothing was changed; try again in a moment.")
 
     if authoritative_label:
         return {

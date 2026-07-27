@@ -27,6 +27,7 @@
   let safetyPreview = null;
   let safetyResult = null;
   let teachPreviewRequestId = 0;
+  let forceLlmReviewRequested = false;
   let previousTeachPreview = null;
   let teachResult = null;
   let teachFlowState = "teaching";
@@ -528,6 +529,10 @@
       });
       renderState(response.payload);
     });
+    if (mode === "current-only") {
+      applyInFlight = false;
+      openFirstSummaryItemIfHelpful("needs_attention_items");
+    }
   }
 
   function asyncFollowUpIsWorking() {
@@ -2589,11 +2594,11 @@
         <div style="margin-top:6px;font-weight:700;">${escapeHtml(preview.acknowledgment || "Preview ready.")}</div>
         <div style="margin-top:8px;color:#6b6255;line-height:1.45;">Fix this email only updates the message you are reviewing.</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
-          <button type="button" data-ea-apply="current-only" style="border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Fix this email</button>
+          <button type="button" data-ea-apply="current-only" style="border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Fix email + Next</button>
         </div>
         <div style="margin-top:10px;border:2px solid #241812;border-radius:11px;background:#fffdf7;padding:10px 12px;color:#1f1a14;line-height:1.45;">
           <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">Future rule</div>
-          <div style="margin-top:6px;font-weight:700;">${escapeHtml(preview.plain_english_rule || "No future rule proposal was generated.")}</div>
+          <div style="margin-top:6px;font-weight:700;">${escapeHtml(preview.human_explanation || preview.plain_english_rule || "No future rule proposal was generated.")}</div>
           ${ruleMeta}
           <details style="margin-top:8px;color:#6b6255;">
             <summary style="cursor:pointer;font-weight:700;color:#241812;">Structured rule</summary>
@@ -2656,7 +2661,7 @@
       ? "Fix + remember"
       : selectedTeachScope === "apply-included"
         ? `Review ${matchingCount} matches`
-        : "Fix this email";
+        : "Fix email + Next";
     const structuredRuleRows = Object.keys(structuredRule).length
       ? Object.entries(structuredRule).map(([key, value]) => `<div><strong>${escapeHtml(key.replaceAll("_", " "))}:</strong> ${escapeHtml(Array.isArray(value) ? value.join(", ") : String(value))}</div>`).join("")
       : "<div>No structured rule details are available yet.</div>";
@@ -2690,8 +2695,9 @@
         <button type="button" data-ea-action="confirm-selected-scope" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">${escapeHtml(actionLabel)}</button>
         <details style="border-top:1px solid rgba(36,24,18,.2);padding-top:10px;color:#6b6255;">
           <summary style="cursor:pointer;font-weight:800;color:#241812;">How Threadwise understood this</summary>
-          <div style="margin-top:8px;font-weight:700;color:#241812;">${escapeHtml(preview?.plain_english_rule || "No future rule proposal was generated.")}</div>
-          <div style="margin-top:6px;">${escapeHtml(preview?.rule_type_label || "Future rule")} · ${escapeHtml(preview?.rule_confidence_label || "Confidence unavailable")} · ${preview?.intent_source === "llm" ? "LLM reviewed" : "Deterministic fallback"}</div>
+          <div style="margin-top:8px;font-weight:700;color:#241812;">${escapeHtml(preview?.human_explanation || preview?.plain_english_rule || "No future rule proposal was generated.")}</div>
+         <div style="margin-top:6px;">${escapeHtml(preview?.rule_type_label || "Future rule")} · ${escapeHtml(preview?.rule_confidence_label || "Confidence unavailable")} · ${preview?.intent_source === "llm" ? "LLM reviewed" : "Deterministic fallback"}</div>
+          <button type="button" data-ea-action="force-llm-review" style="margin-top:10px;border:1px solid #241812;background:#fffdf7;color:#241812;border-radius:9px;padding:7px 10px;cursor:pointer;font:inherit;font-weight:800;">Ask LLM to review this</button>
           ${preview?.clarifying_question ? `<div style="margin-top:8px;color:#8a4b00;">${escapeHtml(preview.clarifying_question)}</div>` : ""}
           <div style="display:grid;gap:4px;margin-top:8px;font-size:.82rem;">${structuredRuleRows}</div>
         </details>
@@ -3221,6 +3227,15 @@
       }
       return previewTeach();
     }
+    const forceLlmReviewButton = event.target.closest("[data-ea-action='force-llm-review']");
+    if (forceLlmReviewButton) {
+      event.preventDefault();
+      if (isTeachPending()) {
+        return;
+      }
+      forceLlmReviewRequested = true;
+      return previewTeach();
+    }
     const clearButton = event.target.closest("[data-ea-action='clear-teach']");
     if (clearButton) {
       event.preventDefault();
@@ -3456,6 +3471,8 @@
       return;
     }
     syncTeachDraftFromDom();
+    const forceLlmReview = forceLlmReviewRequested;
+    forceLlmReviewRequested = false;
     selectedTeachScope = "current-only";
     const targetLabel = teachDraft.targetLabel;
     const note = teachDraft.note;
@@ -3479,6 +3496,7 @@
         target_label_explicit: Boolean(teachDraft.targetLabelExplicit),
         note,
         scope: "sender",
+        force_llm_review: forceLlmReview,
       },
     }, (response) => {
       if (requestId !== teachPreviewRequestId) {
@@ -3787,6 +3805,10 @@
         openFirstSummaryItemIfHelpful("needs_attention_items");
       }
     });
+    if (mode === "current-only") {
+      applyInFlight = false;
+      openFirstSummaryItemIfHelpful("needs_attention_items");
+    }
   }
 
   function triggerGmailSync() {
