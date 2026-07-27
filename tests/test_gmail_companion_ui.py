@@ -3235,7 +3235,7 @@ class GmailCompanionUiTests(unittest.TestCase):
 
             self.assertEqual(selected["internal_label"], "financial-account")
             self.assertEqual(selected["classification"], "EA/Finance")
-            self.assertEqual(selected["status"], "kept-visible")
+            self.assertEqual(selected["status"], "provider-confirmed")
 
     def test_sidebar_state_uses_latest_mutation_receipt_for_visible_gmail_label(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

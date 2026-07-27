@@ -1760,6 +1760,9 @@ function handledReceiptKind(selected) {
   if (status === "kept-visible" && writeStatus === "applied") {
     return "kept-visible";
   }
+  if (status === "provider-confirmed") {
+    return "provider-confirmed";
+  }
   if (status === "auto-labeled") {
     return "auto-labeled";
   }
@@ -2381,11 +2384,15 @@ function renderSelectedPanel() {
       ? `${label} · Auto-handled`
       : handledKind === "auto-labeled"
         ? `${label} · Auto-labeled`
+      : handledKind === "provider-confirmed"
+        ? `${label} · Confirmed in Gmail`
         : `Labeled ${label}`;
     const receipt = handledKind === "auto-handled"
       ? "Gmail label applied. Removed from Inbox."
       : handledKind === "auto-labeled"
         ? "Threadwise classified this email and kept it visible. Gmail label not confirmed."
+      : handledKind === "provider-confirmed"
+        ? "Gmail label is present. Threadwise will keep this out of the review queue."
         : "Gmail label applied. Kept in Inbox.";
     selectedEmailNode.innerHTML = `
       <div data-ea-selected-state="receipt" data-ea-handled-kind="${escapeHtml(handledKind)}" style="display:grid;gap:12px;margin-top:10px;">

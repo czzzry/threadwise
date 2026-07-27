@@ -8,7 +8,7 @@ from src.cli_paths import resolve_optional_path, resolve_path
 from src.live_protonmail_client import LiveProtonMailClient, SetupError
 from src.protonmail_fetcher import ProtonMailBatchFetcher
 
-DEFAULT_STORAGE_DIR = Path("data/gmail_fetch")
+DEFAULT_STORAGE_DIR = Path("data/protonmail_fetch")
 DEFAULT_CREDENTIALS_DIR = Path("data/protonmail_credentials")
 
 

@@ -9,6 +9,7 @@ from src.daily_report import build_protonmail_daily_report, suggested_label_coun
 from src.live_protonmail_client import LiveProtonMailClient, SetupError
 from src.live_protonmail_fetch_cli import DEFAULT_CREDENTIALS_DIR, DEFAULT_STORAGE_DIR
 from src.protonmail_fetcher import ProtonMailBatchFetcher
+from src.proton_review_console import sync_proton_review_ledger
 from src.stored_batch_review_store import StoredBatchReviewStore
 
 
@@ -56,6 +57,7 @@ def main(
 
         batch_store = StoredBatchReviewStore(storage_dir)
         stored_batch = batch_store.load_batch(review_queue["batch_id"])
+        sync_proton_review_ledger(storage_dir, review_queue["batch_id"])
         unlabeled_exceptions = [item for item in stored_batch["items"] if not item.get("applied_labels")]
         classified_count = len(stored_batch["items"]) - len(unlabeled_exceptions)
         _print_summary(
@@ -93,10 +95,10 @@ def _print_summary(
     write_daily_report(storage_dir, batch_id, report)
     output.write(f"Batch: {batch_id}\n")
     output.write(f"Fetched: {fetched_count}\n")
-    output.write("Auto-applied label writes: 0\n")
+    output.write("Provider label writes: 0 (review decisions are still required)\n")
     output.write("INBOX removals: 0\n")
-    output.write(f"Classified messages: {classified_count}\n")
-    output.write(f"Unlabeled exceptions: {len(unlabeled_exceptions)}\n")
+    output.write(f"Suggested labels ready for review: {classified_count}\n")
+    output.write(f"Needs a label decision: {len(unlabeled_exceptions)}\n")
     for item in unlabeled_exceptions:
         output.write(f"{item['sender']} || {item['subject']}\n")
 

@@ -14,6 +14,11 @@ This checkpoint is the short read for what Threadwise currently proves. The olde
 
 The Gmail path is now a usable supervised release workflow for one inbox:
 
+The active review count is reconciled against the live Gmail Inbox and is
+provider-scoped. Historical batch artifacts, messages no longer in Inbox, and
+ProtonMail records do not enter the Gmail review queue. A visible `EA/` label
+from Gmail is authoritative even when an older local write receipt is missing.
+
 1. fetch a fresh batch
 2. classify messages into the approved taxonomy
 3. auto-apply current suggested `EA/` labels
@@ -37,6 +42,11 @@ The ProtonMail batch/report path remains read-only by default:
 4. leave unresolved exceptions for manual follow-up
 
 The founder-approved Proton review-console experiment adds one narrower capability: a user may confirm a review locally or add one canonical `EA/` label through Bridge. Threadwise must read that label back, preserve Inbox, and report no destructive actions before advancing. Label replacement, move, archive, Trash, Spam, send, and provider filter/rule changes remain outside the operating model.
+
+Proton artifacts live under `data/protonmail_fetch`, separate from Gmail's
+`data/gmail_fetch`. The review console only offers messages still present in
+the live Proton Inbox, records optional feedback notes locally, and advances a
+message only after an additive label write is verified by Bridge.
 
 ### Reporting and workbench
 

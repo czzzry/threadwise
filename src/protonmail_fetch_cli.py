@@ -7,7 +7,7 @@ from typing import TextIO
 from src.cli_paths import resolve_path
 from src.protonmail_fetcher import ProtonMailBatchFetcher, ProtonMailExportClient
 
-DEFAULT_STORAGE_DIR = Path("data/gmail_fetch")
+DEFAULT_STORAGE_DIR = Path("data/protonmail_fetch")
 
 
 def build_parser() -> argparse.ArgumentParser:

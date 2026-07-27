@@ -10,6 +10,42 @@ from src.label_taxonomy import CANONICAL_LABEL_ORDER, gmail_label_name
 from src.local_artifacts import load_json_or_default, write_json
 
 
+def sync_proton_review_ledger(storage_dir: Path, batch_id: str) -> dict:
+    """Project one classified Proton batch into the user-facing review queue."""
+    batch_path = storage_dir / "batches" / f"{batch_id}.json"
+    batch = load_json_or_default(batch_path, {})
+    if not isinstance(batch, dict) or not isinstance(batch.get("items"), list):
+        raise ValueError(f"Proton batch not found or malformed: {batch_id}")
+    if (batch.get("provider") or "") != "protonmail":
+        raise ValueError(f"Batch is not a ProtonMail batch: {batch_id}")
+
+    ledger_path = storage_dir / "live_manual_review_ledger.json"
+    ledger = load_json_or_default(ledger_path, {"provider": "protonmail", "messages": {}})
+    records = ledger.setdefault("messages", {})
+    projected = 0
+    for item in batch["items"]:
+        message_id = str(item.get("message_id") or "")
+        if not message_id or records.get(message_id, {}).get("status") == "applied":
+            continue
+        internal_labels = [str(label) for label in item.get("applied_labels") or [] if str(label)]
+        records[message_id] = {
+            "status": "suggested",
+            "batch_id": batch_id,
+            "internal_labels": internal_labels,
+            "labels": [gmail_label_name(label) for label in internal_labels],
+            "internal_label": internal_labels[0] if internal_labels else "",
+            "label": gmail_label_name(internal_labels[0]) if internal_labels else "",
+            "reason": str(item.get("interpretation") or "No explanation was stored."),
+            "confidence_band": str(item.get("confidence_band") or "low"),
+        }
+        projected += 1
+
+    ledger["provider"] = "protonmail"
+    ledger["updated_at"] = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    write_json(ledger_path, ledger)
+    return {"ledger_path": str(ledger_path), "projected_count": projected}
+
+
 class ProtonReviewConsole:
     """A bounded, label-only review queue backed by Proton Mail Bridge."""
 
@@ -31,13 +67,43 @@ class ProtonReviewConsole:
         with self._lock:
             return self._state_unlocked()
 
-    def acknowledge(self, message_id: str) -> dict:
+    def acknowledge(self, message_id: str, note: str = "") -> dict:
         with self._lock:
             self._require_pending_unlocked(message_id)
             self._record_decision_unlocked(
                 message_id,
                 decision="looks-right",
                 provider_verified=False,
+                note=str(note or "").strip()[:500],
+            )
+            return self._state_unlocked()
+
+    def apply_suggested(self, message_id: str) -> dict:
+        """Apply every locally suggested label, then verify each Proton write."""
+        with self._lock:
+            current = self._require_pending_unlocked(message_id)
+            internal_labels = list(current.get("suggested_internal_labels") or [])
+            if not internal_labels:
+                raise ValueError("This email has no suggested label. Choose a label or keep it unresolved.")
+
+            provider_mailboxes: list[str] = []
+            for internal_label in internal_labels:
+                label_name = gmail_label_name(internal_label)
+                write_result = self._proton.apply_label(message_id, label_name)
+                if not write_result.get("inbox_preserved") or write_result.get("destructive_actions"):
+                    raise RuntimeError("Proton label write violated the label-only safety contract.")
+                rfc_message_id = str(current.get("rfc_message_id") or "").strip()
+                if not rfc_message_id or not self._proton.message_has_label(rfc_message_id, label_name):
+                    raise RuntimeError("Proton did not confirm the label after the write; the review item was not advanced.")
+                provider_mailboxes.append(str(write_result.get("mailbox") or ""))
+
+            self._record_decision_unlocked(
+                message_id,
+                decision="suggested-labels-applied",
+                provider_verified=True,
+                internal_labels=internal_labels,
+                labels=[gmail_label_name(label) for label in internal_labels],
+                provider_mailboxes=provider_mailboxes,
             )
             return self._state_unlocked()
 
@@ -82,10 +148,7 @@ class ProtonReviewConsole:
         for message_id, record in (classification.get("messages") or {}).items():
             if message_id not in live_ids or message_id in reviewed:
                 continue
-            double_check = record.get("double_check")
-            if not isinstance(double_check, dict):
-                continue
-            confidence = float(double_check.get("confidence", 1.0))
+            confidence = float((record.get("double_check") or {}).get("confidence", 1.0))
             candidates.append((confidence, message_id, record))
         candidates.sort(key=lambda item: (item[0], item[1]))
 
@@ -100,14 +163,17 @@ class ProtonReviewConsole:
                 "date": str(message.get("date") or ""),
                 "body": str(message.get("body") or ""),
                 "rfc_message_id": str(message.get("rfc_message_id") or ""),
+                "suggested_internal_labels": list(record.get("internal_labels") or ([record.get("internal_label")] if record.get("internal_label") else [])),
+                "suggested_labels": list(record.get("labels") or ([record.get("label")] if record.get("label") else [])),
                 "suggested_internal_label": str(record.get("internal_label") or ""),
                 "suggested_label": str(record.get("label") or ""),
-                "reason": str(record.get("reason") or ""),
+                "reason": str(record.get("reason") or "No label suggestion was stored."),
                 "confidence": confidence,
+                "source_batch_id": str(record.get("batch_id") or ""),
             }
         return {
             "provider": "protonmail",
-            "queue_name": "Double check",
+            "queue_name": "Proton inbox review",
             "remaining_count": len(candidates),
             "reviewed_count": len(reviewed),
             "current": current,
@@ -167,12 +233,12 @@ def render_proton_review_page(state: dict) -> str:
     if current:
         card = f"""
         <article class="message-card" data-proton-current-message="{escape_html(current['message_id'])}">
-          <div class="eyebrow">Proton · needs your review</div>
+          <div class="eyebrow">Proton · review this email</div>
           <h2>{escape_html(current.get('subject') or '(No subject)')}</h2>
           <div class="sender">{escape_html(current.get('sender') or 'Unknown sender')}</div>
           <div class="date">{escape_html(current.get('date') or '')}</div>
           <section class="suggestion">
-            <strong>Threadwise suggests {escape_html(current.get('suggested_label') or 'a label')}</strong>
+            <strong>{escape_html('Threadwise suggests ' + ', '.join(current.get('suggested_labels') or []) if current.get('suggested_labels') else 'Threadwise could not choose a label')}</strong>
             <div>{escape_html(current.get('reason') or 'No reason was stored.')}</div>
           </section>
           <details class="body" open>
@@ -180,11 +246,14 @@ def render_proton_review_page(state: dict) -> str:
             <pre>{escape_html(current.get('body') or 'No readable body was available.')}</pre>
           </details>
           <div id="action-status" class="status" role="status" aria-live="polite"></div>
-          <button id="looks-right" class="action primary" type="button">Looks right · Next</button>
+          <label for="review-note">Note for Threadwise <span>(optional)</span></label>
+          <textarea id="review-note" rows="2" placeholder="Why should this be handled differently?"></textarea>
+          {f'<button id="apply-suggested" class="action primary" type="button">Apply suggested label(s) · Next</button>' if current.get('suggested_labels') else '<button id="looks-right" class="action primary" type="button">Keep unresolved · Next</button>'}
+          {f'<button id="looks-right" class="action quiet" type="button">Keep local suggestion · Next</button>' if current.get('suggested_labels') else ''}
           <div class="correction">
-            <label for="target-label">Add another label to this email</label>
+            <label for="target-label">Choose a different label</label>
             <select id="target-label">{options}</select>
-            <button id="apply-label" class="action secondary" type="button">Add label · Next</button>
+            <button id="apply-label" class="action secondary" type="button">Apply chosen label · Next</button>
           </div>
         </article>
         """
@@ -192,8 +261,8 @@ def render_proton_review_page(state: dict) -> str:
         card = """
         <article class="message-card caught-up" data-proton-caught-up>
           <div class="eyebrow">Proton · review complete</div>
-          <h2>Nothing else needs a double check</h2>
-          <p>Threadwise will not re-offer the messages you reviewed in this console.</p>
+          <h2>Your Proton queue is clear</h2>
+          <p>Threadwise will not re-offer emails you completed in this review.</p>
         </article>
         """
 
@@ -261,7 +330,8 @@ def render_proton_review_page(state: dict) -> str:
         if (statusNode) {{ statusNode.className = 'status error'; statusNode.textContent = error.message; }}
       }}
     }}
-    document.getElementById('looks-right')?.addEventListener('click', () => submit('/api/proton-review/acknowledge', {{message_id:current.message_id}}, 'Recording this review…'));
+    document.getElementById('looks-right')?.addEventListener('click', () => submit('/api/proton-review/acknowledge', {{message_id:current.message_id, note:document.getElementById('review-note')?.value || ''}}, 'Saving this decision…'));
+    document.getElementById('apply-suggested')?.addEventListener('click', () => submit('/api/proton-review/apply-suggested', {{message_id:current.message_id}}, 'Applying and verifying the suggested Proton label(s)…'));
     document.getElementById('apply-label')?.addEventListener('click', () => submit('/api/proton-review/apply-label', {{message_id:current.message_id, internal_label:document.getElementById('target-label').value}}, 'Applying and verifying the Proton label…'));
   </script>
 </body>

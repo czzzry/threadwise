@@ -127,6 +127,31 @@ class ProtonReviewConsoleTests(unittest.TestCase):
             self.assertEqual(saved["messages"]["101"]["decision"], "label-added")
             self.assertTrue(saved["messages"]["101"]["provider_verified"])
 
+    def test_approving_suggested_labels_writes_and_verifies_all_suggestions(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "classification.json").write_text(json.dumps({
+                "provider": "protonmail",
+                "messages": {
+                    "101": {
+                        "status": "suggested",
+                        "internal_labels": ["newsletter", "personal"],
+                        "labels": ["EA/Newsletter", "EA/Personal"],
+                        "reason": "An opted-in digest.",
+                    },
+                },
+            }))
+            client = FakeProtonClient(message_ids=["101"])
+            console = self._console(root, client)
+
+            state = console.apply_suggested("101")
+
+            self.assertEqual(client.label_calls, [("101", "EA/Newsletter"), ("101", "EA/Personal")])
+            self.assertEqual(state["remaining_count"], 0)
+            saved = json.loads((root / "console.json").read_text())
+            self.assertEqual(saved["messages"]["101"]["decision"], "suggested-labels-applied")
+            self.assertTrue(saved["messages"]["101"]["provider_verified"])
+
     def test_message_missing_from_live_inbox_is_not_offered(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -162,8 +187,9 @@ class ProtonReviewConsoleTests(unittest.TestCase):
             page = render_proton_review_page(self._console(root, FakeProtonClient()).state())
 
             self.assertIn("The complete first message context.", page)
-            self.assertIn("Looks right · Next", page)
-            self.assertIn("Add label · Next", page)
+            self.assertIn("Apply suggested label(s) · Next", page)
+            self.assertIn("Apply chosen label · Next", page)
+            self.assertIn("Apply suggested label(s) · Next", page)
             self.assertIn("No email will be archived, deleted, moved, or sent", page)
 
     def _console(self, root: Path, client: FakeProtonClient) -> ProtonReviewConsole:

@@ -123,11 +123,13 @@ def build_selected_email_state(storage_dir: Path, unsubscribe_candidates: list[d
         status, status_label = (
             ("auto-handled", "Auto-handled")
             if inbox_status == "applied"
-            else ("kept-visible", "Kept visible")
+            else ("provider-confirmed", "Confirmed in Gmail")
         )
     else:
         status, status_label = classify_handling_status(item, write_status, inbox_status)
     if (
+        not visible_gmail_labels
+        and
         status == "kept-visible"
         and write_status is None
         and labels
@@ -740,6 +742,7 @@ def build_runtime_item(
 def build_companion_runtime_payload(
     storage_dir: Path,
     *,
+    provider: str = "gmail",
     allowed_review_message_ids: set[str] | None = None,
 ) -> dict:
     from src.gmail_batch_review_store import GmailBatchReviewStore
@@ -772,11 +775,16 @@ def build_companion_runtime_payload(
         )[:4]
         for batch_path in recent_batch_paths:
             batch = load_json(batch_path)
+            if (batch.get("provider") or "gmail") != provider:
+                continue
             batch_id = batch.get("batch_id", "")
             write_status_map = load_json_or_default(write_status_path(storage_dir, batch_id), {})
             inbox_status_map = load_json_or_default(inbox_removal_status_path(storage_dir, batch_id), {})
             raw_messages = {message.get("id"): message for message in batch.get("raw_messages", [])}
             for item in batch.get("items", [])[:25]:
+                message_id = str(item.get("message_id") or "")
+                if allowed_review_message_ids is not None and message_id not in allowed_review_message_ids:
+                    continue
                 item = refresh_item_if_needed(batch, item, raw_messages.get(item.get("message_id"), {}))
                 items.append(build_runtime_item(
                     batch,
@@ -796,6 +804,8 @@ def build_companion_runtime_payload(
         )
         for batch_path in all_batch_paths:
             batch = load_json(batch_path)
+            if (batch.get("provider") or "gmail") != provider:
+                continue
             batch_id = batch.get("batch_id", "")
             write_status_map = load_json_or_default(write_status_path(storage_dir, batch_id), {})
             inbox_status_map = load_json_or_default(inbox_removal_status_path(storage_dir, batch_id), {})
@@ -825,12 +835,16 @@ def build_companion_runtime_payload(
     }
     return {
         "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
-        "daily_summary": live_daily_summary,
+        "daily_summary": {
+            **live_daily_summary,
+            "provider": provider,
+            "live_inbox_count": len(allowed_review_message_ids) if allowed_review_message_ids is not None else None,
+        },
         "items": items[:80],
         "recent_items": items[:24],
         "needs_attention_items": actionable_items[:12],
         "auto_handled_items": [item for item in items if item.get("status") == "auto-handled"][:12],
-        "kept_visible_items": [item for item in items if item.get("status") in {"kept-visible", "auto-labeled"}][:12],
+        "kept_visible_items": [item for item in items if item.get("status") in {"kept-visible", "auto-labeled", "provider-confirmed"}][:12],
     }
 
 def load_latest_report(storage_dir: Path) -> dict | None:
@@ -866,11 +880,14 @@ def find_matching_item(storage_dir: Path, selected_context: dict) -> dict | None
     message_id = selected_context.get("message_id") or ""
     normalized_selected_sender = normalized_sender_email(selected_context.get("sender") or "")
     normalized_subject = (selected_context.get("subject") or "").strip().lower()
+    selected_provider = selected_context.get("provider")
     batches_dir = storage_dir / "batches"
     if not batches_dir.exists():
         return None
     for batch_path in sorted(batches_dir.glob("*.json"), key=artifact_path_sort_key, reverse=True):
         batch = load_json(batch_path)
+        if selected_provider and (batch.get("provider") or "gmail") != selected_provider:
+            continue
         raw_messages = {message.get("id"): message for message in batch.get("raw_messages", [])}
         for item in batch.get("items", []):
             if message_id and item.get("message_id") == message_id:

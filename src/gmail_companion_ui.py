@@ -62,6 +62,8 @@ from src.gmail_teaching_adapter import GmailTeachingAdapter, INBOX_BACKFILL_ESTI
 
 DEFAULT_STORAGE_DIR = Path("data/gmail_fetch")
 DEFAULT_CREDENTIALS_DIR = Path("data/gmail_credentials")
+# Proton daily runs and the local companion use a dedicated artifact store so
+# Proton records cannot enter the Gmail companion queue.
 DEFAULT_PROTON_STORAGE_DIR = Path("data/protonmail_fetch")
 DEFAULT_PROTON_CREDENTIALS_DIR = Path("data/protonmail_credentials")
 DEFAULT_PROTON_ACCOUNT_ID = "founder-proton"
@@ -71,7 +73,7 @@ HEALTH_STATUS_PATH = "/api/health"
 HEALTH_STATUS_SERVICE_ID = "threadwise-gmail-companion"
 HEALTH_STATUS_SERVICE_NAME = "Threadwise Gmail Companion"
 HEALTH_STATUS_CACHE_SECONDS = 5.0
-LIVE_INBOX_RECONCILIATION_MAX_MESSAGES = 10_000
+LIVE_INBOX_RECONCILIATION_MAX_MESSAGES = 500
 THREADWISE_APP_VERSION = "0.1.0"
 
 
@@ -538,7 +540,10 @@ class GmailCompanionApp:
         if handler.command == "POST" and parsed.path == "/api/proton-review/acknowledge":
             try:
                 payload = self._read_json_body(handler)
-                response = self._proton_console().acknowledge(str(payload.get("message_id") or ""))
+                response = self._proton_console().acknowledge(
+                    str(payload.get("message_id") or ""),
+                    str(payload.get("note") or ""),
+                )
                 self._capture_workflow_event(
                     handler,
                     "proton review completed",
@@ -547,6 +552,33 @@ class GmailCompanionApp:
                         "decision_type": "looks_right",
                         "queue_size_bucket": bucket_count(response.get("remaining_count", 0)),
                         "provider_verified": False,
+                    },
+                )
+                return self._write_json(handler, HTTPStatus.OK, response)
+            except (KeyError, ValueError, RuntimeError, ProtonSetupError) as exc:
+                self._capture_workflow_event(
+                    handler,
+                    "proton review failed",
+                    {
+                        "surface": "proton_review",
+                        "decision_type": "looks_right",
+                        "error_category": "invalid_request" if isinstance(exc, (KeyError, ValueError)) else "provider_write_error",
+                    },
+                )
+                return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+
+        if handler.command == "POST" and parsed.path == "/api/proton-review/apply-suggested":
+            try:
+                payload = self._read_json_body(handler)
+                response = self._proton_console().apply_suggested(str(payload.get("message_id") or ""))
+                self._capture_workflow_event(
+                    handler,
+                    "proton review completed",
+                    {
+                        "surface": "proton_review",
+                        "decision_type": "looks_right",
+                        "queue_size_bucket": bucket_count(response.get("remaining_count", 0)),
+                        "provider_verified": True,
                     },
                 )
                 return self._write_json(handler, HTTPStatus.OK, response)

@@ -112,10 +112,10 @@ class LiveProtonMailDailyRunCliTests(unittest.TestCase):
             self.assertEqual(len(stored_batch["items"]), 3)
             self.assertIn("Batch: founder-proton-batch-1", rendered)
             self.assertIn("Fetched: 3", rendered)
-            self.assertIn("Auto-applied label writes: 0", rendered)
+            self.assertIn("Provider label writes: 0 (review decisions are still required)", rendered)
             self.assertIn("INBOX removals: 0", rendered)
-            self.assertIn("Classified messages: 3", rendered)
-            self.assertIn("Unlabeled exceptions: 0", rendered)
+            self.assertIn("Suggested labels ready for review: 3", rendered)
+            self.assertIn("Needs a label decision: 0", rendered)
             self.assertEqual(report["provider"], "protonmail")
             self.assertEqual(report["processed_count"], 3)
             self.assertEqual(report["auto_applied_count"], 0)
@@ -130,6 +130,11 @@ class LiveProtonMailDailyRunCliTests(unittest.TestCase):
             )
             self.assertEqual(report["unlabeled_count"], 0)
             self.assertEqual(report["unlabeled_exceptions"], [])
+
+            ledger_path = Path(temp_dir) / "live_manual_review_ledger.json"
+            ledger = json.loads(ledger_path.read_text())
+            self.assertEqual(set(ledger["messages"]), {"pm-live-001", "pm-live-002", "pm-live-003"})
+            self.assertEqual(ledger["messages"]["pm-live-002"]["labels"], ["EA/Orders"])
 
 
 if __name__ == "__main__":

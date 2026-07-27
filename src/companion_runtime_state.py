@@ -89,6 +89,7 @@ class CompanionRuntimeState:
                     return payload
             payload = build_companion_runtime_payload(
                 self._storage_dir,
+                provider="gmail",
                 allowed_review_message_ids=self._live_inbox_ids(),
             )
             self._runtime_payload_cache = (time.monotonic(), payload)
@@ -135,6 +136,7 @@ class CompanionRuntimeState:
             "auto-handled",
             "kept-visible",
             "auto-labeled",
+            "provider-confirmed",
         }:
             raise ValueError("Selected email is not a completed handled item.")
         decision = self._handled_review_store.acknowledge(
@@ -294,7 +296,7 @@ class CompanionRuntimeState:
             "kept_visible_items": [
                 item
                 for item in unacknowledged_items
-                if item.get("status") in {"kept-visible", "auto-labeled"}
+                if item.get("status") in {"kept-visible", "auto-labeled", "provider-confirmed"}
             ][:12],
             "analytics_status": self._analytics_status(),
         }
