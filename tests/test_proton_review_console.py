@@ -187,10 +187,36 @@ class ProtonReviewConsoleTests(unittest.TestCase):
             page = render_proton_review_page(self._console(root, FakeProtonClient()).state())
 
             self.assertIn("The complete first message context.", page)
-            self.assertIn("Apply suggested label(s) · Next", page)
-            self.assertIn("Apply chosen label · Next", page)
-            self.assertIn("Apply suggested label(s) · Next", page)
+            self.assertIn("Accept EA/Newsletter · Next", page)
+            self.assertIn("Change label", page)
+            self.assertIn("Apply label · Next", page)
+            self.assertNotIn("Keep local suggestion", page)
             self.assertIn("No email will be archived, deleted, moved, or sent", page)
+
+    def test_provider_applied_messages_are_completed_and_not_reoffered(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "classification.json").write_text(json.dumps({
+                "provider": "protonmail",
+                "messages": {
+                    "101": {
+                        "status": "applied",
+                        "internal_label": "newsletter",
+                        "label": "EA/Newsletter",
+                    },
+                    "102": {
+                        "status": "suggested",
+                        "internal_label": "shopping-order",
+                        "label": "EA/Orders",
+                    },
+                },
+            }))
+
+            state = self._console(root, FakeProtonClient()).state()
+
+            self.assertEqual(state["remaining_count"], 1)
+            self.assertEqual(state["completed_count"], 1)
+            self.assertEqual(state["current"]["message_id"], "102")
 
     def _console(self, root: Path, client: FakeProtonClient) -> ProtonReviewConsole:
         return ProtonReviewConsole(
@@ -204,14 +230,14 @@ class ProtonReviewConsoleTests(unittest.TestCase):
             "provider": "protonmail",
             "messages": {
                 "101": {
-                    "status": "applied",
+                    "status": "suggested",
                     "internal_label": "newsletter",
                     "label": "EA/Newsletter",
                     "reason": "An opted-in editorial digest.",
                     "double_check": {"confidence": 0.42},
                 },
                 "102": {
-                    "status": "applied",
+                    "status": "suggested",
                     "internal_label": "shopping-order",
                     "label": "EA/Orders",
                     "reason": "A delivery lifecycle update.",

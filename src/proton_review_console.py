@@ -107,7 +107,7 @@ class ProtonReviewConsole:
             )
             return self._state_unlocked()
 
-    def apply_label(self, message_id: str, internal_label: str) -> dict:
+    def apply_label(self, message_id: str, internal_label: str, note: str = "") -> dict:
         if internal_label not in CANONICAL_LABEL_ORDER:
             raise ValueError("Choose one of Threadwise's allowed labels.")
         with self._lock:
@@ -130,6 +130,7 @@ class ProtonReviewConsole:
                 internal_label=internal_label,
                 label=label_name,
                 provider_mailbox=str(write_result.get("mailbox") or ""),
+                note=str(note or "").strip()[:500],
             )
             return self._state_unlocked()
 
@@ -144,9 +145,15 @@ class ProtonReviewConsole:
         )
         live_ids = set(self._proton.list_messages(self._max_results))
         reviewed = review_state.get("messages") or {}
+        provider_completed = {
+            message_id
+            for message_id, record in (classification.get("messages") or {}).items()
+            if str(record.get("status") or "").lower() in {"applied", "provider-confirmed", "completed"}
+        }
+        completed_ids = provider_completed | set(reviewed)
         candidates: list[tuple[float, str, dict]] = []
         for message_id, record in (classification.get("messages") or {}).items():
-            if message_id not in live_ids or message_id in reviewed:
+            if message_id not in live_ids or message_id in completed_ids:
                 continue
             confidence = float((record.get("double_check") or {}).get("confidence", 1.0))
             candidates.append((confidence, message_id, record))
@@ -176,6 +183,7 @@ class ProtonReviewConsole:
             "queue_name": "Proton inbox review",
             "remaining_count": len(candidates),
             "reviewed_count": len(reviewed),
+            "completed_count": len(completed_ids & live_ids),
             "current": current,
             "allowed_labels": [
                 {"internal_label": label, "display_label": gmail_label_name(label)}
@@ -223,7 +231,7 @@ class ProtonReviewConsole:
 def render_proton_review_page(state: dict) -> str:
     current = state.get("current")
     remaining = int(state.get("remaining_count") or 0)
-    reviewed = int(state.get("reviewed_count") or 0)
+    completed = int(state.get("completed_count") or state.get("reviewed_count") or 0)
     options = "".join(
         f'<option value="{escape_html(item["internal_label"])}"'
         f'{" selected" if current and item["internal_label"] == current.get("suggested_internal_label") else ""}>'
@@ -233,7 +241,7 @@ def render_proton_review_page(state: dict) -> str:
     if current:
         card = f"""
         <article class="message-card" data-proton-current-message="{escape_html(current['message_id'])}">
-          <div class="eyebrow">Proton · review this email</div>
+          <div class="eyebrow">Proton · Needs your review</div>
           <h2>{escape_html(current.get('subject') or '(No subject)')}</h2>
           <div class="sender">{escape_html(current.get('sender') or 'Unknown sender')}</div>
           <div class="date">{escape_html(current.get('date') or '')}</div>
@@ -246,14 +254,14 @@ def render_proton_review_page(state: dict) -> str:
             <pre>{escape_html(current.get('body') or 'No readable body was available.')}</pre>
           </details>
           <div id="action-status" class="status" role="status" aria-live="polite"></div>
-          <label for="review-note">Note for Threadwise <span>(optional)</span></label>
-          <textarea id="review-note" rows="2" placeholder="Why should this be handled differently?"></textarea>
-          {f'<button id="apply-suggested" class="action primary" type="button">Apply suggested label(s) · Next</button>' if current.get('suggested_labels') else '<button id="looks-right" class="action primary" type="button">Keep unresolved · Next</button>'}
-          {f'<button id="looks-right" class="action quiet" type="button">Keep local suggestion · Next</button>' if current.get('suggested_labels') else ''}
-          <div class="correction">
+          {f'<button id="apply-suggested" class="action primary" type="button">Accept {escape_html((current.get("suggested_labels") or ["label"])[0])} · Next</button>' if current.get('suggested_labels') else '<button id="looks-right" class="action primary" type="button">Leave unlabeled · Next</button>'}
+          <button id="change-label-toggle" class="action secondary" type="button">Change label</button>
+          <div id="correction" class="correction" hidden>
             <label for="target-label">Choose a different label</label>
             <select id="target-label">{options}</select>
-            <button id="apply-label" class="action secondary" type="button">Apply chosen label · Next</button>
+            <label for="review-note">Tell Threadwise why <span>(optional)</span></label>
+            <textarea id="review-note" rows="2" placeholder="What should Threadwise remember?"></textarea>
+            <button id="apply-label" class="action primary" type="button">Apply label · Next</button>
           </div>
         </article>
         """
@@ -307,7 +315,7 @@ def render_proton_review_page(state: dict) -> str:
   <main>
     <header>
       <div class="brand"><img src="/assets/brand/threadwise-app-icon.png" alt=""><div><div class="eyebrow">Threadwise companion</div><h1>Proton review</h1><a href="/daily-dashboard">Back to daily dashboard</a></div></div>
-      <div class="count"><span data-remaining-count>{remaining}</span> remaining · {reviewed} reviewed</div>
+          <div class="count"><span data-remaining-count>{remaining}</span> to review · {completed} completed</div>
     </header>
     {card}
     <aside class="safety"><strong>Label-only trial.</strong> No email will be archived, deleted, moved, or sent. “Looks right” changes only Threadwise's local review record.</aside>
@@ -316,6 +324,12 @@ def render_proton_review_page(state: dict) -> str:
     const current = {safe_state};
     const statusNode = document.getElementById('action-status');
     const buttons = Array.from(document.querySelectorAll('button'));
+    document.getElementById('change-label-toggle')?.addEventListener('click', () => {{
+      const correction = document.getElementById('correction');
+      if (!correction) return;
+      correction.hidden = !correction.hidden;
+      document.getElementById('change-label-toggle').textContent = correction.hidden ? 'Change label' : 'Cancel label change';
+    }});
     async function submit(path, payload, workingCopy) {{
       buttons.forEach((button) => button.disabled = true);
       if (statusNode) {{ statusNode.className = 'status'; statusNode.textContent = workingCopy; }}
@@ -332,7 +346,7 @@ def render_proton_review_page(state: dict) -> str:
     }}
     document.getElementById('looks-right')?.addEventListener('click', () => submit('/api/proton-review/acknowledge', {{message_id:current.message_id, note:document.getElementById('review-note')?.value || ''}}, 'Saving this decision…'));
     document.getElementById('apply-suggested')?.addEventListener('click', () => submit('/api/proton-review/apply-suggested', {{message_id:current.message_id}}, 'Applying and verifying the suggested Proton label(s)…'));
-    document.getElementById('apply-label')?.addEventListener('click', () => submit('/api/proton-review/apply-label', {{message_id:current.message_id, internal_label:document.getElementById('target-label').value}}, 'Applying and verifying the Proton label…'));
+    document.getElementById('apply-label')?.addEventListener('click', () => submit('/api/proton-review/apply-label', {{message_id:current.message_id, internal_label:document.getElementById('target-label').value, note:document.getElementById('review-note')?.value || ''}}, 'Applying and verifying the Proton label…'));
   </script>
 </body>
 </html>"""

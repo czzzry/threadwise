@@ -48,6 +48,11 @@ Proton artifacts live under `data/protonmail_fetch`, separate from Gmail's
 the live Proton Inbox, records optional feedback notes locally, and advances a
 message only after an additive label write is verified by Bridge.
 
+The Proton queue treats provider-verified `applied` records as completed, so a
+later Inbox refresh cannot re-offer already-labeled mail. Its review actions
+follow the Gmail companion contract: accept the suggestion, change the label,
+or leave an unresolved message unlabeled for later.
+
 ### Reporting and workbench
 
 The repo also supports:

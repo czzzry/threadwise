@@ -600,6 +600,7 @@ class GmailCompanionApp:
                 response = self._proton_console().apply_label(
                     str(payload.get("message_id") or ""),
                     str(payload.get("internal_label") or ""),
+                    str(payload.get("note") or ""),
                 )
                 self._capture_workflow_event(
                     handler,
