@@ -175,6 +175,50 @@ class CompanionTeachingWorkflowTests(unittest.TestCase):
 
         apply_teaching.assert_not_called()
 
+    def test_deferred_apply_returns_before_provider_write_and_can_complete_later(self) -> None:
+        write_requests: list[TeachingWriteRequest] = []
+        write_summary = {
+            "mode": "applied",
+            "messages_written": 1,
+            "label_write_failed": 0,
+            "inbox_remove_failed": 0,
+        }
+        workflow = CompanionTeachingWorkflow(
+            Path("/tmp/threadwise-test"),
+            write_through=lambda request: write_requests.append(request) or write_summary,
+        )
+        teaching_result = {
+            "acknowledgment": "Updated this email.",
+            "current": {"account_id": "founder", "message_id": "message-1", "subject": "Hello", "sender": "a@example.test"},
+            "mode": "current-only",
+            "preview_matches": [],
+            "semantic_rule": {"rule_type": "current-only"},
+            "matched_existing_count": 0,
+            "proposal": None,
+            "current_changed": True,
+            "future_rule_saved": False,
+        }
+
+        with patch(
+            "src.companion_teaching_workflow.apply_sidebar_teaching",
+            return_value=teaching_result,
+        ):
+            result = workflow.apply(
+                {
+                    "selected_context": {"provider": "gmail", "message_id": "message-1"},
+                    "target_label": "personal",
+                    "note": "This is personal.",
+                    "mode": "current-only",
+                },
+                defer_provider_write=True,
+            )
+
+        self.assertEqual(write_requests, [])
+        self.assertEqual(result.write_summary["mode"], "pending")
+        self.assertIsNotNone(result.write_request)
+        self.assertEqual(workflow.complete_deferred_write(result.write_request), write_summary)
+        self.assertEqual(len(write_requests), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

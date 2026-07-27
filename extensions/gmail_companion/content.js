@@ -2521,6 +2521,7 @@
 
   function renderTeachPreviewHtml(preview) {
     const impact = preview.impact || {};
+    const futureRuleAllowed = preview.future_rule_allowed !== false;
     const matchingCount = impact.matching_existing_count || 0;
     const similarCount = impact.similar_candidate_count || 0;
     const similarGroups = impact.similar_candidate_groups || [];
@@ -2626,7 +2627,7 @@
         ${renderAffectedReviewHtml(preview)}
         ${similarGroupsHtml}
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
-          <button type="button" data-ea-apply="future-only" style="border:2px solid #241812;background:#ffc64a;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Teach future rule</button>
+          ${futureRuleAllowed ? '<button type="button" data-ea-apply="future-only" style="border:2px solid #241812;background:#ffc64a;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Teach future rule</button>' : '<span style="color:#6b6255;line-height:1.45;">This looks like a one-off or uncertain email, so Threadwise will only change this email.</span>'}
           <button type="button" data-ea-action="refine-teach" style="border:2px solid #241812;background:#fffdf7;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Keep discussing</button>
         </div>
       </div>
@@ -2642,6 +2643,7 @@
     const inboxMatchScanCapped = Boolean(preview?.inbox_backfill?.is_capped);
     const targetLabelName = humanLabelNameFromId((preview?.selected_label_after || [])[0] || "");
     const structuredRule = preview?.structured_rule || {};
+    const futureRuleAllowed = preview?.future_rule_allowed !== false;
     const selectedStyle = "border:2px solid #241812;background:#dff8ed;";
     const idleStyle = "border:1px solid rgba(36,24,18,.24);background:#fffdf7;";
     const scopeCard = (mode, title, description, disabled = false) => `
@@ -2669,7 +2671,7 @@
         </div>
         <div role="group" aria-label="Choose how broadly to apply this change" style="display:grid;gap:8px;">
           ${scopeCard("current-only", "Just this email", "Relabel this message only.")}
-          ${scopeCard("future-only", "This email + future emails", "Also remember the rule for new matching mail.")}
+          ${futureRuleAllowed ? scopeCard("future-only", "This email + future emails", "Also remember the rule for new matching mail.") : ""}
           ${scopeCard(
             "apply-included",
             `Also update ${matchingCount} reviewed inbox email${matchingCount === 1 ? "" : "s"}`,
@@ -2689,7 +2691,7 @@
         <details style="border-top:1px solid rgba(36,24,18,.2);padding-top:10px;color:#6b6255;">
           <summary style="cursor:pointer;font-weight:800;color:#241812;">How Threadwise understood this</summary>
           <div style="margin-top:8px;font-weight:700;color:#241812;">${escapeHtml(preview?.plain_english_rule || "No future rule proposal was generated.")}</div>
-          <div style="margin-top:6px;">${escapeHtml(preview?.rule_type_label || "Future rule")} · ${escapeHtml(preview?.rule_confidence_label || "Confidence unavailable")}</div>
+          <div style="margin-top:6px;">${escapeHtml(preview?.rule_type_label || "Future rule")} · ${escapeHtml(preview?.rule_confidence_label || "Confidence unavailable")} · ${preview?.intent_source === "llm" ? "LLM reviewed" : "Deterministic fallback"}</div>
           ${preview?.clarifying_question ? `<div style="margin-top:8px;color:#8a4b00;">${escapeHtml(preview.clarifying_question)}</div>` : ""}
           <div style="display:grid;gap:4px;margin-top:8px;font-size:.82rem;">${structuredRuleRows}</div>
         </details>
@@ -2700,6 +2702,7 @@
         </details>
         ${renderRuleAmendmentHtml(preview?.amendment_proposal)}
         ${affectedReviewOpen ? `${renderAffectedReviewHtml(preview)}<button type="button" data-ea-apply="apply-included" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#3d6df2;color:#fff;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Apply to included</button>` : ""}
+        ${futureRuleAllowed ? "" : '<div style="color:#6b6255;line-height:1.45;">This looks like a one-off or uncertain email. Threadwise will only change this email until you describe a recurring pattern.</div>'}
         <button type="button" data-ea-action="refine-teach" style="justify-self:start;border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Keep discussing</button>
       </div>
     `;
@@ -3720,6 +3723,7 @@
         note,
         scope: "sender",
         mode,
+        defer_provider_write: mode === "current-only",
         included_message_ids: mode === "apply-included"
           ? affectedReviewItemsFromPreview(teachPreview).map((item) => item.message_id).filter(Boolean)
           : [],
@@ -3779,6 +3783,9 @@
         ANALYTICS?.completeReviewBatch(previousQueueSize);
       }
       renderState(preserveHarnessQueues(payload.sidebar_state || lastSidebarState));
+      if (mode === "current-only") {
+        openFirstSummaryItemIfHelpful("needs_attention_items");
+      }
     });
   }
 

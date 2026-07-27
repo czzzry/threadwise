@@ -28,6 +28,7 @@ class TeachingWorkflowResult:
     response: dict
     selected_context: dict
     write_summary: dict
+    write_request: TeachingWriteRequest | None = None
 
 
 class CompanionTeachingWorkflow:
@@ -111,7 +112,7 @@ class CompanionTeachingWorkflow:
             ),
         }
 
-    def apply(self, payload: dict) -> TeachingWorkflowResult:
+    def apply(self, payload: dict, *, defer_provider_write: bool = False) -> TeachingWorkflowResult:
         selected_context = dict(payload.get("selected_context") or {})
         target_label = payload["target_label"]
         if target_label == "suspicious":
@@ -129,20 +130,23 @@ class CompanionTeachingWorkflow:
             included_message_ids=included_message_ids,
         )
         current = teaching_result["current"]
-        write_summary = self._write_through(
-            TeachingWriteRequest(
-                account_id=current["account_id"],
-                current_message_id=current["message_id"],
-                mode=teaching_result["mode"],
-                preview_matches=list(teaching_result["preview_matches"]),
-                semantic_rule={
-                    **(teaching_result.get("semantic_rule") or {}),
-                    "target_label": target_label,
-                },
-                current_subject=current.get("subject") or "",
-                current_sender=current.get("sender") or "",
-                included_message_ids=frozenset(included_message_ids),
-            )
+        write_request = TeachingWriteRequest(
+            account_id=current["account_id"],
+            current_message_id=current["message_id"],
+            mode=teaching_result["mode"],
+            preview_matches=list(teaching_result["preview_matches"]),
+            semantic_rule={
+                **(teaching_result.get("semantic_rule") or {}),
+                "target_label": target_label,
+            },
+            current_subject=current.get("subject") or "",
+            current_sender=current.get("sender") or "",
+            included_message_ids=frozenset(included_message_ids),
+        )
+        write_summary = (
+            _pending_write_summary()
+            if defer_provider_write
+            else self._write_through(write_request)
         )
         response = {
             "acknowledgment": _apply_acknowledgment(teaching_result, write_summary),
@@ -156,7 +160,11 @@ class CompanionTeachingWorkflow:
             response=response,
             selected_context=selected_context,
             write_summary=write_summary,
+            write_request=write_request if defer_provider_write else None,
         )
+
+    def complete_deferred_write(self, request: TeachingWriteRequest) -> dict:
+        return self._write_through(request)
 
 
 def _included_message_ids(payload: dict) -> list[str]:
@@ -167,6 +175,18 @@ def _included_message_ids(payload: dict) -> list[str]:
     ):
         raise ValueError("included_message_ids must be a list of message ids.")
     return included_message_ids
+
+
+def _pending_write_summary() -> dict:
+    return {
+        "messages_written": 0,
+        "inbox_removed": 0,
+        "label_write_failed": 0,
+        "label_write_skipped": 0,
+        "inbox_remove_failed": 0,
+        "inbox_remove_skipped": 0,
+        "mode": "pending",
+    }
 
 
 def _apply_acknowledgment(teaching_result: dict, write_summary: dict) -> str:
@@ -182,6 +202,11 @@ def _apply_acknowledgment(teaching_result: dict, write_summary: dict) -> str:
         return (
             f"{base} Stored locally for {local_changed} {local_email_label}. "
             "Gmail write-through is disabled here."
+        )
+    if gmail_mode == "pending":
+        return (
+            f"{base} The next email is ready. Gmail is applying this label in the background; "
+            "Threadwise will report if the provider write needs attention."
         )
     if gmail_mode == "gmail-write-failed":
         error = write_summary.get("error") or "unknown Gmail write error"

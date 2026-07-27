@@ -48,6 +48,7 @@ class CompanionRuntimeState:
         self._unsubscribe_candidates_cache: tuple[float, list[dict]] | None = None
         self._data_lock = threading.Lock()
         self._async_follow_up_state: dict | None = None
+        self._provider_write_state: dict | None = None
         self._async_lock = threading.Lock()
 
     def sidebar(self, selected_context: dict | None) -> dict:
@@ -126,6 +127,14 @@ class CompanionRuntimeState:
             }
         )
         self._background_runner(lambda: self._run_teaching_refresh(selected_context))
+
+    def start_teaching_write(self, work: Callable[[], dict]) -> None:
+        self._set_provider_write_state({
+            "state": "working",
+            "label": "Gmail write running",
+            "message": "The next email is ready while Threadwise finishes applying the label.",
+        })
+        self._background_runner(lambda: self._run_teaching_write(work))
 
     def acknowledge_handled_review(self, payload: dict) -> dict:
         selected_context = dict(payload.get("selected_context") or {})
@@ -211,8 +220,38 @@ class CompanionRuntimeState:
                 for label in CANONICAL_LABEL_ORDER
             ],
             "async_follow_up": self._async_follow_up(),
+            "provider_write": self._provider_write_status(),
             "activity_feed": self._activity_feed(),
         }
+
+    def _provider_write_status(self) -> dict | None:
+        with self._async_lock:
+            return dict(self._provider_write_state) if self._provider_write_state else None
+
+    def _set_provider_write_state(self, payload: dict | None) -> None:
+        with self._async_lock:
+            self._provider_write_state = dict(payload) if payload else None
+
+    def _run_teaching_write(self, work: Callable[[], dict]) -> None:
+        try:
+            summary = work() or {}
+            failed = int(summary.get("label_write_failed") or 0) + int(summary.get("inbox_remove_failed") or 0)
+            self._set_provider_write_state({
+                "state": "error" if failed else "done",
+                "label": "Gmail write needs attention" if failed else "Gmail label applied",
+                "message": (
+                    f"{failed} Gmail write{'s' if failed != 1 else ''} failed. Retry from the email receipt."
+                    if failed
+                    else "The accepted label is now confirmed in Gmail."
+                ),
+                "summary": summary,
+            })
+        except Exception as exc:
+            self._set_provider_write_state({
+                "state": "error",
+                "label": "Gmail write needs attention",
+                "message": f"Gmail could not confirm this label: {exc}",
+            })
 
     def _run_teaching_refresh(self, selected_context: dict) -> None:
         try:

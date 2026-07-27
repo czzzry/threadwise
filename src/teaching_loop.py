@@ -195,6 +195,7 @@ def build_sidebar_teach_preview(
         "structured_rule": structured_rule,
         "semantic_rule": semantic_rule,
         "future_rule_allowed": future_rule_allowed,
+        "intent_source": "llm" if intent.get("source") == "llm" else "deterministic-fallback",
         "proposal": proposal.to_dict(),
         "impact": {
             "current_message_will_change": True,

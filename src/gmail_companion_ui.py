@@ -936,12 +936,25 @@ class GmailCompanionApp:
                 {"surface": "gmail_companion", "retry_count": min(retry_count, 100)},
                 distinct_id=analytics_distinct_id,
             )
-        workflow_result = self._teaching_workflow.apply(payload)
-        self._capture_label_write_outcomes(
-            analytics_distinct_id or self._analytics_distinct_ids.get_or_create(),
-            workflow_result.response["mode"],
-            workflow_result.write_summary,
+        defer_provider_write = bool(payload.get("defer_provider_write")) and payload.get("mode") != "save-future-rule"
+        workflow_result = self._teaching_workflow.apply(
+            payload,
+            defer_provider_write=defer_provider_write,
         )
+        distinct_id = analytics_distinct_id or self._analytics_distinct_ids.get_or_create()
+        if defer_provider_write and workflow_result.write_request is not None:
+            self._runtime_state.start_teaching_write(
+                lambda: self._complete_deferred_teaching_write(
+                    workflow_result.write_request,
+                    distinct_id,
+                )
+            )
+        else:
+            self._capture_label_write_outcomes(
+                distinct_id,
+                workflow_result.response["mode"],
+                workflow_result.write_summary,
+            )
         self._runtime_state.start_teaching_refresh(workflow_result.selected_context)
         self._capture_workflow_event(
             None,
@@ -954,6 +967,12 @@ class GmailCompanionApp:
             **workflow_result.response,
             "sidebar_state": refreshed,
         }
+
+    def _complete_deferred_teaching_write(self, request, distinct_id: str) -> dict:
+        summary = self._teaching_workflow.complete_deferred_write(request)
+        self._capture_label_write_outcomes(distinct_id, request.mode, summary)
+        self._runtime_state.invalidate()
+        return summary
 
     def safety_preview(self, payload: dict) -> dict:
         selected = self._selected_gmail_message_for_safety(payload)

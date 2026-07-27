@@ -2726,6 +2726,8 @@ async function applyTeach(mode) {
     return;
   }
   applyInFlight = true;
+  const appliedMessageId = currentContext.message_id || "";
+  const advanceAfterApply = mode === "current-only";
   lastApplyMode = mode;
   const labelNode = document.getElementById("sim-target-label");
   const noteNode = document.getElementById("sim-teach-note");
@@ -2742,6 +2744,7 @@ async function applyTeach(mode) {
       scope: "sender",
       mode,
       retry_count: teachRetryCount,
+      defer_provider_write: advanceAfterApply,
     });
     if (payload.error) {
       throw new Error(payload.error);
@@ -2760,6 +2763,13 @@ async function applyTeach(mode) {
     unsubscribeResult = "";
     affectedReviewOpen = false;
     await refreshState();
+    if (advanceAfterApply) {
+      const next = (((harnessState || {}).needs_attention_items) || [])
+        .find((item) => item.message_id && item.message_id !== appliedMessageId);
+      if (next) {
+        setContextFromItem(next);
+      }
+    }
   } catch (error) {
     teachError = error && error.message
       ? error.message
