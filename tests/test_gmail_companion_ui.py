@@ -4441,7 +4441,11 @@ class GmailCompanionUiTests(unittest.TestCase):
         }
 
         with (
-            patch.object(app._teaching_workflow, "apply", return_value=workflow_result),
+            patch.object(
+                app._provider_runtimes.for_provider("gmail"),
+                "apply",
+                return_value=workflow_result,
+            ),
             patch.object(app._runtime_state, "start_teaching_refresh") as start_follow_up_mock,
             patch.object(app._runtime_state, "sidebar", return_value=fast_sidebar) as fast_sidebar_mock,
         ):

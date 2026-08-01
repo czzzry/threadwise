@@ -16,6 +16,14 @@ GitHub parent: `#96`
 - Shared PostHog events retain their existing names and add only a privacy-safe `provider` property.
 - Proton daily-run output now opens Proton Mail directly rather than directing the founder to the separate review console.
 
+## Architecture Closeout
+
+- `extensions/gmail_companion/provider_adapter.js` owns provider-page discovery and navigation for both inboxes.
+- `src/provider_write_queue.py` owns ordered background write, status, failure, and retry behavior for both providers.
+- `src/provider_companion_runtime.py` now owns each provider's sidebar state, teaching workflow, preview adapter, deferred-write submission, retry, post-apply refresh, and post-write invalidation lifecycle.
+- `GmailCompanionApp` resolves a provider runtime once and executes the shared flow without repeating Gmail-versus-Proton branches at each step.
+- Provider registration is data-driven with Gmail as the explicit fallback, so another provider can be added without editing the shared teaching lifecycle.
+
 ## Verification
 
 - Full repository test suite passes.
@@ -23,6 +31,7 @@ GitHub parent: `#96`
 - Python compilation checks pass for the changed provider and companion modules.
 - Desktop and narrow-viewport synthetic browser checks pass without horizontal overflow or unusable controls.
 - Tests prove full Proton message context reaches forced LLM review and rapid accepts are applied in order on both providers.
+- Focused provider-runtime and companion regressions pass (`146` tests), including Proton's required snapshot-before-background-write ordering.
 
 ## Remaining Acceptance
 

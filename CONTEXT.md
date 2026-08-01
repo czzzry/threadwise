@@ -57,7 +57,7 @@ The current branch state includes the completed async Gmail companion extension 
 - compact recent-activity and retry visibility
 - a founder-facing teaching pack for this async architecture
 
-The current architecture checkpoint on `codex/runtime-a042b03` also completes a behavior-preserving refactor of the companion application. Rendering, teaching, Gmail teaching writes, and cached runtime state now live in deep modules with narrow interfaces. See `docs/handoff/2026-07-20-architecture-refactor-closeout.md`.
+The current architecture checkpoint is documented in `docs/handoff/2026-08-01-universal-threadwise-provider-parity.md`. Rendering and browser behavior are shared, provider page access sits behind browser adapters, ordered writes use one queue implementation, and backend teaching plus companion lifecycle behavior now sits behind a provider runtime registry. The earlier module-extraction history remains in `docs/handoff/2026-07-20-architecture-refactor-closeout.md`.
 
 ## Current Source Of Truth
 
@@ -78,7 +78,7 @@ For the just-completed async extension work, use:
 
 For the founder-approved bounded Proton review-console experiment, use `docs/issues/138-add-proton-bridge-review-console.md`. It is the authority for the narrow label-only Proton write boundary.
 
-For the current implementation architecture, use `docs/handoff/2026-07-20-architecture-refactor-closeout.md` and the linked bounded handoffs.
+For the current implementation architecture, use `docs/handoff/2026-08-01-universal-threadwise-provider-parity.md`. Use `docs/handoff/2026-07-20-architecture-refactor-closeout.md` only for the earlier module-extraction history.
 
 For repo workflow and guardrails, use `AGENTS.md`.
 

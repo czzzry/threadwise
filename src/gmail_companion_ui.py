@@ -59,6 +59,12 @@ from src.companion_teaching_workflow import CompanionTeachingWorkflow
 from src.companion_runtime_state import CompanionRuntimeState
 from src.gmail_teaching_adapter import GmailTeachingAdapter, INBOX_BACKFILL_ESTIMATE_CAP
 from src.proton_teaching_adapter import ProtonTeachingAdapter
+from src.provider_companion_runtime import (
+    CompanionProviderRuntimes,
+    GmailCompanionSurface,
+    ProtonCompanionSurface,
+    ProviderCompanionRuntime,
+)
 
 
 DEFAULT_STORAGE_DIR = Path("data/gmail_fetch")
@@ -214,21 +220,37 @@ class GmailCompanionApp:
             analytics_status=self._analytics.delivery_status,
             live_inbox_ids_loader=self._load_live_inbox_message_ids,
         )
-        self._gmail_teaching_adapter = GmailTeachingAdapter(
+        gmail_teaching_adapter = GmailTeachingAdapter(
             storage_dir,
             credentials_dir=credentials_dir,
             client_secret_path=client_secret_path,
             gmail_client_factory=self._gmail_client_factory,
             write_enabled=gmail_write_through_enabled,
         )
-        self._teaching_workflow = CompanionTeachingWorkflow(
+        gmail_teaching_workflow = CompanionTeachingWorkflow(
             storage_dir,
-            write_through=self._gmail_teaching_adapter.apply,
+            write_through=gmail_teaching_adapter.apply,
         )
-        self._proton_teaching_adapter = ProtonTeachingAdapter(self._proton_console)
-        self._proton_teaching_workflow = CompanionTeachingWorkflow(
+        proton_teaching_adapter = ProtonTeachingAdapter(self._proton_console)
+        proton_teaching_workflow = CompanionTeachingWorkflow(
             proton_storage_dir,
-            write_through=self._proton_teaching_adapter.apply,
+            write_through=proton_teaching_adapter.apply,
+        )
+        self._provider_runtimes = CompanionProviderRuntimes(
+            [
+                ProviderCompanionRuntime(
+                    provider="gmail",
+                    workflow=gmail_teaching_workflow,
+                    teaching_adapter=gmail_teaching_adapter,
+                    surface=GmailCompanionSurface(self._runtime_state),
+                ),
+                ProviderCompanionRuntime(
+                    provider="protonmail",
+                    workflow=proton_teaching_workflow,
+                    teaching_adapter=proton_teaching_adapter,
+                    surface=ProtonCompanionSurface(self._proton_console),
+                ),
+            ]
         )
 
     def handle_request(self, handler: BaseHTTPRequestHandler) -> None:
@@ -437,12 +459,7 @@ class GmailCompanionApp:
         if handler.command == "POST" and parsed.path == "/api/provider-write-retry":
             try:
                 payload = self._read_json_body(handler)
-                provider = self._provider_from_payload(payload)
-                activity = (
-                    self._proton_console().retry_companion_write()
-                    if provider == "protonmail"
-                    else self._runtime_state.retry_teaching_writes()
-                )
+                activity = self._provider_runtime_for_payload(payload).retry_write()
                 return self._write_json(handler, HTTPStatus.OK, {"activity": activity})
             except (KeyError, ValueError, HTTPException) as exc:
                 return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
@@ -862,14 +879,14 @@ class GmailCompanionApp:
 
 
     def sidebar_state(self, selected_context: dict | None) -> dict:
-        if (selected_context or {}).get("provider") == "protonmail":
-            return self._proton_console().companion_harness(selected_context)["sidebar_state"]
-        return self._runtime_state.sidebar(selected_context)
+        return self._provider_runtime_for_payload(
+            {"selected_context": selected_context or {}}
+        ).sidebar(selected_context)
 
     def harness_state(self, selected_context: dict | None) -> dict:
-        if (selected_context or {}).get("provider") == "protonmail":
-            return self._proton_console().companion_harness(selected_context)
-        return self._runtime_state.harness(selected_context)
+        return self._provider_runtime_for_payload(
+            {"selected_context": selected_context or {}}
+        ).harness(selected_context)
 
 
     def acknowledge_handled_review(self, payload: dict) -> dict:
@@ -917,22 +934,21 @@ class GmailCompanionApp:
         return preview
 
     def teach_preview_impact(self, payload: dict) -> dict:
-        workflow = self._teaching_workflow_for_payload(payload)
-        completed = workflow.finish_preview_impact(payload.get("preview"))
+        runtime = self._provider_runtime_for_payload(payload)
+        completed = runtime.finish_preview_impact(payload.get("preview"))
         completed = self._finish_teach_preview_impact(completed)
         completed["inbox_backfill"]["state"] = "ready"
         return completed
 
     def _build_teach_preview(self, payload: dict, *, include_existing_impact: bool = True) -> dict:
-        return self._teaching_workflow_for_payload(payload).build_preview(
+        return self._provider_runtime_for_payload(payload).build_preview(
             payload,
             include_existing_impact=include_existing_impact,
         )
 
     def _finish_teach_preview_impact(self, preview: dict) -> dict:
-        provider = self._provider_from_payload({"preview": preview})
-        adapter = self._proton_teaching_adapter if provider == "protonmail" else self._gmail_teaching_adapter
-        preview["inbox_backfill"] = adapter.preview_backfill(preview)
+        runtime = self._provider_runtime_for_payload({"preview": preview})
+        preview["inbox_backfill"] = runtime.preview_backfill(preview)
         remote_matches = list(preview["inbox_backfill"].get("matches") or [])
         existing_items = list(preview.get("impact", {}).get("matching_existing_items") or [])
         if preview["inbox_backfill"].get("available"):
@@ -971,8 +987,8 @@ class GmailCompanionApp:
             )
         defer_provider_write = bool(payload.get("defer_provider_write")) and payload.get("mode") != "save-future-rule"
         provider = self._provider_from_payload(payload)
-        workflow = self._teaching_workflow_for_provider(provider)
-        workflow_result = workflow.apply(
+        runtime = self._provider_runtime_for_payload(payload)
+        workflow_result = runtime.apply(
             payload,
             defer_provider_write=defer_provider_write,
         )
@@ -982,23 +998,19 @@ class GmailCompanionApp:
             complete_write = lambda: self._complete_deferred_teaching_write(
                 workflow_result.write_request,
                 distinct_id,
-                workflow,
+                runtime,
             )
-            if provider == "protonmail":
-                # Snapshot before the Bridge thread takes the console lock. The
-                # extension advances optimistically and learns completion from activity.
-                refreshed = self.sidebar_state(workflow_result.selected_context)
-                self._proton_console().start_companion_write(complete_write)
-            else:
-                self._runtime_state.start_teaching_write(complete_write)
+            refreshed = runtime.submit_deferred_write(
+                complete_write,
+                workflow_result.selected_context,
+            )
         else:
             self._capture_label_write_outcomes(
                 distinct_id,
                 workflow_result.response["mode"],
                 workflow_result.write_summary,
             )
-        if provider == "gmail":
-            self._runtime_state.start_teaching_refresh(workflow_result.selected_context)
+        runtime.after_apply(workflow_result.selected_context)
         self._capture_workflow_event(
             None,
             "teach/fix completed",
@@ -1009,36 +1021,23 @@ class GmailCompanionApp:
             },
             distinct_id=analytics_distinct_id,
         )
-        refreshed = refreshed or self.sidebar_state(workflow_result.selected_context)
+        refreshed = refreshed or runtime.sidebar(workflow_result.selected_context)
         return {
             **workflow_result.response,
             "sidebar_state": refreshed,
         }
 
-    def _complete_deferred_teaching_write(self, request, distinct_id: str, workflow=None) -> dict:
-        workflow = workflow or self._teaching_workflow
-        summary = workflow.complete_deferred_write(request)
+    def _complete_deferred_teaching_write(self, request, distinct_id: str, runtime) -> dict:
+        summary = runtime.complete_deferred_write(request)
         self._capture_label_write_outcomes(distinct_id, request.mode, summary)
-        if request.provider == "gmail":
-            self._runtime_state.invalidate()
+        runtime.after_write()
         return summary
 
     def _provider_from_payload(self, payload: dict) -> str:
-        selected_context = payload.get("selected_context") or {}
-        preview = payload.get("preview") or {}
-        proposal = preview.get("proposal") or {}
-        return str(
-            selected_context.get("provider")
-            or proposal.get("provider")
-            or preview.get("provider")
-            or "gmail"
-        )
+        return self._provider_runtime_for_payload(payload).provider
 
-    def _teaching_workflow_for_provider(self, provider: str):
-        return self._proton_teaching_workflow if provider == "protonmail" else self._teaching_workflow
-
-    def _teaching_workflow_for_payload(self, payload: dict):
-        return self._teaching_workflow_for_provider(self._provider_from_payload(payload))
+    def _provider_runtime_for_payload(self, payload: dict) -> ProviderCompanionRuntime:
+        return self._provider_runtimes.for_payload(payload)
 
     def safety_preview(self, payload: dict) -> dict:
         selected = self._selected_gmail_message_for_safety(payload)
@@ -1133,14 +1132,14 @@ class GmailCompanionApp:
     def teach_exclude(self, payload: dict) -> dict:
         selected_context = payload.get("selected_context") or {}
         return {
-            **self._teaching_workflow_for_payload(payload).exclude_match(payload),
+            **self._provider_runtime_for_payload(payload).exclude_match(payload),
             "sidebar_state": self.sidebar_state(selected_context),
         }
 
     def teach_amendment(self, payload: dict) -> dict:
         selected_context = payload.get("selected_context") or {}
         return {
-            **self._teaching_workflow_for_payload(payload).decide_amendment(payload),
+            **self._provider_runtime_for_payload(payload).decide_amendment(payload),
             "sidebar_state": self.sidebar_state(selected_context),
         }
 
