@@ -29,9 +29,14 @@ def sync_proton_review_ledger(storage_dir: Path, batch_id: str) -> dict:
         if not message_id or records.get(message_id, {}).get("status") == "applied":
             continue
         internal_labels = [str(label) for label in item.get("applied_labels") or [] if str(label)]
+        provider_write_state = str(item.get("provider_write_state") or "")
         records[message_id] = {
-            "status": "suggested",
+            "status": "provider-confirmed" if provider_write_state == "applied" else "suggested",
             "batch_id": batch_id,
+            "account_id": str(batch.get("account_id") or ""),
+            "sender": str(item.get("sender") or ""),
+            "subject": str(item.get("subject") or ""),
+            "date": str(item.get("date") or ""),
             "internal_labels": internal_labels,
             "labels": [gmail_label_name(label) for label in internal_labels],
             "internal_label": internal_labels[0] if internal_labels else "",
@@ -42,6 +47,7 @@ def sync_proton_review_ledger(storage_dir: Path, batch_id: str) -> dict:
         projected += 1
 
     ledger["provider"] = "protonmail"
+    ledger["account_id"] = str(batch.get("account_id") or ledger.get("account_id") or "")
     ledger["updated_at"] = datetime.now(UTC).isoformat().replace("+00:00", "Z")
     write_json(ledger_path, ledger)
     return {"ledger_path": str(ledger_path), "projected_count": projected}
@@ -63,11 +69,162 @@ class ProtonReviewConsole:
         self._review_state_path = review_state_path
         self._max_results = max_results
         self._lock = threading.Lock()
+        self._activity_lock = threading.Lock()
+        self._provider_write_activity: dict | None = None
+        self._pending_provider_writes: list = []
+        self._failed_provider_writes: list = []
+        self._provider_write_worker_running = False
         migrate_review_feedback(self._classification_ledger_path.parent, self._review_state_path)
 
     def state(self) -> dict:
         with self._lock:
             return self._state_unlocked()
+
+    def companion_harness(self, selected_context: dict | None = None) -> dict:
+        """Project the Proton queue into the shared companion sidebar contract."""
+        selected_context = {
+            **(selected_context or {}),
+            "provider": "protonmail",
+        }
+        with self._lock:
+            state = self._state_unlocked()
+            selected_email = self._companion_selected_email_unlocked(state, selected_context)
+
+        review_items = list(state.get("items") or [])
+        completed_count = int(state.get("completed_count") or 0)
+        daily_summary = {
+            "provider": "protonmail",
+            "account_id": state.get("account_id") or "",
+            "processed_count": int(state.get("remaining_count") or 0) + completed_count,
+            "needs_attention_count": int(state.get("remaining_count") or 0),
+            "unlabeled_count": int(state.get("remaining_count") or 0),
+            "auto_handled_count": completed_count,
+            "kept_visible_count": completed_count,
+            "recent_items": review_items,
+            "needs_attention_items": review_items,
+            "auto_handled_items": [],
+            "kept_visible_items": [],
+            "run_count": 1 if review_items or completed_count else 0,
+            "source_label": "live Proton Mail inbox",
+        }
+        provider_write = self._companion_provider_write_activity()
+        activity_feed = [provider_write] if provider_write else []
+        sidebar_state = {
+            "contract_version": "threadwise-sidebar-v2",
+            "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            "selected_context": selected_context,
+            "selected_email": selected_email,
+            "daily_summary": daily_summary,
+            "run_status": {},
+            "ui_state": {
+                "default_mode": "minimized",
+                "can_minimize": True,
+                "panel_title": "Threadwise",
+                "provider": "protonmail",
+                "provider_name": "Proton Mail",
+                "allowed_labels": [
+                    {"id": label, "name": gmail_label_name(label)}
+                    for label in CANONICAL_LABEL_ORDER
+                ],
+                "async_follow_up": None,
+                "provider_write": provider_write,
+                "activity_feed": activity_feed,
+            },
+        }
+        return {
+            "selected_context": selected_context,
+            "sidebar_state": sidebar_state,
+            "recent_items": review_items[:24],
+            "needs_attention_items": review_items[:12],
+            "auto_handled_items": [],
+            "kept_visible_items": [],
+            "analytics_status": {"state": "active"},
+        }
+
+    def start_companion_write(self, work) -> None:
+        with self._activity_lock:
+            self._pending_provider_writes.append(work)
+            pending_count = len(self._pending_provider_writes)
+            self._provider_write_activity = {
+                "id": "proton-teaching-write",
+                "kind": "provider-write",
+                "state": "working",
+                "label": "Proton Mail writes running",
+                "message": f"Threadwise is applying {pending_count} accepted Proton Mail change{'s' if pending_count != 1 else ''} in order.",
+                "provider": "protonmail",
+            }
+            if self._provider_write_worker_running:
+                return
+            self._provider_write_worker_running = True
+        threading.Thread(target=self._run_companion_write_queue, daemon=True).start()
+
+    def _companion_provider_write_activity(self) -> dict | None:
+        with self._activity_lock:
+            return dict(self._provider_write_activity) if self._provider_write_activity else None
+
+    def companion_write_activity(self) -> dict | None:
+        return self._companion_provider_write_activity()
+
+    def retry_companion_write(self) -> dict:
+        with self._activity_lock:
+            if self._provider_write_worker_running:
+                raise ValueError("Proton Mail writes are still running.")
+            if not self._failed_provider_writes:
+                raise ValueError("There are no failed Proton Mail writes to retry.")
+            self._pending_provider_writes.extend(self._failed_provider_writes)
+            self._failed_provider_writes.clear()
+            self._provider_write_worker_running = True
+            self._provider_write_activity = {
+                "id": "proton-teaching-write",
+                "kind": "provider-write",
+                "state": "working",
+                "label": "Retrying Proton Mail writes",
+                "message": "Threadwise is retrying the failed Proton Mail changes in order.",
+                "provider": "protonmail",
+            }
+        threading.Thread(target=self._run_companion_write_queue, daemon=True).start()
+        return self.companion_write_activity() or {}
+
+    def _run_companion_write_queue(self) -> None:
+        completed = 0
+        while True:
+            with self._activity_lock:
+                if not self._pending_provider_writes:
+                    self._provider_write_worker_running = False
+                    failed_count = len(self._failed_provider_writes)
+                    self._provider_write_activity = {
+                        "id": "proton-teaching-write",
+                        "kind": "provider-write",
+                        "state": "error" if failed_count else "done",
+                        "label": "Proton Mail writes need attention" if failed_count else "Proton Mail labels applied",
+                        "message": (
+                            f"{failed_count} accepted Proton Mail change{'s' if failed_count != 1 else ''} could not be confirmed."
+                            if failed_count
+                            else f"{completed} accepted Proton Mail change{'s' if completed != 1 else ''} confirmed."
+                        ),
+                        "provider": "protonmail",
+                        **({"action": "retry-provider-write", "action_label": "Try again"} if failed_count else {}),
+                    }
+                    return
+                work = self._pending_provider_writes.pop(0)
+            failed = False
+            try:
+                summary = work() or {}
+                failed = bool(int(summary.get("label_write_failed") or 0))
+            except Exception:
+                failed = True
+            with self._activity_lock:
+                if failed:
+                    self._failed_provider_writes.append(work)
+                else:
+                    completed += 1
+
+    def live_message_ids(self) -> set[str]:
+        return set(self._proton.list_messages(self._max_results))
+
+    def _set_companion_provider_write_activity(self, payload: dict | None) -> None:
+        with self._activity_lock:
+            self._provider_write_activity = dict(payload) if payload else None
 
     def acknowledge(self, message_id: str, note: str = "") -> dict:
         with self._lock:
@@ -156,6 +313,44 @@ class ProtonReviewConsole:
                 )
             return self._state_unlocked()
 
+    def apply_companion_label(self, message_id: str, internal_label: str) -> dict:
+        """Apply one shared-companion decision without requiring queue position."""
+        if internal_label not in CANONICAL_LABEL_ORDER:
+            raise ValueError("Choose one of Threadwise's allowed labels.")
+        with self._lock:
+            classification = load_json_or_default(
+                self._classification_ledger_path,
+                {"provider": "protonmail", "messages": {}},
+            )
+            record = (classification.get("messages") or {}).get(message_id)
+            if not isinstance(record, dict):
+                raise ValueError("That Proton Mail message is not in the current Threadwise sync.")
+            if message_id not in set(self._proton.list_messages(self._max_results)):
+                raise ValueError("That Proton Mail message is no longer in Inbox.")
+            message = self._proton.get_message(message_id)
+            label_name = gmail_label_name(internal_label)
+            write_result = self._proton.apply_label(message_id, label_name)
+            if not write_result.get("inbox_preserved") or write_result.get("destructive_actions"):
+                raise RuntimeError("Proton label write violated the label-only safety contract.")
+            rfc_message_id = str(message.get("rfc_message_id") or "").strip()
+            if not rfc_message_id or not self._proton.message_has_label(rfc_message_id, label_name):
+                raise RuntimeError("Proton did not confirm the label after the write.")
+            self._record_decision_unlocked(
+                message_id,
+                decision="companion-label-applied",
+                provider_verified=True,
+                internal_label=internal_label,
+                label=label_name,
+                provider_mailbox=str(write_result.get("mailbox") or ""),
+            )
+            return {
+                "message_id": message_id,
+                "label": label_name,
+                "inbox_preserved": True,
+                "destructive_actions": [],
+                "provider_verified": True,
+            }
+
     def _state_unlocked(self) -> dict:
         classification = load_json_or_default(
             self._classification_ledger_path,
@@ -181,6 +376,10 @@ class ProtonReviewConsole:
             candidates.append((confidence, message_id, record))
         candidates.sort(key=lambda item: (item[0], item[1]))
 
+        review_items = [
+            self._companion_review_item_unlocked(message_id, record)
+            for _, message_id, record in candidates[:24]
+        ]
         current = None
         if candidates:
             confidence, message_id, record = candidates[0]
@@ -202,11 +401,13 @@ class ProtonReviewConsole:
             }
         return {
             "provider": "protonmail",
+            "account_id": str(classification.get("account_id") or ""),
             "queue_name": "Proton inbox review",
             "remaining_count": len(candidates),
             "reviewed_count": len(reviewed),
             "completed_count": len(completed_ids & live_ids),
             "current": current,
+            "items": review_items,
             "allowed_labels": [
                 {"internal_label": label, "display_label": gmail_label_name(label)}
                 for label in CANONICAL_LABEL_ORDER
@@ -216,6 +417,128 @@ class ProtonReviewConsole:
                 "inbox_preserved": True,
                 "destructive_actions": [],
             },
+        }
+
+    def _companion_review_item_unlocked(self, message_id: str, record: dict) -> dict:
+        sender = str(record.get("sender") or "")
+        subject = str(record.get("subject") or "")
+        received_at = str(record.get("date") or "")
+        if not sender or not subject:
+            message = self._proton.get_message(message_id)
+            sender = sender or str(message.get("sender") or "")
+            subject = subject or str(message.get("subject") or "")
+            received_at = received_at or str(message.get("date") or "")
+        internal_labels = list(
+            record.get("internal_labels")
+            or ([record.get("internal_label")] if record.get("internal_label") else [])
+        )
+        labels = list(
+            record.get("labels")
+            or ([record.get("label")] if record.get("label") else [])
+        )
+        return {
+            "provider": "protonmail",
+            "account_id": str(record.get("account_id") or ""),
+            "batch_id": str(record.get("batch_id") or ""),
+            "message_id": message_id,
+            "subject": subject,
+            "sender": sender,
+            "received_at": received_at,
+            "internal_label": internal_labels[0] if internal_labels else None,
+            "all_labels": internal_labels,
+            "suggested_label": internal_labels[0] if internal_labels else None,
+            "classification": labels[0] if labels else "Uncategorized",
+            "all_classifications": labels,
+            "status": "needs-attention",
+            "status_label": "Needs attention",
+            "action_reason": "Choose or confirm label",
+            "reason": str(record.get("reason") or "No label suggestion was stored."),
+            "unsubscribe_available": False,
+        }
+
+    def _companion_selected_email_unlocked(self, state: dict, selected_context: dict) -> dict:
+        has_context = bool(
+            selected_context.get("message_id")
+            or selected_context.get("subject")
+            or selected_context.get("sender")
+        )
+        if not has_context:
+            return {
+                "found": False,
+                "provider": "protonmail",
+                "status": "idle",
+                "status_label": "Waiting for message selection",
+                "subject": "",
+                "sender": "",
+                "understanding_state": "idle",
+                "understanding_label": "Idle",
+                "understanding_message": "Open an email to inspect or teach Threadwise.",
+            }
+
+        selected_id = str(selected_context.get("message_id") or "")
+        selected_sender = str(selected_context.get("sender") or "").strip().casefold()
+        selected_subject = str(selected_context.get("subject") or "").strip().casefold()
+        classification = load_json_or_default(
+            self._classification_ledger_path,
+            {"provider": "protonmail", "messages": {}},
+        )
+        records = classification.get("messages") or {}
+        live_ids = set(self._proton.list_messages(self._max_results))
+        matching_ids: list[str] = []
+        if selected_id and selected_id in records and selected_id in live_ids:
+            matching_ids = [selected_id]
+        elif not selected_id and selected_sender and selected_subject:
+            matching_ids = [
+                message_id
+                for message_id, record in records.items()
+                if message_id in live_ids
+                and str(record.get("sender") or "").strip().casefold() == selected_sender
+                and str(record.get("subject") or "").strip().casefold() == selected_subject
+            ]
+        item = None
+        if len(matching_ids) == 1:
+            message_id = matching_ids[0]
+            item = self._companion_review_item_unlocked(message_id, records[message_id])
+            review_state = load_json_or_default(
+                self._review_state_path,
+                {"provider": "protonmail", "messages": {}},
+            )
+            provider_status = str(records[message_id].get("status") or "").lower()
+            if message_id in (review_state.get("messages") or {}) or provider_status in {
+                "applied", "provider-confirmed", "completed",
+            }:
+                item.update({
+                    "status": "auto-handled",
+                    "status_label": "Already handled",
+                    "action_reason": "Provider label confirmed",
+                })
+        if item is None:
+            ambiguous = len(matching_ids) > 1
+            return {
+                "found": False,
+                "provider": "protonmail",
+                "status": "not-in-snapshot",
+                "status_label": "Not in Threadwise yet",
+                "reason": (
+                    "More than one synced Proton Mail message has this sender and subject, so Threadwise will not guess."
+                    if ambiguous
+                    else "This Proton Mail message is not in the current Threadwise sync yet."
+                ),
+                "subject": str(selected_context.get("subject") or ""),
+                "sender": str(selected_context.get("sender") or ""),
+                "understanding_state": "ready",
+                "understanding_label": "Ready",
+                "understanding_message": "Threadwise is ready with the current email.",
+            }
+        return {
+            **item,
+            "found": True,
+            "reason": item.get("reason") or "No label suggestion was stored.",
+            "details": {"write_status": None, "inbox_status": "preserved"},
+            "unsubscribe": None,
+            "understanding_state": "ready",
+            "understanding_label": "Ready",
+            "understanding_message": "Threadwise is ready with the current email.",
         }
 
     def _require_pending_unlocked(self, message_id: str) -> dict:

@@ -1,6 +1,6 @@
 (() => {
   const WORKFLOW_VERSION = "gmail-companion-v1";
-  const COMMON_KEYS = ["app_version", "workflow_version", "source"];
+  const COMMON_KEYS = ["app_version", "workflow_version", "source", "provider"];
   const EVENT_KEYS = Object.freeze({
     "extension opened": ["surface"],
     "review queue opened": ["queue_size_bucket"],
@@ -35,6 +35,7 @@
         app_version: chrome.runtime.getManifest().version,
         workflow_version: WORKFLOW_VERSION,
         source: "extension",
+        provider: globalThis.location?.hostname === "mail.proton.me" ? "protonmail" : "gmail",
         ...eventProperties,
       };
       const expectedKeys = new Set([...COMMON_KEYS, ...eventKeys]);

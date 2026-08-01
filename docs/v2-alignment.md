@@ -1,13 +1,25 @@
 # V2 Alignment
 
 Status: Current product-direction alignment
-Current as of: 2026-07-16
+Current as of: 2026-08-01
 Builds on: `docs/archive/alignment-v1-gmail-mvp.md` and `docs/archive/prd-v1-gmail-mvp.md` as historical Gmail V1 artifacts
 Completed bounded milestone: `docs/archive/prd-memory-runtime-milestone-completed-2026-06-29.md`
 Current bounded PRD: `docs/prd.md` for MVP+2 Gmail daily usefulness
 Implementation checkpoint: `docs/checkpoints/current-operating-model-2026-06-22.md`
 
 Threadwise is the public-facing project name for this repo.
+
+## August 2026 provider-parity decision
+
+The founder has approved a universal Threadwise side panel with one shared in-panel review experience as the next product direction.
+
+Threadwise must present one user experience across Gmail and ProtonMail. It should automatically appear in a minimized state on both providers and expand only when the founder opens it. The existing Gmail interaction model is the initial parity baseline, while shared improvements may change both providers together.
+
+The Gmail companion and Proton review console must not continue as independently designed product surfaces. The existing Gmail in-panel review workflow is the initial behavioral baseline. Gmail and Proton should share one rendering implementation, interaction state machine, teaching flow, activity model, and provider-neutral review workflow. Provider-specific adapters may vary only where mailbox context, message retrieval, matching, writes, verification, or provider navigation genuinely differ.
+
+Gmail and Proton remain separate inboxes with provider-scoped queues, rules, receipts, reconciliation, and reporting. Identical interaction does not imply a merged inbox or automatic cross-provider learning.
+
+The bounded product contract is recorded in `docs/prd-universal-threadwise-experience-2026-08-01.md`.
 
 ## Mature product direction
 
@@ -149,7 +161,7 @@ Still out of scope for default autonomy:
 - trashing mail
 - archiving mail broadly
 - unsubscribing from lists without explicit user selection or confirmation
-- ProtonMail label replacement, moving, archiving, Trash, Spam, sending, or provider-side filter/rule management; the approved Proton trial may only add and read back one `EA/` label while preserving Inbox
+- ProtonMail label replacement, moving, archiving, Trash, Spam, sending, or provider-side filter/rule management. Daily Proton runs may add and read back suggested `EA/` labels only for medium/high-confidence classifications while preserving Inbox; low-confidence, unlabeled, and failed-verification items require review.
 
 ## Teaching Loop Rules
 

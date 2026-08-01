@@ -1,14 +1,15 @@
 {
   "manifest_version": 3,
-  "name": "Email Agent Gmail Companion",
-  "version": "0.2.0",
-  "description": "Shows the Email Agent companion sidebar inside Gmail using the local companion server.",
+  "name": "Threadwise Companion",
+  "version": "0.3.0",
+  "description": "Shows the same Threadwise companion inside Gmail and Proton Mail.",
   "permissions": [
     "tabs",
     "storage"
   ],
   "host_permissions": [
     "https://mail.google.com/*",
+    "https://mail.proton.me/*",
     "http://127.0.0.1:8021/*"
   ],
   "background": {
@@ -17,7 +18,8 @@
   "content_scripts": [
     {
       "matches": [
-        "https://mail.google.com/*"
+        "https://mail.google.com/*",
+        "https://mail.proton.me/*"
       ],
       "js": [
         "analytics.js",
@@ -32,11 +34,12 @@
         "assets/brand/threadwise-app-icon.png"
       ],
       "matches": [
-        "https://mail.google.com/*"
+        "https://mail.google.com/*",
+        "https://mail.proton.me/*"
       ]
     }
   ],
   "action": {
-    "default_title": "Email Agent Gmail Companion"
+    "default_title": "Threadwise Companion"
   }
 }

@@ -1,7 +1,7 @@
 # CONTEXT.md
 
 Status: Current repo context
-Current as of: 2026-07-21
+Current as of: 2026-08-01
 
 This file is the short "you are here" guide for the repo.
 
@@ -33,6 +33,10 @@ Do not infer approval from `docs/v2-issue-map.md`, archived PRDs, or old handoff
 
 ## Current Stage
 
+The universal Threadwise experience in `docs/prd-universal-threadwise-experience-2026-08-01.md` is implemented behind one minimized-by-default browser side panel for Gmail and ProtonMail. The two inboxes remain provider-scoped, while review, teaching, scope selection, optimistic advancement, background writes, retry, and activity use one implementation.
+
+Automated and synthetic-browser acceptance is complete. One live Proton selected-message acceptance check remains before the old `/proton-review` fallback is removed; live-provider writes remain separately approval-gated.
+
 Threadwise is past basic MVP proof.
 
 The repo already proves:
@@ -56,6 +60,12 @@ The current branch state includes the completed async Gmail companion extension 
 The current architecture checkpoint on `codex/runtime-a042b03` also completes a behavior-preserving refactor of the companion application. Rendering, teaching, Gmail teaching writes, and cached runtime state now live in deep modules with narrow interfaces. See `docs/handoff/2026-07-20-architecture-refactor-closeout.md`.
 
 ## Current Source Of Truth
+
+For the next provider-parity milestone, use:
+
+1. `docs/prd-universal-threadwise-experience-2026-08-01.md`
+2. `docs/v2-alignment.md`
+3. the implementation issues created from that PRD after bounded slicing
 
 For the just-completed async extension work, use:
 
@@ -99,7 +109,7 @@ Use this order:
 ## Current Trust Boundaries
 
 - Gmail mutation must stay bounded and auditable
-- ProtonMail mutation is limited to the founder-approved review-console slice: add one `EA/` label, verify it through Bridge, and preserve Inbox; no label replacement, move, archive, Trash, Spam, send, or provider rule changes
+- ProtonMail daily runs add suggested `EA/` labels only for medium/high-confidence classifications, verify each through Bridge, and preserve Inbox; low-confidence, unlabeled, and failed-verification items remain in the review console. No label replacement, move, archive, Trash, Spam, send, or provider rule changes are allowed.
 - unsubscribe execution must remain explicit and reviewable
 - broad autonomous inbox actions remain out of scope by default
 - private email, credentials, OAuth, and live inbox data remain sensitive

@@ -6,18 +6,31 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from src.live_protonmail_daily_run_cli import main
+from src.live_protonmail_daily_run_cli import _auto_apply_confident_labels, main
 
 
 class FakeDailyRunProtonMailClient:
     def __init__(self, messages: list[dict]) -> None:
         self._messages = {message["id"]: message for message in messages}
+        self.label_calls: list[tuple[str, str]] = []
 
     def list_messages(self, max_results: int) -> list[str]:
         return list(self._messages)[:max_results]
 
     def get_message(self, message_id: str) -> dict:
         return self._messages[message_id]
+
+    def apply_label(self, message_id: str, label_name: str) -> dict:
+        self.label_calls.append((message_id, label_name))
+        return {
+            "message_id": message_id,
+            "label": label_name,
+            "inbox_preserved": True,
+            "destructive_actions": [],
+        }
+
+    def message_has_label(self, rfc_message_id: str, label_name: str) -> bool:
+        return bool(rfc_message_id and label_name)
 
 
 class LiveProtonMailDailyRunCliTests(unittest.TestCase):
@@ -55,12 +68,37 @@ class LiveProtonMailDailyRunCliTests(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             self.assertIn("No new messages found.", stdout.getvalue())
 
-    def test_main_fetches_classifies_and_writes_daily_report_without_provider_writes(self) -> None:
+    def test_auto_apply_leaves_low_confidence_and_unlabeled_messages_for_review(self) -> None:
+        client = FakeDailyRunProtonMailClient([])
+        batch = {
+            "raw_messages": [
+                {"id": "high", "rfc_message_id": "<high@example.com>"},
+                {"id": "low", "rfc_message_id": "<low@example.com>"},
+                {"id": "unlabeled", "rfc_message_id": "<unlabeled@example.com>"},
+            ],
+            "items": [
+                {"message_id": "high", "confidence_band": "high", "applied_labels": ["personal"]},
+                {"message_id": "low", "confidence_band": "low", "applied_labels": ["personal"]},
+                {"message_id": "unlabeled", "confidence_band": "low", "applied_labels": []},
+            ],
+        }
+
+        applied_count, failure_count = _auto_apply_confident_labels(client, batch)
+
+        self.assertEqual((applied_count, failure_count), (1, 0))
+        self.assertEqual(client.label_calls, [("high", "EA/Personal")])
+        self.assertEqual(
+            [item["provider_write_state"] for item in batch["items"]],
+            ["applied", "not-attempted", "not-attempted"],
+        )
+
+    def test_main_auto_applies_confident_labels_and_writes_daily_report(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             stdout = io.StringIO()
             messages = [
                 {
                     "id": "pm-live-001",
+                    "rfc_message_id": "<pm-live-001@example.com>",
                     "sender": "Healthy Planet <newsletters@mail.healthyplanetcanada.com>",
                     "subject": "Father's Day Sale starts now",
                     "date": "2026-04-29T23:06:47Z",
@@ -71,6 +109,7 @@ class LiveProtonMailDailyRunCliTests(unittest.TestCase):
                 },
                 {
                     "id": "pm-live-002",
+                    "rfc_message_id": "<pm-live-002@example.com>",
                     "sender": "\"Amazon.de\" <versandbestaetigung@amazon.de>",
                     "subject": "Dispatched: 'GEWAGE CO2 Bicycle Pump -...'",
                     "date": "2026-04-29T23:06:48Z",
@@ -80,6 +119,7 @@ class LiveProtonMailDailyRunCliTests(unittest.TestCase):
                 },
                 {
                     "id": "pm-live-003",
+                    "rfc_message_id": "<pm-live-003@example.com>",
                     "sender": "upGrad KnowledgeHut <mailer@certs.knowledgehut.com>",
                     "subject": "A reserved seat is available in your name",
                     "date": "2026-04-29T23:06:50Z",
@@ -89,6 +129,7 @@ class LiveProtonMailDailyRunCliTests(unittest.TestCase):
                 },
             ]
 
+            client = FakeDailyRunProtonMailClient(messages)
             exit_code = main(
                 [
                     "--account-id",
@@ -99,7 +140,7 @@ class LiveProtonMailDailyRunCliTests(unittest.TestCase):
                     temp_dir,
                 ],
                 stdout=stdout,
-                protonmail_client_factory=lambda account_id, credentials_dir, bridge_config_path: FakeDailyRunProtonMailClient(messages),
+                protonmail_client_factory=lambda account_id, credentials_dir, bridge_config_path: client,
             )
 
             batch_path = Path(temp_dir) / "batches" / "founder-proton-batch-1.json"
@@ -112,13 +153,15 @@ class LiveProtonMailDailyRunCliTests(unittest.TestCase):
             self.assertEqual(len(stored_batch["items"]), 3)
             self.assertIn("Batch: founder-proton-batch-1", rendered)
             self.assertIn("Fetched: 3", rendered)
-            self.assertIn("Provider label writes: 0 (review decisions are still required)", rendered)
+            self.assertIn("Provider label writes: 3 (Inbox preserved and verified)", rendered)
             self.assertIn("INBOX removals: 0", rendered)
             self.assertIn("Suggested labels ready for review: 3", rendered)
             self.assertIn("Needs a label decision: 0", rendered)
+            self.assertIn("Provider write verification failures for review: 0", rendered)
+            self.assertIn("Open Threadwise in Proton Mail: https://mail.proton.me/", rendered)
             self.assertEqual(report["provider"], "protonmail")
             self.assertEqual(report["processed_count"], 3)
-            self.assertEqual(report["auto_applied_count"], 0)
+            self.assertEqual(report["auto_applied_count"], 3)
             self.assertEqual(report["inbox_removed_count"], 0)
             self.assertEqual(report["classified_count"], 3)
             self.assertEqual(
@@ -135,6 +178,15 @@ class LiveProtonMailDailyRunCliTests(unittest.TestCase):
             ledger = json.loads(ledger_path.read_text())
             self.assertEqual(set(ledger["messages"]), {"pm-live-001", "pm-live-002", "pm-live-003"})
             self.assertEqual(ledger["messages"]["pm-live-002"]["labels"], ["EA/Orders"])
+            self.assertCountEqual(
+                client.label_calls,
+                [
+                    ("pm-live-001", "EA/LowValue"),
+                    ("pm-live-002", "EA/Orders"),
+                    ("pm-live-003", "EA/LowValue"),
+                ],
+            )
+            self.assertEqual(ledger["messages"]["pm-live-001"]["status"], "provider-confirmed")
 
 
 if __name__ == "__main__":

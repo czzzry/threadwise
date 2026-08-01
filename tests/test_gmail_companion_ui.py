@@ -845,9 +845,11 @@ class GmailCompanionUiTests(unittest.TestCase):
                 "page_url": "https://mail.google.com",
                 "selected_at": "2026-06-30T10:00:00Z",
                 "gmail_labels": "EA/Finance",
+                "provider_labels": "",
+                "provider_ref": "",
             },
         )
-        self.assertEqual(selected_email_contract()["contract_version"], "gmail-companion-selected-email-v1")
+        self.assertEqual(selected_email_contract()["contract_version"], "threadwise-selected-email-v2")
 
     def test_companion_state_module_preserves_selected_email_status_rules(self) -> None:
         self.assertEqual(
@@ -1073,7 +1075,7 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn('selected.status === "write-unconfirmed"', content_js)
         self.assertIn('data-ea-action="accept-suggestion"', content_js)
         self.assertIn("Apply ${escapeHtml(label)}", content_js)
-        self.assertIn("Finish Gmail update", content_js)
+        self.assertIn("Finish ${escapeHtml(activeProviderName())} update", content_js)
         self.assertIn('["needs-attention", "write-unconfirmed"].includes(selected?.status)', content_js)
 
     def test_extension_keeps_refreshing_until_selected_email_is_ready(self) -> None:
@@ -1099,7 +1101,15 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("/api/analytics/capture", background_js)
         self.assertIn("X-PostHog-Distinct-Id", background_js)
         self.assertIn("storage", manifest["permissions"])
+        self.assertIn("https://mail.google.com/*", manifest["host_permissions"])
+        self.assertIn("https://mail.proton.me/*", manifest["host_permissions"])
+        self.assertIn("https://mail.proton.me/*", manifest["content_scripts"][0]["matches"])
         self.assertEqual(manifest["content_scripts"][0]["js"][0], "analytics.js")
+        self.assertIn("function currentProvider", content_js)
+        self.assertIn("function protonSelectedContext", content_js)
+        self.assertIn("provider_labels: context.provider_labels || \"\"", content_js)
+        self.assertIn("provider_ref: context.provider_ref || \"\"", content_js)
+        self.assertIn('let minimized = true;', content_js)
         self.assertIn("data-ea-summary-filter", content_js)
         self.assertIn('previousPayload = "";', content_js)
         self.assertIn("refreshInFlight", content_js)
@@ -1112,7 +1122,7 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("What should Threadwise do better here?", content_js)
         self.assertIn("ea-selected-email-secondary", content_js)
         self.assertIn("Open an email to inspect or teach Threadwise.", content_js)
-        self.assertIn("Gmail label", content_js)
+        self.assertIn("`${activeProviderName()} label`", content_js)
         self.assertIn("Human meaning", content_js)
         self.assertIn("Likely why", content_js)
         self.assertIn("likelyReasonForSelected", content_js)
@@ -1139,7 +1149,7 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("Review next", content_js)
         self.assertNotIn("Review queue needs a refresh", content_js)
         self.assertIn("No emails need review", content_js)
-        self.assertIn("Gmail sync completed. Threadwise handled everything automatically.", content_js)
+        self.assertIn("${activeProviderName()} sync completed. Threadwise handled everything automatically.", content_js)
         self.assertIn("function noteExplicitlyAssignsLabel", content_js)
         self.assertIn("function defaultManualRuleNote", content_js)
         self.assertIn("teachDraft.note = defaultManualRuleNote()", content_js)
@@ -1193,12 +1203,12 @@ class GmailCompanionUiTests(unittest.TestCase):
 
         self.assertIn("data-ea-summary-item", content_js)
         self.assertIn("data-ea-action=\"open-selected-gmail\"", content_js)
-        self.assertIn("Open this email in Gmail", content_js)
+        self.assertIn("Open this email in ${escapeHtml(activeProviderName())}", content_js)
         self.assertIn("data-ea-open-changed-gmail", content_js)
         self.assertIn("Preview in Threadwise", content_js)
         self.assertIn("findChangedTodayItem", content_js)
         self.assertIn("openSelectedEmailInGmail", content_js)
-        self.assertIn("window.location.href = gmailSearchUrl(item)", content_js)
+        self.assertIn("window.location.href = providerSearchUrl(item)", content_js)
         self.assertIn("const messageNode = subject ? selectedMessageNode() : null;", content_js)
         self.assertIn("box-sizing:border-box;width:100%", content_js)
         self.assertIn("teachErrorResult", content_js)
@@ -1351,10 +1361,10 @@ class GmailCompanionUiTests(unittest.TestCase):
         manifest = json.loads((repo_root / "extensions" / "gmail_companion" / "manifest.json").read_text())
         background_js = (repo_root / "extensions" / "gmail_companion" / "background.js").read_text()
 
-        self.assertEqual(manifest["version"], "0.2.0")
+        self.assertEqual(manifest["version"], "0.3.0")
         self.assertIn("threadwise_active_extension_version", background_js)
         self.assertIn("chrome.runtime.getManifest().version", background_js)
-        self.assertIn('chrome.tabs.query({ url: "https://mail.google.com/*" })', background_js)
+        self.assertIn('"https://mail.google.com/*", "https://mail.proton.me/*"', background_js)
         self.assertIn("chrome.tabs.reload(tab.id)", background_js)
         self.assertIn("await chrome.storage.local.set", background_js)
 
@@ -3942,11 +3952,15 @@ class GmailCompanionUiTests(unittest.TestCase):
                     "state": "future-rule-saved",
                     "scope": "future-rule",
                     "current_email_changed_locally": False,
+                    "provider": "gmail",
+                    "current_email_written_to_provider": False,
                     "current_email_written_to_gmail": False,
                     "matching_existing_changed_locally": 0,
                     "future_rule_saved": True,
                     "gmail_write_mode": "no-gmail-write-future-rule-only",
                     "gmail_label_write_failed": 0,
+                    "provider_write_mode": "no-gmail-write-future-rule-only",
+                    "provider_label_write_failed": 0,
                 },
             )
 
@@ -3999,11 +4013,15 @@ class GmailCompanionUiTests(unittest.TestCase):
                     "state": "changed",
                     "scope": "current-email",
                     "current_email_changed_locally": True,
+                    "provider": "gmail",
+                    "current_email_written_to_provider": True,
                     "current_email_written_to_gmail": True,
                     "matching_existing_changed_locally": 0,
                     "future_rule_saved": False,
                     "gmail_write_mode": "applied",
                     "gmail_label_write_failed": 0,
+                    "provider_write_mode": "applied",
+                    "provider_label_write_failed": 0,
                 },
             )
             self.assertIn("relabeled only this email", result["acknowledgment"])
@@ -4451,7 +4469,7 @@ class GmailCompanionUiTests(unittest.TestCase):
         status_code, payload = self._get_contract(app)
 
         self.assertEqual(status_code, 200)
-        self.assertEqual(payload["contract_version"], "gmail-companion-selected-email-v1")
+        self.assertEqual(payload["contract_version"], "threadwise-selected-email-v2")
         self.assertIn("message_id", payload["selected_context_fields"])
         self.assertIn("selected_email", payload["sidebar_state_fields"])
 

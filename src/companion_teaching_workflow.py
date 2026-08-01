@@ -21,6 +21,7 @@ class TeachingWriteRequest:
     current_subject: str
     current_sender: str
     included_message_ids: frozenset[str]
+    provider: str = "gmail"
 
 
 @dataclass(frozen=True)
@@ -116,7 +117,7 @@ class CompanionTeachingWorkflow:
     def apply(self, payload: dict, *, defer_provider_write: bool = False) -> TeachingWorkflowResult:
         selected_context = dict(payload.get("selected_context") or {})
         target_label = payload["target_label"]
-        if target_label == "suspicious":
+        if target_label == "suspicious" and selected_context.get("provider", "gmail") == "gmail":
             raise ValueError(
                 "Suspicious email requires the explicit Gmail safety preview and confirmation flow."
             )
@@ -138,11 +139,15 @@ class CompanionTeachingWorkflow:
             preview_matches=list(teaching_result["preview_matches"]),
             semantic_rule={
                 **(teaching_result.get("semantic_rule") or {}),
-                "target_label": target_label,
+                "target_label": (
+                    (teaching_result.get("semantic_rule") or {}).get("target_label")
+                    or target_label
+                ),
             },
             current_subject=current.get("subject") or "",
             current_sender=current.get("sender") or "",
             included_message_ids=frozenset(included_message_ids),
+            provider=str(current.get("provider") or selected_context.get("provider") or "gmail"),
         )
         write_summary = (
             _pending_write_summary()
@@ -154,6 +159,7 @@ class CompanionTeachingWorkflow:
             "mode": teaching_result["mode"],
             "matched_existing_count": teaching_result["matched_existing_count"],
             "proposal": teaching_result["proposal"],
+            "provider_write": write_summary,
             "gmail_write_through": write_summary,
             "outcome": _apply_outcome(teaching_result, write_summary),
         }
@@ -192,29 +198,31 @@ def _pending_write_summary() -> dict:
 
 def _apply_acknowledgment(teaching_result: dict, write_summary: dict) -> str:
     base = teaching_result["acknowledgment"]
+    provider = str((teaching_result.get("current") or {}).get("provider") or "gmail")
+    provider_name = "Proton Mail" if provider == "protonmail" else "Gmail"
     gmail_mode = write_summary.get("mode")
     local_changed = int(bool(teaching_result.get("current_changed"))) + int(
         teaching_result.get("matched_existing_count") or 0
     )
     local_email_label = f"email{'' if local_changed == 1 else 's'}"
     if gmail_mode == "no-gmail-write-future-rule-only":
-        return f"{base} Gmail was not changed because this action only saved future behavior."
+        return f"{base} {provider_name} was not changed because this action only saved future behavior."
     if gmail_mode == "disabled":
         return (
             f"{base} Stored locally for {local_changed} {local_email_label}. "
-            "Gmail write-through is disabled here."
+            f"{provider_name} write-through is disabled here."
         )
     if gmail_mode == "pending":
         return (
-            f"{base} The next email is ready. Gmail is applying this label in the background; "
+            f"{base} The next email is ready. {provider_name} is applying this label in the background; "
             "Threadwise will report if the provider write needs attention."
         )
-    if gmail_mode == "gmail-write-failed":
-        error = write_summary.get("error") or "unknown Gmail write error"
+    if gmail_mode in {"gmail-write-failed", "provider-write-failed"}:
+        error = write_summary.get("error") or f"unknown {provider_name} write error"
         return (
             f"{base} Stored locally for {local_changed} {local_email_label}, "
-            f"but Gmail was not updated: {error}. "
-            "Retry Gmail write-through after the connection is healthy."
+            f"but {provider_name} was not updated: {error}. "
+            f"Retry {provider_name} write-through after the connection is healthy."
         )
     messages_written = int(write_summary.get("messages_written") or 0)
     label_failed = int(write_summary.get("label_write_failed") or 0)
@@ -225,12 +233,12 @@ def _apply_acknowledgment(teaching_result: dict, write_summary: dict) -> str:
     if label_failed or inbox_failed:
         return (
             f"{base} Stored locally for {local_changed} {local_email_label}. "
-            f"Gmail label writes: {messages_written} applied, {label_failed} failed"
+            f"{provider_name} label writes: {messages_written} applied, {label_failed} failed"
             f"{skipped_copy}. Inbox removal: {inbox_removed} applied, {inbox_failed} failed. "
-            "Retry failed Gmail writes when ready."
+            f"Retry failed {provider_name} writes when ready."
         )
     return (
-        f"{base} Gmail label writes: {messages_written} applied{skipped_copy}. "
+        f"{base} {provider_name} label writes: {messages_written} applied{skipped_copy}. "
         f"Inbox removal: {inbox_removed} applied."
     )
 
@@ -242,6 +250,7 @@ def _apply_outcome(teaching_result: dict, write_summary: dict) -> dict:
     messages_written = int(write_summary.get("messages_written") or 0)
     current_changed = bool(teaching_result.get("current_changed"))
     future_rule_saved = bool(teaching_result.get("future_rule_saved"))
+    provider = str((teaching_result.get("current") or {}).get("provider") or "gmail")
     current_written = (
         current_changed
         and gmail_mode == "applied"
@@ -268,6 +277,8 @@ def _apply_outcome(teaching_result: dict, write_summary: dict) -> dict:
         "state": state,
         "scope": scope,
         "current_email_changed_locally": current_changed,
+        "provider": provider,
+        "current_email_written_to_provider": current_written,
         "current_email_written_to_gmail": current_written,
         "matching_existing_changed_locally": int(
             teaching_result.get("matched_existing_count") or 0
@@ -275,4 +286,6 @@ def _apply_outcome(teaching_result: dict, write_summary: dict) -> dict:
         "future_rule_saved": future_rule_saved,
         "gmail_write_mode": gmail_mode,
         "gmail_label_write_failed": label_failed,
+        "provider_write_mode": gmail_mode,
+        "provider_label_write_failed": label_failed,
     }

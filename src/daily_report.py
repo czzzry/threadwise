@@ -50,6 +50,7 @@ def build_protonmail_daily_report(
     fetched_count: int,
     classified_count: int,
     unlabeled_exceptions: list[dict],
+    auto_applied_count: int = 0,
 ) -> dict:
     return {
         "account_id": account_id,
@@ -57,7 +58,7 @@ def build_protonmail_daily_report(
         "batch_id": batch_id,
         "report_date": datetime.now(UTC).date().isoformat(),
         "processed_count": fetched_count,
-        "auto_applied_count": 0,
+        "auto_applied_count": auto_applied_count,
         "inbox_removed_count": 0,
         "classified_count": classified_count,
         "label_counts": {},

@@ -3,8 +3,11 @@ from __future__ import annotations
 import json
 import io
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from src.proton_review_console import ProtonReviewConsole, render_proton_review_page
 from src.gmail_companion_ui import GmailCompanionApp
@@ -55,6 +58,296 @@ class FakeProtonClient:
 
 
 class ProtonReviewConsoleTests(unittest.TestCase):
+    def test_rapid_proton_accepts_are_applied_in_order(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self._write_classification_ledger(root)
+            console = self._console(root, FakeProtonClient())
+            first_started = threading.Event()
+            release_first = threading.Event()
+            calls: list[str] = []
+
+            def first() -> dict:
+                calls.append("first-start")
+                first_started.set()
+                release_first.wait(timeout=2)
+                calls.append("first-done")
+                return {}
+
+            def second() -> dict:
+                calls.append("second")
+                return {}
+
+            console.start_companion_write(first)
+            self.assertTrue(first_started.wait(timeout=1))
+            console.start_companion_write(second)
+            self.assertEqual(calls, ["first-start"])
+            release_first.set()
+            self._wait_for_activity(console, "done")
+
+            self.assertEqual(calls, ["first-start", "first-done", "second"])
+
+    def test_forced_llm_review_receives_full_proton_message_context(self) -> None:
+        class RecordingIntentClient:
+            def __init__(self) -> None:
+                self.payload = None
+
+            def interpret(self, payload: dict) -> dict:
+                self.payload = payload
+                return {
+                    "target_label": "personal",
+                    "semantic_pattern": "personal project notifications",
+                    "cross_sender": True,
+                    "confidence": "high",
+                    "rationale": "The founder described a project-specific boundary.",
+                }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            gmail_root = root / "gmail"
+            proton_root = root / "proton"
+            (proton_root / "batches").mkdir(parents=True)
+            self._write_classification_ledger(proton_root)
+            full_body = "First line\nThe complete private message context for this teaching decision."
+            (proton_root / "batches" / "proton-batch.json").write_text(json.dumps({
+                "batch_id": "proton-batch",
+                "provider": "protonmail",
+                "account_id": "founder-proton",
+                "items": [{
+                    "source": "protonmail",
+                    "account_id": "founder-proton",
+                    "message_id": "101",
+                    "sender": "First sender <first@example.test>",
+                    "subject": "First subject",
+                    "body": full_body,
+                    "review_state": "pending",
+                    "final_labels": ["newsletter"],
+                    "applied_labels": ["newsletter"],
+                }],
+                "raw_messages": [],
+            }))
+            client = RecordingIntentClient()
+            app = GmailCompanionApp(
+                gmail_root,
+                proton_storage_dir=proton_root,
+                proton_review_console=self._console(proton_root, FakeProtonClient(["101"])),
+                analytics=ProductAnalytics(),
+            )
+
+            with patch("src.teaching_loop.OpenAITeachingIntentClient.from_env", return_value=client):
+                preview = app.teach_preview_initial({
+                    "selected_context": {"provider": "protonmail", "message_id": "101"},
+                    "target_label": "personal",
+                    "target_label_explicit": True,
+                    "note": "Only personal AI project notifications should match this lesson.",
+                    "scope": "sender",
+                    "force_llm_review": True,
+                })
+
+            self.assertEqual(client.payload["current_body"], full_body)
+            self.assertEqual(client.payload["current_subject"], "First subject")
+            self.assertEqual(preview["intent_source"], "llm")
+
+    def test_failed_background_write_can_be_retried_from_shared_activity(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self._write_classification_ledger(root)
+            console = self._console(root, FakeProtonClient())
+            calls = []
+
+            def work() -> dict:
+                calls.append("called")
+                return {"label_write_failed": 1 if len(calls) == 1 else 0}
+
+            console.start_companion_write(work)
+            self._wait_for_activity(console, "error")
+            self.assertEqual(console.companion_write_activity()["action"], "retry-provider-write")
+
+            console.retry_companion_write()
+            self._wait_for_activity(console, "done")
+
+            self.assertEqual(calls, ["called", "called"])
+
+    def test_shared_teaching_advances_while_proton_write_finishes_in_background(self) -> None:
+        class BlockingClient(FakeProtonClient):
+            def __init__(self) -> None:
+                super().__init__(message_ids=["101"])
+                self.started = threading.Event()
+                self.release = threading.Event()
+
+            def apply_label(self, message_id: str, label_name: str) -> dict:
+                self.started.set()
+                self.release.wait(timeout=2)
+                return super().apply_label(message_id, label_name)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            gmail_root = root / "gmail"
+            proton_root = root / "proton"
+            (proton_root / "batches").mkdir(parents=True)
+            self._write_classification_ledger(proton_root)
+            (proton_root / "batches" / "proton-batch.json").write_text(json.dumps({
+                "batch_id": "proton-batch",
+                "provider": "protonmail",
+                "account_id": "founder-proton",
+                "items": [{
+                    "source": "protonmail",
+                    "account_id": "founder-proton",
+                    "message_id": "101",
+                    "sender": "First sender <first@example.test>",
+                    "subject": "First subject",
+                    "body": "The complete first message context.",
+                    "review_state": "pending",
+                    "final_labels": ["newsletter"],
+                    "applied_labels": ["newsletter"],
+                }],
+                "raw_messages": [],
+            }))
+            client = BlockingClient()
+            console = self._console(proton_root, client)
+            app = GmailCompanionApp(
+                gmail_root,
+                proton_storage_dir=proton_root,
+                proton_review_console=console,
+                analytics=ProductAnalytics(),
+            )
+
+            result = app.teach_apply({
+                "selected_context": {"provider": "protonmail", "message_id": "101"},
+                "target_label": "personal",
+                "note": "",
+                "scope": "sender",
+                "mode": "current-only",
+                "defer_provider_write": True,
+                "included_message_ids": [],
+            })
+
+            self.assertEqual(result["provider_write"]["mode"], "pending")
+            self.assertTrue(client.started.wait(timeout=1))
+            self.assertEqual(console.companion_write_activity()["state"], "working")
+
+            client.release.set()
+            deadline = time.monotonic() + 2
+            activity = None
+            while time.monotonic() < deadline:
+                activity = console.companion_write_activity()
+                if activity and activity.get("state") == "done":
+                    break
+                time.sleep(0.01)
+
+            self.assertEqual(activity["state"], "done")
+            self.assertEqual(client.label_calls, [("101", "EA/Personal")])
+
+    def test_shared_teaching_apply_routes_a_proton_decision_through_the_proton_adapter(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            gmail_root = root / "gmail"
+            proton_root = root / "proton"
+            (proton_root / "batches").mkdir(parents=True)
+            self._write_classification_ledger(proton_root)
+            (proton_root / "batches" / "proton-batch.json").write_text(json.dumps({
+                "batch_id": "proton-batch",
+                "provider": "protonmail",
+                "account_id": "founder-proton",
+                "items": [
+                    {
+                        "source": "protonmail",
+                        "account_id": "founder-proton",
+                        "message_id": "101",
+                        "sender": "First sender <first@example.test>",
+                        "subject": "First subject",
+                        "date": "2026-07-16T08:00:00Z",
+                        "body": "The complete first message context.",
+                        "interpretation": "An opted-in editorial digest.",
+                        "review_state": "pending",
+                        "final_labels": ["newsletter"],
+                        "applied_labels": ["newsletter"],
+                    }
+                ],
+                "raw_messages": [],
+            }))
+            client = FakeProtonClient(message_ids=["101"])
+            console = self._console(proton_root, client)
+            app = GmailCompanionApp(
+                gmail_root,
+                proton_storage_dir=proton_root,
+                proton_review_console=console,
+                analytics=ProductAnalytics(),
+            )
+
+            result = app.teach_apply({
+                "selected_context": {"provider": "protonmail", "message_id": "101"},
+                "target_label": "personal",
+                "note": "",
+                "scope": "sender",
+                "mode": "current-only",
+                "defer_provider_write": False,
+                "included_message_ids": [],
+            })
+
+            self.assertEqual(client.label_calls, [("101", "EA/Personal")])
+            self.assertEqual(result["provider_write"]["provider"], "protonmail")
+            self.assertTrue(result["outcome"]["current_email_written_to_provider"])
+            self.assertEqual(result["sidebar_state"]["daily_summary"]["needs_attention_count"], 0)
+
+    def test_companion_harness_uses_shared_sidebar_contract_for_proton(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self._write_classification_ledger(root)
+            console = self._console(root, FakeProtonClient())
+
+            state = console.companion_harness({
+                "provider": "protonmail",
+                "subject": "First subject",
+                "sender": "First sender <first@example.test>",
+            })
+
+            self.assertEqual(state["sidebar_state"]["contract_version"], "threadwise-sidebar-v2")
+            self.assertEqual(state["sidebar_state"]["selected_context"]["provider"], "protonmail")
+            self.assertEqual(state["sidebar_state"]["selected_email"]["message_id"], "101")
+            self.assertEqual(state["sidebar_state"]["selected_email"]["status"], "needs-attention")
+            self.assertEqual(state["sidebar_state"]["daily_summary"]["provider"], "protonmail")
+            self.assertEqual(state["sidebar_state"]["daily_summary"]["needs_attention_count"], 2)
+            self.assertEqual(
+                [item["message_id"] for item in state["needs_attention_items"]],
+                ["101", "102"],
+            )
+            self.assertEqual(state["sidebar_state"]["ui_state"]["provider_name"], "Proton Mail")
+
+    def test_selected_completed_message_is_still_recognized_outside_review_queue(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self._write_classification_ledger(root)
+            (root / "console.json").write_text(json.dumps({
+                "provider": "protonmail",
+                "messages": {"101": {"decision": "looks-right"}},
+            }))
+            console = self._console(root, FakeProtonClient())
+
+            state = console.companion_harness({
+                "provider": "protonmail",
+                "sender": "First sender <first@example.test>",
+                "subject": "First subject",
+            })
+
+            self.assertTrue(state["sidebar_state"]["selected_email"]["found"])
+            self.assertEqual(state["sidebar_state"]["selected_email"]["status"], "auto-handled")
+
+    def test_companion_harness_does_not_reoffer_acknowledged_proton_items(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self._write_classification_ledger(root)
+            console = self._console(root, FakeProtonClient())
+
+            console.acknowledge("101")
+            state = console.companion_harness({"provider": "protonmail"})
+
+            self.assertEqual(state["sidebar_state"]["daily_summary"]["needs_attention_count"], 1)
+            self.assertEqual(
+                [item["message_id"] for item in state["needs_attention_items"]],
+                ["102"],
+            )
+
     def test_companion_server_exposes_discoverable_proton_review_flow(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -266,12 +559,25 @@ class ProtonReviewConsoleTests(unittest.TestCase):
             review_state_path=root / "console.json",
         )
 
+    def _wait_for_activity(self, console: ProtonReviewConsole, state: str) -> dict:
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            activity = console.companion_write_activity()
+            if activity and activity.get("state") == state:
+                return activity
+            time.sleep(0.01)
+        self.fail(f"Proton activity did not reach {state!r}.")
+
     def _write_classification_ledger(self, root: Path) -> None:
         (root / "classification.json").write_text(json.dumps({
             "provider": "protonmail",
+            "account_id": "founder-proton",
             "messages": {
                 "101": {
                     "status": "suggested",
+                    "sender": "First sender <first@example.test>",
+                    "subject": "First subject",
+                    "date": "2026-07-16T08:00:00Z",
                     "internal_label": "newsletter",
                     "label": "EA/Newsletter",
                     "reason": "An opted-in editorial digest.",
@@ -279,6 +585,9 @@ class ProtonReviewConsoleTests(unittest.TestCase):
                 },
                 "102": {
                     "status": "suggested",
+                    "sender": "Second sender <second@example.test>",
+                    "subject": "Second subject",
+                    "date": "2026-07-16T09:00:00Z",
                     "internal_label": "shopping-order",
                     "label": "EA/Orders",
                     "reason": "A delivery lifecycle update.",

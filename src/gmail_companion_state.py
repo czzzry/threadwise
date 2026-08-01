@@ -50,6 +50,8 @@ def selected_context_from_query(query: dict[str, list[str]]) -> dict:
         "subject": first_query_value(query, "subject"),
         "sender": first_query_value(query, "sender"),
         "gmail_labels": first_query_value(query, "gmail_labels"),
+        "provider_labels": first_query_value(query, "provider_labels"),
+        "provider_ref": first_query_value(query, "provider_ref"),
         "page_url": first_query_value(query, "page_url"),
         "selected_at": first_query_value(query, "selected_at"),
     }
@@ -934,13 +936,16 @@ def _selected_unsubscribe_candidates_for_batch(storage_dir: Path, batch: dict) -
 
 def selected_email_contract() -> dict:
     return {
-        "contract_version": "gmail-companion-selected-email-v1",
+        "contract_version": "threadwise-selected-email-v2",
         "selected_context_fields": [
             "provider",
             "message_id",
             "thread_id",
             "subject",
             "sender",
+            "gmail_labels",
+            "provider_labels",
+            "provider_ref",
             "page_url",
             "selected_at",
         ],

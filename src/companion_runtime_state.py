@@ -49,6 +49,9 @@ class CompanionRuntimeState:
         self._data_lock = threading.Lock()
         self._async_follow_up_state: dict | None = None
         self._provider_write_state: dict | None = None
+        self._pending_provider_writes: list[Callable[[], dict]] = []
+        self._failed_provider_writes: list[Callable[[], dict]] = []
+        self._provider_write_worker_running = False
         self._async_lock = threading.Lock()
 
     def sidebar(self, selected_context: dict | None) -> dict:
@@ -129,12 +132,41 @@ class CompanionRuntimeState:
         self._background_runner(lambda: self._run_teaching_refresh(selected_context))
 
     def start_teaching_write(self, work: Callable[[], dict]) -> None:
-        self._set_provider_write_state({
-            "state": "working",
-            "label": "Gmail write running",
-            "message": "The next email is ready while Threadwise finishes applying the label.",
-        })
-        self._background_runner(lambda: self._run_teaching_write(work))
+        with self._async_lock:
+            self._pending_provider_writes.append(work)
+            pending_count = len(self._pending_provider_writes)
+            self._provider_write_state = {
+                "id": "gmail-teaching-write",
+                "kind": "provider-write",
+                "state": "working",
+                "label": "Gmail writes running",
+                "message": f"Threadwise is applying {pending_count} accepted Gmail change{'s' if pending_count != 1 else ''} in order.",
+                "provider": "gmail",
+            }
+            if self._provider_write_worker_running:
+                return
+            self._provider_write_worker_running = True
+        self._background_runner(self._run_teaching_write_queue)
+
+    def retry_teaching_writes(self) -> dict:
+        with self._async_lock:
+            if self._provider_write_worker_running:
+                raise ValueError("Gmail writes are still running.")
+            if not self._failed_provider_writes:
+                raise ValueError("There are no failed Gmail writes to retry.")
+            self._pending_provider_writes.extend(self._failed_provider_writes)
+            self._failed_provider_writes.clear()
+            self._provider_write_worker_running = True
+            self._provider_write_state = {
+                "id": "gmail-teaching-write",
+                "kind": "provider-write",
+                "state": "working",
+                "label": "Retrying Gmail writes",
+                "message": "Threadwise is retrying the failed Gmail changes in order.",
+                "provider": "gmail",
+            }
+        self._background_runner(self._run_teaching_write_queue)
+        return self._provider_write_status() or {}
 
     def acknowledge_handled_review(self, payload: dict) -> dict:
         selected_context = dict(payload.get("selected_context") or {})
@@ -198,17 +230,19 @@ class CompanionRuntimeState:
 
     def _activity_feed(self) -> list[dict]:
         follow_up = self._async_follow_up()
-        if not follow_up:
-            return []
-        return [
-            {
+        provider_write = self._provider_write_status()
+        items = []
+        if provider_write:
+            items.append(provider_write)
+        if follow_up:
+            items.append({
                 "id": follow_up.get("kind") or "async-follow-up",
                 "kind": follow_up.get("kind") or "async-follow-up",
                 "state": follow_up.get("state") or "working",
                 "label": follow_up.get("label") or "Background refresh",
                 "message": follow_up.get("message") or "",
-            }
-        ]
+            })
+        return items
 
     def _ui_state(self) -> dict:
         return {
@@ -232,26 +266,42 @@ class CompanionRuntimeState:
         with self._async_lock:
             self._provider_write_state = dict(payload) if payload else None
 
-    def _run_teaching_write(self, work: Callable[[], dict]) -> None:
-        try:
-            summary = work() or {}
-            failed = int(summary.get("label_write_failed") or 0) + int(summary.get("inbox_remove_failed") or 0)
-            self._set_provider_write_state({
-                "state": "error" if failed else "done",
-                "label": "Gmail write needs attention" if failed else "Gmail label applied",
-                "message": (
-                    f"{failed} Gmail write{'s' if failed != 1 else ''} failed. Retry from the email receipt."
-                    if failed
-                    else "The accepted label is now confirmed in Gmail."
-                ),
-                "summary": summary,
-            })
-        except Exception as exc:
-            self._set_provider_write_state({
-                "state": "error",
-                "label": "Gmail write needs attention",
-                "message": f"Gmail could not confirm this label: {exc}",
-            })
+    def _run_teaching_write_queue(self) -> None:
+        completed = 0
+        while True:
+            with self._async_lock:
+                if not self._pending_provider_writes:
+                    self._provider_write_worker_running = False
+                    failed_count = len(self._failed_provider_writes)
+                    self._provider_write_state = {
+                        "id": "gmail-teaching-write",
+                        "kind": "provider-write",
+                        "state": "error" if failed_count else "done",
+                        "label": "Gmail writes need attention" if failed_count else "Gmail labels applied",
+                        "message": (
+                            f"{failed_count} accepted Gmail change{'s' if failed_count != 1 else ''} could not be confirmed."
+                            if failed_count
+                            else f"{completed} accepted Gmail change{'s' if completed != 1 else ''} confirmed."
+                        ),
+                        "provider": "gmail",
+                        **({"action": "retry-provider-write", "action_label": "Try again"} if failed_count else {}),
+                    }
+                    return
+                work = self._pending_provider_writes.pop(0)
+            failed = False
+            try:
+                summary = work() or {}
+                failed = bool(
+                    int(summary.get("label_write_failed") or 0)
+                    + int(summary.get("inbox_remove_failed") or 0)
+                )
+            except Exception:
+                failed = True
+            with self._async_lock:
+                if failed:
+                    self._failed_provider_writes.append(work)
+                else:
+                    completed += 1
 
     def _run_teaching_refresh(self, selected_context: dict) -> None:
         try:

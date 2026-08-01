@@ -65,6 +65,7 @@ class AnalyticsProperties(TypedDict, total=False):
     review_outcome: str
     provider_verified: bool
     synthetic: bool
+    provider: str
 
 
 class PostHogClient(Protocol):
@@ -84,7 +85,7 @@ class EventSpec:
 
 
 COMMON_REQUIRED = frozenset({"app_version", "workflow_version", "source"})
-COMMON_OPTIONAL = frozenset({"synthetic"})
+COMMON_OPTIONAL = frozenset({"synthetic", "provider"})
 EVENT_SPECS: dict[str, EventSpec] = {
     "extension opened": EventSpec(COMMON_REQUIRED | {"surface"}, COMMON_OPTIONAL),
     "review queue opened": EventSpec(COMMON_REQUIRED | {"queue_size_bucket"}, COMMON_OPTIONAL),
@@ -144,6 +145,7 @@ PROPERTY_ENUMS: dict[str, frozenset[str]] = {
     "workflow_version": frozenset({ANALYTICS_WORKFLOW_VERSION}),
     "source": frozenset({"extension", "companion_service", "retry_cli", "synthetic"}),
     "surface": frozenset({"gmail_companion", "proton_review", "validation_script"}),
+    "provider": frozenset({"gmail", "protonmail"}),
     "queue_size_bucket": COUNT_BUCKETS,
     "review_origin": frozenset({"gmail_selected_email", "needs_attention_queue"}),
     "decision_type": frozenset({"approve", "edit", "reject", "open", "looks_right", "add_label"}),

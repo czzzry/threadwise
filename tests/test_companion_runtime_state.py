@@ -9,6 +9,22 @@ from src.unsubscribe_inventory_store import UnsubscribeInventoryStore
 
 
 class CompanionRuntimeStateTests(unittest.TestCase):
+    def test_rapid_gmail_accepts_share_one_serial_background_worker(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            queued: list = []
+            calls: list[str] = []
+            runtime = _runtime(Path(temp_dir), background_runner=queued.append)
+
+            runtime.start_teaching_write(lambda: calls.append("first") or {})
+            runtime.start_teaching_write(lambda: calls.append("second") or {})
+
+            self.assertEqual(len(queued), 1)
+            self.assertEqual(runtime._provider_write_status()["state"], "working")
+            queued[0]()
+
+            self.assertEqual(calls, ["first", "second"])
+            self.assertEqual(runtime._provider_write_status()["state"], "done")
+
     def test_sidebar_snapshot_caches_local_inputs_until_invalidation(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)

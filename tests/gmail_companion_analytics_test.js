@@ -41,4 +41,5 @@ for (const message of messages) {
   assert.equal(message.properties.app_version, "0.1.0");
   assert.equal(message.properties.workflow_version, "gmail-companion-v1");
   assert.equal(message.properties.source, "extension");
+  assert.equal(message.properties.provider, "gmail");
 }

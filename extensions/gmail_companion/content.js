@@ -9,6 +9,7 @@
   const HEALTH_SERVICE_ID = "threadwise-gmail-companion";
   const ANALYTICS = globalThis.ThreadwiseAnalytics;
   const BRAND_ICON_URL = chrome.runtime.getURL("assets/brand/threadwise-app-icon.png");
+  const ACTIVE_PROVIDER = currentProvider();
   const PANEL_WIDTH = "420px";
   const PANEL_WIDTH_EXPANDED = "min(920px, calc(100vw - 84px))";
   const PANEL_WIDTH_MINIMIZED = "70px";
@@ -330,6 +331,22 @@
   }
 
   function selectedContext() {
+    return ACTIVE_PROVIDER === "protonmail" ? protonSelectedContext() : gmailSelectedContext();
+  }
+
+  function currentProvider() {
+    return window.location.hostname === "mail.proton.me" ? "protonmail" : "gmail";
+  }
+
+  function providerName(provider = ACTIVE_PROVIDER) {
+    return provider === "protonmail" ? "Proton Mail" : "Gmail";
+  }
+
+  function activeProviderName() {
+    return lastSidebarState?.ui_state?.provider_name || providerName();
+  }
+
+  function gmailSelectedContext() {
     if (!gmailRouteHasOpenMessage()) {
       return {
         provider: "gmail",
@@ -363,6 +380,82 @@
       page_url: window.location.href,
       selected_at: new Date().toISOString(),
     };
+  }
+
+  function protonSelectedContext() {
+    if (!protonRouteHasOpenMessage()) {
+      return {
+        provider: "protonmail",
+        message_id: "",
+        thread_id: "",
+        subject: "",
+        sender: "",
+        provider_labels: "",
+        page_url: window.location.href,
+        selected_at: new Date().toISOString(),
+      };
+    }
+    const subject = firstText([
+      '[data-testid="conversation-header:subject"]',
+      '[data-testid="message-view:subject"]',
+      '[data-testid*="conversation-header"] h1',
+      "main h1",
+      "main h2",
+    ]);
+    const sender = protonSenderText();
+    const providerLabels = Array.from(
+      document.querySelectorAll('[data-testid*="label"], [class*="label"]'),
+    )
+      .map((node) => (node.textContent || "").trim())
+      .filter((value) => value.startsWith("EA/"));
+    return {
+      provider: "protonmail",
+      message_id: "",
+      thread_id: "",
+      subject,
+      sender,
+      provider_labels: [...new Set(providerLabels)].join(","),
+      provider_ref: protonRouteMessageReference(),
+      page_url: window.location.href,
+      selected_at: new Date().toISOString(),
+    };
+  }
+
+  function protonRouteHasOpenMessage() {
+    return Boolean(protonRouteMessageReference());
+  }
+
+  function protonRouteMessageReference() {
+    const parts = window.location.pathname.split("/").filter(Boolean);
+    const mailboxIndex = parts.findIndex((part) =>
+      ["inbox", "all-mail", "archive", "sent", "drafts", "trash", "spam", "starred"].includes(part),
+    );
+    if (mailboxIndex < 0 || parts.length <= mailboxIndex + 1) {
+      return "";
+    }
+    return decodeURIComponent(parts[mailboxIndex + 1] || "");
+  }
+
+  function protonSenderText() {
+    const selectors = [
+      '[data-testid="message-header:sender-address"]',
+      '[data-testid="message-header:sender"]',
+      '[data-testid*="message-header"] [title*="@"]',
+      '[data-testid*="sender"] [title*="@"]',
+      '[data-testid*="sender"]',
+    ];
+    for (const selector of selectors) {
+      const node = document.querySelector(selector);
+      if (!node) continue;
+      const address = node.getAttribute("title") || node.getAttribute("data-email") || "";
+      const name = (node.textContent || "").trim();
+      if (address.includes("@") && name && name !== address) {
+        return `${name} <${address}>`;
+      }
+      if (address.includes("@")) return address;
+      if (name) return name;
+    }
+    return "";
   }
 
   function gmailRouteHasOpenMessage() {
@@ -418,7 +511,7 @@
 
   function contextFromItem(item) {
     return {
-      provider: "gmail",
+      provider: item?.provider || ACTIVE_PROVIDER,
       message_id: item?.message_id || "",
       subject: item?.subject || "",
       sender: item?.sender || "",
@@ -482,6 +575,8 @@
       subject: context.subject || "",
       sender: context.sender || "",
       gmail_labels: context.gmail_labels || "",
+      provider_labels: context.provider_labels || "",
+      provider_ref: context.provider_ref || "",
       page_url: context.page_url || "",
     });
     if (!force && payload === previousPayload && !asyncFollowUpIsWorking()) {
@@ -557,7 +652,7 @@
     lastConnectionState = normalizeConnectionState({
       kind: "ready",
       label: "Ready",
-      details: "Threadwise is reading the selected Gmail message.",
+      details: `Threadwise is reading the selected ${activeProviderName()} message.`,
     });
     renderStandaloneWorkspace("understanding", `
       <div data-ea-selected-state="reading" role="status" aria-live="polite" aria-busy="true" style="display:grid;gap:12px;">
@@ -575,7 +670,7 @@
   function chooseRefreshContext() {
     if (forcedHome) {
       return {
-        provider: "gmail",
+        provider: ACTIVE_PROVIDER,
         message_id: "",
         thread_id: "",
         subject: "",
@@ -846,10 +941,10 @@
   function friendlyErrorMessage(message) {
     const normalized = String(message || "").toLowerCase();
     if (normalized.includes("aborterror") || normalized.includes("signal is aborted")) {
-      return "The last connection attempt was interrupted. This usually clears after checking again or reopening Gmail.";
+      return `The last connection attempt was interrupted. This usually clears after checking again or reopening ${activeProviderName()}.`;
     }
     if (normalized.includes("failed to fetch") || normalized.includes("could not reach")) {
-      return "The Gmail extension cannot reach the local Threadwise companion yet.";
+      return `The Threadwise extension cannot reach the local companion from ${activeProviderName()} yet.`;
     }
     return "Threadwise could not load the local companion state.";
   }
@@ -1224,7 +1319,7 @@
           ? "Threadwise could not finish handling this email."
           : "Threadwise needs a fresh check before it can continue.";
       const detail = hasSnapshotMiss
-        ? (selected.reason || "Run a Gmail sync to classify this email with the latest rules.")
+        ? (selected.reason || `Run a ${activeProviderName()} sync to classify this email with the latest rules.`)
         : handlingFailed
           ? "The label or Inbox step is still pending or failed. Threadwise will not describe it as handled until the recorded status is complete."
           : (selected?.reason || "Refresh the current state and try again.");
@@ -1232,7 +1327,7 @@
         <div data-ea-selected-state="blocked" role="status" style="display:grid;gap:12px;">
           <h2 style="margin:0;font-size:1.3rem;line-height:1.2;">${escapeHtml(title)}</h2>
           <div style="border-radius:14px;background:#fff4dd;padding:12px;color:#1f1a14;line-height:1.45;">${escapeHtml(detail)}</div>
-          <button type="button" data-ea-action="${hasSnapshotMiss ? "run-gmail-sync" : "force-refresh"}" ${gmailCheckPending ? "disabled" : ""} data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:${gmailCheckPending ? "#c7d8cc" : "#ffc64a"};color:#241812;border-radius:11px;padding:9px 12px;cursor:${gmailCheckPending ? "wait" : "pointer"};font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">${gmailCheckPending ? "Running Gmail sync..." : hasSnapshotMiss ? "Run Gmail sync" : "Check again"}</button>
+          <button type="button" data-ea-action="${hasSnapshotMiss && ACTIVE_PROVIDER === "gmail" ? "run-gmail-sync" : "force-refresh"}" ${gmailCheckPending ? "disabled" : ""} data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:${gmailCheckPending ? "#c7d8cc" : "#ffc64a"};color:#241812;border-radius:11px;padding:9px 12px;cursor:${gmailCheckPending ? "wait" : "pointer"};font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">${gmailCheckPending ? "Running Gmail sync..." : hasSnapshotMiss && ACTIVE_PROVIDER === "gmail" ? "Run Gmail sync" : "Check again"}</button>
           ${gmailCheckResult ? renderGmailCheckResultHtml(gmailCheckResult) : ""}
         </div>
       `);
@@ -1269,7 +1364,7 @@
       const liveEmailCard = hasSnapshotMiss && lastLiveContext && (lastLiveContext.subject || lastLiveContext.sender)
         ? `
           <div style="margin-top:12px;border-radius:14px;background:#f5efe2;padding:12px;">
-            <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">Viewing in Gmail now</div>
+            <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">Viewing in ${escapeHtml(activeProviderName())} now</div>
             <div style="margin-top:8px;font-weight:700;line-height:1.35;">${escapeHtml(lastLiveContext.subject || "(no subject)")}</div>
             <div style="margin-top:6px;color:#6b6255;line-height:1.45;overflow-wrap:anywhere;">${escapeHtml(lastLiveContext.sender || "(unknown sender)")}</div>
           </div>
@@ -1283,9 +1378,9 @@
           <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">${escapeHtml(stepCopy.title)}</div>
           <div style="margin-top:8px;color:#1f1a14;line-height:1.45;">${escapeHtml(stepCopy.body)}</div>
         </div>
-        <div style="margin-top:12px;color:#6b6255;line-height:1.45;">Threadwise can explain emails it has already synced. Preview a synced match below, or run a Gmail check from the dashboard to refresh what Threadwise knows.</div>
+        <div style="margin-top:12px;color:#6b6255;line-height:1.45;">Threadwise can explain emails it has already synced. Preview a synced match below, or refresh the provider sync to update what Threadwise knows.</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
-          <button type="button" data-ea-action="run-gmail-sync" ${gmailCheckPending ? "disabled" : ""} style="border:2px solid #241812;background:${gmailCheckPending ? "#c7d8cc" : "#ffc64a"};color:#241812;border-radius:11px;padding:9px 12px;cursor:${gmailCheckPending ? "wait" : "pointer"};font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">${gmailCheckPending ? "Running Gmail sync..." : "Run Gmail sync now"}</button>
+          <button type="button" data-ea-action="${ACTIVE_PROVIDER === "gmail" ? "run-gmail-sync" : "force-refresh"}" ${gmailCheckPending ? "disabled" : ""} style="border:2px solid #241812;background:${gmailCheckPending ? "#c7d8cc" : "#ffc64a"};color:#241812;border-radius:11px;padding:9px 12px;cursor:${gmailCheckPending ? "wait" : "pointer"};font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">${gmailCheckPending ? "Running Gmail sync..." : ACTIVE_PROVIDER === "gmail" ? "Run Gmail sync now" : "Check again"}</button>
           ${
             primaryRelatedItem
               ? `<button type="button" data-ea-related-item="${escapeHtml(primaryRelatedItem.message_id || "")}" style="border:0;background:#0f766e;color:#fff;border-radius:999px;padding:9px 12px;cursor:pointer;font:inherit;">Preview closest synced match</button>`
@@ -1335,7 +1430,7 @@
       setHtml(selectedEmailNode, `
         <div data-ea-selected-state="future-learning-applying" aria-live="polite" aria-busy="true" style="display:grid;gap:12px;margin-top:10px;">
           <h2 data-ea-preview-heading style="margin:0;font-size:1.3rem;line-height:1.2;">Saving future rule</h2>
-          <div style="border-radius:14px;background:#fff4dd;padding:12px;color:#1f1a14;line-height:1.45;">Saving this lesson for future emails. The current email and Gmail are not being changed.</div>
+          <div style="border-radius:14px;background:#fff4dd;padding:12px;color:#1f1a14;line-height:1.45;">Saving this lesson for future emails. The current email and ${escapeHtml(activeProviderName())} are not being changed.</div>
         </div>
       `);
       setHtml(selectedEmailSecondaryNode, "");
@@ -1343,7 +1438,7 @@
       setHtml(selectedEmailNode, `
         <div data-ea-selected-state="future-learning-receipt" role="status" style="display:grid;gap:12px;margin-top:10px;">
           <h2 data-ea-receipt-heading style="margin:0;font-size:1.3rem;line-height:1.2;">Future rule saved</h2>
-          <div data-ea-receipt-outcome style="border-radius:14px;background:#eef7f5;padding:12px;color:#1f1a14;line-height:1.45;">Threadwise saved the lesson for future emails. No Gmail message was changed.</div>
+          <div data-ea-receipt-outcome style="border-radius:14px;background:#eef7f5;padding:12px;color:#1f1a14;line-height:1.45;">Threadwise saved the lesson for future emails. No ${escapeHtml(activeProviderName())} message was changed.</div>
           <button type="button" data-ea-action="finish-future-learning" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Done</button>
         </div>
       `);
@@ -1378,24 +1473,24 @@
     } else if (workspaceMode === "current-receipt" || workspaceMode === "partial-receipt") {
       gmailCheckResult = null;
       const label = decisionLabelName(teachDraft.targetLabel || decisionSuggestedLabelId(selected) || selected.classification || "");
-      const gmailLabelUpdated = Boolean(teachOutcome.current_email_written_to_gmail);
-      const labelWriteFailed = !gmailLabelUpdated
-        || Number(teachOutcome.gmail_label_write_failed || 0) > 0
+      const providerLabelUpdated = Boolean(teachOutcome.current_email_written_to_provider ?? teachOutcome.current_email_written_to_gmail);
+      const labelWriteFailed = !providerLabelUpdated
+        || Number((teachOutcome.provider_label_write_failed ?? teachOutcome.gmail_label_write_failed) || 0) > 0
         || Number(teachWriteThrough?.label_write_failed || 0) > 0;
       const inboxFailed = Number(teachWriteThrough?.inbox_remove_failed || 0) > 0;
       const inboxRemoved = Number(teachWriteThrough?.inbox_removed || 0) > 0;
       const hasNextReviewItem = remainingNeedsAttentionItems().length > 0;
-      const successfulGmailChange = !labelWriteFailed && !inboxFailed;
+      const successfulProviderChange = !labelWriteFailed && !inboxFailed;
       const receiptHeading = labelWriteFailed
         ? (teachOutcome.current_email_changed_locally ? `Saved locally as ${label}` : `Couldn’t change to ${label}`)
         : `Changed to ${label}`;
       const receiptOutcomes = labelWriteFailed
         ? `
             <div data-ea-receipt-outcome>${teachOutcome.current_email_changed_locally ? "Saved locally in Threadwise." : "No label change was confirmed."}</div>
-            <div data-ea-receipt-outcome>Gmail label not confirmed. Open Activity to review recovery.</div>
+            <div data-ea-receipt-outcome>${escapeHtml(activeProviderName())} label not confirmed. Open Activity to review recovery.</div>
           `
         : `
-            <div data-ea-receipt-outcome>Gmail label updated.</div>
+            <div data-ea-receipt-outcome>${escapeHtml(activeProviderName())} label updated.</div>
             <div data-ea-receipt-outcome>${inboxFailed ? "Couldn’t remove from Inbox. Open Activity to review the failed step." : inboxRemoved ? "Removed from Inbox." : "Kept in Inbox."}</div>
           `;
       setHtml(selectedEmailNode, `
@@ -1407,9 +1502,9 @@
           <div style="display:grid;gap:8px;border-radius:14px;background:#eef7f5;padding:12px;color:#1f1a14;line-height:1.45;">
             ${receiptOutcomes}
           </div>
-          ${hasNextReviewItem && successfulGmailChange ? '<button type="button" data-ea-action="open-needs-attention" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Next email</button>' : ""}
-          ${!hasNextReviewItem && successfulGmailChange ? '<div data-ea-review-complete role="status" style="border-radius:14px;background:#dff8ed;padding:12px;color:#0f665e;font-weight:800;">Review queue complete</div><button type="button" data-ea-action="return-home-after-receipt" style="justify-self:start;border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Back to Home</button>' : ""}
-          ${successfulGmailChange ? '<button type="button" data-ea-action="teach-future-after-receipt" style="justify-self:start;border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Teach Threadwise for future emails</button>' : ""}
+          ${hasNextReviewItem && successfulProviderChange ? '<button type="button" data-ea-action="open-needs-attention" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Next email</button>' : ""}
+          ${!hasNextReviewItem && successfulProviderChange ? '<div data-ea-review-complete role="status" style="border-radius:14px;background:#dff8ed;padding:12px;color:#0f665e;font-weight:800;">Review queue complete</div><button type="button" data-ea-action="return-home-after-receipt" style="justify-self:start;border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Back to Home</button>' : ""}
+          ${successfulProviderChange ? '<button type="button" data-ea-action="teach-future-after-receipt" style="justify-self:start;border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Teach Threadwise for future emails</button>' : ""}
           ${labelWriteFailed || inboxFailed ? `<a href="${LOCAL_ORIGIN}/daily-dashboard" target="_blank" rel="noreferrer" style="color:#5d5342;font-weight:760;text-underline-offset:3px;">Open Activity</a>` : ""}
         </div>
       `);
@@ -1421,10 +1516,10 @@
       const writeStatus = String((selected.details || {}).write_status || "").toLowerCase();
       const inboxStatus = String((selected.details || {}).inbox_status || "").toLowerCase();
       const handlingReceipt = selected.status === "auto-handled" && writeStatus === "applied" && inboxStatus === "applied"
-        ? `Threadwise applied the ${label} Gmail label and removed this email from Inbox.`
+        ? `Threadwise applied the ${label} ${activeProviderName()} label and removed this email from Inbox.`
         : selected.status === "kept-visible" && writeStatus === "applied"
-          ? `Threadwise applied the ${label} Gmail label and kept this email in Inbox.`
-          : `Threadwise classified this email as ${label} and kept it visible. Gmail label write is not confirmed.`;
+          ? `Threadwise applied the ${label} ${activeProviderName()} label and kept this email in Inbox.`
+          : `Threadwise classified this email as ${label} and kept it visible. ${activeProviderName()} label write is not confirmed.`;
       const handlingLabel = selected.status === "auto-handled" ? "Auto-handled" : (selected.status_label || "Handled");
       setHtml(selectedEmailNode, `
         <div data-ea-selected-state="handled-receipt" style="display:grid;gap:12px;margin-top:10px;">
@@ -1452,20 +1547,20 @@
       gmailCheckResult = null;
       const suggestedLabelId = decisionSuggestedLabelId(selected);
       const label = suggestedLabelId ? decisionLabelName(suggestedLabelId) : "";
-      const finishingGmailUpdate = selected.status === "write-unconfirmed";
+      const finishingProviderUpdate = selected.status === "write-unconfirmed";
       setHtml(selectedEmailNode, `
         <div data-ea-selected-state="review" style="display:grid;gap:12px;margin-top:10px;">
-          <div style="color:#8a4b00;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;font-weight:820;">${finishingGmailUpdate ? "Finish Gmail update" : "Needs your review"}</div>
+          <div style="color:#8a4b00;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;font-weight:820;">${finishingProviderUpdate ? `Finish ${escapeHtml(activeProviderName())} update` : "Needs your review"}</div>
           <div>
             <div style="font-size:1.3rem;font-weight:840;line-height:1.15;overflow-wrap:anywhere;">${escapeHtml(selected.subject || "(no subject)")}</div>
             <div style="margin-top:6px;color:#6b6255;font-size:0.88rem;overflow-wrap:anywhere;">${escapeHtml(selected.sender || "(unknown sender)")}</div>
             ${reviewReceivedLabel(selected.received_at) ? `<div data-ea-review-received-at style="margin-top:4px;color:#6b6255;font-size:0.8rem;">${escapeHtml(reviewReceivedLabel(selected.received_at))}</div>` : ""}
           </div>
-          <div data-ea-review-suggestion style="font-size:1.05rem;font-weight:760;line-height:1.4;">${label ? finishingGmailUpdate ? `Threadwise classified this as ${escapeHtml(label)}, but Gmail was not confirmed.` : `Threadwise suggests ${escapeHtml(label)}` : "Threadwise needs you to choose a label"}</div>
+          <div data-ea-review-suggestion style="font-size:1.05rem;font-weight:760;line-height:1.4;">${label ? finishingProviderUpdate ? `Threadwise classified this as ${escapeHtml(label)}, but ${escapeHtml(activeProviderName())} was not confirmed.` : `Threadwise suggests ${escapeHtml(label)}` : "Threadwise needs you to choose a label"}</div>
           <div style="border-radius:14px;background:#fff4dd;padding:12px;color:#1f1a14;line-height:1.45;">${escapeHtml(likelyReasonForSelected(selected).slice(0, 160))}</div>
           <div style="display:grid;gap:9px;">
-            <button type="button" data-ea-action="open-selected-gmail" style="min-height:40px;border:1px solid rgba(36,24,18,.24);background:#fffdf7;color:#241812;border-radius:11px;padding:8px 12px;cursor:pointer;font:inherit;font-weight:760;">Open email in Gmail ↗</button>
-            ${label ? `<button type="button" data-ea-action="accept-suggestion" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">${finishingGmailUpdate ? `Apply ${escapeHtml(label)}` : `Accept ${escapeHtml(label)}`}</button>` : ""}
+            <button type="button" data-ea-action="open-selected-gmail" style="min-height:40px;border:1px solid rgba(36,24,18,.24);background:#fffdf7;color:#241812;border-radius:11px;padding:8px 12px;cursor:pointer;font:inherit;font-weight:760;">Open email in ${escapeHtml(activeProviderName())} ↗</button>
+            ${label ? `<button type="button" data-ea-action="accept-suggestion" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">${finishingProviderUpdate ? `Apply ${escapeHtml(label)}` : `Accept ${escapeHtml(label)}`}</button>` : ""}
             <button type="button" data-ea-action="change-suggestion" ${label ? "" : "data-tw-primary-action"} style="min-height:44px;border:${label ? "1px solid rgba(36,24,18,.16)" : "2px solid #241812"};background:${label ? "#f5efe2" : "#2eb67d"};color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:760;${label ? "" : "box-shadow:3px 3px 0 #241812;"}">Change label</button>
           </div>
         </div>
@@ -1697,7 +1792,7 @@
           <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">Agent view</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;">
             <div style="border-radius:12px;background:#fffdfa;padding:10px 12px;">
-              <div style="font-size:0.72rem;color:#6b6255;text-transform:uppercase;letter-spacing:0.08em;">Gmail label</div>
+              <div style="font-size:0.72rem;color:#6b6255;text-transform:uppercase;letter-spacing:0.08em;">${escapeHtml(activeProviderName())} label</div>
               <div style="margin-top:6px;font-weight:700;line-height:1.3;">${escapeHtml(selected.classification || "Uncategorized")}</div>
             </div>
             <div style="border-radius:12px;background:#fffdfa;padding:10px 12px;">
@@ -1721,7 +1816,7 @@
           <span style="${statusStyle};border:2px solid #241812;box-shadow:2px 2px 0 rgba(36,24,18,.28);font-weight:760;">${escapeHtml(selected.status_label)}</span>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
-          <button type="button" data-ea-action="open-selected-gmail" style="border:2px solid #241812;background:#ffc64a;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Open this email in Gmail</button>
+          <button type="button" data-ea-action="open-selected-gmail" style="border:2px solid #241812;background:#ffc64a;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Open this email in ${escapeHtml(activeProviderName())}</button>
         </div>
         ${previewModeBanner}
         ${overviewCard}
@@ -1793,7 +1888,7 @@
             : "Analytics is disabled for this Threadwise environment.";
       const analyticsBackground = analyticsState === "degraded" ? "#fff1d6" : "#eef7f5";
       const emptyQueueCopy = gmailCheckResult
-        ? "Gmail sync completed. Threadwise handled everything automatically."
+        ? `${activeProviderName()} sync completed. Threadwise handled everything automatically.`
         : "There is no review queue right now.";
       setHtml(dailySummaryNode, `
         <div data-ea-selected-state="home" style="display:grid;gap:12px;margin-top:10px;">
@@ -1817,7 +1912,7 @@
     }
     setHtml(dailySummaryNode, `
       ${activityHtml}
-      <div style="margin-top:10px;color:#6b6255;line-height:1.45;">${summary.run_count > 1 ? `Rolling view across the last ${summary.run_count} Gmail runs` : "Latest run snapshot"}</div>
+      <div style="margin-top:10px;color:#6b6255;line-height:1.45;">${summary.run_count > 1 ? `Rolling view across the last ${summary.run_count} ${escapeHtml(activeProviderName())} runs` : "Latest run snapshot"}</div>
       <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px;">
         <button type="button" data-ea-summary-filter="recent_items" style="${metricButtonStyle("recent_items")}"><strong style="display:block;font-size:1.15rem;">${summary.processed_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">processed</span></button>
         <button type="button" data-ea-summary-filter="auto_handled_items" style="${metricButtonStyle("auto_handled_items")}"><strong style="display:block;font-size:1.15rem;">${summary.auto_handled_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">auto-handled</span></button>
@@ -1868,7 +1963,7 @@
             ? `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;">${topLabels}</div>`
             : '<p style="margin-top:12px;color:#6b6255;line-height:1.45;">No stored label mix yet.</p>'
         }
-        <p style="color:#6b6255;font-size:0.85rem;margin-top:12px;">Source: ${escapeHtml(summary.source_label || "stored Gmail snapshot")}${summary.batch_id ? ` - ${escapeHtml(summary.batch_id)}` : ""}</p>
+        <p style="color:#6b6255;font-size:0.85rem;margin-top:12px;">Source: ${escapeHtml(summary.source_label || `stored ${activeProviderName()} snapshot`)}${summary.batch_id ? ` - ${escapeHtml(summary.batch_id)}` : ""}</p>
         <div style="margin-top:12px;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">${escapeHtml(bucketLabelForFilter(activeSummaryFilter))}</div>
         <div style="margin-top:10px;display:grid;gap:8px;">${renderSummaryItemCards(summaryItemsForFilter(activeSummaryFilter))}</div>
       </details>
@@ -2112,7 +2207,7 @@
               <span style="border-radius:999px;padding:6px 10px;background:#f1eadb;color:#5d5342;font-size:0.8rem;">${escapeHtml(item.classification || "Uncategorized")}</span>
               <span style="border-radius:999px;padding:6px 10px;background:#f1eadb;color:#5d5342;font-size:0.8rem;">${escapeHtml(item.status_label || item.status || "")}</span>
             </div>
-            <a href="${escapeHtml(gmailSearchUrl(item))}" target="_blank" rel="noreferrer" data-ea-open-gmail="true" style="display:inline-flex;width:max-content;margin-top:8px;border:1px solid #d7cfbf;border-radius:999px;background:#f5efe2;color:#241812;padding:6px 10px;text-decoration:none;font-size:0.78rem;font-weight:800;">Open in Gmail</a>
+            <a href="${escapeHtml(providerSearchUrl(item))}" target="_blank" rel="noreferrer" data-ea-open-gmail="true" style="display:inline-flex;width:max-content;margin-top:8px;border:1px solid #d7cfbf;border-radius:999px;background:#f5efe2;color:#241812;padding:6px 10px;text-decoration:none;font-size:0.78rem;font-weight:800;">Open in ${escapeHtml(activeProviderName())}</a>
           </button>
         `;
       })
@@ -2138,6 +2233,17 @@
     }
     const query = parts.join(" ") || String(item?.message_id || "");
     return `https://mail.google.com/mail/u/0/#search/${encodeURIComponent(query)}`;
+  }
+
+  function protonSearchUrl(item) {
+    const subject = String(item?.subject || "").replace(/\s+/g, " ").trim().slice(0, 120);
+    const sender = normalizedSender(item?.sender || "");
+    const query = [sender, subject].filter(Boolean).join(" ");
+    return `https://mail.proton.me/u/0/all-mail#keyword=${encodeURIComponent(query)}`;
+  }
+
+  function providerSearchUrl(item) {
+    return ACTIVE_PROVIDER === "protonmail" ? protonSearchUrl(item) : gmailSearchUrl(item);
   }
 
   function renderChangedTodayGroups(changedToday) {
@@ -2278,7 +2384,7 @@
     if (!item || !(item.subject || item.sender || item.message_id)) {
       return;
     }
-    window.location.href = gmailSearchUrl(item);
+    window.location.href = providerSearchUrl(item);
   }
 
   function teachErrorResult(operation, rawMessage) {
@@ -2450,7 +2556,7 @@
             const state = String(item.state || "working");
             const tone = state === "done"
               ? { background: "#eef7f5", color: "#0f766e" }
-              : state === "retry"
+              : state === "retry" || state === "error"
                 ? { background: "#fff4dd", color: "#8a4b00" }
                 : { background: "#eef3ff", color: "#2146b7" };
             return `
@@ -2478,7 +2584,7 @@
   function renderTeachReceiptHtml(message, outcome, followUp) {
     const rows = [
       ["This email", outcome?.current_email_changed_locally ? "done" : "not changed"],
-      ["Gmail label", outcome?.current_email_written_to_gmail ? "done" : "not confirmed"],
+      [`${activeProviderName()} label`, outcome?.current_email_written_to_provider || outcome?.current_email_written_to_gmail ? "done" : "not confirmed"],
       ["Other stored emails", (outcome?.matching_existing_changed_locally || 0) > 0 ? `${outcome.matching_existing_changed_locally} changed` : "not changed"],
       ["Future rule", outcome?.future_rule_saved ? "saved" : "not saved"],
     ];
@@ -2658,7 +2764,7 @@
       </button>
     `;
     const actionLabel = selectedTeachScope === "future-only"
-      ? "Fix + remember"
+      ? "Fix + remember + Next"
       : selectedTeachScope === "apply-included"
         ? `Review ${matchingCount} matches`
         : "Fix email + Next";
@@ -2937,6 +3043,21 @@
     if (runGmailSyncButton) {
       event.preventDefault();
       triggerGmailSync();
+      return;
+    }
+    const retryProviderWriteButton = event.target.closest("[data-ea-action='retry-provider-write']");
+    if (retryProviderWriteButton) {
+      event.preventDefault();
+      retryProviderWriteButton.disabled = true;
+      chrome.runtime.sendMessage({
+        type: "email-agent:api",
+        path: "/api/provider-write-retry",
+        method: "POST",
+        body: { selected_context: lastSidebarState?.selected_context || { provider: ACTIVE_PROVIDER } },
+      }, () => {
+        previousPayload = "";
+        refreshSelection(true);
+      });
       return;
     }
     const summaryFilterButton = event.target.closest("[data-ea-summary-filter]");
@@ -3519,7 +3640,7 @@
         if (previewTargetLabel) {
           teachDraft.targetLabel = previewTargetLabel;
         }
-        if (previewTargetLabel === "suspicious") {
+        if (previewTargetLabel === "suspicious" && ACTIVE_PROVIDER === "gmail") {
           previewSafety("sender");
           return;
         }
@@ -3741,7 +3862,7 @@
         note,
         scope: "sender",
         mode,
-        defer_provider_write: mode === "current-only",
+        defer_provider_write: mode !== "save-future-rule",
         included_message_ids: mode === "apply-included"
           ? affectedReviewItemsFromPreview(teachPreview).map((item) => item.message_id).filter(Boolean)
           : [],
@@ -3790,7 +3911,7 @@
       };
       teachFlowState = "result";
       teachOutcome = payload.outcome || null;
-      teachWriteThrough = payload.gmail_write_through || null;
+      teachWriteThrough = payload.provider_write || payload.gmail_write_through || null;
       futureLearningError = "";
       currentApplyError = "";
       inboxApplyConfirmOpen = false;
@@ -3801,11 +3922,8 @@
         ANALYTICS?.completeReviewBatch(previousQueueSize);
       }
       renderState(preserveHarnessQueues(payload.sidebar_state || lastSidebarState));
-      if (mode === "current-only") {
-        openFirstSummaryItemIfHelpful("needs_attention_items");
-      }
     });
-    if (mode === "current-only") {
+    if (mode !== "save-future-rule") {
       applyInFlight = false;
       openFirstSummaryItemIfHelpful("needs_attention_items");
     }
