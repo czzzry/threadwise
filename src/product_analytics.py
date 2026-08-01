@@ -147,7 +147,11 @@ PROPERTY_ENUMS: dict[str, frozenset[str]] = {
     "surface": frozenset({"gmail_companion", "proton_review", "validation_script"}),
     "provider": frozenset({"gmail", "protonmail"}),
     "queue_size_bucket": COUNT_BUCKETS,
-    "review_origin": frozenset({"gmail_selected_email", "needs_attention_queue"}),
+    "review_origin": frozenset({
+        "gmail_selected_email",
+        "provider_selected_email",
+        "needs_attention_queue",
+    }),
     "decision_type": frozenset({"approve", "edit", "reject", "open", "looks_right", "add_label"}),
     "rule_scope": frozenset({"current_email", "included_existing", "future_email"}),
     "affected_count_bucket": COUNT_BUCKETS,

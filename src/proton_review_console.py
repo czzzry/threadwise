@@ -9,6 +9,11 @@ from src.gmail_companion_rendering import escape_html
 from src.label_taxonomy import CANONICAL_LABEL_ORDER, gmail_label_name
 from src.local_artifacts import load_json_or_default, write_json
 from src.proton_feedback_memory import migrate_review_feedback, save_feedback_rule
+from src.provider_write_queue import ProviderWriteQueue
+
+
+def _start_background_thread(work) -> None:
+    threading.Thread(target=work, daemon=True).start()
 
 
 def sync_proton_review_ledger(storage_dir: Path, batch_id: str) -> dict:
@@ -69,11 +74,12 @@ class ProtonReviewConsole:
         self._review_state_path = review_state_path
         self._max_results = max_results
         self._lock = threading.Lock()
-        self._activity_lock = threading.Lock()
-        self._provider_write_activity: dict | None = None
-        self._pending_provider_writes: list = []
-        self._failed_provider_writes: list = []
-        self._provider_write_worker_running = False
+        self._provider_writes = ProviderWriteQueue(
+            provider="protonmail",
+            provider_name="Proton Mail",
+            background_runner=_start_background_thread,
+            failure_keys=("label_write_failed",),
+        )
         migrate_review_feedback(self._classification_ledger_path.parent, self._review_state_path)
 
     def state(self) -> dict:
@@ -142,89 +148,19 @@ class ProtonReviewConsole:
         }
 
     def start_companion_write(self, work) -> None:
-        with self._activity_lock:
-            self._pending_provider_writes.append(work)
-            pending_count = len(self._pending_provider_writes)
-            self._provider_write_activity = {
-                "id": "proton-teaching-write",
-                "kind": "provider-write",
-                "state": "working",
-                "label": "Proton Mail writes running",
-                "message": f"Threadwise is applying {pending_count} accepted Proton Mail change{'s' if pending_count != 1 else ''} in order.",
-                "provider": "protonmail",
-            }
-            if self._provider_write_worker_running:
-                return
-            self._provider_write_worker_running = True
-        threading.Thread(target=self._run_companion_write_queue, daemon=True).start()
+        self._provider_writes.submit(work)
 
     def _companion_provider_write_activity(self) -> dict | None:
-        with self._activity_lock:
-            return dict(self._provider_write_activity) if self._provider_write_activity else None
+        return self._provider_writes.activity()
 
     def companion_write_activity(self) -> dict | None:
         return self._companion_provider_write_activity()
 
     def retry_companion_write(self) -> dict:
-        with self._activity_lock:
-            if self._provider_write_worker_running:
-                raise ValueError("Proton Mail writes are still running.")
-            if not self._failed_provider_writes:
-                raise ValueError("There are no failed Proton Mail writes to retry.")
-            self._pending_provider_writes.extend(self._failed_provider_writes)
-            self._failed_provider_writes.clear()
-            self._provider_write_worker_running = True
-            self._provider_write_activity = {
-                "id": "proton-teaching-write",
-                "kind": "provider-write",
-                "state": "working",
-                "label": "Retrying Proton Mail writes",
-                "message": "Threadwise is retrying the failed Proton Mail changes in order.",
-                "provider": "protonmail",
-            }
-        threading.Thread(target=self._run_companion_write_queue, daemon=True).start()
-        return self.companion_write_activity() or {}
-
-    def _run_companion_write_queue(self) -> None:
-        completed = 0
-        while True:
-            with self._activity_lock:
-                if not self._pending_provider_writes:
-                    self._provider_write_worker_running = False
-                    failed_count = len(self._failed_provider_writes)
-                    self._provider_write_activity = {
-                        "id": "proton-teaching-write",
-                        "kind": "provider-write",
-                        "state": "error" if failed_count else "done",
-                        "label": "Proton Mail writes need attention" if failed_count else "Proton Mail labels applied",
-                        "message": (
-                            f"{failed_count} accepted Proton Mail change{'s' if failed_count != 1 else ''} could not be confirmed."
-                            if failed_count
-                            else f"{completed} accepted Proton Mail change{'s' if completed != 1 else ''} confirmed."
-                        ),
-                        "provider": "protonmail",
-                        **({"action": "retry-provider-write", "action_label": "Try again"} if failed_count else {}),
-                    }
-                    return
-                work = self._pending_provider_writes.pop(0)
-            failed = False
-            try:
-                summary = work() or {}
-                failed = bool(int(summary.get("label_write_failed") or 0))
-            except Exception:
-                failed = True
-            with self._activity_lock:
-                if failed:
-                    self._failed_provider_writes.append(work)
-                else:
-                    completed += 1
+        return self._provider_writes.retry()
 
     def live_message_ids(self) -> set[str]:
         return set(self._proton.list_messages(self._max_results))
-
-    def _set_companion_provider_write_activity(self, payload: dict | None) -> None:
-        with self._activity_lock:
-            self._provider_write_activity = dict(payload) if payload else None
 
     def acknowledge(self, message_id: str, note: str = "") -> dict:
         with self._lock:

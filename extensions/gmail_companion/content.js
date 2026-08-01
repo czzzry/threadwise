@@ -8,8 +8,12 @@
   const HEALTH_PATH = "/api/health";
   const HEALTH_SERVICE_ID = "threadwise-gmail-companion";
   const ANALYTICS = globalThis.ThreadwiseAnalytics;
+  const PROVIDER = globalThis.ThreadwiseProvider;
+  if (!PROVIDER) {
+    throw new Error("Threadwise provider adapter did not load.");
+  }
   const BRAND_ICON_URL = chrome.runtime.getURL("assets/brand/threadwise-app-icon.png");
-  const ACTIVE_PROVIDER = currentProvider();
+  const ACTIVE_PROVIDER = PROVIDER.id;
   const PANEL_WIDTH = "420px";
   const PANEL_WIDTH_EXPANDED = "min(920px, calc(100vw - 84px))";
   const PANEL_WIDTH_MINIMIZED = "70px";
@@ -331,11 +335,7 @@
   }
 
   function selectedContext() {
-    return ACTIVE_PROVIDER === "protonmail" ? protonSelectedContext() : gmailSelectedContext();
-  }
-
-  function currentProvider() {
-    return window.location.hostname === "mail.proton.me" ? "protonmail" : "gmail";
+    return PROVIDER.selectedContext();
   }
 
   function providerName(provider = ACTIVE_PROVIDER) {
@@ -343,170 +343,7 @@
   }
 
   function activeProviderName() {
-    return lastSidebarState?.ui_state?.provider_name || providerName();
-  }
-
-  function gmailSelectedContext() {
-    if (!gmailRouteHasOpenMessage()) {
-      return {
-        provider: "gmail",
-        message_id: "",
-        thread_id: "",
-        subject: "",
-        sender: "",
-        page_url: window.location.href,
-        selected_at: new Date().toISOString(),
-      };
-    }
-    const subject = firstText(["h2[data-thread-perm-id]", "h2.hP", "h2[role='heading']"]);
-    const messageNode = subject ? selectedMessageNode() : null;
-    const senderNode = selectedSenderNode(messageNode);
-    const gmailLabels = [...document.querySelectorAll('[aria-label^="Search for all messages with label EA/"]')]
-      .map((node) => (node.textContent || "").trim())
-      .filter(Boolean);
-    return {
-      provider: "gmail",
-      message_id: messageNode
-        ? messageNode.getAttribute("data-legacy-message-id") ||
-          messageNode.getAttribute("data-message-id") ||
-          ""
-        : "",
-      thread_id: messageNode ? messageNode.getAttribute("data-thread-perm-id") || "" : "",
-      subject,
-      sender: senderNode
-        ? (senderNode.getAttribute("email") || senderNode.textContent || "").trim()
-        : "",
-      gmail_labels: [...new Set(gmailLabels)].join(","),
-      page_url: window.location.href,
-      selected_at: new Date().toISOString(),
-    };
-  }
-
-  function protonSelectedContext() {
-    if (!protonRouteHasOpenMessage()) {
-      return {
-        provider: "protonmail",
-        message_id: "",
-        thread_id: "",
-        subject: "",
-        sender: "",
-        provider_labels: "",
-        page_url: window.location.href,
-        selected_at: new Date().toISOString(),
-      };
-    }
-    const subject = firstText([
-      '[data-testid="conversation-header:subject"]',
-      '[data-testid="message-view:subject"]',
-      '[data-testid*="conversation-header"] h1',
-      "main h1",
-      "main h2",
-    ]);
-    const sender = protonSenderText();
-    const providerLabels = Array.from(
-      document.querySelectorAll('[data-testid*="label"], [class*="label"]'),
-    )
-      .map((node) => (node.textContent || "").trim())
-      .filter((value) => value.startsWith("EA/"));
-    return {
-      provider: "protonmail",
-      message_id: "",
-      thread_id: "",
-      subject,
-      sender,
-      provider_labels: [...new Set(providerLabels)].join(","),
-      provider_ref: protonRouteMessageReference(),
-      page_url: window.location.href,
-      selected_at: new Date().toISOString(),
-    };
-  }
-
-  function protonRouteHasOpenMessage() {
-    return Boolean(protonRouteMessageReference());
-  }
-
-  function protonRouteMessageReference() {
-    const parts = window.location.pathname.split("/").filter(Boolean);
-    const mailboxIndex = parts.findIndex((part) =>
-      ["inbox", "all-mail", "archive", "sent", "drafts", "trash", "spam", "starred"].includes(part),
-    );
-    if (mailboxIndex < 0 || parts.length <= mailboxIndex + 1) {
-      return "";
-    }
-    return decodeURIComponent(parts[mailboxIndex + 1] || "");
-  }
-
-  function protonSenderText() {
-    const selectors = [
-      '[data-testid="message-header:sender-address"]',
-      '[data-testid="message-header:sender"]',
-      '[data-testid*="message-header"] [title*="@"]',
-      '[data-testid*="sender"] [title*="@"]',
-      '[data-testid*="sender"]',
-    ];
-    for (const selector of selectors) {
-      const node = document.querySelector(selector);
-      if (!node) continue;
-      const address = node.getAttribute("title") || node.getAttribute("data-email") || "";
-      const name = (node.textContent || "").trim();
-      if (address.includes("@") && name && name !== address) {
-        return `${name} <${address}>`;
-      }
-      if (address.includes("@")) return address;
-      if (name) return name;
-    }
-    return "";
-  }
-
-  function gmailRouteHasOpenMessage() {
-    const hash = window.location.hash || "";
-    if (!hash || hash === "#inbox") {
-      return false;
-    }
-    const route = hash.replace(/^#/, "");
-    const parts = route.split("/").filter(Boolean);
-    if (parts.length < 2) {
-      return false;
-    }
-    const lastPart = decodeURIComponent(parts[parts.length - 1] || "");
-    return Boolean(lastPart && /^(FM|msg|thread|[a-f0-9]{8,})/i.test(lastPart));
-  }
-
-  function selectedMessageNode() {
-    const visibleCandidates = Array.from(
-      document.querySelectorAll("[data-legacy-message-id], [data-message-id]"),
-    ).filter(isVisibleNode);
-    if (visibleCandidates.length) {
-      return visibleCandidates[visibleCandidates.length - 1];
-    }
-    return (
-      document.querySelector("[data-legacy-message-id]") ||
-      document.querySelector("[data-message-id]")
-    );
-  }
-
-  function selectedSenderNode(messageNode) {
-    const scopedRoot =
-      messageNode?.closest("[role='listitem'], .adn, .ii, .h7, [data-thread-perm-id]") ||
-      document;
-    return (
-      scopedRoot.querySelector?.("[email][data-hovercard-id]") ||
-      scopedRoot.querySelector?.("span[email]") ||
-      document.querySelector("[email][data-hovercard-id]") ||
-      document.querySelector("span[email]")
-    );
-  }
-
-  function isVisibleNode(node) {
-    if (!node || typeof node.getBoundingClientRect !== "function") {
-      return false;
-    }
-    const style = window.getComputedStyle(node);
-    if (!style || style.display === "none" || style.visibility === "hidden") {
-      return false;
-    }
-    const rect = node.getBoundingClientRect();
-    return rect.width > 0 && rect.height > 0;
+    return lastSidebarState?.ui_state?.provider_name || PROVIDER.name || providerName();
   }
 
   function contextFromItem(item) {
@@ -544,16 +381,6 @@
     );
     refreshSelection(true);
     return true;
-  }
-
-  function firstText(selectors) {
-    for (const selector of selectors) {
-      const node = document.querySelector(selector);
-      if (node && node.textContent && node.textContent.trim()) {
-        return node.textContent.trim();
-      }
-    }
-    return "";
   }
 
   function refreshSelection(force = false) {
@@ -706,7 +533,7 @@
   }
 
   function stabilizedLiveContext(nextContext) {
-    if (!gmailRouteHasOpenMessage()) {
+    if (!PROVIDER.hasOpenMessage()) {
       return nextContext || {};
     }
     const previous = lastLiveContext || {};
@@ -1266,7 +1093,7 @@
     if (selected?.found && !manualPreviewContext) {
       ANALYTICS?.startEmailReview(
         selected.message_id || "",
-        "gmail_selected_email",
+        "provider_selected_email",
         Number(summary.needs_attention_count || 0),
       );
     }
@@ -1327,7 +1154,7 @@
         <div data-ea-selected-state="blocked" role="status" style="display:grid;gap:12px;">
           <h2 style="margin:0;font-size:1.3rem;line-height:1.2;">${escapeHtml(title)}</h2>
           <div style="border-radius:14px;background:#fff4dd;padding:12px;color:#1f1a14;line-height:1.45;">${escapeHtml(detail)}</div>
-          <button type="button" data-ea-action="${hasSnapshotMiss && ACTIVE_PROVIDER === "gmail" ? "run-gmail-sync" : "force-refresh"}" ${gmailCheckPending ? "disabled" : ""} data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:${gmailCheckPending ? "#c7d8cc" : "#ffc64a"};color:#241812;border-radius:11px;padding:9px 12px;cursor:${gmailCheckPending ? "wait" : "pointer"};font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">${gmailCheckPending ? "Running Gmail sync..." : hasSnapshotMiss && ACTIVE_PROVIDER === "gmail" ? "Run Gmail sync" : "Check again"}</button>
+          <button type="button" data-ea-action="${hasSnapshotMiss && PROVIDER.canRunManualSync ? "run-gmail-sync" : "force-refresh"}" ${gmailCheckPending ? "disabled" : ""} data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:${gmailCheckPending ? "#c7d8cc" : "#ffc64a"};color:#241812;border-radius:11px;padding:9px 12px;cursor:${gmailCheckPending ? "wait" : "pointer"};font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">${gmailCheckPending ? `Running ${activeProviderName()} sync...` : hasSnapshotMiss && PROVIDER.canRunManualSync ? `Run ${activeProviderName()} sync` : "Check again"}</button>
           ${gmailCheckResult ? renderGmailCheckResultHtml(gmailCheckResult) : ""}
         </div>
       `);
@@ -1380,7 +1207,7 @@
         </div>
         <div style="margin-top:12px;color:#6b6255;line-height:1.45;">Threadwise can explain emails it has already synced. Preview a synced match below, or refresh the provider sync to update what Threadwise knows.</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
-          <button type="button" data-ea-action="${ACTIVE_PROVIDER === "gmail" ? "run-gmail-sync" : "force-refresh"}" ${gmailCheckPending ? "disabled" : ""} style="border:2px solid #241812;background:${gmailCheckPending ? "#c7d8cc" : "#ffc64a"};color:#241812;border-radius:11px;padding:9px 12px;cursor:${gmailCheckPending ? "wait" : "pointer"};font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">${gmailCheckPending ? "Running Gmail sync..." : ACTIVE_PROVIDER === "gmail" ? "Run Gmail sync now" : "Check again"}</button>
+          <button type="button" data-ea-action="${PROVIDER.canRunManualSync ? "run-gmail-sync" : "force-refresh"}" ${gmailCheckPending ? "disabled" : ""} style="border:2px solid #241812;background:${gmailCheckPending ? "#c7d8cc" : "#ffc64a"};color:#241812;border-radius:11px;padding:9px 12px;cursor:${gmailCheckPending ? "wait" : "pointer"};font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">${gmailCheckPending ? `Running ${activeProviderName()} sync...` : PROVIDER.canRunManualSync ? `Run ${activeProviderName()} sync now` : "Check again"}</button>
           ${
             primaryRelatedItem
               ? `<button type="button" data-ea-related-item="${escapeHtml(primaryRelatedItem.message_id || "")}" style="border:0;background:#0f766e;color:#fff;border-radius:999px;padding:9px 12px;cursor:pointer;font:inherit;">Preview closest synced match</button>`
@@ -1645,7 +1472,7 @@
             <div style="font-size:1.3rem;font-weight:840;line-height:1.15;">Change this email to ${escapeHtml(label)}</div>
             <div style="margin-top:6px;color:#6b6255;font-size:0.88rem;overflow-wrap:anywhere;">${escapeHtml(selected.subject || "(no subject)")}</div>
           </div>
-          <button type="button" data-ea-action="open-selected-gmail" style="justify-self:start;border:1px solid rgba(36,24,18,.24);background:#fffdf7;color:#241812;border-radius:9px;padding:7px 10px;cursor:pointer;font:inherit;font-weight:760;">Open email in Gmail ↗</button>
+          <button type="button" data-ea-action="open-selected-gmail" style="justify-self:start;border:1px solid rgba(36,24,18,.24);background:#fffdf7;color:#241812;border-radius:9px;padding:7px 10px;cursor:pointer;font:inherit;font-weight:760;">Open email in ${escapeHtml(activeProviderName())} ↗</button>
           <div style="color:#6b6255;font-size:0.82rem;line-height:1.4;">Opening the email preserves the current correction draft.</div>
           <div style="border-radius:14px;background:#f5efe2;padding:12px;color:#1f1a14;line-height:1.45;">This keeps the simple current-email change, and also lets you choose whether the lesson should apply to future or matching inbox emails.</div>
           ${learningPreviewHtml}
@@ -2207,43 +2034,11 @@
               <span style="border-radius:999px;padding:6px 10px;background:#f1eadb;color:#5d5342;font-size:0.8rem;">${escapeHtml(item.classification || "Uncategorized")}</span>
               <span style="border-radius:999px;padding:6px 10px;background:#f1eadb;color:#5d5342;font-size:0.8rem;">${escapeHtml(item.status_label || item.status || "")}</span>
             </div>
-            <a href="${escapeHtml(providerSearchUrl(item))}" target="_blank" rel="noreferrer" data-ea-open-gmail="true" style="display:inline-flex;width:max-content;margin-top:8px;border:1px solid #d7cfbf;border-radius:999px;background:#f5efe2;color:#241812;padding:6px 10px;text-decoration:none;font-size:0.78rem;font-weight:800;">Open in ${escapeHtml(activeProviderName())}</a>
+            <a href="${escapeHtml(PROVIDER.messageUrl(item))}" target="_blank" rel="noreferrer" data-ea-open-gmail="true" style="display:inline-flex;width:max-content;margin-top:8px;border:1px solid #d7cfbf;border-radius:999px;background:#f5efe2;color:#241812;padding:6px 10px;text-decoration:none;font-size:0.78rem;font-weight:800;">Open in ${escapeHtml(activeProviderName())}</a>
           </button>
         `;
       })
       .join("");
-  }
-
-  function gmailSearchUrl(item) {
-    const messageId = String(item?.message_id || "").trim();
-    if (messageId) {
-      return `https://mail.google.com/mail/u/0/#all/${encodeURIComponent(messageId)}`;
-    }
-    const subject = String(item?.subject || "").replace(/\s+/g, " ").trim().slice(0, 80);
-    let sender = String(item?.sender || "").trim();
-    if (sender.includes("<") && sender.includes(">")) {
-      sender = sender.split("<", 2)[1].split(">", 1)[0].trim();
-    }
-    const parts = [];
-    if (sender) {
-      parts.push(`from:${sender}`);
-    }
-    if (subject) {
-      parts.push(`"${subject}"`);
-    }
-    const query = parts.join(" ") || String(item?.message_id || "");
-    return `https://mail.google.com/mail/u/0/#search/${encodeURIComponent(query)}`;
-  }
-
-  function protonSearchUrl(item) {
-    const subject = String(item?.subject || "").replace(/\s+/g, " ").trim().slice(0, 120);
-    const sender = normalizedSender(item?.sender || "");
-    const query = [sender, subject].filter(Boolean).join(" ");
-    return `https://mail.proton.me/u/0/all-mail#keyword=${encodeURIComponent(query)}`;
-  }
-
-  function providerSearchUrl(item) {
-    return ACTIVE_PROVIDER === "protonmail" ? protonSearchUrl(item) : gmailSearchUrl(item);
   }
 
   function renderChangedTodayGroups(changedToday) {
@@ -2271,7 +2066,7 @@
         <div style="margin-top:6px;color:#6b6255;line-height:1.45;">${escapeHtml(item.change_summary || "")}</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
           <button type="button" data-ea-changed-item="${escapeHtml(item.message_id || "")}" style="border:1px solid #d7cfbf;border-radius:999px;background:#f5efe2;color:#241812;padding:6px 10px;cursor:pointer;font:inherit;font-size:0.78rem;font-weight:800;">Preview in Threadwise</button>
-          <button type="button" data-ea-open-changed-gmail="${escapeHtml(item.message_id || "")}" style="border:1px solid #d7cfbf;border-radius:999px;background:#ffc64a;color:#241812;padding:6px 10px;cursor:pointer;font:inherit;font-size:0.78rem;font-weight:800;">Open in Gmail</button>
+          <button type="button" data-ea-open-changed-gmail="${escapeHtml(item.message_id || "")}" style="border:1px solid #d7cfbf;border-radius:999px;background:#ffc64a;color:#241812;padding:6px 10px;cursor:pointer;font:inherit;font-size:0.78rem;font-weight:800;">Open in ${escapeHtml(activeProviderName())}</button>
         </div>
       </div>
     `;
@@ -2384,7 +2179,7 @@
     if (!item || !(item.subject || item.sender || item.message_id)) {
       return;
     }
-    window.location.href = providerSearchUrl(item);
+    window.location.href = PROVIDER.messageUrl(item);
   }
 
   function teachErrorResult(operation, rawMessage) {
@@ -4117,7 +3912,7 @@
           <td style="padding:9px 8px;vertical-align:top;color:#0f766e;font-weight:800;">${escapeHtml((item.labels_after || []).map(humanLabelNameFromId).join(", ") || "Uncategorized")}</td>
           <td style="padding:9px 8px;vertical-align:top;">
             <div style="display:grid;gap:7px;">
-              <button type="button" data-ea-open-affected-gmail="${escapeHtml(item.message_id || "")}" style="border:0;background:transparent;color:#5d5342;border-radius:0;padding:0;cursor:pointer;font:inherit;font-weight:760;text-align:left;text-decoration:underline;text-underline-offset:3px;box-shadow:none;">Open in Gmail</button>
+              <button type="button" data-ea-open-affected-gmail="${escapeHtml(item.message_id || "")}" style="border:0;background:transparent;color:#5d5342;border-radius:0;padding:0;cursor:pointer;font:inherit;font-weight:760;text-align:left;text-decoration:underline;text-underline-offset:3px;box-shadow:none;">Open in ${escapeHtml(activeProviderName())}</button>
               <button type="button" data-ea-exclude-affected="${escapeHtml(item.message_id || "")}" style="border:2px solid #241812;background:#fff4dd;color:#241812;border-radius:9px;padding:6px 8px;cursor:pointer;font:inherit;font-weight:800;box-shadow:2px 2px 0 #241812;">Exclude</button>
               <details style="color:#6b6255;">
                 <summary style="cursor:pointer;">Why?</summary>
@@ -4175,12 +3970,12 @@
 
   function humanWriteStatus(writeStatus) {
     if (!writeStatus) {
-      return "Not written to Gmail";
+      return `Not written to ${activeProviderName()}`;
     }
     return {
-      applied: "Written to Gmail",
-      skipped: "Skipped Gmail write",
-      failed: "Gmail write failed",
+      applied: `Written to ${activeProviderName()}`,
+      skipped: `Skipped ${activeProviderName()} write`,
+      failed: `${activeProviderName()} write failed`,
     }[writeStatus] || writeStatus;
   }
 

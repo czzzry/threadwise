@@ -1091,6 +1091,9 @@ class GmailCompanionUiTests(unittest.TestCase):
         repo_root = Path(__file__).resolve().parent.parent
         background_js = (repo_root / "extensions" / "gmail_companion" / "background.js").read_text()
         content_js = (repo_root / "extensions" / "gmail_companion" / "content.js").read_text()
+        provider_adapter_js = (
+            repo_root / "extensions" / "gmail_companion" / "provider_adapter.js"
+        ).read_text()
         manifest = json.loads((repo_root / "extensions" / "gmail_companion" / "manifest.json").read_text())
 
         self.assertIn("/api/harness-state", background_js)
@@ -1104,9 +1107,10 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("https://mail.google.com/*", manifest["host_permissions"])
         self.assertIn("https://mail.proton.me/*", manifest["host_permissions"])
         self.assertIn("https://mail.proton.me/*", manifest["content_scripts"][0]["matches"])
-        self.assertEqual(manifest["content_scripts"][0]["js"][0], "analytics.js")
-        self.assertIn("function currentProvider", content_js)
-        self.assertIn("function protonSelectedContext", content_js)
+        self.assertEqual(manifest["content_scripts"][0]["js"][0], "provider_adapter.js")
+        self.assertEqual(manifest["content_scripts"][0]["js"][1], "analytics.js")
+        self.assertIn("globalThis.ThreadwiseProvider", content_js)
+        self.assertIn("return PROVIDER.selectedContext();", content_js)
         self.assertIn("provider_labels: context.provider_labels || \"\"", content_js)
         self.assertIn("provider_ref: context.provider_ref || \"\"", content_js)
         self.assertIn('let minimized = true;', content_js)
@@ -1165,7 +1169,7 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn('chrome.runtime.getURL("assets/brand/threadwise-app-icon.png")', content_js)
         self.assertIn("open Threadwise", content_js)
         self.assertIn("Check again", content_js)
-        self.assertIn("Running Gmail sync...", content_js)
+        self.assertIn("`Running ${activeProviderName()} sync...`", content_js)
         background_js = (Path(__file__).parent.parent / "extensions/gmail_companion/background.js").read_text()
         self.assertIn("const GMAIL_CHECK_TIMEOUT_MS = 180000", background_js)
         self.assertIn("const GMAIL_MUTATION_TIMEOUT_MS = 180000", background_js)
@@ -1186,7 +1190,7 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("Reconnect Threadwise before teaching corrections.", content_js)
         self.assertIn("Threadwise has not synced this email yet.", content_js)
         self.assertIn("Threadwise can explain emails it has already synced.", content_js)
-        self.assertIn("Run Gmail sync now", content_js)
+        self.assertIn("`Run ${activeProviderName()} sync now`", content_js)
         self.assertIn("/api/gmail-check-run", content_js)
         self.assertIn("Connection details", content_js)
         self.assertNotIn("This email is not in the current local sync.", content_js)
@@ -1208,8 +1212,7 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("Preview in Threadwise", content_js)
         self.assertIn("findChangedTodayItem", content_js)
         self.assertIn("openSelectedEmailInGmail", content_js)
-        self.assertIn("window.location.href = providerSearchUrl(item)", content_js)
-        self.assertIn("const messageNode = subject ? selectedMessageNode() : null;", content_js)
+        self.assertIn("window.location.href = PROVIDER.messageUrl(item)", content_js)
         self.assertIn("box-sizing:border-box;width:100%", content_js)
         self.assertIn("teachErrorResult", content_js)
         self.assertIn("renderTeachResultHtml", content_js)
@@ -1252,13 +1255,13 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("Choose label manually", content_js)
         self.assertIn("Infer from note", content_js)
         self.assertIn("What should Threadwise understand?", content_js)
-        self.assertIn("gmailSearchUrl", content_js)
+        self.assertIn("function gmailMessageUrl", provider_adapter_js)
         self.assertIn("data-ea-open-gmail", content_js)
         self.assertIn("What to do now", content_js)
         self.assertIn("Viewing", content_js)
         self.assertIn("Closest synced emails", content_js)
         self.assertIn("kept visible", content_js)
-        self.assertIn("selectedMessageNode", content_js)
+        self.assertIn("selectedGmailMessageNode", provider_adapter_js)
         self.assertIn("Fix this email", content_js)
         self.assertIn("Affected existing emails", content_js)
         self.assertIn("Show affected emails", content_js)
@@ -1334,11 +1337,16 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn('data-ea-action="return-home-after-receipt"', content_js)
 
     def test_review_and_scope_screens_can_open_the_exact_gmail_message(self) -> None:
-        content_js = (Path(__file__).parent.parent / "extensions" / "gmail_companion" / "content.js").read_text()
+        extension_dir = Path(__file__).parent.parent / "extensions" / "gmail_companion"
+        content_js = (extension_dir / "content.js").read_text()
+        provider_adapter_js = (extension_dir / "provider_adapter.js").read_text()
 
         self.assertGreaterEqual(content_js.count('data-ea-action="open-selected-gmail"'), 4)
         self.assertIn('data-ea-action="open-selected-gmail" style="border:0;background:transparent', content_js)
-        self.assertIn('return `https://mail.google.com/mail/u/0/#all/${encodeURIComponent(messageId)}`', content_js)
+        self.assertIn(
+            'return `https://mail.google.com/mail/u/0/#all/${encodeURIComponent(messageId)}`',
+            provider_adapter_js,
+        )
         self.assertIn("Opening the email preserves the current correction draft", content_js)
 
     def test_label_change_preview_uses_one_compact_three_scope_chooser(self) -> None:
@@ -1361,7 +1369,7 @@ class GmailCompanionUiTests(unittest.TestCase):
         manifest = json.loads((repo_root / "extensions" / "gmail_companion" / "manifest.json").read_text())
         background_js = (repo_root / "extensions" / "gmail_companion" / "background.js").read_text()
 
-        self.assertEqual(manifest["version"], "0.3.0")
+        self.assertEqual(manifest["version"], "0.3.1")
         self.assertIn("threadwise_active_extension_version", background_js)
         self.assertIn("chrome.runtime.getManifest().version", background_js)
         self.assertIn('"https://mail.google.com/*", "https://mail.proton.me/*"', background_js)
