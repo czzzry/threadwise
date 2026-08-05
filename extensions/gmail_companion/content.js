@@ -451,10 +451,6 @@
       });
       renderState(response.payload);
     });
-    if (mode === "current-only") {
-      applyInFlight = false;
-      openFirstSummaryItemIfHelpful("needs_attention_items");
-    }
   }
 
   function asyncFollowUpIsWorking() {
@@ -1154,7 +1150,7 @@
         <div data-ea-selected-state="blocked" role="status" style="display:grid;gap:12px;">
           <h2 style="margin:0;font-size:1.3rem;line-height:1.2;">${escapeHtml(title)}</h2>
           <div style="border-radius:14px;background:#fff4dd;padding:12px;color:#1f1a14;line-height:1.45;">${escapeHtml(detail)}</div>
-          <button type="button" data-ea-action="${hasSnapshotMiss && PROVIDER.canRunManualSync ? "run-gmail-sync" : "force-refresh"}" ${gmailCheckPending ? "disabled" : ""} data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:${gmailCheckPending ? "#c7d8cc" : "#ffc64a"};color:#241812;border-radius:11px;padding:9px 12px;cursor:${gmailCheckPending ? "wait" : "pointer"};font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">${gmailCheckPending ? `Running ${activeProviderName()} sync...` : hasSnapshotMiss && PROVIDER.canRunManualSync ? `Run ${activeProviderName()} sync` : "Check again"}</button>
+          <button type="button" data-ea-action="${hasSnapshotMiss && PROVIDER.canRunManualSync ? "run-provider-sync" : "force-refresh"}" ${gmailCheckPending ? "disabled" : ""} data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:${gmailCheckPending ? "#c7d8cc" : "#ffc64a"};color:#241812;border-radius:11px;padding:9px 12px;cursor:${gmailCheckPending ? "wait" : "pointer"};font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">${gmailCheckPending ? `Running ${activeProviderName()} sync...` : hasSnapshotMiss && PROVIDER.canRunManualSync ? `Run ${activeProviderName()} sync` : "Check again"}</button>
           ${gmailCheckResult ? renderGmailCheckResultHtml(gmailCheckResult) : ""}
         </div>
       `);
@@ -1207,7 +1203,7 @@
         </div>
         <div style="margin-top:12px;color:#6b6255;line-height:1.45;">Threadwise can explain emails it has already synced. Preview a synced match below, or refresh the provider sync to update what Threadwise knows.</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
-          <button type="button" data-ea-action="${PROVIDER.canRunManualSync ? "run-gmail-sync" : "force-refresh"}" ${gmailCheckPending ? "disabled" : ""} style="border:2px solid #241812;background:${gmailCheckPending ? "#c7d8cc" : "#ffc64a"};color:#241812;border-radius:11px;padding:9px 12px;cursor:${gmailCheckPending ? "wait" : "pointer"};font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">${gmailCheckPending ? `Running ${activeProviderName()} sync...` : PROVIDER.canRunManualSync ? `Run ${activeProviderName()} sync now` : "Check again"}</button>
+          <button type="button" data-ea-action="${PROVIDER.canRunManualSync ? "run-provider-sync" : "force-refresh"}" ${gmailCheckPending ? "disabled" : ""} style="border:2px solid #241812;background:${gmailCheckPending ? "#c7d8cc" : "#ffc64a"};color:#241812;border-radius:11px;padding:9px 12px;cursor:${gmailCheckPending ? "wait" : "pointer"};font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">${gmailCheckPending ? `Running ${activeProviderName()} sync...` : PROVIDER.canRunManualSync ? `Run ${activeProviderName()} sync now` : "Check again"}</button>
           ${
             primaryRelatedItem
               ? `<button type="button" data-ea-related-item="${escapeHtml(primaryRelatedItem.message_id || "")}" style="border:0;background:#0f766e;color:#fff;border-radius:999px;padding:9px 12px;cursor:pointer;font:inherit;">Preview closest synced match</button>`
@@ -2834,10 +2830,10 @@
       refreshSelection(true);
       return;
     }
-    const runGmailSyncButton = event.target.closest("[data-ea-action='run-gmail-sync']");
-    if (runGmailSyncButton) {
+    const runProviderSyncButton = event.target.closest("[data-ea-action='run-provider-sync']");
+    if (runProviderSyncButton) {
       event.preventDefault();
-      triggerGmailSync();
+      triggerProviderSync();
       return;
     }
     const retryProviderWriteButton = event.target.closest("[data-ea-action='retry-provider-write']");
@@ -3724,7 +3720,7 @@
     }
   }
 
-  function triggerGmailSync() {
+  function triggerProviderSync() {
     if (gmailCheckPending) {
       return;
     }
@@ -3735,18 +3731,20 @@
     }
     chrome.runtime.sendMessage({
       type: "email-agent:api",
-      path: "/api/gmail-check-run",
+      path: "/api/provider-sync-run",
       method: "POST",
       body: {
         confirmed: "true",
+        provider: ACTIVE_PROVIDER,
+        batch_size: ACTIVE_PROVIDER === "protonmail" ? 25 : 50,
       },
     }, (response) => {
       gmailCheckPending = false;
       if (chrome.runtime.lastError) {
         gmailCheckResult = {
-          kind: "gmail-sync-error",
-          title: "Gmail sync did not start",
-          message: chrome.runtime.lastError.message || "Could not start a Gmail sync.",
+          kind: "provider-sync-error",
+          title: `${activeProviderName()} sync did not start`,
+          message: chrome.runtime.lastError.message || `Could not start a ${activeProviderName()} sync.`,
         };
         if (lastHarnessState) {
           renderState(lastHarnessState);
@@ -3755,9 +3753,9 @@
       }
       if (!response || !response.ok) {
         gmailCheckResult = {
-          kind: "gmail-sync-error",
-          title: "Gmail sync did not start",
-          message: (response && (response.payload?.error || response.error)) || "Could not start a Gmail sync.",
+          kind: "provider-sync-error",
+          title: `${activeProviderName()} sync did not start`,
+          message: (response && (response.payload?.error || response.error)) || `Could not start a ${activeProviderName()} sync.`,
         };
         if (lastHarnessState) {
           renderState(lastHarnessState);
@@ -3765,9 +3763,9 @@
         return;
       }
       gmailCheckResult = {
-        kind: "gmail-sync-success",
-        title: "Gmail sync finished",
-        message: "Threadwise ran a Gmail sync. Checking this email again now.",
+        kind: "provider-sync-success",
+        title: `${activeProviderName()} sync finished`,
+        message: `Threadwise synced new ${activeProviderName()} messages. Checking this email again now.`,
       };
       previousPayload = "";
       refreshSelection(true);

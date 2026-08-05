@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import threading
 from datetime import UTC, datetime
+from email.utils import parseaddr
 from pathlib import Path
 
 from src.gmail_companion_rendering import escape_html
@@ -14,6 +15,16 @@ from src.provider_write_queue import ProviderWriteQueue
 
 def _start_background_thread(work) -> None:
     threading.Thread(target=work, daemon=True).start()
+
+
+def _normalized_sender_identity(value: object) -> str:
+    text = str(value or "").strip()
+    address = parseaddr(text)[1].strip().casefold()
+    return address or " ".join(text.casefold().split())
+
+
+def _normalized_subject(value: object) -> str:
+    return " ".join(str(value or "").strip().casefold().split())
 
 
 def sync_proton_review_ledger(storage_dir: Path, batch_id: str) -> dict:
@@ -412,8 +423,8 @@ class ProtonReviewConsole:
             }
 
         selected_id = str(selected_context.get("message_id") or "")
-        selected_sender = str(selected_context.get("sender") or "").strip().casefold()
-        selected_subject = str(selected_context.get("subject") or "").strip().casefold()
+        selected_sender = _normalized_sender_identity(selected_context.get("sender"))
+        selected_subject = _normalized_subject(selected_context.get("subject"))
         classification = load_json_or_default(
             self._classification_ledger_path,
             {"provider": "protonmail", "messages": {}},
@@ -423,14 +434,22 @@ class ProtonReviewConsole:
         matching_ids: list[str] = []
         if selected_id and selected_id in records and selected_id in live_ids:
             matching_ids = [selected_id]
-        elif not selected_id and selected_sender and selected_subject:
-            matching_ids = [
-                message_id
-                for message_id, record in records.items()
-                if message_id in live_ids
-                and str(record.get("sender") or "").strip().casefold() == selected_sender
-                and str(record.get("subject") or "").strip().casefold() == selected_subject
-            ]
+        elif not selected_id and selected_subject:
+            if selected_sender:
+                matching_ids = [
+                    message_id
+                    for message_id, record in records.items()
+                    if message_id in live_ids
+                    and _normalized_sender_identity(record.get("sender")) == selected_sender
+                    and _normalized_subject(record.get("subject")) == selected_subject
+                ]
+            if not matching_ids:
+                matching_ids = [
+                    message_id
+                    for message_id, record in records.items()
+                    if message_id in live_ids
+                    and _normalized_subject(record.get("subject")) == selected_subject
+                ]
         item = None
         if len(matching_ids) == 1:
             message_id = matching_ids[0]

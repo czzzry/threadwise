@@ -1,6 +1,7 @@
 import io
 import json
 import plistlib
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -11,7 +12,9 @@ from src.threadwise_startup import (
     HEALTH_SERVICE_ID,
     LAUNCH_AGENT_LABEL,
     build_proton_bridge_status,
+    build_proton_daily_launch_agent_plist,
     build_status_report,
+    bootstrap_launch_agent,
     install_launch_agent,
     probe_health,
     render_launch_agent_plist,
@@ -22,6 +25,20 @@ from src.threadwise_startup import (
 
 
 class ThreadwiseStartupTests(unittest.TestCase):
+    def test_bootstrap_retries_while_launchd_finishes_bootout(self) -> None:
+        plist_path = Path("/tmp/com.threadwise.companion.plist")
+        with (
+            patch(
+                "src.threadwise_startup.subprocess.run",
+                side_effect=[subprocess.CalledProcessError(5, "launchctl"), None],
+            ) as run_mock,
+            patch("src.threadwise_startup.time.sleep") as sleep_mock,
+        ):
+            bootstrap_launch_agent(plist_path, uid="501")
+
+        self.assertEqual(run_mock.call_count, 2)
+        sleep_mock.assert_called_once_with(0.5)
+
     def test_render_launch_agent_plist_targets_repo_root_and_fixed_loopback(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir)
@@ -52,6 +69,34 @@ class ThreadwiseStartupTests(unittest.TestCase):
             self.assertEqual(payload["WorkingDirectory"], str(repo_root.resolve()))
             self.assertEqual(payload["StandardOutPath"], str(log_dir / "companion.out.log"))
             self.assertEqual(payload["StandardErrorPath"], str(log_dir / "companion.err.log"))
+
+    def test_proton_daily_launch_agent_runs_incrementally_at_six(self) -> None:
+        repo_root = Path("/Users/example/threadwise")
+        log_dir = Path("/Users/example/Library/Logs/Threadwise")
+
+        payload = build_proton_daily_launch_agent_plist(
+            repo_root,
+            python_executable="/opt/python/bin/python3",
+            log_dir=log_dir,
+        )
+
+        self.assertEqual(payload["Label"], "com.threadwise.proton-daily")
+        self.assertFalse(payload["RunAtLoad"])
+        self.assertFalse(payload["KeepAlive"])
+        self.assertEqual(payload["StartCalendarInterval"], {"Hour": 6, "Minute": 0})
+        self.assertEqual(
+            payload["ProgramArguments"],
+            [
+                "/opt/python/bin/python3",
+                str(repo_root / "scripts" / "daily_live_protonmail_run.py"),
+                "--account-id",
+                "founder-proton",
+                "--batch-size",
+                "25",
+            ],
+        )
+        self.assertEqual(payload["StandardOutPath"], str(log_dir / "proton-daily.out.log"))
+        self.assertEqual(payload["StandardErrorPath"], str(log_dir / "proton-daily.err.log"))
 
     def test_install_and_uninstall_commands_support_dry_run(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -84,11 +129,20 @@ class ThreadwiseStartupTests(unittest.TestCase):
                     ["launchctl", "enable", "gui/501/com.threadwise.companion"],
                     ["launchctl", "bootout", "gui/501/com.threadwise.companion"],
                     ["launchctl", "bootstrap", "gui/501", str(plist_path)],
+                    ["launchctl", "enable", "gui/501/com.threadwise.proton-daily"],
+                    ["launchctl", "bootout", "gui/501/com.threadwise.proton-daily"],
+                    [
+                        "launchctl",
+                        "bootstrap",
+                        "gui/501",
+                        str(plist_path.with_name("com.threadwise.proton-daily.plist")),
+                    ],
                 ],
             )
-            self.assertTrue(run_mock.call_args_list[0].kwargs["check"])
-            self.assertFalse(run_mock.call_args_list[1].kwargs["check"])
-            self.assertTrue(run_mock.call_args_list[2].kwargs["check"])
+            self.assertEqual(
+                [call.kwargs["check"] for call in run_mock.call_args_list],
+                [True, False, True, True, False, True],
+            )
 
     def test_stop_disables_before_unloading_and_preserves_the_plist(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -107,11 +161,15 @@ class ThreadwiseStartupTests(unittest.TestCase):
                 [call.args[0] for call in run_mock.call_args_list],
                 [
                     ["launchctl", "disable", "gui/501/com.threadwise.companion"],
+                    ["launchctl", "disable", "gui/501/com.threadwise.proton-daily"],
                     ["launchctl", "bootout", "gui/501/com.threadwise.companion"],
+                    ["launchctl", "bootout", "gui/501/com.threadwise.proton-daily"],
                 ],
             )
-            self.assertTrue(run_mock.call_args_list[0].kwargs["check"])
-            self.assertFalse(run_mock.call_args_list[1].kwargs["check"])
+            self.assertEqual(
+                [call.kwargs["check"] for call in run_mock.call_args_list],
+                [True, True, False, False],
+            )
 
     def test_start_reenables_and_bootstraps_the_preserved_plist(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -132,6 +190,13 @@ class ThreadwiseStartupTests(unittest.TestCase):
                 [
                     ["launchctl", "enable", "gui/501/com.threadwise.companion"],
                     ["launchctl", "bootstrap", "gui/501", str(plist_path)],
+                    ["launchctl", "enable", "gui/501/com.threadwise.proton-daily"],
+                    [
+                        "launchctl",
+                        "bootstrap",
+                        "gui/501",
+                        str(plist_path.with_name("com.threadwise.proton-daily.plist")),
+                    ],
                 ],
             )
 
@@ -153,6 +218,7 @@ class ThreadwiseStartupTests(unittest.TestCase):
                 [
                     ["launchctl", "enable", "gui/501/com.threadwise.companion"],
                     ["launchctl", "kickstart", "-k", "gui/501/com.threadwise.companion"],
+                    ["launchctl", "enable", "gui/501/com.threadwise.proton-daily"],
                 ],
             )
 
@@ -205,6 +271,27 @@ class ThreadwiseStartupTests(unittest.TestCase):
         self.assertEqual(running["state_label"], "Running")
         self.assertEqual(stopped["state"], "stopped")
         self.assertEqual(stopped["state_label"], "Stopped")
+
+    def test_status_report_exposes_the_proton_daily_schedule(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+
+            def inspect(*, uid=None, label=LAUNCH_AGENT_LABEL):
+                return {
+                    "loaded": True,
+                    "disabled": False,
+                    "target": f"gui/501/{label}",
+                }
+
+            with (
+                patch("src.threadwise_startup.inspect_launch_agent", side_effect=inspect),
+                patch("src.threadwise_startup.probe_health", return_value={"kind": "ready", "reachable": True}),
+                patch("src.threadwise_startup.build_proton_bridge_status", return_value={"state": "available"}),
+            ):
+                report = build_status_report(repo_root)
+
+        self.assertEqual(report["proton_daily"]["state"], "scheduled")
+        self.assertEqual(report["proton_daily"]["state_label"], "Scheduled daily at 6:00")
 
     def test_bridge_status_reports_required_but_unavailable_without_reading_config(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

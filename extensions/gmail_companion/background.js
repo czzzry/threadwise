@@ -3,8 +3,8 @@ const HEALTH_PATH = "/api/health";
 const HEALTH_SERVICE_ID = "threadwise-gmail-companion";
 const HEALTH_TIMEOUT_MS = 5000;
 const HARNESS_STATE_TIMEOUT_MS = 30000;
-// A bounded live Gmail run can take longer than an ordinary state read.
-const GMAIL_CHECK_TIMEOUT_MS = 180000;
+// A bounded live provider run can take longer than an ordinary state read.
+const PROVIDER_SYNC_TIMEOUT_MS = 180000;
 // Teaching can include bounded Gmail label mutations across matching inbox messages.
 const GMAIL_MUTATION_TIMEOUT_MS = 180000;
 const ANALYTICS_DISTINCT_ID_KEY = "threadwise_analytics_distinct_id";
@@ -128,8 +128,8 @@ async function probeHealth() {
 }
 
 function apiTimeoutMs(path) {
-  if (path === "/api/gmail-check-run") {
-    return GMAIL_CHECK_TIMEOUT_MS;
+  if (path === "/api/gmail-check-run" || path === "/api/provider-sync-run") {
+    return PROVIDER_SYNC_TIMEOUT_MS;
   }
   if (path === "/api/teach-apply" || path === "/api/safety-apply") {
     return GMAIL_MUTATION_TIMEOUT_MS;

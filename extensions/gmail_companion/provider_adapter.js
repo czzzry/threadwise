@@ -105,7 +105,7 @@
     return Object.freeze({
       id: "protonmail",
       name: "Proton Mail",
-      canRunManualSync: false,
+      canRunManualSync: true,
       hasOpenMessage: () => Boolean(messageReference()),
       selectedContext,
       messageUrl: protonMessageUrl,

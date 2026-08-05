@@ -68,6 +68,28 @@ class ProductAnalyticsTests(unittest.TestCase):
                     "error_category": "provider_write_error",
                 },
             ),
+            (
+                "provider sync started",
+                {"surface": "gmail_companion", "provider": "protonmail"},
+            ),
+            (
+                "provider sync completed",
+                {
+                    "surface": "gmail_companion",
+                    "provider": "protonmail",
+                    "sync_outcome": "completed",
+                    "fetched_count_bucket": "2-5",
+                    "write_failure_count_bucket": "0",
+                },
+            ),
+            (
+                "provider sync failed",
+                {
+                    "surface": "gmail_companion",
+                    "provider": "protonmail",
+                    "error_category": "provider_write_error",
+                },
+            ),
         ]
 
         for event, properties in events:

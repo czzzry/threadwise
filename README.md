@@ -160,11 +160,16 @@ Gmail daily workflow:
 python3 scripts/daily_live_gmail_run.py --account-id <local-gmail-id> --batch-size 50
 ```
 
-ProtonMail read-only daily workflow:
+ProtonMail incremental, label-only daily workflow:
 
 ```bash
 python3 scripts/daily_live_protonmail_run.py --account-id <local-proton-id> --batch-size 25
 ```
+
+On the founder's Mac, `scripts/manage_threadwise_startup.py install` also installs
+`com.threadwise.proton-daily`, which runs this incremental check at 6:00 each day.
+Already processed messages are skipped before classification. Threadwise Start/Stop
+controls both the companion and this schedule.
 
 Weekly per-inbox report:
 

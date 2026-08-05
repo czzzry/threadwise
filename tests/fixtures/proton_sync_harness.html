@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Threadwise Proton Sync Harness</title>
+</head>
+<body>
+  <main>
+    <h1 data-testid="conversation-header:subject">A fresh Proton message</h1>
+    <div data-testid="message-header:sender-address" title="sender@example.test">Sender</div>
+  </main>
+  <script>
+    window.__twSyncCalls = [];
+    window.__twSynced = false;
+
+    const selectedContext = {
+      provider: "protonmail",
+      message_id: "",
+      thread_id: "",
+      subject: "A fresh Proton message",
+      sender: "Sender <sender@example.test>",
+      provider_labels: "",
+      provider_ref: "proton-ref-1",
+      page_url: "https://mail.proton.me/u/0/inbox/proton-ref-1",
+      selected_at: "2026-08-05T09:00:00Z",
+    };
+
+    function harnessState() {
+      const selectedEmail = window.__twSynced
+        ? {
+            found: true,
+            provider: "protonmail",
+            message_id: "101",
+            subject: selectedContext.subject,
+            sender: selectedContext.sender,
+            status: "needs-attention",
+            status_label: "Needs attention",
+            classification: "EA/Orders",
+            internal_label: "shopping-order",
+            suggested_label: "shopping-order",
+            reason: "A delivery lifecycle update.",
+            details: { write_status: null, inbox_status: "preserved" },
+            understanding_state: "ready",
+            understanding_label: "Ready",
+            understanding_message: "Threadwise is ready with the current email.",
+          }
+        : {
+            found: false,
+            provider: "protonmail",
+            status: "not-in-snapshot",
+            status_label: "Not in Threadwise yet",
+            reason: "This Proton Mail message is not in the current Threadwise sync yet.",
+            subject: selectedContext.subject,
+            sender: selectedContext.sender,
+            understanding_state: "ready",
+            understanding_label: "Ready",
+            understanding_message: "Threadwise is ready with the current email.",
+          };
+      const reviewItems = window.__twSynced ? [selectedEmail] : [];
+      return {
+        selected_context: selectedContext,
+        sidebar_state: {
+          contract_version: "threadwise-sidebar-v2",
+          generated_at: "2026-08-05T09:00:00Z",
+          selected_context: selectedContext,
+          selected_email: selectedEmail,
+          daily_summary: {
+            provider: "protonmail",
+            processed_count: reviewItems.length,
+            needs_attention_count: reviewItems.length,
+            unlabeled_count: reviewItems.length,
+            auto_handled_count: 0,
+            kept_visible_count: 0,
+            recent_items: reviewItems,
+            needs_attention_items: reviewItems,
+            auto_handled_items: [],
+            kept_visible_items: [],
+            run_count: window.__twSynced ? 1 : 0,
+            source_label: "synthetic Proton inbox",
+          },
+          run_status: {},
+          ui_state: {
+            default_mode: "minimized",
+            can_minimize: true,
+            panel_title: "Threadwise",
+            provider: "protonmail",
+            provider_name: "Proton Mail",
+            allowed_labels: [{ id: "shopping-order", name: "EA/Orders" }],
+            async_follow_up: null,
+            provider_write: null,
+            activity_feed: [],
+          },
+        },
+        recent_items: reviewItems,
+        needs_attention_items: reviewItems,
+        auto_handled_items: [],
+        kept_visible_items: [],
+        analytics_status: { state: "active" },
+      };
+    }
+
+    window.ThreadwiseProvider = Object.freeze({
+      id: "protonmail",
+      name: "Proton Mail",
+      canRunManualSync: true,
+      hasOpenMessage: () => true,
+      selectedContext: () => ({ ...selectedContext }),
+      messageUrl: () => selectedContext.page_url,
+    });
+
+    window.chrome = {
+      runtime: {
+        lastError: null,
+        getURL: (path) => `/${path}`,
+        onMessage: { addListener: () => undefined },
+        sendMessage(message, callback) {
+          if (message.type === "email-agent:get-state") {
+            setTimeout(() => callback({
+              ok: true,
+              payload: harnessState(),
+              connection_state: { kind: "ready", label: "Ready", details: "Threadwise is connected." },
+            }), 0);
+            return;
+          }
+          if (message.type === "email-agent:api" && message.path === "/api/provider-sync-run") {
+            window.__twSyncCalls.push(message.body);
+            document.body.dataset.syncProvider = String(message.body?.provider || "");
+            document.body.dataset.syncBatchSize = String(message.body?.batch_size || "");
+            window.__twSynced = true;
+            setTimeout(() => callback({
+              ok: true,
+              payload: {
+                status: "succeeded",
+                provider: "protonmail",
+                result: { outcome: "completed", fetched_count: 1 },
+              },
+            }), 50);
+            return;
+          }
+          setTimeout(() => callback({ ok: true, payload: {} }), 0);
+        },
+      },
+    };
+  </script>
+  <script src="/extensions/gmail_companion/content.js"></script>
+</body>
+</html>

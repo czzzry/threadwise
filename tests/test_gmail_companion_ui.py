@@ -1171,7 +1171,7 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("Check again", content_js)
         self.assertIn("`Running ${activeProviderName()} sync...`", content_js)
         background_js = (Path(__file__).parent.parent / "extensions/gmail_companion/background.js").read_text()
-        self.assertIn("const GMAIL_CHECK_TIMEOUT_MS = 180000", background_js)
+        self.assertIn("const PROVIDER_SYNC_TIMEOUT_MS = 180000", background_js)
         self.assertIn("const GMAIL_MUTATION_TIMEOUT_MS = 180000", background_js)
         self.assertIn('path === "/api/gmail-check-run"', background_js)
         self.assertIn('path === "/api/teach-apply"', background_js)
@@ -1189,9 +1189,13 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("Wrong service on port", content_js)
         self.assertIn("Reconnect Threadwise before teaching corrections.", content_js)
         self.assertIn("Threadwise has not synced this email yet.", content_js)
+        refresh_selection = content_js.split("function refreshSelection", 1)[1].split(
+            "function asyncFollowUpIsWorking", 1
+        )[0]
+        self.assertNotIn('mode === "current-only"', refresh_selection)
         self.assertIn("Threadwise can explain emails it has already synced.", content_js)
         self.assertIn("`Run ${activeProviderName()} sync now`", content_js)
-        self.assertIn("/api/gmail-check-run", content_js)
+        self.assertIn("/api/provider-sync-run", content_js)
         self.assertIn("Connection details", content_js)
         self.assertNotIn("This email is not in the current local sync.", content_js)
         self.assertIn("Current Queue", content_js)
@@ -1369,7 +1373,7 @@ class GmailCompanionUiTests(unittest.TestCase):
         manifest = json.loads((repo_root / "extensions" / "gmail_companion" / "manifest.json").read_text())
         background_js = (repo_root / "extensions" / "gmail_companion" / "background.js").read_text()
 
-        self.assertEqual(manifest["version"], "0.3.1")
+        self.assertEqual(manifest["version"], "0.3.2")
         self.assertIn("threadwise_active_extension_version", background_js)
         self.assertIn("chrome.runtime.getManifest().version", background_js)
         self.assertIn('"https://mail.google.com/*", "https://mail.proton.me/*"', background_js)
@@ -2533,6 +2537,23 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertEqual(payload["status"], "succeeded")
             self.assertEqual(sidebar["run_status"]["status"], "succeeded")
             self.assertEqual(sidebar["run_status"]["dashboard_path"], "/daily-dashboard#run-gmail-check")
+
+    def test_provider_sync_endpoint_keeps_gmail_check_compatible(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_attention_fixture(storage_dir)
+            app = GmailCompanionApp(storage_dir, gmail_run_runner=lambda _payload: None)
+            handler = _FakeRequestHandler(
+                "/api/provider-sync-run",
+                method="POST",
+                json_body={"provider": "gmail", "confirmed": "true", "account_id": "founder-test"},
+            )
+
+            app.handle_request(handler)
+            payload = json.loads(handler.wfile.value.decode("utf-8"))
+
+            self.assertEqual(handler.code, 200)
+            self.assertEqual(payload["status"], "succeeded")
 
     def test_attention_rule_proposal_endpoints_preview_and_approve_without_gmail_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

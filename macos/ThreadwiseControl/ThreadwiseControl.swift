@@ -22,17 +22,29 @@ struct BridgeStatus: Decodable {
     let details: String
 }
 
+struct ProtonDailyStatus: Decodable {
+    let state: String
+    let stateLabel: String
+
+    enum CodingKeys: String, CodingKey {
+        case state
+        case stateLabel = "state_label"
+    }
+}
+
 struct CompanionStatus: Decodable {
     let state: String
     let stateLabel: String
     let health: HealthStatus
     let protonBridge: BridgeStatus
+    let protonDaily: ProtonDailyStatus
 
     enum CodingKeys: String, CodingKey {
         case state
         case stateLabel = "state_label"
         case health
         case protonBridge = "proton_bridge"
+        case protonDaily = "proton_daily"
     }
 }
 
@@ -58,6 +70,8 @@ final class ThreadwiseControlDelegate: NSObject, NSApplicationDelegate {
     private lazy var bridgeStatusItem = NSMenuItem(title: "Proton Mail Bridge: Checking…", action: nil, keyEquivalent: "")
     private lazy var bridgeDetailItem = NSMenuItem(title: "Checking whether Bridge is needed.", action: nil, keyEquivalent: "")
     private lazy var openBridgeItem = NSMenuItem(title: "Open Proton Mail Bridge", action: #selector(openProtonBridge), keyEquivalent: "")
+    private lazy var protonDailyStatusItem = NSMenuItem(title: "Proton daily sync: Checking…", action: nil, keyEquivalent: "")
+    private lazy var protonDailyDetailItem = NSMenuItem(title: "Checking the automatic Proton schedule.", action: nil, keyEquivalent: "")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -101,6 +115,9 @@ final class ThreadwiseControlDelegate: NSObject, NSApplicationDelegate {
         bridgeStatusItem.isEnabled = false
         bridgeDetailItem.isEnabled = false
         bridgeDetailItem.indentationLevel = 1
+        protonDailyStatusItem.isEnabled = false
+        protonDailyDetailItem.isEnabled = false
+        protonDailyDetailItem.indentationLevel = 1
 
         for item in [startItem, stopItem, openItem, openBridgeItem] {
             item.target = self
@@ -116,6 +133,8 @@ final class ThreadwiseControlDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(bridgeStatusItem)
         menu.addItem(bridgeDetailItem)
         menu.addItem(openBridgeItem)
+        menu.addItem(protonDailyStatusItem)
+        menu.addItem(protonDailyDetailItem)
         menu.addItem(.separator())
 
         let refreshItem = NSMenuItem(title: "Refresh Status", action: #selector(refreshStatus), keyEquivalent: "r")
@@ -176,6 +195,12 @@ final class ThreadwiseControlDelegate: NSObject, NSApplicationDelegate {
         openBridgeItem.isHidden = !status.protonBridge.required || status.protonBridge.state == "available"
         openBridgeItem.isEnabled = status.protonBridge.installed
 
+        protonDailyStatusItem.title = "Proton daily sync: \(status.protonDaily.stateLabel)"
+        protonDailyStatusItem.image = stateImage(for: status.protonDaily.state)
+        protonDailyDetailItem.title = status.protonDaily.state == "scheduled"
+            ? "Only new messages are processed; previously synced mail is skipped."
+            : "Start Threadwise to restore the automatic Proton schedule."
+
         statusItem.button?.toolTip = "Threadwise is \(status.stateLabel.lowercased())"
     }
 
@@ -191,7 +216,7 @@ final class ThreadwiseControlDelegate: NSObject, NSApplicationDelegate {
     private func stateImage(for state: String) -> NSImage? {
         let symbol: String
         switch state {
-        case "running", "available": symbol = "checkmark.circle.fill"
+        case "running", "available", "scheduled": symbol = "checkmark.circle.fill"
         case "stopped", "not-configured": symbol = "stop.circle"
         default: symbol = "exclamationmark.triangle.fill"
         }

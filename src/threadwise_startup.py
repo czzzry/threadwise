@@ -6,12 +6,14 @@ import plistlib
 import platform
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
 
 
 LAUNCH_AGENT_LABEL = "com.threadwise.companion"
+PROTON_DAILY_LAUNCH_AGENT_LABEL = "com.threadwise.proton-daily"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8021
 HEALTH_PATH = "/api/health"
@@ -19,10 +21,21 @@ HEALTH_SERVICE_ID = "threadwise-gmail-companion"
 HEALTH_SERVICE_NAME = "Threadwise Gmail Companion"
 PROTON_BRIDGE_APP_PATH = Path("/Applications/Proton Mail Bridge.app")
 PROTON_BRIDGE_ACCOUNT_ID = "founder-proton"
+PROTON_DAILY_HOUR = 6
+PROTON_DAILY_BATCH_SIZE = 25
 
 
 def default_launch_agent_plist_path() -> Path:
     return Path.home() / "Library" / "LaunchAgents" / f"{LAUNCH_AGENT_LABEL}.plist"
+
+
+def default_proton_daily_plist_path() -> Path:
+    return (
+        Path.home()
+        / "Library"
+        / "LaunchAgents"
+        / f"{PROTON_DAILY_LAUNCH_AGENT_LABEL}.plist"
+    )
 
 
 def default_log_dir() -> Path:
@@ -33,18 +46,41 @@ def repo_root_from_module() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
-def launch_agent_target(uid: str) -> str:
-    return f"gui/{uid}/{LAUNCH_AGENT_LABEL}"
+def launch_agent_target(uid: str, label: str = LAUNCH_AGENT_LABEL) -> str:
+    return f"gui/{uid}/{label}"
 
 
 def current_uid() -> str:
     return subprocess.check_output(["id", "-u"], text=True).strip()
 
 
-def launch_agent_is_loaded(*, uid: str | None = None) -> bool:
+def bootstrap_launch_agent(
+    plist_path: Path,
+    *,
+    uid: str,
+    attempts: int = 4,
+    retry_delay_seconds: float = 0.5,
+) -> None:
+    """Load a LaunchAgent, tolerating launchd's brief post-bootout transition."""
+    command = ["launchctl", "bootstrap", f"gui/{uid}", str(plist_path)]
+    for attempt in range(attempts):
+        try:
+            subprocess.run(command, check=True)
+            return
+        except subprocess.CalledProcessError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(retry_delay_seconds * (attempt + 1))
+
+
+def launch_agent_is_loaded(
+    *,
+    uid: str | None = None,
+    label: str = LAUNCH_AGENT_LABEL,
+) -> bool:
     uid = uid or current_uid()
     result = subprocess.run(
-        ["launchctl", "print", launch_agent_target(uid)],
+        ["launchctl", "print", launch_agent_target(uid, label)],
         check=False,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -52,29 +88,37 @@ def launch_agent_is_loaded(*, uid: str | None = None) -> bool:
     return result.returncode == 0
 
 
-def inspect_launch_agent(*, uid: str | None = None) -> dict:
+def inspect_launch_agent(
+    *,
+    uid: str | None = None,
+    label: str = LAUNCH_AGENT_LABEL,
+) -> dict:
     if platform.system() != "Darwin":
         return {"loaded": False, "disabled": False, "supported": False}
     uid = uid or current_uid()
-    loaded = launch_agent_is_loaded(uid=uid)
+    loaded = launch_agent_is_loaded(uid=uid, label=label)
     disabled_result = subprocess.run(
         ["launchctl", "print-disabled", f"gui/{uid}"],
         check=False,
         capture_output=True,
         text=True,
     )
-    disabled = _launch_agent_disabled_from_output(disabled_result.stdout or "")
+    disabled = _launch_agent_disabled_from_output(disabled_result.stdout or "", label=label)
     return {
         "loaded": loaded,
         "disabled": disabled,
         "supported": True,
-        "target": launch_agent_target(uid),
+        "target": launch_agent_target(uid, label),
     }
 
 
-def _launch_agent_disabled_from_output(output: str) -> bool:
+def _launch_agent_disabled_from_output(
+    output: str,
+    *,
+    label: str = LAUNCH_AGENT_LABEL,
+) -> bool:
     for line in output.splitlines():
-        if LAUNCH_AGENT_LABEL in line:
+        if label in line:
             return line.rsplit("=>", 1)[-1].strip().rstrip(";") == "true"
     return False
 
@@ -190,6 +234,60 @@ def render_launch_agent_plist(
     return plistlib.dumps(payload, fmt=plistlib.FMT_XML, sort_keys=False)
 
 
+def build_proton_daily_launch_agent_plist(
+    repo_root: Path,
+    *,
+    python_executable: str | None = None,
+    log_dir: Path | None = None,
+) -> dict:
+    log_dir = log_dir or default_log_dir()
+    daily_script = (repo_root / "scripts" / "daily_live_protonmail_run.py").resolve()
+    return {
+        "Label": PROTON_DAILY_LAUNCH_AGENT_LABEL,
+        "ProgramArguments": [
+            python_executable or sys.executable,
+            str(daily_script),
+            "--account-id",
+            PROTON_BRIDGE_ACCOUNT_ID,
+            "--batch-size",
+            str(PROTON_DAILY_BATCH_SIZE),
+        ],
+        "RunAtLoad": False,
+        "KeepAlive": False,
+        "StartCalendarInterval": {"Hour": PROTON_DAILY_HOUR, "Minute": 0},
+        "WorkingDirectory": str(repo_root.resolve()),
+        "StandardOutPath": str(log_dir / "proton-daily.out.log"),
+        "StandardErrorPath": str(log_dir / "proton-daily.err.log"),
+    }
+
+
+def write_proton_daily_launch_agent_plist(
+    repo_root: Path,
+    plist_path: Path | None = None,
+    *,
+    python_executable: str | None = None,
+    log_dir: Path | None = None,
+    create_log_dir: bool = True,
+) -> Path:
+    plist_path = plist_path or default_proton_daily_plist_path()
+    log_dir = log_dir or default_log_dir()
+    if create_log_dir:
+        log_dir.mkdir(parents=True, exist_ok=True)
+    plist_path.parent.mkdir(parents=True, exist_ok=True)
+    plist_path.write_bytes(
+        plistlib.dumps(
+            build_proton_daily_launch_agent_plist(
+                repo_root,
+                python_executable=python_executable,
+                log_dir=log_dir,
+            ),
+            fmt=plistlib.FMT_XML,
+            sort_keys=False,
+        )
+    )
+    return plist_path
+
+
 def write_launch_agent_plist(
     repo_root: Path,
     plist_path: Path | None = None,
@@ -292,6 +390,25 @@ def build_status_report(
     log_dir = default_log_dir()
     health = probe_health(origin=origin, timeout_seconds=timeout_seconds)
     launch_agent = inspect_launch_agent()
+    proton_daily_agent = inspect_launch_agent(label=PROTON_DAILY_LAUNCH_AGENT_LABEL)
+    proton_daily = {
+        **proton_daily_agent,
+        "label": PROTON_DAILY_LAUNCH_AGENT_LABEL,
+        "state": (
+            "scheduled"
+            if proton_daily_agent.get("loaded") and not proton_daily_agent.get("disabled")
+            else "stopped"
+        ),
+        "state_label": (
+            f"Scheduled daily at {PROTON_DAILY_HOUR}:00"
+            if proton_daily_agent.get("loaded") and not proton_daily_agent.get("disabled")
+            else "Not scheduled"
+        ),
+        "hour": PROTON_DAILY_HOUR,
+        "minute": 0,
+        "plist_path": str(default_proton_daily_plist_path()),
+        "plist_exists": default_proton_daily_plist_path().exists(),
+    }
     if launch_agent["loaded"] and health.get("kind") == "ready":
         state = "running"
         state_label = "Running"
@@ -313,6 +430,7 @@ def build_status_report(
         "state": state,
         "state_label": state_label,
         "proton_bridge": build_proton_bridge_status(repo_root),
+        "proton_daily": proton_daily,
         "service_id": HEALTH_SERVICE_ID,
         "service_name": HEALTH_SERVICE_NAME,
         "origin": origin or f"http://{DEFAULT_HOST}:{DEFAULT_PORT}",
@@ -328,6 +446,10 @@ def install_launch_agent(
     port: int = DEFAULT_PORT,
     dry_run: bool = False,
 ) -> dict:
+    plist_path = plist_path or default_launch_agent_plist_path()
+    proton_daily_plist_path = plist_path.with_name(
+        f"{PROTON_DAILY_LAUNCH_AGENT_LABEL}.plist"
+    )
     plist_path = write_launch_agent_plist(
         repo_root,
         plist_path=plist_path,
@@ -336,10 +458,17 @@ def install_launch_agent(
         port=port,
         create_log_dir=not dry_run,
     )
+    write_proton_daily_launch_agent_plist(
+        repo_root,
+        plist_path=proton_daily_plist_path,
+        python_executable=python_executable,
+        create_log_dir=not dry_run,
+    )
     result = {
         "plist_path": str(plist_path),
         "dry_run": dry_run,
         "launchctl_executed": False,
+        "proton_daily_plist_path": str(proton_daily_plist_path),
     }
     if dry_run:
         return result
@@ -354,7 +483,16 @@ def install_launch_agent(
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
-    subprocess.run(["launchctl", "bootstrap", f"gui/{uid}", str(plist_path)], check=True)
+    bootstrap_launch_agent(plist_path, uid=uid)
+    proton_target = launch_agent_target(uid, PROTON_DAILY_LAUNCH_AGENT_LABEL)
+    subprocess.run(["launchctl", "enable", proton_target], check=True)
+    subprocess.run(
+        ["launchctl", "bootout", proton_target],
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    bootstrap_launch_agent(proton_daily_plist_path, uid=uid)
     result["launchctl_executed"] = True
     return result
 
@@ -374,20 +512,31 @@ def start_launch_agent(
             plist_path=plist_path,
             python_executable=python_executable,
         )
+    proton_daily_plist_path = plist_path.with_name(
+        f"{PROTON_DAILY_LAUNCH_AGENT_LABEL}.plist"
+    )
+    if not proton_daily_plist_path.exists():
+        write_proton_daily_launch_agent_plist(
+            repo_root,
+            plist_path=proton_daily_plist_path,
+            python_executable=python_executable,
+        )
     uid = current_uid()
     target = launch_agent_target(uid)
     subprocess.run(["launchctl", "enable", target], check=True)
     if launch_agent_is_loaded(uid=uid):
         subprocess.run(["launchctl", "kickstart", "-k", target], check=True)
     else:
-        subprocess.run(
-            ["launchctl", "bootstrap", f"gui/{uid}", str(plist_path)],
-            check=True,
-        )
+        bootstrap_launch_agent(plist_path, uid=uid)
+    proton_target = launch_agent_target(uid, PROTON_DAILY_LAUNCH_AGENT_LABEL)
+    subprocess.run(["launchctl", "enable", proton_target], check=True)
+    if not launch_agent_is_loaded(uid=uid, label=PROTON_DAILY_LAUNCH_AGENT_LABEL):
+        bootstrap_launch_agent(proton_daily_plist_path, uid=uid)
     return {
         "state": "starting",
         "plist_path": str(plist_path),
         "target": target,
+        "proton_daily_target": proton_target,
     }
 
 
@@ -397,10 +546,18 @@ def stop_launch_agent(*, plist_path: Path | None = None) -> dict:
     plist_path = plist_path or default_launch_agent_plist_path()
     uid = current_uid()
     target = launch_agent_target(uid)
-    # Disable first so KeepAlive cannot race the subsequent unload.
+    proton_target = launch_agent_target(uid, PROTON_DAILY_LAUNCH_AGENT_LABEL)
+    # Disable both first so neither KeepAlive nor the calendar trigger can race unload.
     subprocess.run(["launchctl", "disable", target], check=True)
+    subprocess.run(["launchctl", "disable", proton_target], check=True)
     subprocess.run(
         ["launchctl", "bootout", target],
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    subprocess.run(
+        ["launchctl", "bootout", proton_target],
         check=False,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -409,6 +566,7 @@ def stop_launch_agent(*, plist_path: Path | None = None) -> dict:
         "state": "stopped",
         "plist_path": str(plist_path),
         "target": target,
+        "proton_daily_target": proton_target,
     }
 
 
@@ -418,20 +576,30 @@ def uninstall_launch_agent(
     dry_run: bool = False,
 ) -> dict:
     plist_path = plist_path or default_launch_agent_plist_path()
+    proton_daily_plist_path = plist_path.with_name(
+        f"{PROTON_DAILY_LAUNCH_AGENT_LABEL}.plist"
+    )
     result = {
         "plist_path": str(plist_path),
         "dry_run": dry_run,
         "launchctl_executed": False,
         "removed": False,
+        "proton_daily_removed": False,
     }
     if dry_run:
         result["removed"] = plist_path.exists()
+        result["proton_daily_removed"] = proton_daily_plist_path.exists()
         return result
-    if platform.system() == "Darwin" and plist_path.exists():
+    if platform.system() == "Darwin" and (plist_path.exists() or proton_daily_plist_path.exists()):
         uid = current_uid()
         subprocess.run(["launchctl", "bootout", launch_agent_target(uid)], check=False)
+        subprocess.run(
+            ["launchctl", "bootout", launch_agent_target(uid, PROTON_DAILY_LAUNCH_AGENT_LABEL)],
+            check=False,
+        )
         result["launchctl_executed"] = True
     result["removed"] = remove_launch_agent_plist(plist_path)
+    result["proton_daily_removed"] = remove_launch_agent_plist(proton_daily_plist_path)
     return result
 
 
@@ -476,6 +644,9 @@ def main(argv: list[str] | None = None, stdout=None) -> int:
             output.write("Dry run only; launchctl was not invoked.\n")
         elif result["launchctl_executed"]:
             output.write("Bootstrapped the LaunchAgent.\n")
+            output.write(
+                f"Scheduled incremental Proton Mail sync daily at {PROTON_DAILY_HOUR}:00.\n"
+            )
         return 0
 
     if args.command == "status":
@@ -498,6 +669,8 @@ def main(argv: list[str] | None = None, stdout=None) -> int:
         bridge = report["proton_bridge"]
         output.write(f"Proton Mail Bridge: {bridge['label']}\n")
         output.write(f"Bridge detail: {bridge['details']}\n")
+        proton_daily = report["proton_daily"]
+        output.write(f"Proton daily sync: {proton_daily['state_label']}\n")
         return 0
 
     if args.command == "start":
@@ -506,11 +679,13 @@ def main(argv: list[str] | None = None, stdout=None) -> int:
             plist_path=args.plist_path,
         )
         output.write(f"Threadwise is starting from {result['plist_path']}\n")
+        output.write(f"Proton daily sync is scheduled for {PROTON_DAILY_HOUR}:00.\n")
         return 0
 
     if args.command == "stop":
         result = stop_launch_agent(plist_path=args.plist_path)
         output.write(f"Threadwise is stopped. Startup settings remain at {result['plist_path']}\n")
+        output.write("The Proton daily sync is stopped too.\n")
         return 0
 
     if args.command == "uninstall":

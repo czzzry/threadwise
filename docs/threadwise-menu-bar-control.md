@@ -15,18 +15,26 @@ The first menu row always reports one of:
 
 The Proton Mail Bridge row reports **Available**, **Required but unavailable**, or **Not configured**. When Bridge is required, installed, and not running, the menu offers **Open Proton Mail Bridge**. The control checks only whether the existing Threadwise Bridge configuration file is present; it does not read credentials.
 
+The **Proton daily sync** row reports whether the incremental 6:00 a.m. run is scheduled. The run skips messages already recorded as processed before classification, so a 25-message batch limit means “up to 25 new messages,” not “reprocess the latest 25 messages.”
+
 ## Start And Stop
 
 1. Click **Threadwise** in the Mac menu bar.
-2. Click **Stop Threadwise** to disable and unload the background service. Its plist, project files, local data, and Proton Mail Bridge are left untouched.
-3. Click **Start Threadwise** to re-enable and load the same service. The status changes to **Running** after the local health check succeeds.
+2. Click **Stop Threadwise** to disable and unload the background service and Proton daily schedule. Their plists, project files, local data, and Proton Mail Bridge are left untouched.
+3. Click **Start Threadwise** to re-enable the service and daily schedule. The status changes to **Running** after the local health check succeeds.
 4. Click **Open Threadwise** to open the existing local workspace while the service is running.
 
 The separate **Quit Menu Bar Control** command closes only the menu-bar UI. It does not stop the Threadwise companion.
 
 ## Installation
 
-The personal installer is:
+The service and daily schedule installer is:
+
+```bash
+python3 scripts/manage_threadwise_startup.py install
+```
+
+The personal menu-bar installer is:
 
 ```bash
 python3 scripts/install_threadwise_control.py

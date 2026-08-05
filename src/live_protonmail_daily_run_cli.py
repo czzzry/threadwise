@@ -53,30 +53,23 @@ def main(
 
     try:
         protonmail_client = protonmail_client_factory(args.account_id, credentials_dir, bridge_config_path)
-        fetcher = ProtonMailBatchFetcher(protonmail_client=protonmail_client, storage_dir=storage_dir)
-        review_queue = fetcher.fetch_protonmail_batch(args.account_id, args.batch_size)
-        if review_queue is None:
+        result = run_live_protonmail_daily_batch(
+            account_id=args.account_id,
+            batch_size=args.batch_size,
+            storage_dir=storage_dir,
+            protonmail_client=protonmail_client,
+        )
+        if result is None:
             output.write("No new messages found.\n")
             return 0
-
-        batch_store = StoredBatchReviewStore(storage_dir)
-        stored_batch = batch_store.load_batch(review_queue["batch_id"])
-        auto_applied_count, write_failure_count = _auto_apply_confident_labels(
-            protonmail_client,
-            stored_batch,
-        )
-        batch_store.persist_reviewed_items(review_queue["batch_id"], stored_batch["items"])
-        sync_proton_review_ledger(storage_dir, review_queue["batch_id"])
-        unlabeled_exceptions = [item for item in stored_batch["items"] if not item.get("applied_labels")]
-        classified_count = len(stored_batch["items"]) - len(unlabeled_exceptions)
         _print_summary(
-            review_queue["batch_id"],
-            stored_batch["account_id"],
-            len(review_queue["items"]),
-            classified_count,
-            unlabeled_exceptions,
-            auto_applied_count,
-            write_failure_count,
+            result["batch_id"],
+            result["account_id"],
+            result["fetched_count"],
+            result["classified_count"],
+            result["unlabeled_exceptions"],
+            result["auto_applied_count"],
+            result["write_failure_count"],
             storage_dir,
             output,
         )
@@ -84,6 +77,56 @@ def main(
     except SetupError as exc:
         error_output.write(f"{exc}\n")
         return 2
+
+
+def run_live_protonmail_daily_batch(
+    *,
+    account_id: str,
+    batch_size: int,
+    storage_dir: Path,
+    protonmail_client: object,
+) -> dict | None:
+    """Incrementally classify new Proton messages and refresh the shared review ledger."""
+    fetcher = ProtonMailBatchFetcher(
+        protonmail_client=protonmail_client,
+        storage_dir=storage_dir,
+    )
+    review_queue = fetcher.fetch_protonmail_batch(account_id, batch_size)
+    if review_queue is None:
+        return None
+
+    batch_id = str(review_queue["batch_id"])
+    batch_store = StoredBatchReviewStore(storage_dir)
+    stored_batch = batch_store.load_batch(batch_id)
+    auto_applied_count, write_failure_count = _auto_apply_confident_labels(
+        protonmail_client,
+        stored_batch,
+    )
+    batch_store.persist_reviewed_items(batch_id, stored_batch["items"])
+    sync_proton_review_ledger(storage_dir, batch_id)
+    unlabeled_exceptions = [
+        item for item in stored_batch["items"] if not item.get("applied_labels")
+    ]
+    classified_count = len(stored_batch["items"]) - len(unlabeled_exceptions)
+    report = build_protonmail_daily_report(
+        storage_dir,
+        batch_id,
+        str(stored_batch["account_id"]),
+        len(review_queue["items"]),
+        classified_count,
+        unlabeled_exceptions,
+        auto_applied_count,
+    )
+    write_daily_report(storage_dir, batch_id, report)
+    return {
+        "batch_id": batch_id,
+        "account_id": str(stored_batch["account_id"]),
+        "fetched_count": len(review_queue["items"]),
+        "classified_count": classified_count,
+        "unlabeled_exceptions": unlabeled_exceptions,
+        "auto_applied_count": auto_applied_count,
+        "write_failure_count": write_failure_count,
+    }
 
 
 def _print_summary(
@@ -97,16 +140,6 @@ def _print_summary(
     storage_dir: Path,
     output: TextIO,
 ) -> None:
-    report = build_protonmail_daily_report(
-        storage_dir,
-        batch_id,
-        account_id,
-        fetched_count,
-        classified_count,
-        unlabeled_exceptions,
-        auto_applied_count,
-    )
-    write_daily_report(storage_dir, batch_id, report)
     output.write(f"Batch: {batch_id}\n")
     output.write(f"Fetched: {fetched_count}\n")
     output.write(f"Provider label writes: {auto_applied_count} (Inbox preserved and verified)\n")

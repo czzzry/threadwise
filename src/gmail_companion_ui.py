@@ -23,6 +23,7 @@ from src.gmail_safety_action import GmailSafetyAction
 from src.handled_review_store import HandledReviewStore
 from src.live_gmail_client import GMAIL_MODIFY_SCOPE, GMAIL_SAFETY_SCOPE
 from src.live_protonmail_client import LiveProtonMailClient, SetupError as ProtonSetupError
+from src.live_protonmail_daily_run_cli import run_live_protonmail_daily_batch
 from src.proton_review_console import ProtonReviewConsole, render_proton_review_page
 from src.product_analytics import (
     ANALYTICS_WORKFLOW_VERSION,
@@ -191,6 +192,7 @@ class GmailCompanionApp:
         proton_account_id: str = DEFAULT_PROTON_ACCOUNT_ID,
         proton_client_factory=None,
         proton_review_console: object | None = None,
+        proton_run_runner=None,
     ) -> None:
         self._storage_dir = storage_dir
         self._credentials_dir = credentials_dir
@@ -208,6 +210,8 @@ class GmailCompanionApp:
         self._proton_client_factory = proton_client_factory or default_proton_client_factory
         self._proton_review_console_instance = proton_review_console
         self._proton_review_console_lock = threading.Lock()
+        self._proton_run_runner = proton_run_runner
+        self._proton_sync_lock = threading.Lock()
         self._analytics_distinct_ids = AnonymousDistinctIdStore(storage_dir)
         self._unsubscribe_store = UnsubscribeInventoryStore(storage_dir)
         self._handled_review_store = HandledReviewStore(storage_dir)
@@ -557,6 +561,19 @@ class GmailCompanionApp:
             except Exception as exc:
                 return self._write_json(handler, HTTPStatus.INTERNAL_SERVER_ERROR, {"error": str(exc)})
 
+        if handler.command == "POST" and parsed.path == "/api/provider-sync-run":
+            try:
+                payload = self._read_request_payload(handler)
+                response = self.trigger_provider_sync(
+                    payload,
+                    analytics_distinct_id=self._analytics_distinct_id_from_request(handler),
+                )
+                return self._write_json(handler, HTTPStatus.OK, response)
+            except (KeyError, ValueError, HTTPException, json.JSONDecodeError) as exc:
+                return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+            except Exception as exc:
+                return self._write_json(handler, HTTPStatus.INTERNAL_SERVER_ERROR, {"error": str(exc)})
+
         if handler.command == "POST" and parsed.path == "/api/attention-rule-proposal/preview":
             try:
                 payload = self._read_request_payload(handler)
@@ -797,6 +814,7 @@ class GmailCompanionApp:
                 "sidebar-state",
                 "daily-dashboard",
                 "gmail-check",
+                "provider-sync",
                 "attention-feedback",
                 "unsubscribe-review",
                 "proton-review",
@@ -1250,6 +1268,98 @@ class GmailCompanionApp:
         self._runtime_state.invalidate()
         return response
 
+    def trigger_provider_sync(
+        self,
+        payload: dict,
+        *,
+        analytics_distinct_id: str | None = None,
+    ) -> dict:
+        provider = str(payload.get("provider") or "gmail")
+        if provider not in {"gmail", "protonmail"}:
+            raise ValueError("Choose Gmail or Proton Mail before syncing.")
+        self._capture_workflow_event(
+            None,
+            "provider sync started",
+            {"surface": "gmail_companion", "provider": provider},
+            distinct_id=analytics_distinct_id,
+        )
+        try:
+            response = (
+                self.trigger_gmail_check(payload)
+                if provider == "gmail"
+                else self._trigger_proton_sync(payload)
+            )
+        except Exception as exc:
+            self._capture_workflow_event(
+                None,
+                "provider sync failed",
+                {
+                    "surface": "gmail_companion",
+                    "provider": provider,
+                    "error_category": (
+                        "invalid_request"
+                        if isinstance(exc, (KeyError, ValueError))
+                        else "provider_write_error"
+                    ),
+                },
+                distinct_id=analytics_distinct_id,
+            )
+            raise
+        result = response.get("result") or {}
+        self._capture_workflow_event(
+            None,
+            "provider sync completed",
+            {
+                "surface": "gmail_companion",
+                "provider": provider,
+                "sync_outcome": str(result.get("outcome") or "completed"),
+                "fetched_count_bucket": bucket_count(int(result.get("fetched_count") or 0)),
+                "write_failure_count_bucket": bucket_count(int(result.get("write_failure_count") or 0)),
+            },
+            distinct_id=analytics_distinct_id,
+        )
+        return response
+
+    def _trigger_proton_sync(self, payload: dict) -> dict:
+        if str(payload.get("confirmed") or "").lower() != "true":
+            raise ValueError("Confirm the Proton Mail sync before starting it.")
+        batch_size = int(payload.get("batch_size") or 25)
+        if batch_size < 1 or batch_size > 50:
+            raise ValueError("Proton Mail sync batch size must be between 1 and 50.")
+        if not self._proton_sync_lock.acquire(blocking=False):
+            raise ValueError("A Proton Mail sync is already running.")
+        try:
+            runner = self._proton_run_runner or self._run_daily_proton_check
+            result = runner({
+                **payload,
+                "provider": "protonmail",
+                "account_id": self._proton_account_id,
+                "batch_size": batch_size,
+            })
+        finally:
+            self._proton_sync_lock.release()
+        if result is None:
+            summary = {
+                "outcome": "no_new_messages",
+                "batch_id": "",
+                "fetched_count": 0,
+                "auto_applied_count": 0,
+                "write_failure_count": 0,
+            }
+        else:
+            summary = {
+                "outcome": "completed",
+                "batch_id": str(result.get("batch_id") or ""),
+                "fetched_count": int(result.get("fetched_count") or 0),
+                "auto_applied_count": int(result.get("auto_applied_count") or 0),
+                "write_failure_count": int(result.get("write_failure_count") or 0),
+            }
+        return {
+            "status": "succeeded",
+            "provider": "protonmail",
+            "result": summary,
+        }
+
     def preview_attention_rule_proposal(self, payload: dict) -> dict:
         message_id = payload.get("message_id") or ""
         proposal = build_attention_rule_proposal(self._storage_dir, message_id)
@@ -1297,6 +1407,18 @@ class GmailCompanionApp:
             storage_dir=self._storage_dir,
             gmail_client=gmail_client,
             attention_model_client=self._attention_model_client,
+        )
+
+    def _run_daily_proton_check(self, payload: dict) -> dict | None:
+        proton_client = self._proton_client_factory(
+            self._proton_account_id,
+            self._proton_credentials_dir,
+        )
+        return run_live_protonmail_daily_batch(
+            account_id=self._proton_account_id,
+            batch_size=int(payload.get("batch_size") or 25),
+            storage_dir=self._proton_storage_dir,
+            protonmail_client=proton_client,
         )
 
 

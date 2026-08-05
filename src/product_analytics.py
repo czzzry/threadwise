@@ -40,6 +40,9 @@ AnalyticsEventName = Literal[
     "proton review opened",
     "proton review completed",
     "proton review failed",
+    "provider sync started",
+    "provider sync completed",
+    "provider sync failed",
 ]
 
 
@@ -66,6 +69,9 @@ class AnalyticsProperties(TypedDict, total=False):
     provider_verified: bool
     synthetic: bool
     provider: str
+    sync_outcome: str
+    fetched_count_bucket: str
+    write_failure_count_bucket: str
 
 
 class PostHogClient(Protocol):
@@ -138,6 +144,20 @@ EVENT_SPECS: dict[str, EventSpec] = {
     "proton review failed": EventSpec(
         COMMON_REQUIRED | {"surface", "decision_type", "error_category"}, COMMON_OPTIONAL
     ),
+    "provider sync started": EventSpec(COMMON_REQUIRED | {"surface", "provider"}),
+    "provider sync completed": EventSpec(
+        COMMON_REQUIRED
+        | {
+            "surface",
+            "provider",
+            "sync_outcome",
+            "fetched_count_bucket",
+            "write_failure_count_bucket",
+        }
+    ),
+    "provider sync failed": EventSpec(
+        COMMON_REQUIRED | {"surface", "provider", "error_category"}
+    ),
 }
 
 COUNT_BUCKETS = frozenset({"0", "1", "2-5", "6-10", "11-25", "26-50", "51+"})
@@ -157,6 +177,9 @@ PROPERTY_ENUMS: dict[str, frozenset[str]] = {
     "affected_count_bucket": COUNT_BUCKETS,
     "write_count_bucket": COUNT_BUCKETS,
     "reviewed_count_bucket": COUNT_BUCKETS,
+    "fetched_count_bucket": COUNT_BUCKETS,
+    "write_failure_count_bucket": COUNT_BUCKETS,
+    "sync_outcome": frozenset({"completed", "no_new_messages"}),
     "error_category": frozenset(
         {
             "gmail_client_initialization",

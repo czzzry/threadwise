@@ -90,7 +90,7 @@ function documentFixture({ one = {}, all = {} }) {
 
   assert.equal(adapter.id, "protonmail");
   assert.equal(adapter.name, "Proton Mail");
-  assert.equal(adapter.canRunManualSync, false);
+  assert.equal(adapter.canRunManualSync, true);
   assert.equal(adapter.hasOpenMessage(), true);
   const context = adapter.selectedContext();
   assert.equal(context.subject, "A Proton subject");

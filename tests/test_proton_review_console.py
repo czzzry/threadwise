@@ -314,6 +314,108 @@ class ProtonReviewConsoleTests(unittest.TestCase):
             )
             self.assertEqual(state["sidebar_state"]["ui_state"]["provider_name"], "Proton Mail")
 
+    def test_selected_email_matches_sender_by_address_when_display_formatting_differs(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self._write_classification_ledger(root)
+            console = self._console(root, FakeProtonClient())
+
+            state = console.companion_harness({
+                "provider": "protonmail",
+                "subject": "First subject",
+                "sender": '"First sender" <FIRST@example.test>',
+            })
+
+            self.assertTrue(state["sidebar_state"]["selected_email"]["found"])
+            self.assertEqual(state["sidebar_state"]["selected_email"]["message_id"], "101")
+
+    def test_selected_email_uses_unique_subject_when_proton_sender_is_unavailable(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self._write_classification_ledger(root)
+            console = self._console(root, FakeProtonClient())
+
+            state = console.companion_harness({
+                "provider": "protonmail",
+                "subject": "  First   subject ",
+                "sender": "",
+            })
+
+            self.assertTrue(state["sidebar_state"]["selected_email"]["found"])
+            self.assertEqual(state["sidebar_state"]["selected_email"]["message_id"], "101")
+
+    def test_provider_sync_endpoint_refreshes_an_unsynced_proton_selection(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            proton_root = root / "proton"
+            proton_root.mkdir()
+            ledger_path = proton_root / "live_manual_review_ledger.json"
+            ledger_path.write_text(json.dumps({"provider": "protonmail", "messages": {}}))
+            client = FakeProtonClient(message_ids=["101"])
+            console = ProtonReviewConsole(
+                proton_client=client,
+                classification_ledger_path=ledger_path,
+                review_state_path=proton_root / "console.json",
+            )
+
+            def runner(payload: dict) -> dict:
+                self.assertEqual(payload["batch_size"], 25)
+                ledger_path.write_text(json.dumps({
+                    "provider": "protonmail",
+                    "account_id": "founder-proton",
+                    "messages": {
+                        "101": {
+                            "status": "suggested",
+                            "sender": "First sender <first@example.test>",
+                            "subject": "First subject",
+                            "internal_label": "newsletter",
+                            "label": "EA/Newsletter",
+                        },
+                    },
+                }))
+                return {"batch_id": "proton-batch-1", "fetched_count": 1}
+
+            posthog = FakePostHogClient()
+            app = GmailCompanionApp(
+                root / "gmail",
+                proton_storage_dir=proton_root,
+                proton_review_console=console,
+                proton_run_runner=runner,
+                analytics=ProductAnalytics(
+                    client=posthog,
+                    environment="production",
+                    enabled=True,
+                ),
+            )
+            selected_context = {
+                "provider": "protonmail",
+                "subject": "First subject",
+                "sender": "First sender <first@example.test>",
+            }
+            before = app.sidebar_state(selected_context)
+            handler = FakeHandler(
+                "POST",
+                "/api/provider-sync-run",
+                {"provider": "protonmail", "confirmed": "true", "batch_size": 25},
+            )
+            handler.headers["X-PostHog-Distinct-Id"] = "tw_anon_12345678-1234-4123-8123-123456789abc"
+
+            app.handle_request(handler)
+            after = app.sidebar_state(selected_context)
+            response = json.loads(handler.body_text)
+
+            self.assertFalse(before["selected_email"]["found"])
+            self.assertEqual(handler.status, 200)
+            self.assertEqual(response["provider"], "protonmail")
+            self.assertEqual(response["status"], "succeeded")
+            self.assertTrue(after["selected_email"]["found"])
+            self.assertEqual(
+                [call["event"] for call in posthog.calls],
+                ["provider sync started", "provider sync completed"],
+            )
+            self.assertEqual(posthog.calls[1]["properties"]["provider"], "protonmail")
+            self.assertNotIn("message_id", posthog.calls[1]["properties"])
+
     def test_selected_completed_message_is_still_recognized_outside_review_queue(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
