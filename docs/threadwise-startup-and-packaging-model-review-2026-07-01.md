@@ -1,7 +1,7 @@
 # Threadwise Startup and Packaging Model Review
 
-Status: Current startup contract
-Current as of: 2026-07-17
+Status: Historical startup decision; menu-bar escalation implemented 2026-08-05
+Current as of: 2026-08-05
 GitHub issue: `#16`
 Parent: `docs/prd.md`
 Scope: Product and architecture review only. This review did not install startup services, alter browser settings, inspect credentials, or run live Gmail.
@@ -20,7 +20,7 @@ The next implementation should be **Threadwise Personal Startup**:
 - disconnected state appears as an ultra-minimal badge, not a large persistent panel
 - status and uninstall commands exist for recovery
 
-The milestone should not build a full installer, menubar app, dynamic port discovery, cloud service, standalone email client, or ProtonMail browser companion yet.
+The original milestone did not build a full installer or menu-bar app. After real use, the founder explicitly approved a narrow native menu-bar control on 2026-08-05. That control preserves the same local helper and LaunchAgent architecture; see `docs/threadwise-menu-bar-control.md`.
 
 ## Target User Experience
 
@@ -71,7 +71,7 @@ Why:
 
 This means creating a Mac app that manages startup, status, restart, logs, and possibly native messaging.
 
-Recommendation: keep as a later slice.
+Original recommendation: keep as a later slice. The bounded menu-bar service control is now implemented; signing, notarization, automatic updates, and moving runtime data remain deferred.
 
 Why not now:
 
@@ -187,7 +187,7 @@ Create these as bounded slices:
 - `#25` / `100`: Future full installer and menubar app packaging review
 - `#26` / `101`: Future AI OS local-control API review
 
-Status note: `#22`, `#23`, and `#24` are now complete in the repo; the next packaging review candidates are `#25` and `#26`.
+Status note: `#22`, `#23`, and `#24` are complete. The bounded menu-bar control from `#25` is also complete as of 2026-08-05; `#26` remains a future candidate.
 
 Suggested sequencing:
 

@@ -10,10 +10,13 @@ from urllib.error import URLError
 from src.threadwise_startup import (
     HEALTH_SERVICE_ID,
     LAUNCH_AGENT_LABEL,
+    build_proton_bridge_status,
     build_status_report,
     install_launch_agent,
     probe_health,
     render_launch_agent_plist,
+    start_launch_agent,
+    stop_launch_agent,
     uninstall_launch_agent,
 )
 
@@ -78,12 +81,80 @@ class ThreadwiseStartupTests(unittest.TestCase):
             self.assertEqual(
                 [call.args[0] for call in run_mock.call_args_list],
                 [
+                    ["launchctl", "enable", "gui/501/com.threadwise.companion"],
                     ["launchctl", "bootout", "gui/501/com.threadwise.companion"],
                     ["launchctl", "bootstrap", "gui/501", str(plist_path)],
                 ],
             )
-            self.assertFalse(run_mock.call_args_list[0].kwargs["check"])
-            self.assertTrue(run_mock.call_args_list[1].kwargs["check"])
+            self.assertTrue(run_mock.call_args_list[0].kwargs["check"])
+            self.assertFalse(run_mock.call_args_list[1].kwargs["check"])
+            self.assertTrue(run_mock.call_args_list[2].kwargs["check"])
+
+    def test_stop_disables_before_unloading_and_preserves_the_plist(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            plist_path = Path(temp_dir) / "com.threadwise.companion.plist"
+            plist_path.write_text("plist")
+            with (
+                patch("src.threadwise_startup.platform.system", return_value="Darwin"),
+                patch("src.threadwise_startup.subprocess.check_output", return_value="501\n"),
+                patch("src.threadwise_startup.subprocess.run") as run_mock,
+            ):
+                result = stop_launch_agent(plist_path=plist_path)
+
+            self.assertTrue(plist_path.exists())
+            self.assertEqual(result["state"], "stopped")
+            self.assertEqual(
+                [call.args[0] for call in run_mock.call_args_list],
+                [
+                    ["launchctl", "disable", "gui/501/com.threadwise.companion"],
+                    ["launchctl", "bootout", "gui/501/com.threadwise.companion"],
+                ],
+            )
+            self.assertTrue(run_mock.call_args_list[0].kwargs["check"])
+            self.assertFalse(run_mock.call_args_list[1].kwargs["check"])
+
+    def test_start_reenables_and_bootstraps_the_preserved_plist(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            plist_path = repo_root / "com.threadwise.companion.plist"
+            plist_path.write_text("plist")
+            with (
+                patch("src.threadwise_startup.platform.system", return_value="Darwin"),
+                patch("src.threadwise_startup.subprocess.check_output", return_value="501\n"),
+                patch("src.threadwise_startup.subprocess.run") as run_mock,
+                patch("src.threadwise_startup.launch_agent_is_loaded", return_value=False),
+            ):
+                result = start_launch_agent(repo_root, plist_path=plist_path)
+
+            self.assertEqual(result["state"], "starting")
+            self.assertEqual(
+                [call.args[0] for call in run_mock.call_args_list],
+                [
+                    ["launchctl", "enable", "gui/501/com.threadwise.companion"],
+                    ["launchctl", "bootstrap", "gui/501", str(plist_path)],
+                ],
+            )
+
+    def test_start_kickstarts_an_already_loaded_service(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            plist_path = repo_root / "com.threadwise.companion.plist"
+            plist_path.write_text("plist")
+            with (
+                patch("src.threadwise_startup.platform.system", return_value="Darwin"),
+                patch("src.threadwise_startup.subprocess.check_output", return_value="501\n"),
+                patch("src.threadwise_startup.subprocess.run") as run_mock,
+                patch("src.threadwise_startup.launch_agent_is_loaded", return_value=True),
+            ):
+                start_launch_agent(repo_root, plist_path=plist_path)
+
+            self.assertEqual(
+                [call.args[0] for call in run_mock.call_args_list],
+                [
+                    ["launchctl", "enable", "gui/501/com.threadwise.companion"],
+                    ["launchctl", "kickstart", "-k", "gui/501/com.threadwise.companion"],
+                ],
+            )
 
     def test_build_status_report_uses_health_probe(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -91,7 +162,11 @@ class ThreadwiseStartupTests(unittest.TestCase):
             plist_path = repo_root / "com.threadwise.companion.plist"
             plist_path.write_text("plist")
 
-            with patch("src.threadwise_startup.probe_health") as probe_mock:
+            with (
+                patch("src.threadwise_startup.probe_health") as probe_mock,
+                patch("src.threadwise_startup.inspect_launch_agent") as launch_agent_mock,
+                patch("src.threadwise_startup.build_proton_bridge_status") as bridge_mock,
+            ):
                 probe_mock.return_value = {
                     "kind": "wrong-service",
                     "label": "Wrong service on port",
@@ -100,12 +175,69 @@ class ThreadwiseStartupTests(unittest.TestCase):
                     "service_name": "Other Service",
                     "health_path": "/api/health",
                 }
+                launch_agent_mock.return_value = {"loaded": True, "disabled": False}
+                bridge_mock.return_value = {"state": "not-configured"}
                 report = build_status_report(repo_root, plist_path=plist_path, origin="http://127.0.0.1:8021")
 
             self.assertTrue(report["plist_exists"])
+            self.assertEqual(report["state"], "needs-attention")
             self.assertEqual(report["health"]["kind"], "wrong-service")
             self.assertEqual(report["health"]["service_id"], "other-service")
             self.assertEqual(report["service_id"], HEALTH_SERVICE_ID)
+
+    def test_status_report_distinguishes_running_and_stopped(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            with (
+                patch("src.threadwise_startup.inspect_launch_agent", return_value={"loaded": True, "disabled": False}),
+                patch("src.threadwise_startup.probe_health", return_value={"kind": "ready", "reachable": True}),
+                patch("src.threadwise_startup.build_proton_bridge_status", return_value={"state": "available"}),
+            ):
+                running = build_status_report(repo_root)
+            with (
+                patch("src.threadwise_startup.inspect_launch_agent", return_value={"loaded": False, "disabled": True}),
+                patch("src.threadwise_startup.probe_health", return_value={"kind": "helper-unreachable", "reachable": False}),
+                patch("src.threadwise_startup.build_proton_bridge_status", return_value={"state": "available"}),
+            ):
+                stopped = build_status_report(repo_root)
+
+        self.assertEqual(running["state"], "running")
+        self.assertEqual(running["state_label"], "Running")
+        self.assertEqual(stopped["state"], "stopped")
+        self.assertEqual(stopped["state_label"], "Stopped")
+
+    def test_bridge_status_reports_required_but_unavailable_without_reading_config(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            config_path = (
+                repo_root
+                / "data"
+                / "protonmail_credentials"
+                / "protonmail_bridge"
+                / "founder-proton.json"
+            )
+            config_path.parent.mkdir(parents=True)
+            config_path.write_text("do-not-read")
+            app_path = repo_root / "Proton Mail Bridge.app"
+            app_path.mkdir()
+
+            with patch("src.threadwise_startup.proton_bridge_is_running", return_value=False):
+                status = build_proton_bridge_status(
+                    repo_root,
+                    app_path=app_path,
+                )
+
+            self.assertTrue(status["required"])
+            self.assertEqual(status["state"], "unavailable")
+            self.assertIn("Open Proton Mail Bridge", status["details"])
+
+    def test_bridge_status_is_optional_when_no_bridge_config_exists(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            status = build_proton_bridge_status(repo_root)
+
+        self.assertFalse(status["required"])
+        self.assertEqual(status["state"], "not-configured")
 
     def test_probe_health_distinguishes_unreachable_and_wrong_service(self) -> None:
         class _FakeResponse:

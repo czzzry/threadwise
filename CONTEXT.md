@@ -1,7 +1,7 @@
 # CONTEXT.md
 
 Status: Current repo context
-Current as of: 2026-08-01
+Current as of: 2026-08-05
 
 This file is the short "you are here" guide for the repo.
 
@@ -58,6 +58,8 @@ The current branch state includes the completed async Gmail companion extension 
 - a founder-facing teaching pack for this async architecture
 
 The current architecture checkpoint is documented in `docs/handoff/2026-08-01-universal-threadwise-provider-parity.md`. Rendering and browser behavior are shared, provider page access sits behind browser adapters, ordered writes use one queue implementation, and backend teaching plus companion lifecycle behavior now sits behind a provider runtime registry. The earlier module-extraction history remains in `docs/handoff/2026-07-20-architecture-refactor-closeout.md`.
+
+The personal Mac now also has a native `Threadwise Control` menu-bar app. It reports the local companion as Running, Stopped, or Needs attention; safely disables and unloads the KeepAlive LaunchAgent when stopped; re-enables it when started; and reports whether Proton Mail Bridge is required but unavailable. See `docs/threadwise-menu-bar-control.md` and `docs/handoff/2026-08-05-threadwise-menu-bar-service-control.md`.
 
 ## Current Source Of Truth
 
