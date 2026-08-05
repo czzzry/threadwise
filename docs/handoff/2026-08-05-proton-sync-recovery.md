@@ -21,6 +21,7 @@ The extension also contained an unrelated stale apply-flow reference in `refresh
 - LaunchAgent installation retries the brief macOS post-unload transition instead of leaving Threadwise stopped when `launchctl` initially rejects an immediate reload.
 - Privacy-allowlisted PostHog events record provider sync started, completed, or failed using only provider, count buckets, outcome, and coarse error category.
 - The classifier now recognizes DHL delivery updates, Teamtailor job matches, the founder's Vercel `caz` project deployments, Spaceship order summaries and account verification, and signed Apple Developer agreements as medium-confidence categories.
+- A classifier-policy version is stored with each result. A later Proton run rechecks a bounded number of older, unresolved low-confidence items against the current Inbox without refetching their bodies; user-reviewed items are terminal and remain untouched.
 
 ## Evidence
 

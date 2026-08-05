@@ -3762,10 +3762,15 @@
         }
         return;
       }
+      const syncSummary = response.payload?.result || {};
+      const repairedCount = Number(syncSummary.reprocessed_count || 0);
+      const syncWasRepair = syncSummary.outcome === "repaired_existing";
       gmailCheckResult = {
         kind: "provider-sync-success",
         title: `${activeProviderName()} sync finished`,
-        message: `Threadwise synced new ${activeProviderName()} messages. Checking this email again now.`,
+        message: syncWasRepair
+          ? `Threadwise rechecked ${repairedCount} older unresolved message${repairedCount === 1 ? "" : "s"}. Checking this email again now.`
+          : `Threadwise synced new ${activeProviderName()} messages. Checking this email again now.`,
       };
       previousPayload = "";
       refreshSelection(true);

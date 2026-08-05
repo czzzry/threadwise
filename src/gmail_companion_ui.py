@@ -1348,9 +1348,10 @@ class GmailCompanionApp:
             }
         else:
             summary = {
-                "outcome": "completed",
+                "outcome": str(result.get("outcome") or "completed"),
                 "batch_id": str(result.get("batch_id") or ""),
                 "fetched_count": int(result.get("fetched_count") or 0),
+                "reprocessed_count": int(result.get("reprocessed_count") or 0),
                 "auto_applied_count": int(result.get("auto_applied_count") or 0),
                 "write_failure_count": int(result.get("write_failure_count") or 0),
             }

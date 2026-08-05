@@ -6,7 +6,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from src.live_protonmail_daily_run_cli import _auto_apply_confident_labels, main
+from src.fixture_classifier import CLASSIFIER_POLICY_VERSION
+from src.live_protonmail_daily_run_cli import (
+    _auto_apply_confident_labels,
+    main,
+    repair_stored_low_confidence_messages,
+)
 
 
 class FakeDailyRunProtonMailClient:
@@ -187,6 +192,87 @@ class LiveProtonMailDailyRunCliTests(unittest.TestCase):
                 ],
             )
             self.assertEqual(ledger["messages"]["pm-live-001"]["status"], "provider-confirmed")
+
+    def test_repair_reclassifies_unresolved_old_items_without_refetching_bodies(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            batch_dir = storage_dir / "batches"
+            batch_dir.mkdir(parents=True)
+            batch = {
+                "batch_id": "founder-proton-batch-1",
+                "account_id": "founder-proton",
+                "provider": "protonmail",
+                "raw_messages": [
+                    {
+                        "id": "dhl-1",
+                        "rfc_message_id": "<dhl-1@example.com>",
+                        "sender": "DHL Paket <noreply@dhl.de>",
+                        "subject": "Ihre YunExpress Sendung ist unterwegs",
+                        "date": "2026-08-05T10:00:00Z",
+                        "snippet": "Ihre Sendung ist unterwegs.",
+                        "body": "Ihre Sendung ist unterwegs.",
+                    }
+                ],
+                "items": [
+                    {
+                        "message_id": "dhl-1",
+                        "sender": "DHL Paket <noreply@dhl.de>",
+                        "subject": "Ihre YunExpress Sendung ist unterwegs",
+                        "date": "2026-08-05T10:00:00Z",
+                        "confidence_band": "low",
+                        "applied_labels": [],
+                    }
+                ],
+            }
+            (batch_dir / "founder-proton-batch-1.json").write_text(json.dumps(batch))
+            client = FakeDailyRunProtonMailClient([{"id": "dhl-1"}])
+
+            result = repair_stored_low_confidence_messages(
+                account_id="founder-proton",
+                batch_size=25,
+                storage_dir=storage_dir,
+                protonmail_client=client,
+            )
+
+            stored = json.loads((batch_dir / "founder-proton-batch-1.json").read_text())
+            item = stored["items"][0]
+            self.assertEqual(result["reprocessed_count"], 1)
+            self.assertEqual(result["auto_applied_count"], 1)
+            self.assertEqual(client.label_calls, [("dhl-1", "EA/Orders")])
+            self.assertEqual(item["applied_labels"], ["shopping-order"])
+            self.assertEqual(item["classifier_policy_version"], CLASSIFIER_POLICY_VERSION)
+
+    def test_repair_does_not_revisit_user_reviewed_unlabeled_items(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            batch_dir = storage_dir / "batches"
+            batch_dir.mkdir(parents=True)
+            batch = {
+                "batch_id": "founder-proton-batch-1",
+                "account_id": "founder-proton",
+                "provider": "protonmail",
+                "raw_messages": [{"id": "reviewed", "rfc_message_id": "<reviewed@example.com>"}],
+                "items": [
+                    {
+                        "message_id": "reviewed",
+                        "confidence_band": "low",
+                        "applied_labels": [],
+                        "review_state": "reviewed",
+                    }
+                ],
+            }
+            (batch_dir / "founder-proton-batch-1.json").write_text(json.dumps(batch))
+            client = FakeDailyRunProtonMailClient([{"id": "reviewed"}])
+
+            result = repair_stored_low_confidence_messages(
+                account_id="founder-proton",
+                batch_size=25,
+                storage_dir=storage_dir,
+                protonmail_client=client,
+            )
+
+            self.assertEqual(result["reprocessed_count"], 0)
+            self.assertEqual(client.label_calls, [])
 
 
 if __name__ == "__main__":

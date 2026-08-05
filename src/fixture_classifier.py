@@ -5,6 +5,9 @@ from pathlib import Path
 from src.sender_utils import normalized_sender_email
 
 
+CLASSIFIER_POLICY_VERSION = "2026-08-05-proton-coverage"
+
+
 class FixtureBatchClassifier:
     def __init__(self, fixtures_dir: Path, trusted_personal_senders: set[str] | None = None) -> None:
         self._fixtures_dir = fixtures_dir
@@ -727,6 +730,7 @@ class FixtureBatchClassifier:
                 "applied_labels": labels,
                 "near_misses": near_misses,
                 "confidence_band": confidence_band,
+                "classifier_policy_version": CLASSIFIER_POLICY_VERSION,
             }
         )
 
