@@ -5,7 +5,7 @@ Current as of: 2026-08-05
 
 ## Failure
 
-Fresh Proton messages appeared unlabeled and the shared panel displayed “Threadwise has not synced this email yet.” Its **Check again** button only reread the stale local ledger because Proton explicitly disabled manual provider sync. Separately, the recurring task was a feedback reminder, not an installed Proton run schedule. Obvious delivery, job, project, order, account, and agreement messages therefore never reached either the classifier or learned rules.
+Fresh Proton messages appeared unlabeled and the shared panel displayed “Threadwise has not synced this email yet.” Its **Check again** button only reread the stale local ledger because Proton explicitly disabled manual provider sync. Separately, the recurring task was a feedback reminder, not an installed Proton run schedule. The affected messages did reach the deterministic classifier, but several familiar message families fell into its low-confidence fallback, so the safety boundary correctly refused to write labels.
 
 The extension also contained an unrelated stale apply-flow reference in `refreshSelection` that raised `ReferenceError: mode is not defined` after every state request.
 
@@ -20,6 +20,7 @@ The extension also contained an unrelated stale apply-flow reference in `refresh
 - `com.threadwise.proton-daily` now schedules the incremental run for 6:00 a.m. and is enabled, disabled, loaded, and unloaded with Threadwise Start/Stop.
 - LaunchAgent installation retries the brief macOS post-unload transition instead of leaving Threadwise stopped when `launchctl` initially rejects an immediate reload.
 - Privacy-allowlisted PostHog events record provider sync started, completed, or failed using only provider, count buckets, outcome, and coarse error category.
+- The classifier now recognizes DHL delivery updates, Teamtailor job matches, the founder's Vercel `caz` project deployments, Spaceship order summaries and account verification, and signed Apple Developer agreements as medium-confidence categories.
 
 ## Evidence
 

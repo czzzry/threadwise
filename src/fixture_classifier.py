@@ -56,6 +56,12 @@ class FixtureBatchClassifier:
         elif self._looks_like_job_alert_message(text, sender):
             labels.append("job-related")
             confidence_band = "medium"
+        elif self._looks_like_teamtailor_job_match(text, sender_email):
+            labels.append("job-related")
+            confidence_band = "medium"
+        elif self._looks_like_vercel_project_deployment(text, sender_email):
+            labels.append("personal")
+            confidence_band = "medium"
         elif self._looks_like_job_platform_reengagement_message(text, sender_email):
             labels.append("job-related")
             confidence_band = "medium"
@@ -174,6 +180,16 @@ class FixtureBatchClassifier:
         elif self._looks_like_dhl_shipment_update(text, sender_email):
             labels.append("shopping-order")
             near_misses.append("receipt-billing")
+            confidence_band = "medium"
+        elif self._looks_like_spaceship_order_summary(text, sender_email):
+            labels.append("shopping-order")
+            near_misses.append("receipt-billing")
+            confidence_band = "medium"
+        elif self._looks_like_spaceship_account_verification(text, sender_email):
+            labels.append("account-security")
+            confidence_band = "medium"
+        elif self._looks_like_apple_developer_agreement(text, sender_email):
+            labels.append("account-security")
             confidence_band = "medium"
         elif self._looks_like_dhl_packstation_dropoff_receipt(text, sender_email):
             labels.append("shopping-order")
@@ -726,6 +742,10 @@ class FixtureBatchClassifier:
             return "Job application or interview process update that should stay easy to retrieve."
         if self._looks_like_job_alert_message(text, sender):
             return "Job alert or role recommendation that should stay easy to retrieve while job-searching."
+        if self._looks_like_teamtailor_job_match(text, sender_email):
+            return "Job recommendation from a recruiting platform that should stay easy to retrieve while job-searching."
+        if self._looks_like_vercel_project_deployment(text, sender_email):
+            return "Personal project deployment update that should stay easy to retrieve with other personal project mail."
         if self._looks_like_job_platform_reengagement_message(text, sender_email):
             return "Job-platform re-engagement message that still belongs with other work and recruiting mail."
         if self._looks_like_job_application_acknowledgement(text, sender_email):
@@ -772,6 +792,12 @@ class FixtureBatchClassifier:
             return "Return retrocharge notice that should stay easy to retrieve with other order records."
         if self._looks_like_dhl_shipment_update(text, sender_email):
             return "Shipment update that should stay easy to retrieve with other order records."
+        if self._looks_like_spaceship_order_summary(text, sender_email):
+            return "Order summary that should stay easy to retrieve with other order records."
+        if self._looks_like_spaceship_account_verification(text, sender_email):
+            return "Account verification notice that should stay easy to retrieve as an account-security alert."
+        if self._looks_like_apple_developer_agreement(text, sender_email):
+            return "Signed developer-account agreement that should stay easy to retrieve as an account notice."
         if self._looks_like_dhl_packstation_dropoff_receipt(text, sender_email):
             return "Parcel drop-off receipt that should stay easy to retrieve with other order records."
         if self._looks_like_restaurant_reservation_message(text, sender_email):
@@ -1007,6 +1033,20 @@ class FixtureBatchClassifier:
                 "apply on linkedin",
                 "jobs like this",
             )
+        )
+
+    def _looks_like_teamtailor_job_match(self, text: str, sender_email: str | None) -> bool:
+        return (
+            bool(sender_email)
+            and sender_email.endswith(".teamtailor-mail.com")
+            and "job matching your profile" in text
+        )
+
+    def _looks_like_vercel_project_deployment(self, text: str, sender_email: str | None) -> bool:
+        return (
+            sender_email in {"notifications@vercel.com", "system@vercel.com"}
+            and "deployment" in text
+            and "team 'caz'" in text
         )
 
     def _looks_like_job_platform_reengagement_message(self, text: str, sender_email: str | None) -> bool:
@@ -1308,9 +1348,39 @@ class FixtureBatchClassifier:
                         )
                     )
                 )
+                or (
+                    any(token in text for token in ("sendung", "shipment", "paket", "parcel"))
+                    and any(
+                        token in text
+                        for token in (
+                            "unterwegs",
+                            "kommt heute",
+                            "zugestellt",
+                            "verfolgen",
+                            "track",
+                            "delivery",
+                            "lieferung",
+                        )
+                    )
+                )
             )
         )
 
+    def _looks_like_spaceship_order_summary(self, text: str, sender_email: str | None) -> bool:
+        return sender_email == "receipts@spaceship.com" and "order summary" in text
+
+    def _looks_like_spaceship_account_verification(self, text: str, sender_email: str | None) -> bool:
+        return (
+            sender_email == "alert@spaceship.com"
+            and "verify account" in text
+        )
+
+    def _looks_like_apple_developer_agreement(self, text: str, sender_email: str | None) -> bool:
+        return (
+            sender_email == "developer@email.apple.com"
+            and "developer agreement" in text
+            and "signed" in text
+        )
     def _looks_like_dpd_tracking_notice(self, text: str, sender_email: str | None) -> bool:
         return (
             sender_email == "no-reply@dpd.de"

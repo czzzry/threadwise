@@ -1353,6 +1353,65 @@ class FixtureBatchClassifierTests(unittest.TestCase):
         self.assertEqual(review_queue["items"][0]["applied_labels"], ["shopping-order"])
         self.assertIn("receipt-billing", review_queue["items"][0]["near_misses"])
 
+    def test_classify_messages_covers_recent_proton_messages_that_were_previously_low_confidence(self) -> None:
+        messages = [
+            {
+                "message_id": "proton-dhl",
+                "sender": "DHL Paket <noreply@dhl.de>",
+                "subject": "Ihre YunExpress Sendung ist unterwegs",
+                "snippet": "Ihre Sendung ist unterwegs.",
+                "body": "Ihre Sendung ist unterwegs.",
+            },
+            {
+                "message_id": "proton-trackunit",
+                "sender": "Trackunit <no-reply@trackunit.teamtailor-mail.com>",
+                "subject": "Trackunit: one new job matching your profile",
+                "snippet": "One new job matching your profile.",
+                "body": "One new job matching your profile.",
+            },
+            {
+                "message_id": "proton-vercel",
+                "sender": "Vercel <notifications@vercel.com>",
+                "subject": "Failed production deployment on team 'caz'",
+                "snippet": "Failed production deployment.",
+                "body": "Failed production deployment on team 'caz'.",
+            },
+            {
+                "message_id": "proton-spaceship-order",
+                "sender": "Spaceship <receipts@spaceship.com>",
+                "subject": "Spaceship order summary #123",
+                "snippet": "Order summary",
+                "body": "Order summary for your purchase.",
+            },
+            {
+                "message_id": "proton-spaceship-account",
+                "sender": "Spaceship <alert@spaceship.com>",
+                "subject": "Important action required: Please verify account",
+                "snippet": "Please verify account.",
+                "body": "Please verify account.",
+            },
+            {
+                "message_id": "proton-apple",
+                "sender": "Apple Developer <developer@email.apple.com>",
+                "subject": "Agreement signed: Apple Developer Agreement",
+                "snippet": "Agreement signed.",
+                "body": "Agreement signed: Apple Developer Agreement.",
+            },
+        ]
+        for message in messages:
+            message["date"] = "2026-08-05T10:00:00Z"
+
+        review_queue = self.classifier.classify_messages("proton-recent-gap", messages)
+        by_id = {item["message_id"]: item for item in review_queue["items"]}
+
+        self.assertEqual(by_id["proton-dhl"]["applied_labels"], ["shopping-order"])
+        self.assertEqual(by_id["proton-trackunit"]["applied_labels"], ["job-related"])
+        self.assertEqual(by_id["proton-vercel"]["applied_labels"], ["personal"])
+        self.assertEqual(by_id["proton-spaceship-order"]["applied_labels"], ["shopping-order"])
+        self.assertEqual(by_id["proton-spaceship-account"]["applied_labels"], ["account-security"])
+        self.assertEqual(by_id["proton-apple"]["applied_labels"], ["account-security"])
+        self.assertTrue(all(item["confidence_band"] == "medium" for item in by_id.values()))
+
     def test_classify_messages_marks_restaurant_reservation_messages_as_calendar_events(self) -> None:
         review_queue = self.classifier.classify_messages(
             "founder-test-batch-x",
