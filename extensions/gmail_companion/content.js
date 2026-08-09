@@ -9,8 +9,12 @@
   const HEALTH_SERVICE_ID = "threadwise-gmail-companion";
   const ANALYTICS = globalThis.ThreadwiseAnalytics;
   const PROVIDER = globalThis.ThreadwiseProvider;
+  const ONBOARDING = globalThis.ThreadwiseOnboarding;
   if (!PROVIDER) {
     throw new Error("Threadwise provider adapter did not load.");
+  }
+  if (!ONBOARDING) {
+    throw new Error("Threadwise onboarding module did not load.");
   }
   const BRAND_ICON_URL = chrome.runtime.getURL("assets/brand/threadwise-app-icon.png");
   const ACTIVE_PROVIDER = PROVIDER.id;
@@ -77,10 +81,25 @@
   let hashChangeListener = null;
   let documentClickListener = null;
   let runtimeMessageListener = null;
+  let onboardingState = { version: ONBOARDING.VERSION, status: "loading" };
+  let onboardingReady = Promise.resolve(onboardingState);
+  let onboardingVisible = false;
+  let onboardingActionInFlight = false;
+  let onboardingMessage = "";
 
   function boot() {
     ensureRoot();
     installTestHooks();
+    onboardingReady = ONBOARDING.load()
+      .then((state) => {
+        onboardingState = state;
+        return state;
+      })
+      .catch((error) => {
+        onboardingState = { version: ONBOARDING.VERSION, status: "unseen" };
+        onboardingMessage = `Threadwise could not save onboarding state: ${error.message || error}`;
+        return onboardingState;
+      });
     refreshSelection();
     refreshIntervalId = window.setInterval(refreshSelection, REFRESH_INTERVAL_MS);
     hashChangeListener = () => refreshSelection();
@@ -191,9 +210,10 @@
         @media (max-width: 480px) {
           #${ROOT_ID}:not([data-ea-minimized="true"]) {
             top: 8px !important;
+            left: 8px !important;
             right: 8px !important;
-            width: calc(100vw - 16px) !important;
-            max-width: calc(100vw - 16px) !important;
+            width: auto !important;
+            max-width: none !important;
             max-height: calc(100vh - 16px) !important;
           }
           #${ROOT_ID}:not([data-ea-minimized="true"]) #ea-panel {
@@ -232,13 +252,62 @@
             padding: 14px !important;
           }
         }
+        @media (min-width: 481px) and (max-height: 520px) {
+          #${ROOT_ID}:not([data-ea-minimized="true"]) #ea-content {
+            padding: 8px !important;
+          }
+          #${ROOT_ID}:not([data-ea-minimized="true"]) #ea-workspace > [data-ea-workspace-body="onboarding"] {
+            padding: 10px !important;
+          }
+          #${ROOT_ID}:not([data-ea-minimized="true"]) [data-ea-onboarding] {
+            gap: 6px !important;
+          }
+          #${ROOT_ID}:not([data-ea-minimized="true"]) [data-ea-onboarding-identity] {
+            gap: 6px !important;
+          }
+          #${ROOT_ID}:not([data-ea-minimized="true"]) [data-ea-onboarding-logo] {
+            width: 28px !important;
+            height: 28px !important;
+            border-radius: 8px !important;
+          }
+          #${ROOT_ID}:not([data-ea-minimized="true"]) [data-ea-onboarding-identity] > div {
+            line-height: 1.15 !important;
+          }
+          #${ROOT_ID}:not([data-ea-minimized="true"]) [data-ea-onboarding-title] {
+            font-size: 1.12rem !important;
+            line-height: 1.02 !important;
+          }
+          #${ROOT_ID}:not([data-ea-minimized="true"]) [data-ea-onboarding-description],
+          #${ROOT_ID}:not([data-ea-minimized="true"]) [data-ea-onboarding-boundary] {
+            margin-top: 4px !important;
+            font-size: .88rem !important;
+            line-height: 1.24 !important;
+          }
+          #${ROOT_ID}:not([data-ea-minimized="true"]) [data-ea-onboarding-status] {
+            padding: 6px 0 !important;
+            font-size: .84rem !important;
+            line-height: 1.24 !important;
+          }
+          #${ROOT_ID}:not([data-ea-minimized="true"]) [data-ea-onboarding-status] > div + div {
+            margin-top: 4px !important;
+          }
+          #${ROOT_ID}:not([data-ea-minimized="true"]) [data-ea-onboarding-actions] {
+            gap: 4px !important;
+          }
+          #${ROOT_ID}:not([data-ea-minimized="true"]) [data-ea-onboarding-actions] [data-tw-primary-action] {
+            min-height: 44px !important;
+            padding: 6px 10px !important;
+          }
+          #${ROOT_ID}:not([data-ea-minimized="true"]) [data-ea-onboarding-skip] {
+            padding: 2px !important;
+          }
+        }
       </style>
       <div id="ea-panel" style="background:#fff7e8;border:3px solid #241812;border-radius:18px;box-shadow:6px 6px 0 #241812;overflow:hidden;font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#241812;display:flex;flex-direction:column;max-height:calc(100vh - 28px);">
         <div id="ea-header" style="display:grid;grid-template-columns:52px 1fr auto;align-items:center;gap:12px;padding:17px 18px;border-bottom:3px solid #241812;background:#fff4d7;">
           <div style="display:flex;align-items:center;gap:10px;min-width:0;">
             <button id="ea-brand-toggle" type="button" title="Open Threadwise" style="position:relative;width:42px;height:42px;border-radius:12px;border:2px solid #241812;box-shadow:3px 3px 0 #241812;flex:0 0 auto;background:#fff8df;padding:0;cursor:pointer;overflow:hidden;">
               <img src="${BRAND_ICON_URL}" alt="" aria-hidden="true" data-ea-brand-img="true" style="width:100%;height:100%;display:block;object-fit:cover;background:#fff8df;">
-              <span aria-hidden="true" style="display:none;place-items:center;width:100%;height:100%;font-weight:900;font-size:0.82rem;color:#241812;background:#ffc64a;">TW</span>
             </button>
           </div>
           <div style="display:flex;align-items:center;gap:10px;min-width:0;">
@@ -267,12 +336,6 @@
       renderMinimized();
     });
     root.querySelector("#ea-brand-toggle").addEventListener("click", handleBrandToggle);
-    root.querySelector("[data-ea-brand-img]")?.addEventListener("error", (event) => {
-      event.target.style.display = "none";
-      if (event.target.nextElementSibling) {
-        event.target.nextElementSibling.style.display = "grid";
-      }
-    });
     root.addEventListener("click", handlePanelClick);
     root.addEventListener("input", handlePanelInput);
     root.addEventListener("change", handlePanelInput);
@@ -463,6 +526,10 @@
       label: "Ready",
       details: "Threadwise is responding at the local companion server.",
     });
+    if (onboardingVisible) {
+      renderOnboarding();
+      return;
+    }
     renderStandaloneWorkspace("loading", `
       <div data-ea-selected-state="loading" role="status" aria-live="polite" aria-busy="true" style="display:grid;gap:12px;">
         <h2 style="margin:0;font-size:1.3rem;line-height:1.2;">Loading Threadwise</h2>
@@ -717,6 +784,10 @@
 
   function renderError(message, connectionState) {
     lastConnectionState = normalizeConnectionState(connectionState || lastConnectionState);
+    if (onboardingVisible) {
+      renderOnboarding();
+      return;
+    }
     const statusCopy = connectionStatusCopy();
     const remediation = connectionRemediationCopy(lastConnectionState);
     const errorTitle = errorTitleForConnection(lastConnectionState);
@@ -892,6 +963,9 @@
     if (event) {
       event.preventDefault();
     }
+    onboardingVisible = false;
+    onboardingActionInFlight = false;
+    onboardingMessage = "";
     minimized = false;
     forcedHome = true;
     forcedHomeLiveContext = { ...selectedContext() };
@@ -928,6 +1002,7 @@
       renderState(lastHarnessState || lastSidebarState);
     }
     renderMinimized();
+    openOnboardingAfterExplicitOpen();
   }
 
   function hasFailedOrPendingHandling(selected) {
@@ -1064,6 +1139,179 @@
     renderMinimized();
   }
 
+  function onboardingTarget() {
+    if (lastConnectionState.kind !== "ready" || !lastSidebarState) {
+      return { kind: "not-ready", provider: ACTIVE_PROVIDER };
+    }
+    return ONBOARDING.resolveTarget({
+      provider: ACTIVE_PROVIDER,
+      selectedEmail: lastSidebarState.selected_email,
+      needsAttentionItems: lastHarnessState?.needs_attention_items || [],
+    });
+  }
+
+  function onboardingReadyForHandoff() {
+    return lastConnectionState.kind === "ready" && Boolean(lastSidebarState);
+  }
+
+  function onboardingTargetCopy(target) {
+    if (target.kind === "selected-email") {
+      return `Your selected ${activeProviderName()} email is ready to review.`;
+    }
+    if (target.kind === "needs-attention") {
+      return `The next ${activeProviderName()} email needing attention is ready.`;
+    }
+    if (target.kind === "home") {
+      return `No reviewable email is ready, so Threadwise will open Home.`;
+    }
+    return "Threadwise is still checking the current inbox state.";
+  }
+
+  function onboardingConnectionCopy() {
+    if (lastConnectionState.kind === "ready" && lastSidebarState) {
+      return `Using ${activeProviderName()} from this tab. No provider choice is needed.`;
+    }
+    if (lastConnectionState.kind === "connecting") {
+      return "Threadwise is still connecting. Check again when the local companion is running.";
+    }
+    return `${lastConnectionState.label}: ${lastConnectionState.details}`;
+  }
+
+  function focusOnboardingAction() {
+    window.setTimeout(() => {
+      if (!onboardingVisible || minimized) {
+        return;
+      }
+      const action = document.querySelector(
+        `[data-ea-action="onboarding-continue"], [data-ea-action="onboarding-retry"]`,
+      );
+      if (!action) {
+        return;
+      }
+      action.focus({ preventScroll: true });
+    }, 0);
+  }
+
+  function renderOnboarding() {
+    if (!onboardingVisible) {
+      return;
+    }
+    const nodes = renderWorkspaceShell("onboarding");
+    if (!nodes) {
+      return;
+    }
+    const ready = onboardingReadyForHandoff();
+    const target = onboardingTarget();
+    const primaryAction = ready ? "onboarding-continue" : "onboarding-retry";
+    const primaryLabel = ready
+      ? target.kind === "selected-email"
+        ? "Review this email"
+        : target.kind === "needs-attention"
+          ? "Review next email"
+          : "Open Home"
+      : "Check again";
+    const actionBusy = onboardingActionInFlight;
+    const remediation = ready ? [] : connectionRemediationCopy(lastConnectionState);
+    setHtml(nodes.selectedEmailNode, `
+      <section data-ea-onboarding role="region" aria-labelledby="ea-onboarding-title" style="display:grid;gap:16px;">
+        <div data-ea-onboarding-identity style="display:flex;align-items:center;gap:10px;min-width:0;">
+          <img src="${BRAND_ICON_URL}" alt="Threadwise logo" data-ea-onboarding-logo="true" style="width:38px;height:38px;display:block;flex:0 0 auto;border:1px solid rgba(36,24,18,.28);border-radius:10px;background:#fff8df;object-fit:cover;">
+          <div style="min-width:0;">
+            <div style="font-size:0.82rem;color:#6b6255;line-height:1.3;">Threadwise</div>
+            <div style="font-size:0.92rem;font-weight:760;line-height:1.3;overflow-wrap:anywhere;">${escapeHtml(activeProviderName())} companion</div>
+          </div>
+        </div>
+        <div>
+          <h2 id="ea-onboarding-title" data-ea-onboarding-title style="margin:0;font-size:1.42rem;font-weight:840;letter-spacing:-0.035em;line-height:1.08;">Make the next inbox decision clearer.</h2>
+          <p data-ea-onboarding-description style="margin:10px 0 0;color:#3f352e;line-height:1.5;">Threadwise classifies and labels email, explains why, and lets you correct it. Broader changes are previewed before anything else is updated.</p>
+          <p data-ea-onboarding-boundary style="margin:10px 0 0;color:#3f352e;line-height:1.5;font-weight:760;">It never writes or sends replies.</p>
+        </div>
+        <div data-ea-onboarding-status role="status" aria-live="polite" style="border-top:1px solid rgba(36,24,18,.24);border-bottom:1px solid rgba(36,24,18,.24);padding:12px 0;color:${ready ? "#0f766e" : "#8a4b00"};line-height:1.45;">
+          <div style="font-weight:760;">${escapeHtml(onboardingConnectionCopy())}</div>
+          <div style="margin-top:6px;color:#3f352e;">${escapeHtml(onboardingTargetCopy(target))}</div>
+          ${remediation.length ? `<ul style="margin:8px 0 0;padding-left:18px;color:#6b6255;">${remediation.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}
+        </div>
+        ${onboardingMessage ? `<div data-ea-onboarding-error role="alert" style="border-radius:10px;background:#fde8e6;padding:10px 12px;color:#7f1d1d;line-height:1.45;">${escapeHtml(onboardingMessage)}</div>` : ""}
+        <div data-ea-onboarding-actions style="display:grid;gap:10px;">
+          <button type="button" data-ea-action="${primaryAction}" data-tw-primary-action ${actionBusy ? "disabled" : ""} style="min-height:44px;border:2px solid #241812;background:${actionBusy ? "#c7d8cc" : "#2eb67d"};color:#241812;border-radius:11px;padding:9px 12px;cursor:${actionBusy ? "wait" : "pointer"};font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">${actionBusy ? "Saving your choice..." : escapeHtml(primaryLabel)}</button>
+          <button type="button" data-ea-action="onboarding-skip" data-ea-onboarding-skip ${actionBusy ? "disabled" : ""} style="justify-self:start;border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:${actionBusy ? "wait" : "pointer"};font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Skip intro</button>
+        </div>
+      </section>
+    `);
+    setHtml(nodes.selectedEmailSecondaryNode, "");
+    renderMinimized();
+    focusOnboardingAction();
+  }
+
+  async function openOnboardingAfterExplicitOpen() {
+    const state = await onboardingReady;
+    if (!(["unseen", "active"].includes(state.status))) {
+      return;
+    }
+    onboardingVisible = true;
+    onboardingMessage = "";
+    try {
+      onboardingState = await ONBOARDING.markActive();
+    } catch (error) {
+      onboardingState = { version: ONBOARDING.VERSION, status: "active" };
+      onboardingMessage = `Threadwise could not save onboarding state yet: ${error.message || error}`;
+    }
+    renderOnboarding();
+    ANALYTICS?.showOnboarding?.(ONBOARDING.VERSION, onboardingTarget().kind);
+  }
+
+  function handoffFromOnboarding(target) {
+    onboardingVisible = false;
+    onboardingActionInFlight = false;
+    onboardingMessage = "";
+    if (target.kind === "selected-email") {
+      forcedHome = false;
+      forcedHomeLiveContext = null;
+      manualPreviewContext = null;
+      manualPreviewOriginContext = null;
+      previousPayload = "";
+      refreshSelection(true);
+      renderMinimized();
+      return;
+    }
+    if (target.kind === "needs-attention") {
+      openItemPreview(target.item);
+      renderMinimized();
+      return;
+    }
+    openThreadwiseHome();
+  }
+
+  async function finishOnboarding(status) {
+    if (onboardingActionInFlight) {
+      return;
+    }
+    const target = onboardingTarget();
+    if (status === "completed" && !onboardingReadyForHandoff()) {
+      previousPayload = "";
+      refreshSelection(true);
+      return;
+    }
+    onboardingActionInFlight = true;
+    renderOnboarding();
+    try {
+      onboardingState = status === "completed"
+        ? await ONBOARDING.markCompleted()
+        : await ONBOARDING.markDismissed();
+    } catch (error) {
+      onboardingActionInFlight = false;
+      onboardingMessage = `Threadwise could not save that choice: ${error.message || error}`;
+      renderOnboarding();
+      return;
+    }
+    if (status === "completed") {
+      ANALYTICS?.completeOnboarding?.(ONBOARDING.VERSION, target.kind);
+    } else {
+      ANALYTICS?.dismissOnboarding?.(ONBOARDING.VERSION, target.kind);
+    }
+    handoffFromOnboarding(target);
+  }
+
   function renderState(state) {
     lastHarnessState = normalizeHarnessState(state);
     lastSidebarState = lastHarnessState.sidebar_state;
@@ -1072,6 +1320,10 @@
     if (selectedMessageId !== lastSelectedMessageId) {
       resetPerEmailInteraction();
       lastSelectedMessageId = selectedMessageId;
+    }
+    if (onboardingVisible) {
+      renderOnboarding();
+      return;
     }
     const workspaceMode = resolveWorkspaceMode(lastSidebarState, selected);
     const workspaceNodes = renderWorkspaceShell(workspaceMode);
@@ -2802,6 +3054,23 @@
   }
 
   async function handlePanelClick(event) {
+    const onboardingContinueButton = event.target.closest("[data-ea-action='onboarding-continue']");
+    if (onboardingContinueButton) {
+      event.preventDefault();
+      return finishOnboarding("completed");
+    }
+    const onboardingRetryButton = event.target.closest("[data-ea-action='onboarding-retry']");
+    if (onboardingRetryButton) {
+      event.preventDefault();
+      previousPayload = "";
+      refreshSelection(true);
+      return;
+    }
+    const onboardingSkipButton = event.target.closest("[data-ea-action='onboarding-skip']");
+    if (onboardingSkipButton) {
+      event.preventDefault();
+      return finishOnboarding("dismissed");
+    }
     const openFeedbackButton = event.target.closest("[data-ea-action='open-feedback']");
     if (openFeedbackButton) {
       event.preventDefault();
@@ -4007,6 +4276,13 @@
           selectedEmail: lastSidebarState?.selected_email || null,
           recentCount: (lastHarnessState?.recent_items || []).length,
           needsAttentionCount: (lastHarnessState?.needs_attention_items || []).length,
+        };
+      },
+      getOnboardingState() {
+        return {
+          ...onboardingState,
+          visible: onboardingVisible,
+          target: onboardingTarget(),
         };
       },
       setFounderFeedbackVisible(visible) {

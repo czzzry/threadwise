@@ -1,7 +1,7 @@
 # CONTEXT.md
 
 Status: Current repo context
-Current as of: 2026-08-05
+Current as of: 2026-08-09
 
 This file is the short "you are here" guide for the repo.
 
@@ -33,6 +33,10 @@ Do not infer approval from `docs/v2-issue-map.md`, archived PRDs, or old handoff
 
 ## Current Stage
 
+The founder has approved the Threadwise World-Class Triage Gauntlet in `docs/prd-threadwise-gauntlet-2026-08-09.md`. It preserves the existing Threadwise logo and Gmail-overlay architecture, excludes AI auto-response and writing, and uses Mail-0/Zero, Grammarly, Refined GitHub, Raycast, and Linear as the specified functionality and interaction bars.
+
+The Gauntlet is decomposed in `docs/threadwise-gauntlet-slice-map-2026-08-09.md`. Implementation still proceeds one triaged vertical slice at a time. The first-run companion slice in issue `#105` is implemented and won its second independent critic round at `97/100`; see `docs/handoff/2026-08-09-threadwise-gauntlet-onboarding.md`. Queue-local search and panel-scoped keyboard navigation is the next candidate slice, but it still requires its own triage gate before implementation.
+
 The universal Threadwise experience in `docs/prd-universal-threadwise-experience-2026-08-01.md` is implemented behind one minimized-by-default browser side panel for Gmail and ProtonMail. The two inboxes remain provider-scoped, while review, teaching, scope selection, optimistic advancement, background writes, retry, and activity use one implementation.
 
 Automated and synthetic-browser acceptance is complete. One live Proton selected-message acceptance check remains before the old `/proton-review` fallback is removed; live-provider writes remain separately approval-gated.
@@ -62,6 +66,14 @@ The current architecture checkpoint is documented in `docs/handoff/2026-08-01-un
 The personal Mac now also has a native `Threadwise Control` menu-bar app. It reports the local companion as Running, Stopped, or Needs attention; safely disables and unloads the KeepAlive LaunchAgent when stopped; re-enables it when started; reports whether Proton Mail Bridge is required but unavailable; and manages the incremental 6:00 a.m. Proton daily schedule. See `docs/threadwise-menu-bar-control.md`, `docs/handoff/2026-08-05-threadwise-menu-bar-service-control.md`, and `docs/handoff/2026-08-05-proton-sync-recovery.md`.
 
 ## Current Source Of Truth
+
+For the active Gauntlet direction and first bounded slice, use:
+
+1. `docs/prd-threadwise-gauntlet-2026-08-09.md`
+2. `docs/threadwise-gauntlet-slice-map-2026-08-09.md`
+3. `docs/handoff/2026-08-09-threadwise-gauntlet-onboarding.md` and GitHub issue `#105` for the completed first-run onboarding slice
+4. `docs/v2-alignment.md`
+5. `docs/prd-universal-threadwise-experience-2026-08-01.md` for the shared-provider architecture and safety baseline
 
 For the next provider-parity milestone, use:
 

@@ -1,13 +1,23 @@
 # V2 Alignment
 
 Status: Current product-direction alignment
-Current as of: 2026-08-01
+Current as of: 2026-08-09
 Builds on: `docs/archive/alignment-v1-gmail-mvp.md` and `docs/archive/prd-v1-gmail-mvp.md` as historical Gmail V1 artifacts
 Completed bounded milestone: `docs/archive/prd-memory-runtime-milestone-completed-2026-06-29.md`
-Current bounded PRD: `docs/prd.md` for MVP+2 Gmail daily usefulness
+Current product-direction PRD: `docs/prd-threadwise-gauntlet-2026-08-09.md`
 Implementation checkpoint: `docs/checkpoints/current-operating-model-2026-06-22.md`
 
 Threadwise is the public-facing project name for this repo.
+
+## August 9 world-class triage Gauntlet decision
+
+The founder has approved a continuing Gauntlet Loop to make Threadwise a world-class email-triage product. The existing Threadwise logo and the Gmail-overlay architecture are fixed. Threadwise must not become a separate inbox application, and AI auto-response, email writing, reply, forward, compose, and send behavior are excluded.
+
+Mail-0/Zero is the functionality bar, adapted to a Gmail overlay rather than copied as an inbox client. Grammarly is the contextual-intelligence bar, Refined GitHub the host-native extension bar, Raycast the contextual-action and keyboard bar, and Linear only the compact configuration reference.
+
+The detailed product contract and judgeable test seams are in `docs/prd-threadwise-gauntlet-2026-08-09.md`. The smallest-slice decomposition is in `docs/threadwise-gauntlet-slice-map-2026-08-09.md`. Each important slice uses a fresh builder and separate fresh critic; only individually triaged slices are approved for implementation.
+
+The first slice, issue `#105`, now provides truthful first-run value inside the real companion. Its first critic round failed at `79/100` because focus scrolled the short desktop view past the headline. The bounded correction kept the full story and focused 44-pixel primary action visible at `756×469`, preserved narrow containment, and won a new fresh critic at `97/100`. The evidence and remaining synthetic-versus-live boundary are recorded in `docs/handoff/2026-08-09-threadwise-gauntlet-onboarding.md`.
 
 ## August 2026 provider-parity decision
 

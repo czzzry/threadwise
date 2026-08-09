@@ -43,6 +43,9 @@ AnalyticsEventName = Literal[
     "provider sync started",
     "provider sync completed",
     "provider sync failed",
+    "onboarding shown",
+    "onboarding completed",
+    "onboarding dismissed",
 ]
 
 
@@ -72,6 +75,8 @@ class AnalyticsProperties(TypedDict, total=False):
     sync_outcome: str
     fetched_count_bucket: str
     write_failure_count_bucket: str
+    onboarding_version: str
+    onboarding_destination: str
 
 
 class PostHogClient(Protocol):
@@ -158,6 +163,18 @@ EVENT_SPECS: dict[str, EventSpec] = {
     "provider sync failed": EventSpec(
         COMMON_REQUIRED | {"surface", "provider", "error_category"}
     ),
+    "onboarding shown": EventSpec(
+        COMMON_REQUIRED | {"surface", "onboarding_version", "onboarding_destination"},
+        COMMON_OPTIONAL,
+    ),
+    "onboarding completed": EventSpec(
+        COMMON_REQUIRED | {"surface", "onboarding_version", "onboarding_destination"},
+        COMMON_OPTIONAL,
+    ),
+    "onboarding dismissed": EventSpec(
+        COMMON_REQUIRED | {"surface", "onboarding_version", "onboarding_destination"},
+        COMMON_OPTIONAL,
+    ),
 }
 
 COUNT_BUCKETS = frozenset({"0", "1", "2-5", "6-10", "11-25", "26-50", "51+"})
@@ -195,6 +212,9 @@ PROPERTY_ENUMS: dict[str, frozenset[str]] = {
     "preview_outcome": frozenset({"ready", "needs_clarification", "failed"}),
     "flow_outcome": frozenset({"completed", "failed"}),
     "review_outcome": frozenset({"saved", "cleared"}),
+    "onboarding_destination": frozenset(
+        {"selected-email", "needs-attention", "home", "not-ready"}
+    ),
 }
 
 PROHIBITED_KEY_PARTS = frozenset(
