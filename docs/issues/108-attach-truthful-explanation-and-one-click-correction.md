@@ -1,6 +1,6 @@
 # Issue 108: Attach truthful explanation and one-click correction to the selected email
 
-Status: Triaged ready-for-agent
+Status: Completed; first fresh critic WIN at 87/100
 Current as of: 2026-08-09
 GitHub issue: `#108`
 Parent: `#104`
@@ -12,6 +12,21 @@ Builds on: `docs/prd-threadwise-gauntlet-2026-08-09.md`
 Make the current classification understandable at the selected-email seam without turning the companion into an analytics dashboard. In review, show the suggested label, the exact reason this item needs attention, the stored confidence band, and one concise stored rationale next to the email. Keep the single correction entry point visible and one click away. Put secondary evidence behind a compact disclosure. Reuse that explanation in the handled-receipt `Why` path.
 
 This is a truthful presentation slice over existing stored classification artifacts. It adds no classifier call, provider request, mailbox action, AI writing, global chat, or new decision policy.
+
+## Completion evidence
+
+- Selected-email state now exposes only normalized stored rationale, confidence band, canonical near misses, and the existing matched-rule count/provider confirmation facts.
+- A frozen, dependency-free presentation policy derives review and handled-`Why` copy without routes, DOM, message identity, or effects.
+- Review replaces the generic yellow rationale with one compact selected-email explanation, while `Accept` / `Apply`, `Change label`, and the contextual `Actions` hierarchy remain in their established order.
+- Missing confidence and rationale are named explicitly. `write-unconfirmed` names the provider confirmation problem separately from the stored confidence band.
+- Evidence is collapsed by default and limited to other labels considered, saved-rule count, and relevant provider confirmation facts; opaque rule IDs never render in this surface.
+- Selected-message changes close evidence and replace label, confidence, rationale, and evidence without stale content. Handled-receipt `Why` reuses the same explanation model.
+- Controlled browser acceptance captures 18 real screenshots across six states and three viewports, preserves Gmail-page scroll `180` and companion scroll `72`, records 22 allowed state-read/observer requests, and records zero unexpected routes.
+- Prior queue and contextual-action browser validators pass after loading the new pure policy module; their existing scroll, focus, collision, and request-denylist evidence remains green.
+- Focused Node and Python checks pass. The repo-wide suite passes `797/797` tests.
+- The first fresh-context critic declared **WIN at `87/100`**, `+17` over the `~70/100` baseline, with five of six fixed tasks and every hard gate clear.
+
+Handoff: `docs/handoff/2026-08-09-threadwise-gauntlet-selected-email-explanation.md`
 
 ## Product contract
 

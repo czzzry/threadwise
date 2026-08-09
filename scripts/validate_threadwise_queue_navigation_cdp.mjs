@@ -443,7 +443,7 @@ async function installBridge() {
 }
 
 async function injectContentScript() {
-  for (const scriptName of ["provider_adapter.js", "analytics.js", "onboarding.js", "queue_navigation.js", "content.js"]) {
+  for (const scriptName of ["provider_adapter.js", "analytics.js", "onboarding.js", "queue_navigation.js", "context_actions.js", "selected_explanation.js", "content.js"]) {
     await evaluate(await fs.readFile(path.join(extensionRoot, scriptName), "utf8"));
   }
 }

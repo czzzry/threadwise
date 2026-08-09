@@ -159,6 +159,7 @@ def build_selected_email_state(storage_dir: Path, unsubscribe_candidates: list[d
         "status": status,
         "status_label": status_label,
         "reason": item.get("interpretation") or item.get("snippet") or "",
+        "rationale": item.get("interpretation") or "",
         "details": build_selected_email_details(item, write_status, inbox_status, candidate),
         "subject": item.get("subject") or selected_context.get("subject") or "",
         "sender": item.get("sender") or selected_context.get("sender") or "",
@@ -309,10 +310,20 @@ def build_selected_email_details(
     unsubscribe_candidate: dict | None,
 ) -> dict:
     matched_rules = item.get("matched_teachable_rules") or []
+    confidence_band = str(item.get("confidence_band") or "").strip().lower()
+    if confidence_band not in {"high", "medium", "low"}:
+        confidence_band = ""
+    near_misses = []
+    for label in item.get("near_misses") or []:
+        normalized_label = str(label or "").strip().lower()
+        if normalized_label in CANONICAL_LABEL_ORDER and normalized_label not in near_misses:
+            near_misses.append(normalized_label)
     return {
         "review_action": item.get("review_action") or "",
         "write_status": write_status or "",
         "inbox_status": inbox_status or "",
+        "confidence_band": confidence_band,
+        "near_misses": near_misses,
         "matched_rule_count": len(matched_rules),
         "matched_rule_ids": [rule.get("id") for rule in matched_rules if rule.get("id")],
         "unsubscribe_reasons": list((unsubscribe_candidate or {}).get("qualification_reasons") or []),

@@ -12,6 +12,7 @@
   const ONBOARDING = globalThis.ThreadwiseOnboarding;
   const QUEUE_NAVIGATION = globalThis.ThreadwiseQueueNavigation;
   const CONTEXT_ACTIONS = globalThis.ThreadwiseContextActions;
+  const SELECTED_EXPLANATION = globalThis.ThreadwiseSelectedExplanation;
   if (!PROVIDER) {
     throw new Error("Threadwise provider adapter did not load.");
   }
@@ -23,6 +24,9 @@
   }
   if (!CONTEXT_ACTIONS) {
     throw new Error("Threadwise contextual actions module did not load.");
+  }
+  if (!SELECTED_EXPLANATION) {
+    throw new Error("Threadwise selected explanation module did not load.");
   }
   const BRAND_ICON_URL = chrome.runtime.getURL("assets/brand/threadwise-app-icon.png");
   const ACTIVE_PROVIDER = PROVIDER.id;
@@ -109,6 +113,7 @@
   let contextActionsOpen = false;
   let contextActionsActiveIndex = 0;
   let contextActionsGeneration = 0;
+  let explanationFocusPending = false;
 
   function boot() {
     ensureRoot();
@@ -1081,6 +1086,7 @@
     recordedSuggestionDecisions = { approve: false, edit: false };
     affectedReviewOpen = false;
     selectedTeachScope = "current-only";
+    explanationFocusPending = false;
     teachDraft = { targetLabel: "", note: "" };
   }
 
@@ -1745,7 +1751,7 @@
         </div>
       `);
       setHtml(selectedEmailSecondaryNode, detailsExpanded
-        ? `<div id="ea-handled-why" style="margin-top:14px;border-radius:14px;background:#f5efe2;padding:12px;color:#1f1a14;line-height:1.45;">${escapeHtml(likelyReasonForSelected(selected))}</div>`
+        ? `<div id="ea-handled-why">${renderSelectedExplanationHtml(selected, workspaceMode, { showEvidence: detailsExpanded })}</div>`
         : "");
       setHtml(teachPanelNode, "");
     } else if (workspaceMode === "review") {
@@ -1755,15 +1761,13 @@
       const finishingProviderUpdate = selected.status === "write-unconfirmed";
       setHtml(selectedEmailNode, `
         <div data-ea-selected-state="review" style="display:grid;gap:12px;margin-top:10px;">
-          <div style="color:#8a4b00;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;font-weight:820;">${finishingProviderUpdate ? `Finish ${escapeHtml(activeProviderName())} update` : "Needs your review"}</div>
           <div>
             <div style="font-size:1.3rem;font-weight:840;line-height:1.15;overflow-wrap:anywhere;">${escapeHtml(selected.subject || "(no subject)")}</div>
             <div style="margin-top:6px;color:#6b6255;font-size:0.88rem;overflow-wrap:anywhere;">${escapeHtml(selected.sender || "(unknown sender)")}</div>
             ${reviewReceivedLabel(selected.received_at) ? `<div data-ea-review-received-at style="margin-top:4px;color:#6b6255;font-size:0.8rem;">${escapeHtml(reviewReceivedLabel(selected.received_at))}</div>` : ""}
           </div>
           ${showingQueuePreview ? renderQueuePreviewNavigationHtml() : ""}
-          <div data-ea-review-suggestion style="font-size:1.05rem;font-weight:760;line-height:1.4;">${label ? finishingProviderUpdate ? `Threadwise classified this as ${escapeHtml(label)}, but ${escapeHtml(activeProviderName())} was not confirmed.` : `Threadwise suggests ${escapeHtml(label)}` : "Threadwise needs you to choose a label"}</div>
-          <div style="border-radius:14px;background:#fff4dd;padding:12px;color:#1f1a14;line-height:1.45;">${escapeHtml(likelyReasonForSelected(selected).slice(0, 160))}</div>
+          ${renderSelectedExplanationHtml(selected, workspaceMode, { showEvidence: detailsExpanded })}
           <div style="display:grid;gap:9px;">
             ${label ? `<button type="button" data-ea-action="accept-suggestion" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">${finishingProviderUpdate ? `Apply ${escapeHtml(label)}` : `Accept ${escapeHtml(label)}`}</button>` : ""}
             <button type="button" data-ea-action="change-suggestion" ${label ? "" : "data-tw-primary-action"} style="min-height:44px;border:${label ? "1px solid rgba(36,24,18,.16)" : "2px solid #241812"};background:${label ? "#f5efe2" : "#2eb67d"};color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:760;${label ? "" : "box-shadow:3px 3px 0 #241812;"}">Change label</button>
@@ -2055,6 +2059,7 @@
     restorePendingQueueNavigationFocus();
     restoreContextScroll(preservedScroll);
     restorePendingContextActionFocus();
+    restorePendingExplanationFocus();
 
     const changedToday = summary.changed_today || {};
     const selectedUnsubscribeExamples = changedToday.selected_unsubscribe_examples || [];
@@ -2547,6 +2552,76 @@
       return `Likely because: ${reason}`;
     }
     return "Likely because this matched the stored classification signals for the current label. Threadwise did not store a more specific reason for this decision yet.";
+  }
+
+  function selectedExplanationFor(selected, workspaceMode) {
+    const details = selected?.details || {};
+    const suggestedLabelId = decisionSuggestedLabelId(selected);
+    return SELECTED_EXPLANATION.derive({
+      workspaceMode,
+      selectedStatus: selected?.status || "",
+      providerName: activeProviderName(),
+      suggestedLabel: suggestedLabelId ? decisionLabelName(suggestedLabelId) : "",
+      storedReason: selected?.rationale || "",
+      details: {
+        confidence_band: details.confidence_band || "",
+        near_misses: Array.isArray(details.near_misses) ? details.near_misses : [],
+        matched_rule_count: details.matched_rule_count || 0,
+        write_status: details.write_status || "",
+        inbox_status: details.inbox_status || "",
+      },
+    });
+  }
+
+  function explanationEvidenceValue(row) {
+    return (row.values || []).map((value) => {
+      if (row.key === "near-misses") {
+        return decisionLabelName(value);
+      }
+      return value;
+    }).join(", ");
+  }
+
+  function renderSelectedExplanationHtml(selected, workspaceMode, { showEvidence = false } = {}) {
+    const model = selectedExplanationFor(selected, workspaceMode);
+    if (!model.visible) {
+      return "";
+    }
+    const evidenceDisclosure = model.hasEvidence
+      ? `
+        <button type="button" data-ea-action="toggle-details" data-ea-explanation-disclosure aria-expanded="${showEvidence ? "true" : "false"}" aria-controls="ea-selected-evidence" style="margin-top:11px;border:0;background:transparent;color:#5d5342;padding:6px 2px;cursor:pointer;font:inherit;font-size:.82rem;font-weight:800;text-decoration:underline;text-underline-offset:3px;text-align:left;">${showEvidence ? "Hide evidence" : "Evidence"}</button>
+        ${showEvidence ? `
+          <div id="ea-selected-evidence" data-ea-explanation-evidence role="region" aria-label="Stored evidence" style="margin-top:8px;border-top:1px solid #e5dccb;padding-top:9px;display:grid;gap:7px;color:#6b6255;font-size:.86rem;line-height:1.4;">
+            ${model.evidenceRows.map((row) => `<div data-ea-evidence-row="${escapeHtml(row.key)}"><strong style="color:#241812;">${escapeHtml(row.label)}:</strong> ${escapeHtml(explanationEvidenceValue(row))}</div>`).join("")}
+          </div>
+        ` : ""}
+      `
+      : "";
+    return `
+      <section data-ea-selected-explanation style="margin-top:0;border:1px solid rgba(36,24,18,.18);border-radius:13px;background:#fff8eb;padding:11px 12px;color:#1f1a14;line-height:1.4;">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;">
+          <div style="min-width:0;">
+            <div style="font-size:.68rem;text-transform:uppercase;letter-spacing:.08em;color:#6b6255;font-weight:820;">Threadwise's read</div>
+            <div data-ea-explanation-suggestion style="margin-top:4px;font-weight:800;overflow-wrap:anywhere;">${escapeHtml(model.suggestionText)}</div>
+          </div>
+          <span data-ea-explanation-confidence style="flex:0 0 auto;border-radius:999px;background:#f1eadf;color:#5d5342;padding:5px 8px;font-size:.74rem;font-weight:800;white-space:nowrap;">${escapeHtml(model.confidenceText)}</span>
+        </div>
+        <div data-ea-explanation-queue-reason style="margin-top:8px;color:#8a4b00;font-size:.86rem;font-weight:760;">${escapeHtml(model.queueReason)}</div>
+        <div data-ea-explanation-rationale style="margin-top:7px;overflow-wrap:anywhere;">${escapeHtml(model.rationale)}</div>
+        ${evidenceDisclosure}
+      </section>
+    `;
+  }
+
+  function restorePendingExplanationFocus() {
+    if (!explanationFocusPending) {
+      return;
+    }
+    explanationFocusPending = false;
+    const target = document.getElementById(ROOT_ID)?.querySelector("[data-ea-explanation-disclosure]");
+    if (target && typeof target.focus === "function") {
+      target.focus({ preventScroll: true });
+    }
   }
 
   function humanMeaningForSelected(selected) {
@@ -4338,6 +4413,9 @@
     const detailsButton = event.target.closest("[data-ea-action='toggle-details']");
     if (detailsButton) {
       event.preventDefault();
+      if (detailsButton.hasAttribute("data-ea-explanation-disclosure")) {
+        explanationFocusPending = true;
+      }
       detailsExpanded = !detailsExpanded;
       if (lastSidebarState) {
         renderState(lastSidebarState);

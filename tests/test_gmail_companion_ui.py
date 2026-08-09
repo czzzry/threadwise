@@ -872,6 +872,72 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertEqual(selected["status"], "not-in-snapshot")
         self.assertEqual(selected["status_label"], "Not in local snapshot")
 
+    def test_selected_email_details_normalize_only_stored_explanation_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                [{
+                    "source": "gmail",
+                    "account_id": "founder-test",
+                    "message_id": "evidence-1",
+                    "sender": "Manager <manager@example.com>",
+                    "subject": "Approval needed",
+                    "interpretation": "A manager asks for a same-day approval.",
+                    "review_state": "pending",
+                    "final_labels": ["job-related"],
+                    "applied_labels": [],
+                    "confidence_band": "HIGH",
+                    "near_misses": ["promotions", "promotions", "not-a-label", "travel"],
+                    "matched_teachable_rules": [{"id": "rule-1"}, {"id": "rule-2"}],
+                }],
+            )
+
+            selected = build_selected_email_state(
+                storage_dir,
+                [],
+                {"provider": "gmail", "message_id": "evidence-1"},
+            )
+
+        self.assertEqual(selected["rationale"], "A manager asks for a same-day approval.")
+        self.assertEqual(selected["details"]["confidence_band"], "high")
+        self.assertEqual(selected["details"]["near_misses"], ["promotions", "travel"])
+        self.assertEqual(selected["details"]["matched_rule_count"], 2)
+        self.assertEqual(selected["details"]["write_status"], "")
+        self.assertEqual(selected["details"]["inbox_status"], "")
+        self.assertEqual(selected["details"]["matched_rule_ids"], ["rule-1", "rule-2"])
+
+    def test_selected_email_details_do_not_promote_invalid_confidence_or_near_miss_values(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                [{
+                    "source": "gmail",
+                    "account_id": "founder-test",
+                    "message_id": "evidence-2",
+                    "sender": "Unknown <unknown@example.com>",
+                    "subject": "Unresolved message",
+                    "review_state": "pending",
+                    "final_labels": [],
+                    "applied_labels": [],
+                    "confidence_band": "certain",
+                    "near_misses": ["", "bogus", "travel", "travel"],
+                }],
+            )
+
+            selected = build_selected_email_state(
+                storage_dir,
+                [],
+                {"provider": "gmail", "message_id": "evidence-2"},
+            )
+
+        self.assertEqual(selected["rationale"], "")
+        self.assertEqual(selected["details"]["confidence_band"], "")
+        self.assertEqual(selected["details"]["near_misses"], ["travel"])
+
     def test_selected_email_understanding_state_progresses_from_reading_to_ready(self) -> None:
         context = {
             "message_id": "gmail-live-001",
@@ -1071,11 +1137,17 @@ class GmailCompanionUiTests(unittest.TestCase):
         content_js = (
             Path(__file__).parent.parent / "extensions" / "gmail_companion" / "content.js"
         ).read_text()
+        explanation_js = (
+            Path(__file__).parent.parent
+            / "extensions"
+            / "gmail_companion"
+            / "selected_explanation.js"
+        ).read_text()
 
         self.assertIn('selected.status === "write-unconfirmed"', content_js)
         self.assertIn('data-ea-action="accept-suggestion"', content_js)
         self.assertIn("Apply ${escapeHtml(label)}", content_js)
-        self.assertIn("Finish ${escapeHtml(activeProviderName())} update", content_js)
+        self.assertIn("${providerName} has not confirmed this label update", explanation_js)
         self.assertIn('["needs-attention", "write-unconfirmed"].includes(selected?.status)', content_js)
 
     def test_extension_keeps_refreshing_until_selected_email_is_ready(self) -> None:
