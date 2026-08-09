@@ -1,6 +1,6 @@
 # Issue 107: Add a contextual action panel to the companion
 
-Status: Ready for bounded implementation
+Status: Completed; third fresh critic WIN at 94/100
 Current as of: 2026-08-09
 GitHub issue: `#107`
 Parent: `#104`
@@ -12,6 +12,20 @@ Builds on: `docs/prd-threadwise-gauntlet-2026-08-09.md`
 Give the current Threadwise object one compact, Raycast-style entry point for secondary actions. Keep the state’s single primary action visible. Keep the one-click correction visible in review and handled-receipt states. Move only safe, already-existing, state-valid secondary actions into a short panel inside the provider companion.
 
 This is an interaction-hierarchy slice, not a new capability layer. It adds no provider API, action, write path, Gmail toolbar, global command palette, or mailbox search.
+
+## Completion evidence
+
+- A frozen, dependency-free policy derives at most four allowlisted secondary actions from the exact workspace state; actionless states render no trigger.
+- Primary actions and one-click `Change label` / `Change` corrections remain inline. Displaced actions reuse their existing `data-ea-action` handlers or safe Activity link.
+- A root-scoped `.` shortcut opens the menu only from a non-editable Threadwise target. Roving arrows, Home/End, Enter/Space, and Escape are menu-scoped; closed-panel J/K behavior remains intact.
+- Every rerender increments an action generation. A deliberately reattached stale item is rejected without state change or request.
+- The menu is a root-level non-flow popover, so opening, roving, closing, explaining `Why`, and a keyboard-only state transition preserve nonzero Gmail-page scroll `180` and companion scroll `72`.
+- Collision-aware placement avoids visible primary and correction controls. At `756x469` and `360x800`, the menu has zero intersection with Accept and Change label; the correction center remains hit-testable and enters the existing change state exactly once.
+- Controlled acceptance captures 30 real screenshots, records 27 allowed state-read/analytics requests, and reports zero unexpected routes.
+- Independent critics: round one `78/100` for incomplete continuity evidence; round two `83/100` for short-viewport correction collision; round three **WIN at `94/100`**, approximately `+24` over baseline, six of six tasks, and no hard gate.
+- Focused Node/browser checks pass; the repo-wide suite passes `795/795` tests.
+
+Handoff: `docs/handoff/2026-08-09-threadwise-gauntlet-contextual-actions.md`
 
 ## Exact action policy
 

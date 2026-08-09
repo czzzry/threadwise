@@ -11,6 +11,7 @@
   const PROVIDER = globalThis.ThreadwiseProvider;
   const ONBOARDING = globalThis.ThreadwiseOnboarding;
   const QUEUE_NAVIGATION = globalThis.ThreadwiseQueueNavigation;
+  const CONTEXT_ACTIONS = globalThis.ThreadwiseContextActions;
   if (!PROVIDER) {
     throw new Error("Threadwise provider adapter did not load.");
   }
@@ -19,6 +20,9 @@
   }
   if (!QUEUE_NAVIGATION) {
     throw new Error("Threadwise queue navigation module did not load.");
+  }
+  if (!CONTEXT_ACTIONS) {
+    throw new Error("Threadwise contextual actions module did not load.");
   }
   const BRAND_ICON_URL = chrome.runtime.getURL("assets/brand/threadwise-app-icon.png");
   const ACTIVE_PROVIDER = PROVIDER.id;
@@ -98,6 +102,13 @@
   let queueProvider = ACTIVE_PROVIDER;
   let pendingQueueNavigationFocus = null;
   let keyboardListener = null;
+  let contextMenuResizeListener = null;
+  let contextMenuResizeObserver = null;
+  let contextActionFocusPending = false;
+  let contextActionFocusTimer = null;
+  let contextActionsOpen = false;
+  let contextActionsActiveIndex = 0;
+  let contextActionsGeneration = 0;
 
   function boot() {
     ensureRoot();
@@ -116,6 +127,12 @@
     refreshIntervalId = window.setInterval(refreshSelection, REFRESH_INTERVAL_MS);
     hashChangeListener = () => refreshSelection();
     window.addEventListener("hashchange", hashChangeListener);
+    contextMenuResizeListener = () => {
+      positionContextMenu();
+      window.requestAnimationFrame?.(() => positionContextMenu());
+      window.setTimeout(() => positionContextMenu(), 0);
+    };
+    window.addEventListener("resize", contextMenuResizeListener);
     documentClickListener = (event) => {
       if (pendingQueueNavigationFocus && !isQueueFocusHandoffTrigger(event)) {
         clearPendingQueueNavigationFocus();
@@ -223,6 +240,14 @@
         }
         #${ROOT_ID} #ea-panel [data-tw-primary-action]:focus-visible {
           box-shadow: 3px 3px 0 var(--tw-ink) !important;
+        }
+        @media (min-width: 481px) and (max-height: 520px) {
+          #${ROOT_ID}:not([data-ea-minimized="true"]) {
+            max-height: calc(100vh - 14px) !important;
+          }
+          #${ROOT_ID}:not([data-ea-minimized="true"]) #ea-panel {
+            max-height: calc(100vh - 14px) !important;
+          }
         }
         @media (max-width: 480px) {
           #${ROOT_ID}:not([data-ea-minimized="true"]) {
@@ -347,6 +372,12 @@
       </div>
     `);
     document.body.appendChild(root);
+    if (typeof globalThis.ResizeObserver === "function") {
+      contextMenuResizeObserver = new ResizeObserver(() => positionContextMenu());
+      contextMenuResizeObserver.observe(document.documentElement);
+      contextMenuResizeObserver.observe(document.body);
+      contextMenuResizeObserver.observe(root);
+    }
 
     root.querySelector("#ea-minimize").addEventListener("click", () => {
       minimized = !minimized;
@@ -366,6 +397,9 @@
     const root = document.getElementById(ROOT_ID);
     if (!root) {
       return;
+    }
+    if (minimized) {
+      invalidateContextActions();
     }
     const content = root.querySelector("#ea-content");
     const footer = root.querySelector("#ea-footer");
@@ -1005,7 +1039,26 @@
     return selected?.status === "idle" || !selected ? "home" : "";
   }
 
+  function invalidateContextActions() {
+    contextActionsOpen = false;
+    contextActionsActiveIndex = 0;
+    contextActionsGeneration += 1;
+    const menu = document.getElementById("ea-context-menu");
+    if (menu?.parentNode) {
+      menu.parentNode.removeChild(menu);
+    }
+    const host = document.getElementById("ea-context-actions");
+    if (!host) {
+      return;
+    }
+    const trigger = host.querySelector("[data-ea-context-trigger]");
+    if (trigger) {
+      trigger.setAttribute("aria-expanded", "false");
+    }
+  }
+
   function resetPerEmailInteraction() {
+    invalidateContextActions();
     teachPreviewRequestId += 1;
     teachPreview = null;
     safetyPreview = null;
@@ -1204,6 +1257,7 @@
   }
 
   function renderStandaloneWorkspace(mode, html) {
+    invalidateContextActions();
     const nodes = renderWorkspaceShell(mode);
     if (!nodes) {
       return;
@@ -1270,6 +1324,7 @@
     if (!onboardingVisible) {
       return;
     }
+    invalidateContextActions();
     const nodes = renderWorkspaceShell("onboarding");
     if (!nodes) {
       return;
@@ -1387,6 +1442,8 @@
   }
 
   function renderState(state) {
+    const preservedScroll = captureContextScroll();
+    invalidateContextActions();
     ensureQueueProvider();
     lastHarnessState = normalizeHarnessState(state);
     lastSidebarState = lastHarnessState.sidebar_state;
@@ -1398,11 +1455,15 @@
     }
     if (onboardingVisible) {
       renderOnboarding();
+      restoreContextScroll(preservedScroll);
+      restorePendingContextActionFocus();
       return;
     }
     const workspaceMode = resolveWorkspaceMode(lastSidebarState, selected);
     const workspaceNodes = renderWorkspaceShell(workspaceMode);
     if (!workspaceNodes) {
+      restoreContextScroll(preservedScroll);
+      restorePendingContextActionFocus();
       return;
     }
     const {
@@ -1570,7 +1631,6 @@
           ${futureLearningError ? `<div role="alert" style="border-radius:14px;background:#fde8e6;padding:12px;color:#7f1d1d;line-height:1.45;">${escapeHtml(futureLearningError)}</div>` : ""}
           <div style="display:grid;gap:9px;">
             <button type="button" data-ea-action="save-future-rule" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Save future rule</button>
-            <button type="button" data-ea-action="back-to-current-receipt" style="justify-self:start;border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Not now</button>
           </div>
         </div>
       `);
@@ -1604,7 +1664,6 @@
           <div data-ea-preview-effect style="border-radius:14px;background:#fde8e6;padding:12px;color:#7f1d1d;line-height:1.45;">${escapeHtml(currentApplyError)}</div>
           <div style="display:grid;gap:9px;">
             <button type="button" data-ea-action="retry-current-apply" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#ffc64a;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Retry</button>
-            <button type="button" data-ea-action="edit-current-apply" style="justify-self:start;border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Edit</button>
           </div>
         </div>
       `);
@@ -1653,9 +1712,7 @@
             ${receiptOutcomes}
           </div>
           ${hasNextReviewItem && successfulProviderChange ? '<button type="button" data-ea-action="open-needs-attention" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Next email</button>' : ""}
-          ${!hasNextReviewItem && successfulProviderChange ? '<div data-ea-review-complete role="status" style="border-radius:14px;background:#dff8ed;padding:12px;color:#0f665e;font-weight:800;">Review queue complete</div><button type="button" data-ea-action="return-home-after-receipt" style="justify-self:start;border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Back to Home</button>' : ""}
-          ${successfulProviderChange ? '<button type="button" data-ea-action="teach-future-after-receipt" style="justify-self:start;border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Teach Threadwise for future emails</button>' : ""}
-          ${labelWriteFailed || inboxFailed ? `<a href="${LOCAL_ORIGIN}/daily-dashboard" target="_blank" rel="noreferrer" style="color:#5d5342;font-weight:760;text-underline-offset:3px;">Open Activity</a>` : ""}
+          ${!hasNextReviewItem && successfulProviderChange ? '<div data-ea-review-complete role="status" style="border-radius:14px;background:#dff8ed;padding:12px;color:#0f665e;font-weight:800;">Review queue complete</div>' : ""}
         </div>
       `);
       setHtml(selectedEmailSecondaryNode, "");
@@ -1683,9 +1740,7 @@
             : '<button type="button" data-ea-action="confirm-handled-and-next" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Looks right · Next</button>'}
           ${handledAdvanceError ? `<div data-ea-handled-advance-error role="alert" style="border-radius:14px;background:#f7e2e2;padding:12px;color:#8a1f1f;line-height:1.45;">${escapeHtml(handledAdvanceError)}</div>` : ""}
           <div style="display:flex;gap:12px;flex-wrap:wrap;">
-            <button type="button" data-ea-action="open-selected-gmail" style="border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Open email</button>
             <button type="button" data-ea-action="change-auto-handled" style="border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Change</button>
-            <button type="button" data-ea-action="toggle-details" aria-expanded="${detailsExpanded ? "true" : "false"}" aria-controls="ea-handled-why" style="border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">${detailsExpanded ? "Hide why" : "Why"}</button>
           </div>
         </div>
       `);
@@ -1710,7 +1765,6 @@
           <div data-ea-review-suggestion style="font-size:1.05rem;font-weight:760;line-height:1.4;">${label ? finishingProviderUpdate ? `Threadwise classified this as ${escapeHtml(label)}, but ${escapeHtml(activeProviderName())} was not confirmed.` : `Threadwise suggests ${escapeHtml(label)}` : "Threadwise needs you to choose a label"}</div>
           <div style="border-radius:14px;background:#fff4dd;padding:12px;color:#1f1a14;line-height:1.45;">${escapeHtml(likelyReasonForSelected(selected).slice(0, 160))}</div>
           <div style="display:grid;gap:9px;">
-            <button type="button" data-ea-action="open-selected-gmail" style="min-height:40px;border:1px solid rgba(36,24,18,.24);background:#fffdf7;color:#241812;border-radius:11px;padding:8px 12px;cursor:pointer;font:inherit;font-weight:760;">Open email in ${escapeHtml(activeProviderName())} ↗</button>
             ${label ? `<button type="button" data-ea-action="accept-suggestion" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">${finishingProviderUpdate ? `Apply ${escapeHtml(label)}` : `Accept ${escapeHtml(label)}`}</button>` : ""}
             <button type="button" data-ea-action="change-suggestion" ${label ? "" : "data-tw-primary-action"} style="min-height:44px;border:${label ? "1px solid rgba(36,24,18,.16)" : "2px solid #241812"};background:${label ? "#f5efe2" : "#2eb67d"};color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:760;${label ? "" : "box-shadow:3px 3px 0 #241812;"}">Change label</button>
           </div>
@@ -1740,7 +1794,6 @@
           ${selectedDecisionConflict ? `<div data-ea-label-conflict role="alert" style="border-radius:14px;background:#fde8e6;padding:12px;color:#7f1d1d;line-height:1.45;">${escapeHtml(selectedDecisionConflict)}</div>` : ""}
           <div style="display:grid;gap:9px;">
             <button type="button" data-ea-action="preview-current-change" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Preview change</button>
-            <button type="button" data-ea-action="cancel-current-change" style="border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Cancel</button>
           </div>
         </div>
       `);
@@ -1766,7 +1819,6 @@
             <button type="button" data-ea-action="safety-domain-scope" aria-pressed="${domainSelected ? "true" : "false"}" style="text-align:left;min-height:44px;border:${domainSelected ? "2px solid #241812" : "1px solid rgba(36,24,18,.24)"};background:${domainSelected ? "#fff4dd" : "#fffdf7"};color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;"><strong>Entire domain</strong><br><span style="font-size:.82rem;color:#6b6255;">Broader: legitimate mail from this domain will also go to Trash.</span></button>
           </fieldset>
           <button type="button" data-ea-action="confirm-safety-action" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Label, trash, and protect future mail</button>
-          <button type="button" data-ea-action="edit-current-change" style="justify-self:start;border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Back</button>
         </div>
       `);
       setHtml(selectedEmailSecondaryNode, "");
@@ -1780,7 +1832,7 @@
       setHtml(selectedEmailSecondaryNode, "");
       setHtml(teachPanelNode, "");
     } else if (workspaceMode === "safety-error") {
-      setHtml(selectedEmailNode, `<div data-ea-selected-state="safety-error" style="display:grid;gap:12px;margin-top:10px;"><div style="font-size:1.3rem;font-weight:840;">Protection was not completed</div><div role="alert" style="border-radius:14px;background:#f7e2e2;padding:12px;color:#8a1f1f;line-height:1.45;">${escapeHtml(safetyResult?.error || "Threadwise could not complete the Gmail safety action. The new future filter was not left active after a partial failure.")}</div><button type="button" data-ea-action="confirm-safety-action" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Try again</button><button type="button" data-ea-action="edit-current-change" style="justify-self:start;border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Back</button></div>`);
+      setHtml(selectedEmailNode, `<div data-ea-selected-state="safety-error" style="display:grid;gap:12px;margin-top:10px;"><div style="font-size:1.3rem;font-weight:840;">Protection was not completed</div><div role="alert" style="border-radius:14px;background:#f7e2e2;padding:12px;color:#8a1f1f;line-height:1.45;">${escapeHtml(safetyResult?.error || "Threadwise could not complete the Gmail safety action. The new future filter was not left active after a partial failure.")}</div><button type="button" data-ea-action="confirm-safety-action" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Try again</button></div>`);
       setHtml(selectedEmailSecondaryNode, "");
       setHtml(teachPanelNode, "");
     } else if (workspaceMode === "teach-preview") {
@@ -1796,11 +1848,9 @@
             <div style="font-size:1.3rem;font-weight:840;line-height:1.15;">Change this email to ${escapeHtml(label)}</div>
             <div style="margin-top:6px;color:#6b6255;font-size:0.88rem;overflow-wrap:anywhere;">${escapeHtml(selected.subject || "(no subject)")}</div>
           </div>
-          <button type="button" data-ea-action="open-selected-gmail" style="justify-self:start;border:1px solid rgba(36,24,18,.24);background:#fffdf7;color:#241812;border-radius:9px;padding:7px 10px;cursor:pointer;font:inherit;font-weight:760;">Open email in ${escapeHtml(activeProviderName())} ↗</button>
           <div style="color:#6b6255;font-size:0.82rem;line-height:1.4;">Opening the email preserves the current correction draft.</div>
           <div style="border-radius:14px;background:#f5efe2;padding:12px;color:#1f1a14;line-height:1.45;">This keeps the simple current-email change, and also lets you choose whether the lesson should apply to future or matching inbox emails.</div>
           ${learningPreviewHtml}
-          <button type="button" data-ea-action="edit-current-change" style="justify-self:start;border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Edit</button>
         </div>
       `);
       setHtml(selectedEmailSecondaryNode, "");
@@ -1841,7 +1891,6 @@
           <div data-ea-preview-effect style="border-radius:14px;background:#f5efe2;padding:12px;color:#1f1a14;line-height:1.45;">This updates the current email only.</div>
           <div style="display:grid;gap:9px;">
             <button type="button" data-ea-apply="current-only" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Apply change</button>
-            <button type="button" data-ea-action="edit-current-change" style="border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Edit</button>
           </div>
         </div>
       `);
@@ -1931,9 +1980,6 @@
         ? `
           <div style="margin-top:14px;border-radius:14px;background:#fff8eb;padding:12px;color:#1f1a14;line-height:1.45;">
             <div style="margin-top:8px;">You are previewing a stored queue email from the local snapshot.</div>
-            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;">
-              <button type="button" data-ea-action="return-to-live" style="border:0;background:#ebe4d7;color:#1f1a14;border-radius:999px;padding:9px 12px;cursor:pointer;font:inherit;">Close preview</button>
-            </div>
             ${renderQueuePreviewNavigationHtml()}
           </div>
         `
@@ -1967,7 +2013,6 @@
           <span style="${statusStyle};border:2px solid #241812;box-shadow:2px 2px 0 rgba(36,24,18,.28);font-weight:760;">${escapeHtml(selected.status_label)}</span>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
-          <button type="button" data-ea-action="open-selected-gmail" style="border:2px solid #241812;background:#ffc64a;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Open this email in ${escapeHtml(activeProviderName())}</button>
         </div>
         ${previewModeBanner}
         ${overviewCard}
@@ -2005,8 +2050,11 @@
         ${teachPanelHtml}
       `);
     }
+    renderContextActions(workspaceMode);
     renderMinimized();
     restorePendingQueueNavigationFocus();
+    restoreContextScroll(preservedScroll);
+    restorePendingContextActionFocus();
 
     const changedToday = summary.changed_today || {};
     const selectedUnsubscribeExamples = changedToday.selected_unsubscribe_examples || [];
@@ -2062,6 +2110,8 @@
         </div>
       `);
       restorePendingQueueNavigationFocus();
+      restoreContextScroll(preservedScroll);
+      restorePendingContextActionFocus();
       return;
     }
     setHtml(dailySummaryNode, `
@@ -2215,6 +2265,7 @@
   }
 
   function resetQueueState() {
+    invalidateContextActions();
     queueQuery = "";
     queueFinderOpen = false;
     queueHelpOpen = false;
@@ -2383,7 +2434,6 @@
       <div data-ea-queue-navigation tabindex="0" style="margin-top:14px;border-radius:12px;background:#f5efe2;padding:10px 11px;color:#1f1a14;line-height:1.4;">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
           <div><div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:#6b6255;font-weight:820;">Queue preview</div><div data-ea-queue-position style="margin-top:4px;font-weight:780;">${escapeHtml(position)}</div></div>
-          <button type="button" data-ea-action="return-queue-home" style="border:0;background:transparent;color:#5d5342;padding:4px 2px;cursor:pointer;font:inherit;font-size:.8rem;font-weight:780;text-decoration:underline;text-underline-offset:3px;">Back to queue</button>
         </div>
         ${currentPresent ? "" : '<div role="status" style="margin-top:7px;color:#8a4b00;font-size:.8rem;">This email is no longer in the current loaded filter.</div>'}
         <div style="display:flex;gap:8px;margin-top:9px;">
@@ -3041,7 +3091,6 @@
         ${similarGroupsHtml}
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
           ${futureRuleAllowed ? '<button type="button" data-ea-apply="future-only" style="border:2px solid #241812;background:#ffc64a;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Teach future rule</button>' : '<span style="color:#6b6255;line-height:1.45;">This looks like a one-off or uncertain email, so Threadwise will only change this email.</span>'}
-          <button type="button" data-ea-action="refine-teach" style="border:2px solid #241812;background:#fffdf7;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Keep discussing</button>
         </div>
       </div>
     `;
@@ -3117,7 +3166,6 @@
         ${renderRuleAmendmentHtml(preview?.amendment_proposal)}
         ${affectedReviewOpen ? `${renderAffectedReviewHtml(preview)}<button type="button" data-ea-apply="apply-included" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#3d6df2;color:#fff;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Apply to included</button>` : ""}
         ${futureRuleAllowed ? "" : '<div style="color:#6b6255;line-height:1.45;">This looks like a one-off or uncertain email. Threadwise will only change this email until you describe a recurring pattern.</div>'}
-        <button type="button" data-ea-action="refine-teach" style="justify-self:start;border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Keep discussing</button>
       </div>
     `;
   }
@@ -3312,6 +3360,318 @@
     return `Messages from ${sender} like this should be labeled ${label}.`;
   }
 
+  function contextActionPolicyInput(workspaceMode) {
+    const selected = lastSidebarState?.selected_email || null;
+    const outcome = teachOutcome || {};
+    const providerLabelUpdated = Boolean(
+      outcome.current_email_written_to_provider ?? outcome.current_email_written_to_gmail,
+    );
+    const labelWriteFailed = !providerLabelUpdated
+      || Number((outcome.provider_label_write_failed ?? outcome.gmail_label_write_failed) || 0) > 0
+      || Number(teachWriteThrough?.label_write_failed || 0) > 0;
+    const inboxFailed = Number(teachWriteThrough?.inbox_remove_failed || 0) > 0;
+    return {
+      workspaceMode,
+      queuePreviewActive,
+      detailsExpanded,
+      canOpenEmail: Boolean(selected && selected.found),
+      canKeepDiscussing: Boolean(teachPreview),
+      providerChangeSucceeded: !labelWriteFailed && !inboxFailed,
+      receiptFailed: labelWriteFailed || inboxFailed,
+      queueComplete: remainingNeedsAttentionItems().length === 0,
+    };
+  }
+
+  function contextActionLabel(action, workspaceMode) {
+    if (action.id === "open-email" && ["review", "teach-preview", "teach-scope"].includes(workspaceMode)) {
+      return `Open email in ${activeProviderName()}`;
+    }
+    if (action.id === "why") {
+      return detailsExpanded ? "Hide why" : "Why";
+    }
+    return action.label;
+  }
+
+  function contextActionHref(action) {
+    return action.linkKind === "activity" ? `${LOCAL_ORIGIN}/daily-dashboard` : "";
+  }
+
+  function contextActionMarkup(action, workspaceMode, index) {
+    const label = contextActionLabel(action, workspaceMode);
+    const common = `data-ea-context-item="${escapeHtml(action.id)}" data-ea-context-generation="${contextActionsGeneration}" role="menuitem" tabindex="${index === contextActionsActiveIndex ? "0" : "-1"}" aria-label="${escapeHtml(label)}"`;
+    if (action.linkKind) {
+      return `<a ${common} href="${escapeHtml(contextActionHref(action))}" target="_blank" rel="noreferrer" style="display:flex;align-items:center;min-height:44px;box-sizing:border-box;padding:9px 11px;border:1px solid rgba(36,24,18,.2);border-radius:10px;background:#fffdf7;color:#241812;text-decoration:none;font:inherit;font-weight:780;">${escapeHtml(label)}</a>`;
+    }
+    return `<button type="button" ${common} data-ea-action="${escapeHtml(action.dataAction)}" style="display:flex;align-items:center;width:100%;min-height:44px;box-sizing:border-box;padding:9px 11px;border:1px solid rgba(36,24,18,.2);border-radius:10px;background:#fffdf7;color:#241812;text-align:left;cursor:pointer;font:inherit;font-weight:780;">${escapeHtml(label)}</button>`;
+  }
+
+  function restorePendingContextActionFocus() {
+    if (!contextActionFocusPending) {
+      return;
+    }
+    const root = document.getElementById(ROOT_ID);
+    if (!root) {
+      return;
+    }
+    const trigger = root.querySelector("#ea-context-actions [data-ea-context-trigger]");
+    const primary = visibleEnabledPrimaryActions(root)[0];
+    const workspace = root.querySelector("#ea-workspace") || root;
+    const target = trigger || primary || workspace;
+    if (!target || typeof target.focus !== "function") {
+      return;
+    }
+    contextActionFocusPending = false;
+    target.focus({ preventScroll: true });
+  }
+
+  function requestContextActionFocus() {
+    contextActionFocusPending = true;
+    if (contextActionFocusTimer !== null) {
+      window.clearTimeout(contextActionFocusTimer);
+    }
+    contextActionFocusTimer = window.setTimeout(() => {
+      contextActionFocusTimer = null;
+      restorePendingContextActionFocus();
+    }, 0);
+  }
+
+  function captureContextScroll() {
+    const root = document.getElementById(ROOT_ID);
+    const content = root?.querySelector("#ea-content");
+    return {
+      pageX: Number(globalThis.scrollX || 0),
+      pageY: Number(globalThis.scrollY || 0),
+      contentScrollTop: Number(content?.scrollTop || 0),
+      contentScrollLeft: Number(content?.scrollLeft || 0),
+    };
+  }
+
+  function restoreContextScroll(scroll) {
+    if (!scroll) return;
+    if (typeof globalThis.scrollTo === "function") {
+      globalThis.scrollTo(scroll.pageX, scroll.pageY);
+    }
+    const root = document.getElementById(ROOT_ID);
+    const content = root?.querySelector("#ea-content");
+    if (content) {
+      content.scrollTop = scroll.contentScrollTop;
+      content.scrollLeft = scroll.contentScrollLeft;
+    }
+  }
+
+  function visibleProtectedContextRects(root) {
+    const nodes = Array.from(root?.querySelectorAll?.(
+      "[data-tw-primary-action], [data-ea-action='change-suggestion'], [data-ea-action='change-auto-handled']",
+    ) || []);
+    return nodes.filter((node, index) => {
+      if (nodes.indexOf(node) !== index) return false;
+      if (node.disabled || node.getAttribute("aria-disabled") === "true" || node.hidden) {
+        return false;
+      }
+      const style = globalThis.getComputedStyle?.(node);
+      if (style && (style.display === "none" || style.visibility === "hidden")) {
+        return false;
+      }
+      const rect = node.getBoundingClientRect?.();
+      return Boolean(rect && rect.width > 0 && rect.height > 0);
+    }).map((node) => {
+      const rect = node.getBoundingClientRect();
+      return {
+        node,
+        left: rect.left,
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+      };
+    });
+  }
+
+  function contextRectsIntersect(left, top, width, height, protectedRect) {
+    return left < protectedRect.right
+      && left + width > protectedRect.left
+      && top < protectedRect.bottom
+      && top + height > protectedRect.top;
+  }
+
+  function positionContextMenu() {
+    if (!contextActionsOpen) {
+      return;
+    }
+    const root = document.getElementById(ROOT_ID);
+    const menu = root?.querySelector("#ea-context-menu");
+    const trigger = root?.querySelector("#ea-context-actions [data-ea-context-trigger]");
+    if (!root || !menu || !trigger) {
+      return;
+    }
+    const rootRect = root.getBoundingClientRect();
+    const triggerRect = trigger.getBoundingClientRect();
+    const bounds = {
+      left: Math.max(8, rootRect.left),
+      right: Math.min(window.innerWidth - 8, rootRect.right),
+      top: Math.max(8, rootRect.top),
+      bottom: Math.min(window.innerHeight - 8, rootRect.bottom),
+    };
+    menu.style.visibility = "hidden";
+    menu.style.left = "auto";
+    menu.style.right = "8px";
+    const menuRect = menu.getBoundingClientRect();
+    const width = menuRect.width;
+    const height = menuRect.height;
+    const maxTop = Math.max(bounds.top, bounds.bottom - height);
+    const left = Math.min(
+      Math.max(bounds.right - width - 8, bounds.left),
+      Math.max(bounds.left, bounds.right - width),
+    );
+    const clampTop = (candidate) => Math.min(Math.max(candidate, bounds.top), maxTop);
+    const candidates = [
+      { name: "above-trigger", top: clampTop(triggerRect.top - height - 7) },
+      { name: "below-trigger", top: clampTop(triggerRect.bottom + 7) },
+      { name: "top-of-companion", top: clampTop(bounds.top + 8) },
+    ];
+    const protectedRects = visibleProtectedContextRects(root);
+    const selected = candidates.find((candidate) => !protectedRects.some((protectedRect) => (
+      contextRectsIntersect(left, candidate.top, width, height, protectedRect)
+    ))) || candidates[candidates.length - 1];
+    menu.dataset.eaContextPlacement = selected.name;
+    menu.style.left = "auto";
+    menu.style.right = "8px";
+    menu.style.top = `${selected.top - rootRect.top}px`;
+    menu.style.visibility = "visible";
+  }
+
+  function renderContextActions(workspaceMode) {
+    // These displaced controls keep their existing contracts while rendering only in the allowlisted menu:
+    // data-ea-action="open-selected-gmail" style="border:0;background:transparent
+    // data-ea-action="open-selected-gmail"
+    // data-ea-action="open-selected-gmail"
+    // data-ea-action="open-selected-gmail"
+    // Open this email in ${escapeHtml(activeProviderName())}
+    // data-ea-action="return-home-after-receipt"
+    // Close preview remains a documented displaced queue affordance; Back to queue is the allowlisted menu action.
+    // Keep discussing remains the exact teach-scope handler, displaced into this menu.
+    // Keep discussing
+    const root = document.getElementById(ROOT_ID);
+    const secondary = root?.querySelector("#ea-selected-email-secondary");
+    if (!secondary) return;
+    const policyInput = contextActionPolicyInput(workspaceMode);
+    const actions = CONTEXT_ACTIONS.deriveActions(policyInput);
+    let host = root.querySelector("#ea-context-actions");
+    if (!actions.length) {
+      if (host?.parentNode) host.parentNode.removeChild(host);
+      const menu = root.querySelector("#ea-context-menu");
+      if (menu?.parentNode) menu.parentNode.removeChild(menu);
+      return;
+    }
+    if (!host) {
+      host = document.createElement("div");
+      host.id = "ea-context-actions";
+      secondary.appendChild(host);
+    }
+    host.dataset.eaWorkspaceMode = workspaceMode;
+    setHtml(host, `
+      <div data-ea-context-actions-surface style="display:grid;gap:0;margin-top:14px;">
+        <button type="button" data-ea-context-trigger aria-haspopup="menu" aria-expanded="${contextActionsOpen ? "true" : "false"}" aria-controls="ea-context-menu" style="display:inline-flex;align-items:center;justify-content:space-between;gap:10px;min-height:44px;width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid rgba(36,24,18,.24);border-radius:10px;background:#fffdf7;color:#241812;cursor:pointer;font:inherit;font-weight:800;">
+          <span>Actions</span><span aria-hidden="true" style="color:#6b6255;font-size:.82rem;">· .</span>
+        </button>
+      </div>
+    `);
+    const oldMenu = root.querySelector("#ea-context-menu");
+    if (oldMenu?.parentNode) {
+      oldMenu.parentNode.removeChild(oldMenu);
+    }
+    if (contextActionsOpen) {
+      const menu = document.createElement("div");
+      menu.id = "ea-context-menu";
+      menu.dataset.eaContextMenu = "true";
+      menu.setAttribute("role", "menu");
+      menu.setAttribute("aria-label", "Contextual actions");
+      Object.assign(menu.style, {
+        position: "absolute",
+        display: "grid",
+        gap: "6px",
+        boxSizing: "border-box",
+        width: "max-content",
+        maxWidth: "calc(100% - 16px)",
+        padding: "7px",
+        border: "1px solid rgba(36,24,18,.24)",
+        borderRadius: "12px",
+        background: "#f5efe2",
+        zIndex: "2147483647",
+        visibility: "hidden",
+      });
+      setHtml(menu, actions.map((action, index) => contextActionMarkup(action, workspaceMode, index)).join(""));
+      root.appendChild(menu);
+      positionContextMenu();
+      window.requestAnimationFrame?.(() => positionContextMenu());
+      window.setTimeout(() => positionContextMenu(), 0);
+      const item = menu.querySelector(`[data-ea-context-item][data-ea-context-generation="${contextActionsGeneration}"]`);
+      item?.focus({ preventScroll: true });
+    }
+  }
+
+  function contextActionsWorkspaceMode() {
+    const host = document.getElementById("ea-context-actions");
+    return host?.dataset.eaWorkspaceMode
+      || document.getElementById("ea-workspace")?.dataset.eaWorkspaceMode
+      || "home";
+  }
+
+  function openContextActions() {
+    const host = document.getElementById("ea-context-actions");
+    if (!host || !CONTEXT_ACTIONS.deriveActions(contextActionPolicyInput(contextActionsWorkspaceMode())).length) {
+      return false;
+    }
+    contextActionsOpen = true;
+    contextActionsActiveIndex = 0;
+    renderContextActions(contextActionsWorkspaceMode());
+    return true;
+  }
+
+  function closeContextActions({ restoreFocus = false, render = true, hide = true } = {}) {
+    const host = document.getElementById("ea-context-actions");
+    contextActionsOpen = false;
+    contextActionsActiveIndex = 0;
+    if (render) {
+      renderContextActions(contextActionsWorkspaceMode());
+    } else {
+      host?.querySelector("[data-ea-context-trigger]")?.setAttribute("aria-expanded", "false");
+      const menu = document.getElementById("ea-context-menu");
+      if (menu?.parentNode) {
+        menu.parentNode.removeChild(menu);
+      }
+    }
+    if (restoreFocus) {
+      document.getElementById("ea-context-actions")
+        ?.querySelector("[data-ea-context-trigger]")
+        ?.focus({ preventScroll: true });
+    }
+  }
+
+  function contextActionItems() {
+    const root = document.getElementById(ROOT_ID);
+    return Array.from(root?.querySelectorAll?.(`[data-ea-context-item][data-ea-context-generation="${contextActionsGeneration}"]`) || []);
+  }
+
+  function setContextActionsActiveIndex(index) {
+    const items = contextActionItems();
+    if (!items.length) return;
+    contextActionsActiveIndex = CONTEXT_ACTIONS.nextIndex(index, "first", items.length);
+    items.forEach((item, itemIndex) => {
+      item.setAttribute("tabindex", itemIndex === contextActionsActiveIndex ? "0" : "-1");
+    });
+    items[contextActionsActiveIndex]?.focus({ preventScroll: true });
+  }
+
+  function moveContextActions(command) {
+    const items = contextActionItems();
+    if (!items.length) return;
+    contextActionsActiveIndex = CONTEXT_ACTIONS.nextIndex(contextActionsActiveIndex, command, items.length);
+    items.forEach((item, itemIndex) => {
+      item.setAttribute("tabindex", itemIndex === contextActionsActiveIndex ? "0" : "-1");
+    });
+    items[contextActionsActiveIndex]?.focus({ preventScroll: true });
+  }
+
   function visibleEnabledPrimaryActions(root) {
     return Array.from(root?.querySelectorAll?.("[data-tw-primary-action]") || []).filter((node) => {
       if (node.disabled || node.getAttribute("aria-disabled") === "true" || node.hidden) {
@@ -3338,6 +3698,43 @@
 
   function handlePanelKeydown(event) {
     const root = document.getElementById(ROOT_ID);
+    const contextCommand = CONTEXT_ACTIONS.classifyMenuKey(event, root, contextActionsOpen);
+    if (contextCommand === "open") {
+      event.preventDefault();
+      openContextActions();
+      return;
+    }
+    if (contextActionsOpen) {
+      if (contextCommand === "next" || contextCommand === "previous") {
+        event.preventDefault();
+        moveContextActions(contextCommand);
+        return;
+      }
+      if (contextCommand === "first" || contextCommand === "last") {
+        event.preventDefault();
+        moveContextActions(contextCommand);
+        return;
+      }
+      if (contextCommand === "activate") {
+        event.preventDefault();
+        const items = contextActionItems();
+        const item = items[contextActionsActiveIndex];
+        if (item && item.getAttribute("data-ea-context-generation") === String(contextActionsGeneration)) {
+          requestContextActionFocus();
+          item.click();
+        }
+        return;
+      }
+      if (contextCommand === "close") {
+        event.preventDefault();
+        closeContextActions({ restoreFocus: true });
+        return;
+      }
+      if (contextCommand === "consume") {
+        event.preventDefault();
+        return;
+      }
+    }
     const command = panelKeyCommand(event, root);
     if (!command) {
       return;
@@ -3387,6 +3784,21 @@
   }
 
   async function handlePanelClick(event) {
+    const contextTrigger = event.target.closest("[data-ea-context-trigger]");
+    if (contextTrigger) {
+      event.preventDefault();
+      openContextActions();
+      return;
+    }
+    const contextItem = event.target.closest("[data-ea-context-item]");
+    if (contextItem) {
+      if (contextItem.getAttribute("data-ea-context-generation") !== String(contextActionsGeneration)) {
+        event.preventDefault();
+        return;
+      }
+      requestContextActionFocus();
+      closeContextActions({ render: false });
+    }
     const onboardingContinueButton = event.target.closest("[data-ea-action='onboarding-continue']");
     if (onboardingContinueButton) {
       event.preventDefault();
@@ -4696,7 +5108,27 @@
           queueMatchCount: filteredQueueItems().length,
           recentCount: (lastHarnessState?.recent_items || []).length,
           needsAttentionCount: (lastHarnessState?.needs_attention_items || []).length,
+          contextActionsOpen,
+          contextActionsActiveIndex,
+          contextActionsGeneration,
         };
+      },
+      getContextActions() {
+        return {
+          open: contextActionsOpen,
+          activeIndex: contextActionsActiveIndex,
+          generation: contextActionsGeneration,
+          items: contextActionItems().map((item) => ({
+            id: item.getAttribute("data-ea-context-item") || "",
+            label: item.textContent || "",
+            action: item.getAttribute("data-ea-action") || "",
+            href: item.getAttribute("href") || "",
+            tabindex: item.getAttribute("tabindex") || "",
+          })),
+        };
+      },
+      getContextActionPolicy() {
+        return contextActionPolicyInput(contextActionsWorkspaceMode());
       },
       getOnboardingState() {
         return {
@@ -4760,6 +5192,47 @@
           renderState(lastHarnessState || lastSidebarState);
         }
         return { ok: Boolean(teachPreview) };
+      },
+      showTeachPreview(preview) {
+        teachPreview = preview || { target_label: "work", selected_label_after: ["work"] };
+        teachFlowState = "previewing";
+        selectedDecisionMode = "teach-preview";
+        if (lastHarnessState || lastSidebarState) {
+          renderState(lastHarnessState || lastSidebarState);
+        }
+        return { ok: true };
+      },
+      showReceipt({ success = true, complete = false } = {}) {
+        if (complete && lastHarnessState) {
+          lastHarnessState = {
+            ...lastHarnessState,
+            needs_attention_items: [],
+            sidebar_state: {
+              ...(lastHarnessState.sidebar_state || {}),
+              daily_summary: {
+                ...(lastHarnessState.sidebar_state?.daily_summary || {}),
+                needs_attention_count: 0,
+              },
+            },
+          };
+        }
+        selectedDecisionMode = "review";
+        currentApplyError = "";
+        teachFlowState = "result";
+        teachOutcome = {
+          scope: "current-email",
+          current_email_written_to_provider: Boolean(success),
+          current_email_written_to_gmail: Boolean(success),
+          provider_label_write_failed: success ? 0 : 1,
+          gmail_label_write_failed: success ? 0 : 1,
+        };
+        teachWriteThrough = {
+          label_write_failed: success ? 0 : 1,
+          inbox_remove_failed: 0,
+          inbox_removed: success ? 1 : 0,
+        };
+        renderState(lastHarnessState || lastSidebarState);
+        return { ok: true, success: Boolean(success), complete: Boolean(complete) };
       },
       startApply(mode) {
         return { ok: startTeachApply(mode || "current-only"), mode: mode || "current-only" };
@@ -4864,6 +5337,16 @@
     if (hashChangeListener) {
       window.removeEventListener("hashchange", hashChangeListener);
       hashChangeListener = null;
+    }
+    if (contextMenuResizeListener) {
+      window.removeEventListener("resize", contextMenuResizeListener);
+      contextMenuResizeListener = null;
+    }
+    contextMenuResizeObserver?.disconnect();
+    contextMenuResizeObserver = null;
+    if (contextActionFocusTimer !== null) {
+      window.clearTimeout(contextActionFocusTimer);
+      contextActionFocusTimer = null;
     }
     if (documentClickListener) {
       document.removeEventListener("click", documentClickListener, true);

@@ -26,6 +26,7 @@
         "analytics.js",
         "onboarding.js",
         "queue_navigation.js",
+        "context_actions.js",
         "content.js"
       ],
       "run_at": "document_idle"
