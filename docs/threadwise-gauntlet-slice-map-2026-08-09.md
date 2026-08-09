@@ -39,6 +39,8 @@ Each slice is a thin, demoable path. The Sol helm selects and triages one slice 
 5. **High-throughput review completion**
    - Type: AFK
    - Blocked by: Slice 2
+   - Current issue: `#109`
+   - Status: Triaged and ready for bounded implementation
    - Outcome: Review → decision → background provider result → truthful receipt → next item → verified queue-complete state is fast, keyboard reachable, and never offers a nonexistent next item.
 
 6. **Bounded batch triage preview**
