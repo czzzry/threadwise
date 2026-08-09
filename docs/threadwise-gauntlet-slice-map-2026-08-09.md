@@ -18,6 +18,8 @@ Each slice is a thin, demoable path. The Sol helm selects and triages one slice 
 2. **Queue-local search and keyboard navigation**
    - Type: AFK
    - Blocked by: Slice 1 only for shared interaction vocabulary
+   - Current issue: `#106`
+   - Status: Triaged and ready for the first builder round
    - Outcome: Filter the loaded provider-scoped review queue by sender, subject, label, or status; navigate with panel-scoped keys; Enter runs the primary action; Escape retreats; Gmail typing and shortcuts remain untouched.
 
 3. **Contextual action panel**

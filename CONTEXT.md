@@ -35,7 +35,7 @@ Do not infer approval from `docs/v2-issue-map.md`, archived PRDs, or old handoff
 
 The founder has approved the Threadwise World-Class Triage Gauntlet in `docs/prd-threadwise-gauntlet-2026-08-09.md`. It preserves the existing Threadwise logo and Gmail-overlay architecture, excludes AI auto-response and writing, and uses Mail-0/Zero, Grammarly, Refined GitHub, Raycast, and Linear as the specified functionality and interaction bars.
 
-The Gauntlet is decomposed in `docs/threadwise-gauntlet-slice-map-2026-08-09.md`. Implementation still proceeds one triaged vertical slice at a time. The first-run companion slice in issue `#105` is implemented and won its second independent critic round at `97/100`; see `docs/handoff/2026-08-09-threadwise-gauntlet-onboarding.md`. Queue-local search and panel-scoped keyboard navigation is the next candidate slice, but it still requires its own triage gate before implementation.
+The Gauntlet is decomposed in `docs/threadwise-gauntlet-slice-map-2026-08-09.md`. Implementation still proceeds one triaged vertical slice at a time. The first-run companion slice in issue `#105` is implemented and won its second independent critic round at `97/100`; see `docs/handoff/2026-08-09-threadwise-gauntlet-onboarding.md`. Queue-local search and panel-scoped keyboard navigation is the active bounded slice in issue `#106`; its implementation contract is `docs/issues/106-add-queue-filtering-and-panel-keyboard-navigation.md`.
 
 The universal Threadwise experience in `docs/prd-universal-threadwise-experience-2026-08-01.md` is implemented behind one minimized-by-default browser side panel for Gmail and ProtonMail. The two inboxes remain provider-scoped, while review, teaching, scope selection, optimistic advancement, background writes, retry, and activity use one implementation.
 
@@ -67,13 +67,14 @@ The personal Mac now also has a native `Threadwise Control` menu-bar app. It rep
 
 ## Current Source Of Truth
 
-For the active Gauntlet direction and first bounded slice, use:
+For the active Gauntlet direction and bounded slice, use:
 
 1. `docs/prd-threadwise-gauntlet-2026-08-09.md`
 2. `docs/threadwise-gauntlet-slice-map-2026-08-09.md`
-3. `docs/handoff/2026-08-09-threadwise-gauntlet-onboarding.md` and GitHub issue `#105` for the completed first-run onboarding slice
-4. `docs/v2-alignment.md`
-5. `docs/prd-universal-threadwise-experience-2026-08-01.md` for the shared-provider architecture and safety baseline
+3. `docs/issues/106-add-queue-filtering-and-panel-keyboard-navigation.md` and GitHub issue `#106` for the active queue-local interaction slice
+4. `docs/handoff/2026-08-09-threadwise-gauntlet-onboarding.md` and GitHub issue `#105` for the completed first-run onboarding slice
+5. `docs/v2-alignment.md`
+6. `docs/prd-universal-threadwise-experience-2026-08-01.md` for the shared-provider architecture and safety baseline
 
 For the next provider-parity milestone, use:
 
