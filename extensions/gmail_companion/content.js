@@ -13,6 +13,7 @@
   const QUEUE_NAVIGATION = globalThis.ThreadwiseQueueNavigation;
   const CONTEXT_ACTIONS = globalThis.ThreadwiseContextActions;
   const SELECTED_EXPLANATION = globalThis.ThreadwiseSelectedExplanation;
+  const REVIEW_PROGRESSION = globalThis.ThreadwiseReviewProgression;
   if (!PROVIDER) {
     throw new Error("Threadwise provider adapter did not load.");
   }
@@ -28,12 +29,16 @@
   if (!SELECTED_EXPLANATION) {
     throw new Error("Threadwise selected explanation module did not load.");
   }
+  if (!REVIEW_PROGRESSION) {
+    throw new Error("Threadwise review progression module did not load.");
+  }
   const BRAND_ICON_URL = chrome.runtime.getURL("assets/brand/threadwise-app-icon.png");
   const ACTIVE_PROVIDER = PROVIDER.id;
   const PANEL_WIDTH = "420px";
   const PANEL_WIDTH_EXPANDED = "min(920px, calc(100vw - 84px))";
   const PANEL_WIDTH_MINIMIZED = "70px";
   const REFRESH_INTERVAL_MS = 5000;
+  const PROGRESSION_REFRESH_INTERVAL_MS = 1000;
   const UNDERSTANDING_REFRESH_INTERVAL_MS = 400;
   const QUEUE_RENDER_CAP = 6;
   let minimized = true;
@@ -92,7 +97,11 @@
   let understandingRefreshTimeoutId = null;
   let refreshInFlight = false;
   let hashChangeListener = null;
+  let popStateListener = null;
   let documentClickListener = null;
+  let hostContextMutationObserver = null;
+  let hostContextInvalidationMicrotaskPending = false;
+  let companionLifecycleActive = false;
   let runtimeMessageListener = null;
   let onboardingState = { version: ONBOARDING.VERSION, status: "loading" };
   let onboardingReady = Promise.resolve(onboardingState);
@@ -114,9 +123,19 @@
   let contextActionsActiveIndex = 0;
   let contextActionsGeneration = 0;
   let explanationFocusPending = false;
+  let reviewProgressionGeneration = 0;
+  let stateReadGeneration = 0;
+  let latestStateReadGeneration = 0;
+  let optimisticDecision = null;
+  let committedReviewIdentities = [];
+  let progressionCheck = null;
+  let progressionRefreshTimeoutId = null;
+  let handledProgressionFlight = null;
 
   function boot() {
+    companionLifecycleActive = true;
     ensureRoot();
+    installHostContextMutationObserver();
     installTestHooks();
     onboardingReady = ONBOARDING.load()
       .then((state) => {
@@ -130,8 +149,18 @@
       });
     refreshSelection();
     refreshIntervalId = window.setInterval(refreshSelection, REFRESH_INTERVAL_MS);
-    hashChangeListener = () => refreshSelection();
+    hashChangeListener = () => {
+      if (!invalidateProgressionForHostNavigation()) {
+        refreshSelection();
+      }
+    };
     window.addEventListener("hashchange", hashChangeListener);
+    popStateListener = () => {
+      if (!invalidateProgressionForHostNavigation()) {
+        refreshSelection();
+      }
+    };
+    window.addEventListener("popstate", popStateListener);
     contextMenuResizeListener = () => {
       positionContextMenu();
       window.requestAnimationFrame?.(() => positionContextMenu());
@@ -143,6 +172,7 @@
         clearPendingQueueNavigationFocus();
       }
       releaseCompletedQueuePreviewOnGmailClick(event);
+      scheduleProgressionHostResample();
       window.setTimeout(refreshSelection, 150);
     };
     document.addEventListener("click", documentClickListener, true);
@@ -459,6 +489,26 @@
     return PROVIDER.selectedContext();
   }
 
+  function currentHostRoute() {
+    return `${window.location.pathname || ""}${window.location.search || ""}${window.location.hash || ""}`;
+  }
+
+  function sampleActualProgressionHostContext() {
+    let sampled = null;
+    try {
+      sampled = PROVIDER.selectedContext();
+    } catch (_error) {
+      sampled = null;
+    }
+    const source = sampled && typeof sampled === "object" ? sampled : {};
+    return {
+      ...source,
+      provider: String(source.provider || ACTIVE_PROVIDER).trim().toLowerCase(),
+      page_url: window.location.href,
+      selected_at: source.selected_at || new Date().toISOString(),
+    };
+  }
+
   function providerName(provider = ACTIVE_PROVIDER) {
     return provider === "protonmail" ? "Proton Mail" : "Gmail";
   }
@@ -471,9 +521,542 @@
     return {
       provider: item?.provider || ACTIVE_PROVIDER,
       message_id: item?.message_id || "",
+      thread_id: item?.thread_id || "",
       subject: item?.subject || "",
       sender: item?.sender || "",
     };
+  }
+
+  function progressionIdentity(sidebarState = lastSidebarState, selected = sidebarState?.selected_email) {
+    const context = sidebarState?.selected_context || {};
+    return REVIEW_PROGRESSION.normalizeIdentity({
+      provider: selected?.provider || context.provider || ACTIVE_PROVIDER,
+      message_id: selected?.message_id || context.message_id || "",
+      thread_id: selected?.thread_id || context.thread_id || "",
+    });
+  }
+
+  function progressionIdentityKey(identity) {
+    return REVIEW_PROGRESSION.identityKey(identity);
+  }
+
+  function progressionIdentityFromContext(context) {
+    return REVIEW_PROGRESSION.normalizeIdentity({
+      provider: context?.provider || ACTIVE_PROVIDER,
+      message_id: context?.message_id || context?.messageId || "",
+      thread_id: context?.thread_id || context?.threadId || "",
+    });
+  }
+
+  function displayedProgressionIdentities() {
+    const identities = [progressionIdentity()];
+    if (manualPreviewContext?.message_id) {
+      identities.push(progressionIdentityFromContext(manualPreviewContext));
+    } else {
+      const liveContext = stabilizedLiveContext(selectedContext());
+      if (liveContext?.message_id) {
+        identities.push(progressionIdentityFromContext(liveContext));
+      }
+    }
+    return identities;
+  }
+
+  function progressionContextAnchorPart(context, overrides = {}) {
+    const source = context && typeof context === "object" ? context : {};
+    const identity = REVIEW_PROGRESSION.normalizeIdentity({
+      provider: source.provider || ACTIVE_PROVIDER,
+      message_id: source.message_id || source.messageId || "",
+      thread_id: source.thread_id || source.threadId || "",
+    });
+    return Object.freeze({
+      ...identity,
+      pageUrl: String(overrides.pageUrl || source.page_url || source.pageUrl || ""),
+      route: String(overrides.route || source.page_route || source.route || ""),
+    });
+  }
+
+  function progressionDisplayIdentity(anchorPart) {
+    return [
+      anchorPart?.provider || "",
+      anchorPart?.messageId || "",
+      anchorPart?.threadId || "",
+    ].join("|");
+  }
+
+  function currentProgressionDisplayContext() {
+    if (manualPreviewContext?.message_id) {
+      return manualPreviewContext;
+    }
+    const sidebarContext = lastSidebarState?.selected_context;
+    if (sidebarContext && (sidebarContext.message_id || sidebarContext.thread_id || sidebarContext.subject || sidebarContext.sender)) {
+      return sidebarContext;
+    }
+    if (progressionCheck?.anchor?.display) {
+      return {
+        provider: progressionCheck.anchor.display.provider,
+        message_id: progressionCheck.anchor.display.messageId,
+        thread_id: progressionCheck.anchor.display.threadId,
+      };
+    }
+    return sidebarContext
+      || (forcedHome && lastLiveContext?.message_id ? lastLiveContext : null)
+      || lastLiveContext
+      || selectedContext();
+  }
+
+  function progressionContextAnchor(generation) {
+    const actualHostContext = sampleActualProgressionHostContext();
+    const host = progressionContextAnchorPart(actualHostContext, {
+      pageUrl: window.location.href,
+      route: currentHostRoute(),
+    });
+    const display = progressionContextAnchorPart(currentProgressionDisplayContext(), {
+      pageUrl: host.pageUrl,
+      route: host.route,
+    });
+    return Object.freeze({
+      generation,
+      provider: String(ACTIVE_PROVIDER || "").trim().toLowerCase(),
+      host,
+      display,
+      displayIdentity: progressionDisplayIdentity(display),
+    });
+  }
+
+  function progressionContextAnchorMatches(check, actualHostContext = null) {
+    const anchor = check?.anchor;
+    if (!anchor || Number(anchor.generation) !== Number(check.generation)) {
+      return false;
+    }
+    const sampledHostContext = actualHostContext || sampleActualProgressionHostContext();
+    const currentHost = progressionContextAnchorPart(sampledHostContext, {
+      pageUrl: window.location.href,
+      route: currentHostRoute(),
+    });
+    const currentDisplay = progressionContextAnchorPart(currentProgressionDisplayContext(), {
+      pageUrl: currentHost.pageUrl,
+      route: currentHost.route,
+    });
+    const samePart = (expected, actual) => (
+      expected?.provider === actual?.provider
+      && expected?.messageId === actual?.messageId
+      && expected?.threadId === actual?.threadId
+      && expected?.pageUrl === actual?.pageUrl
+      && expected?.route === actual?.route
+    );
+    const actualHostIsTrustworthy = Boolean(
+      currentHost.provider
+      && currentHost.provider === String(ACTIVE_PROVIDER || "").trim().toLowerCase()
+      && currentHost.pageUrl === window.location.href
+      && currentHost.route === currentHostRoute()
+      && anchor.host?.messageId === currentHost.messageId
+      && anchor.host?.threadId === currentHost.threadId
+    );
+    const displayMatches = samePart(anchor.display, currentDisplay)
+      && anchor.displayIdentity === progressionDisplayIdentity(currentDisplay);
+    return (
+      anchor.provider === String(ACTIVE_PROVIDER || "").trim().toLowerCase()
+      && actualHostIsTrustworthy
+      && samePart(anchor.host, currentHost)
+      && displayMatches
+    );
+  }
+
+  function invalidateProgressionForHostNavigation(actualHostContext = null) {
+    if (!progressionCheck) {
+      return false;
+    }
+    const sampledHostContext = actualHostContext || sampleActualProgressionHostContext();
+    if (progressionContextAnchorMatches(progressionCheck, sampledHostContext)) {
+      return false;
+    }
+    return supersedeProgressionCheckForContextChange({
+      actualHostContext: sampledHostContext,
+      refreshCurrentContext: true,
+    });
+  }
+
+  function progressionResponseContextIsCurrent(generation) {
+    if (!progressionCheck || progressionCheck.generation !== generation || progressionCheck.status !== "checking") {
+      return false;
+    }
+    return progressionContextAnchorMatches(progressionCheck);
+  }
+
+  function scheduleProgressionHostResample() {
+    if (hostContextInvalidationMicrotaskPending) {
+      return;
+    }
+    hostContextInvalidationMicrotaskPending = true;
+    const resample = () => {
+      hostContextInvalidationMicrotaskPending = false;
+      if (companionLifecycleActive) {
+        invalidateProgressionForHostNavigation();
+      }
+    };
+    if (typeof window.queueMicrotask === "function") {
+      window.queueMicrotask(resample);
+    } else {
+      Promise.resolve().then(resample);
+    }
+  }
+
+  function installHostContextMutationObserver() {
+    if (typeof window.MutationObserver !== "function" || !document.body) {
+      return;
+    }
+    hostContextMutationObserver = new window.MutationObserver((records) => {
+      const root = document.getElementById(ROOT_ID);
+      const touchesHost = records.some((record) => {
+        if (!root || !root.contains(record.target)) {
+          return true;
+        }
+        return Array.from(record.addedNodes || [])
+          .concat(Array.from(record.removedNodes || []))
+          .some((node) => node !== root && !root.contains(node));
+      });
+      if (touchesHost) {
+        scheduleProgressionHostResample();
+      }
+    });
+    hostContextMutationObserver.observe(document.body, {
+      subtree: true,
+      childList: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: [
+        "data-legacy-message-id",
+        "data-message-id",
+        "data-thread-perm-id",
+        "email",
+        "aria-label",
+      ],
+    });
+  }
+
+  function progressionFlightIsCurrent(token) {
+    if (!token) {
+      return true;
+    }
+    const flight = token.kind === "handled-review-acknowledge"
+      ? handledProgressionFlight
+      : optimisticDecision;
+    return Boolean(
+      flight?.token?.token === token.token
+      && flight.token.generation === token.generation
+      && flight.token.kind === token.kind,
+    );
+  }
+
+  function progressionResponseCanRender(token, responseState = null) {
+    if (!token || !progressionFlightIsCurrent(token)) {
+      return !token;
+    }
+    const displayed = displayedProgressionIdentities();
+    if (!displayed.length || !displayed.every((identity) => REVIEW_PROGRESSION.matchesRequestToken(token, {
+      generation: token.generation,
+      identity,
+      kind: token.kind,
+    }))) {
+      return false;
+    }
+    if (!responseState) {
+      return !token.identity?.threadId;
+    }
+    const responseIdentity = progressionIdentity(responseState, responseState.selected_email);
+    return REVIEW_PROGRESSION.responseMatchesToken(token, {
+      generation: token.generation,
+      identity: responseIdentity,
+      kind: token.kind,
+    });
+  }
+
+  function progressionResponseIdentity(responseState = null) {
+    const source = responseState?.sidebar_state || responseState || {};
+    const selected = source.selected_email || {};
+    const context = responseState?.selected_context || source.selected_context || {};
+    return REVIEW_PROGRESSION.normalizeIdentity({
+      provider: selected.provider || context.provider || "",
+      message_id: selected.message_id || context.message_id || "",
+      thread_id: selected.thread_id || context.thread_id || "",
+    });
+  }
+
+  function progressionResponseIsAuthoritative(token, responseState = null) {
+    if (!token || !responseState) {
+      return false;
+    }
+    const expected = REVIEW_PROGRESSION.normalizeIdentity(token.identity);
+    const actual = progressionResponseIdentity(responseState);
+    return (
+      Boolean(actual.provider && actual.messageId)
+      && actual.provider === expected.provider
+      && actual.messageId === expected.messageId
+      && (!expected.threadId || actual.threadId === expected.threadId)
+    );
+  }
+
+  function rejectProgressionResponse(token) {
+    if (!token) {
+      return false;
+    }
+    forgetCommittedIdentity(token.identity);
+    const existing = optimisticDecision?.token?.token === token.token ? optimisticDecision : null;
+    optimisticDecision = {
+      ...(existing || {
+        token,
+        identity: token.identity,
+        localAccepted: true,
+        decisionKind: token.kind,
+        advanceDone: false,
+      }),
+      token,
+      identity: token.identity,
+      localAccepted: true,
+      decisionKind: token.kind,
+      providerWriteState: "retry",
+      retryStateLocked: true,
+      flightActive: false,
+      responseReceived: true,
+      responseAccepted: false,
+    };
+    applyInFlight = false;
+    handledProgressionFlight = null;
+    handledAdvanceError = "";
+    teachFlowState = "teaching";
+    selectedDecisionMode = "review";
+    return true;
+  }
+
+  function progressionDisplayCanRender(token) {
+    if (!token || !progressionFlightIsCurrent(token)) {
+      return !token;
+    }
+    const displayed = displayedProgressionIdentities();
+    return Boolean(displayed.length) && displayed.every((identity) => REVIEW_PROGRESSION.matchesRequestToken(token, {
+      generation: token.generation,
+      identity,
+      kind: token.kind,
+    }));
+  }
+
+  function displayedStateIsSettled() {
+    const providerIdentity = progressionIdentity();
+    if (!providerIdentity.messageId) {
+      return false;
+    }
+    const displayedContext = manualPreviewContext || stabilizedLiveContext(selectedContext());
+    if (!displayedContext?.message_id) {
+      return true;
+    }
+    return REVIEW_PROGRESSION.identitiesCompatible(providerIdentity, progressionIdentityFromContext(displayedContext));
+  }
+
+  function captureFocusedCompanionTarget() {
+    const root = document.getElementById(ROOT_ID);
+    const active = document.activeElement;
+    if (!root || !active || active === document.body || !root.contains(active)) {
+      return null;
+    }
+    return {
+      id: active.id || "",
+      action: active.getAttribute("data-ea-action") || "",
+      queue: active.hasAttribute("data-ea-queue-navigation"),
+      queueNav: active.getAttribute("data-ea-queue-nav") || "",
+      contextItem: active.getAttribute("data-ea-context-item") || "",
+    };
+  }
+
+  function restoreFocusedCompanionTarget(target) {
+    if (!target) {
+      return;
+    }
+    const root = document.getElementById(ROOT_ID);
+    if (!root) {
+      return;
+    }
+    let node = target.id ? document.getElementById(target.id) : null;
+    if (!node && target.queue) {
+      node = root.querySelector("[data-ea-queue-navigation]");
+    }
+    if (!node && target.queueNav) {
+      node = Array.from(root.querySelectorAll("[data-ea-queue-nav]"))
+        .find((candidate) => candidate.getAttribute("data-ea-queue-nav") === target.queueNav);
+    }
+    if (!node && target.contextItem) {
+      node = Array.from(root.querySelectorAll("[data-ea-context-item]"))
+        .find((candidate) => candidate.getAttribute("data-ea-context-item") === target.contextItem);
+    }
+    if (!node && target.action) {
+      node = Array.from(root.querySelectorAll("[data-ea-action]"))
+        .find((candidate) => candidate.getAttribute("data-ea-action") === target.action);
+    }
+    node?.focus?.({ preventScroll: true });
+  }
+
+  function renderCurrentStatePreservingFocus(state) {
+    const focused = captureFocusedCompanionTarget();
+    renderState(state);
+    restoreFocusedCompanionTarget(focused);
+  }
+
+  function committedIdentityKeys() {
+    return committedReviewIdentities
+      .map((identity) => progressionIdentityKey(identity))
+      .filter(Boolean);
+  }
+
+  function rememberCommittedIdentity(identity) {
+    const normalized = REVIEW_PROGRESSION.normalizeIdentity(identity);
+    const key = progressionIdentityKey(normalized);
+    if (!key) {
+      return;
+    }
+    committedReviewIdentities = [
+      ...committedReviewIdentities.filter((candidate) => progressionIdentityKey(candidate) !== key),
+      normalized,
+    ].slice(-32);
+  }
+
+  function forgetCommittedIdentity(identity) {
+    const key = progressionIdentityKey(identity);
+    if (!key) {
+      return;
+    }
+    committedReviewIdentities = committedReviewIdentities.filter(
+      (candidate) => progressionIdentityKey(candidate) !== key,
+    );
+  }
+
+  function clearOptimisticDecisionStatus({ preserveHandledFlight = false } = {}) {
+    optimisticDecision = null;
+    if (!preserveHandledFlight) {
+      handledProgressionFlight = null;
+    }
+  }
+
+  function providerActivityState(sidebarState) {
+    const uiState = sidebarState?.ui_state || {};
+    const followUp = uiState.async_follow_up || {};
+    if (followUp.kind === "teach-apply-refresh" && followUp.state) {
+      return String(followUp.state).toLowerCase();
+    }
+    const activity = Array.isArray(uiState.activity_feed) ? uiState.activity_feed : [];
+    const relevant = activity.find((item) => (
+      item && ["working", "pending", "done", "complete", "completed", "retry", "error", "failed"]
+        .includes(String(item.state || "").toLowerCase())
+    ));
+    return String(relevant?.state || "").toLowerCase();
+  }
+
+  function updateOptimisticDecisionLifecycle(sidebarState, state = "") {
+    if (!optimisticDecision) {
+      return;
+    }
+    const aggregateState = String(state || providerActivityState(sidebarState) || "").toLowerCase();
+    if (optimisticDecision.retryStateLocked) {
+      if (["retry", "error", "failed"].includes(aggregateState)) {
+        optimisticDecision.providerWriteState = aggregateState;
+      }
+      return;
+    }
+    if (aggregateState) {
+      optimisticDecision.providerWriteState = aggregateState;
+    }
+  }
+
+  function renderPreviousDecisionStatusHtml() {
+    if (!optimisticDecision?.localAccepted) {
+      return "";
+    }
+    const model = REVIEW_PROGRESSION.previousDecisionStatus({
+      localAccepted: true,
+      providerWriteState: optimisticDecision.providerWriteState || "working",
+      providerName: activeProviderName(),
+      responseReceived: Boolean(optimisticDecision.responseReceived),
+      responseAccepted: optimisticDecision.responseAccepted,
+      decisionKind: optimisticDecision.decisionKind || "",
+    });
+    if (!model.visible) {
+      return "";
+    }
+    const tone = model.state === "retry"
+      ? { background: "#fff4dd", color: "#8a4b00" }
+      : model.state === "done"
+        ? { background: "#eef7f5", color: "#0f766e" }
+        : { background: "#eef3ff", color: "#2146b7" };
+    return `
+      <div data-ea-previous-decision-status="${escapeHtml(model.state)}" role="status" aria-live="polite" style="border-radius:11px;background:${tone.background};padding:9px 11px;color:${tone.color};line-height:1.4;font-size:.84rem;">
+        <strong>${escapeHtml(model.label)}</strong>
+        <span style="margin-left:4px;">· ${escapeHtml(model.message)}</span>
+      </div>
+    `;
+  }
+
+  function reconcileCommittedIdentitiesFromState(state) {
+    const items = state && Array.isArray(state.needs_attention_items)
+      ? state.needs_attention_items
+      : null;
+    if (!items) {
+      return;
+    }
+    const activeKeys = new Set(items
+      .map((item) => progressionIdentityKey(REVIEW_PROGRESSION.itemIdentity(item, ACTIVE_PROVIDER)))
+      .filter(Boolean));
+    const dailyCount = state.sidebar_state?.daily_summary?.needs_attention_count;
+    if (REVIEW_PROGRESSION.isExplicitFiniteNumericZero(dailyCount)) {
+      committedReviewIdentities = [];
+      return;
+    }
+    committedReviewIdentities = committedReviewIdentities.filter(
+      (identity) => activeKeys.has(progressionIdentityKey(identity)),
+    );
+  }
+
+  function localProgressionActivityItem() {
+    if (!optimisticDecision?.localAccepted || !forcedHome) {
+      return null;
+    }
+    const status = REVIEW_PROGRESSION.previousDecisionStatus({
+      localAccepted: true,
+      providerWriteState: optimisticDecision.providerWriteState || "working",
+      providerName: activeProviderName(),
+      responseReceived: Boolean(optimisticDecision.responseReceived),
+      responseAccepted: optimisticDecision.responseAccepted,
+      decisionKind: optimisticDecision.decisionKind || "",
+    });
+    if (!status.visible) {
+      return null;
+    }
+    return {
+      id: `review-progression-${optimisticDecision.token?.token || "latest"}`,
+      kind: "review-progression",
+      state: status.state,
+      label: status.label,
+      message: status.message,
+      action: status.state === "retry" ? "force-refresh" : "",
+      action_label: status.state === "retry" ? "Check queue again" : "",
+    };
+  }
+
+  function progressionItemsForFilter(filter, { includeCommitted = false } = {}) {
+    const source = filter === "needs_attention_items"
+      ? filteredQueueItems(queueQuery, { excludeCommitted: false })
+      : summaryItemsForFilter(filter);
+    return REVIEW_PROGRESSION.eligibleItems({
+      items: source,
+      activeProvider: ACTIVE_PROVIDER,
+      committedIdentities: includeCommitted ? [] : committedReviewIdentities,
+    });
+  }
+
+  function nextProgressionItem(filter, currentIdentity) {
+    return REVIEW_PROGRESSION.nextEligibleItem({
+      items: progressionItemsForFilter(filter, { includeCommitted: true }),
+      activeProvider: ACTIVE_PROVIDER,
+      currentIdentity,
+      committedIdentities: committedReviewIdentities,
+    });
   }
 
   function openItemPreview(item, options = {}) {
@@ -482,6 +1065,9 @@
     }
     if (options.queueContext && !findQueueItem(item.message_id)) {
       return false;
+    }
+    if (!options.preserveProgressionStatus) {
+      clearOptimisticDecisionStatus({ preserveHandledFlight: Boolean(handledProgressionFlight) });
     }
     forcedHome = false;
     manualPreviewContext = contextFromItem(item);
@@ -514,7 +1100,21 @@
   }
 
   function refreshSelection(force = false) {
-    lastLiveContext = stabilizedLiveContext(selectedContext());
+    const options = arguments[1] || {};
+    const sampledHostContext = options.actualHostContext || sampleActualProgressionHostContext();
+    const nextLiveContext = options.contextInvalidation
+      ? sampledHostContext
+      : stabilizedLiveContext(sampledHostContext);
+    lastLiveContext = nextLiveContext;
+    if (progressionCheck && options.progressionGeneration == null && !progressionContextAnchorMatches(progressionCheck)) {
+      return supersedeProgressionCheckForContextChange({
+        actualHostContext: sampledHostContext,
+        refreshCurrentContext: true,
+      });
+    }
+    if (progressionCheck && options.progressionGeneration == null) {
+      return latestStateReadGeneration;
+    }
     if (
       forcedHome
       && forcedHomeLiveContext?.page_url
@@ -537,25 +1137,38 @@
       page_url: context.page_url || "",
     });
     if (!force && payload === previousPayload && !asyncFollowUpIsWorking()) {
-      return;
+      return latestStateReadGeneration;
     }
     if (refreshInFlight && !force) {
-      return;
+      return latestStateReadGeneration;
     }
+    const readGeneration = ++stateReadGeneration;
+    latestStateReadGeneration = readGeneration;
     const renderedContext = (lastSidebarState && lastSidebarState.selected_context) || {};
     if (
       !forcedHome
       && !manualPreviewContext
       && isMeaningfulContext(context)
       && !contextsMatch(context, renderedContext)
+      && !options.suppressTransition
     ) {
       renderSelectedEmailTransition(context);
     }
     refreshInFlight = true;
     chrome.runtime.sendMessage({ type: "email-agent:get-state", context }, (response) => {
+      if (readGeneration !== latestStateReadGeneration) {
+        return;
+      }
       refreshInFlight = false;
       if (chrome.runtime.lastError) {
         previousPayload = "";
+        if (options.progressionGeneration != null) {
+          if (!progressionResponseContextIsCurrent(options.progressionGeneration)) {
+            return;
+          }
+          finishProgressionCheckWithError(options.progressionGeneration, chrome.runtime.lastError.message || "Could not verify the review queue.");
+          return;
+        }
         renderError(chrome.runtime.lastError.message || "Could not reach extension background.", {
           kind: "helper-unreachable",
           label: "Helper unreachable",
@@ -565,12 +1178,28 @@
       }
       if (!response || !response.ok) {
         previousPayload = "";
+        if (options.progressionGeneration != null) {
+          if (!progressionResponseContextIsCurrent(options.progressionGeneration)) {
+            return;
+          }
+          finishProgressionCheckWithError(
+            options.progressionGeneration,
+            (response && (response.payload?.error || response.error)) || "Could not verify the review queue.",
+          );
+          return;
+        }
         const connectionState = normalizeConnectionState(response && response.connection_state);
         if (connectionState.kind === "ready") {
           renderLoadingState((response && response.error) || "Threadwise is connected but the inbox state is still loading.");
           return;
         }
         renderError((response && response.error) || "Could not reach local companion server.", connectionState);
+        return;
+      }
+      if (options.progressionGeneration != null) {
+        if (handleProgressionStateResponse(options.progressionGeneration, response.payload, response.connection_state)) {
+          previousPayload = payload;
+        }
         return;
       }
       previousPayload = payload;
@@ -581,6 +1210,178 @@
       });
       renderState(response.payload);
     });
+    return readGeneration;
+  }
+
+  function requestProgressionRefresh(generation) {
+    clearProgressionRefreshTimer();
+    return refreshSelection(true, { progressionGeneration: generation });
+  }
+
+  function clearProgressionRefreshTimer() {
+    if (progressionRefreshTimeoutId !== null) {
+      window.clearTimeout(progressionRefreshTimeoutId);
+      progressionRefreshTimeoutId = null;
+    }
+  }
+
+  function scheduleProgressionRefresh(generation) {
+    clearProgressionRefreshTimer();
+    progressionRefreshTimeoutId = window.setTimeout(() => {
+      progressionRefreshTimeoutId = null;
+      if (progressionCheck?.generation !== generation || progressionCheck.status !== "checking") {
+        return;
+      }
+      requestProgressionRefresh(generation);
+    }, PROGRESSION_REFRESH_INTERVAL_MS);
+  }
+
+  function clearProgressionCheck() {
+    clearProgressionRefreshTimer();
+    progressionCheck = null;
+  }
+
+  function removeProgressionPresentation() {
+    const node = document.querySelector(`#${ROOT_ID} [data-ea-review-progression]`);
+    if (!node || node.contains(document.activeElement)) {
+      return;
+    }
+    node.remove();
+  }
+
+  function supersedeProgressionCheckForContextChange({ actualHostContext = null, refreshCurrentContext = true } = {}) {
+    if (!progressionCheck) {
+      return false;
+    }
+    clearProgressionCheck();
+    reviewProgressionGeneration += 1;
+    refreshInFlight = false;
+    latestStateReadGeneration = ++stateReadGeneration;
+    previousPayload = "";
+    gmailCheckResult = null;
+    removeProgressionPresentation();
+    if (forcedHome) {
+      forcedHome = false;
+      forcedHomeLiveContext = null;
+    }
+    if (refreshCurrentContext && companionLifecycleActive) {
+      refreshSelection(true, {
+        actualHostContext: actualHostContext || sampleActualProgressionHostContext(),
+        contextInvalidation: true,
+        suppressTransition: true,
+      });
+    }
+    return true;
+  }
+
+  function finishProgressionCheckWithError(generation, message) {
+    if (!progressionCheck || progressionCheck.generation !== generation || progressionCheck.status !== "checking") {
+      return;
+    }
+    clearProgressionRefreshTimer();
+    progressionCheck.status = "retry";
+    gmailCheckResult = {
+      kind: "review-progression-retry",
+      title: "Review queue check needs a retry",
+      message: message || "Threadwise could not verify the provider-scoped review queue.",
+    };
+    renderCurrentStatePreservingFocus(lastHarnessState || lastSidebarState);
+  }
+
+  function supersedeProgressionCheckWithDecisionFailure(generation, message) {
+    if (!progressionCheck || progressionCheck.generation !== generation) {
+      return;
+    }
+    clearProgressionRefreshTimer();
+    progressionCheck.status = "retry";
+    progressionCheck.readGeneration = null;
+    refreshInFlight = false;
+    latestStateReadGeneration = ++stateReadGeneration;
+    gmailCheckResult = {
+      kind: "review-progression-retry",
+      title: "Review queue check needs a retry",
+      message: message || "The last decision was not confirmed. Threadwise kept this email eligible and needs a fresh queue check.",
+    };
+    renderCurrentStatePreservingFocus(lastHarnessState || lastSidebarState);
+  }
+
+  function handleProgressionStateResponse(generation, payload, connectionState = null) {
+    if (!progressionCheck || progressionCheck.generation !== generation || progressionCheck.status !== "checking") {
+      return false;
+    }
+    const check = progressionCheck;
+    const actualHostContext = sampleActualProgressionHostContext();
+    const contextMatches = progressionContextAnchorMatches(check, actualHostContext);
+    if (!contextMatches) {
+      supersedeProgressionCheckForContextChange({
+        actualHostContext,
+        refreshCurrentContext: true,
+      });
+      return false;
+    }
+    lastConnectionState = normalizeConnectionState(connectionState || {
+      kind: "ready",
+      label: "Ready",
+      details: "Threadwise is connected.",
+    });
+    const freshState = normalizeHarnessState(payload, { preserveMissingQueues: true });
+    const filter = check.filter || "needs_attention_items";
+    const queueKind = filter;
+    const presentation = REVIEW_PROGRESSION.completionPresentation({
+      query: check.query || "",
+      loadedItems: freshState[queueKind] || [],
+      freshState,
+      activeProvider: ACTIVE_PROVIDER,
+      committedIdentities: committedReviewIdentities,
+      queueKind,
+      requireDailyCount: queueKind === "needs_attention_items",
+      refreshGeneration: generation,
+      expectedGeneration: generation,
+      followUpState: providerActivityState(freshState.sidebar_state),
+    });
+    updateOptimisticDecisionLifecycle(freshState.sidebar_state);
+    if (presentation.kind === REVIEW_PROGRESSION.NEXT_AVAILABLE && presentation.item) {
+      clearProgressionCheck();
+      gmailCheckResult = null;
+      reconcileCommittedIdentitiesFromState(freshState);
+      forcedHome = false;
+      forcedHomeLiveContext = null;
+      renderState(freshState);
+      openItemPreview(presentation.item, {
+        queueContext: queueKind === "needs_attention_items",
+        preserveProgressionStatus: true,
+      });
+      return true;
+    }
+    if (presentation.kind === REVIEW_PROGRESSION.COMPLETE) {
+      clearProgressionCheck();
+      const completionResult = {
+        title: filter === "needs_attention_items" ? "Review queue complete" : `${bucketLabelForFilter(filter)} complete`,
+        message: presentation.message,
+      };
+      gmailCheckResult = {
+        kind: "review-progression-complete",
+        ...completionResult,
+      };
+      reconcileCommittedIdentitiesFromState(freshState);
+      forcedHome = true;
+      forcedHomeLiveContext = lastLiveContext ? { ...lastLiveContext } : null;
+      renderState(freshState);
+      return true;
+    }
+    if (presentation.kind === REVIEW_PROGRESSION.RETRY) {
+      finishProgressionCheckWithError(generation, presentation.message);
+      return true;
+    }
+    progressionCheck.status = "checking";
+    gmailCheckResult = {
+      kind: "review-progression-checking",
+      title: presentation.title,
+      message: presentation.message,
+    };
+    renderState(freshState);
+    scheduleProgressionRefresh(generation);
+    return true;
   }
 
   function asyncFollowUpIsWorking() {
@@ -1062,7 +1863,7 @@
     }
   }
 
-  function resetPerEmailInteraction() {
+  function resetPerEmailInteraction({ preserveProgressionStatus = false } = {}) {
     invalidateContextActions();
     teachPreviewRequestId += 1;
     teachPreview = null;
@@ -1088,6 +1889,9 @@
     selectedTeachScope = "current-only";
     explanationFocusPending = false;
     teachDraft = { targetLabel: "", note: "" };
+    if (!preserveProgressionStatus) {
+      clearOptimisticDecisionStatus({ preserveHandledFlight: Boolean(handledProgressionFlight) });
+    }
   }
 
   function openThreadwiseHome(event) {
@@ -1100,10 +1904,14 @@
     minimized = false;
     forcedHome = true;
     forcedHomeLiveContext = { ...selectedContext() };
+    if (manualPreviewContext) {
+      forcedHomeLiveContext = { ...manualPreviewContext };
+    }
     manualPreviewContext = null;
     manualPreviewOriginContext = null;
     resetQueueState();
     gmailCheckResult = null;
+    clearProgressionCheck();
     resetPerEmailInteraction();
     previousPayload = "";
     if (lastHarnessState) {
@@ -1453,10 +2261,11 @@
     ensureQueueProvider();
     lastHarnessState = normalizeHarnessState(state);
     lastSidebarState = lastHarnessState.sidebar_state;
+    updateOptimisticDecisionLifecycle(lastSidebarState);
     const selected = lastSidebarState.selected_email || null;
     const selectedMessageId = selectedMessageIdentity(lastSidebarState, selected);
     if (selectedMessageId !== lastSelectedMessageId) {
-      resetPerEmailInteraction();
+      resetPerEmailInteraction({ preserveProgressionStatus: Boolean(optimisticDecision?.localAccepted) });
       lastSelectedMessageId = selectedMessageId;
     }
     if (onboardingVisible) {
@@ -1695,11 +2504,23 @@
       const inboxFailed = Number(teachWriteThrough?.inbox_remove_failed || 0) > 0;
       const inboxRemoved = Number(teachWriteThrough?.inbox_removed || 0) > 0;
       const hasNextReviewItem = remainingNeedsAttentionItems().length > 0;
-      const successfulProviderChange = !labelWriteFailed && !inboxFailed;
-      const receiptHeading = labelWriteFailed
+      const providerWriteQueued = Boolean(
+        teachOutcome?.provider_write_queued
+        || (teachOutcome?.local_decision_accepted && !teachOutcome?.provider_confirmation),
+      );
+      const successfulProviderChange = !labelWriteFailed && !inboxFailed && !providerWriteQueued;
+      const receiptHeading = providerWriteQueued
+        ? `Saved locally as ${label}`
+        : labelWriteFailed
         ? (teachOutcome.current_email_changed_locally ? `Saved locally as ${label}` : `Couldn’t change to ${label}`)
         : `Changed to ${label}`;
-      const receiptOutcomes = labelWriteFailed
+      const receiptOutcomes = providerWriteQueued
+        ? `
+            <div data-ea-receipt-outcome>Saved locally in Threadwise.</div>
+            <div data-ea-receipt-outcome>${escapeHtml(activeProviderName())} label update queued for background activity. Open Activity for aggregate status.</div>
+            <div data-ea-receipt-outcome>Inbox handling remains part of the background provider update.</div>
+          `
+        : labelWriteFailed
         ? `
             <div data-ea-receipt-outcome>${teachOutcome.current_email_changed_locally ? "Saved locally in Threadwise." : "No label change was confirmed."}</div>
             <div data-ea-receipt-outcome>${escapeHtml(activeProviderName())} label not confirmed. Open Activity to review recovery.</div>
@@ -1741,6 +2562,7 @@
             <div style="margin-top:6px;color:#6b6255;font-size:0.88rem;overflow-wrap:anywhere;">${escapeHtml(selected.subject || "(no subject)")} · ${escapeHtml(selected.sender || "(unknown sender)")}</div>
           </div>
           <div data-ea-auto-handled-receipt style="border-radius:14px;background:#eef7f5;padding:12px;color:#1f1a14;line-height:1.45;">${escapeHtml(handlingReceipt)}</div>
+          ${renderPreviousDecisionStatusHtml()}
           ${selected.handled_review_acknowledged
             ? '<div data-ea-handled-reviewed role="status" style="border-radius:14px;background:#dff8ed;padding:12px;color:#0f665e;font-weight:800;">Reviewed · Threadwise will not offer this email again</div>'
             : '<button type="button" data-ea-action="confirm-handled-and-next" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Looks right · Next</button>'}
@@ -1759,6 +2581,7 @@
       const suggestedLabelId = decisionSuggestedLabelId(selected);
       const label = suggestedLabelId ? decisionLabelName(suggestedLabelId) : "";
       const finishingProviderUpdate = selected.status === "write-unconfirmed";
+      const localDecisionPending = Boolean(optimisticDecision?.flightActive);
       setHtml(selectedEmailNode, `
         <div data-ea-selected-state="review" style="display:grid;gap:12px;margin-top:10px;">
           <div>
@@ -1766,10 +2589,11 @@
             <div style="margin-top:6px;color:#6b6255;font-size:0.88rem;overflow-wrap:anywhere;">${escapeHtml(selected.sender || "(unknown sender)")}</div>
             ${reviewReceivedLabel(selected.received_at) ? `<div data-ea-review-received-at style="margin-top:4px;color:#6b6255;font-size:0.8rem;">${escapeHtml(reviewReceivedLabel(selected.received_at))}</div>` : ""}
           </div>
+          ${renderPreviousDecisionStatusHtml()}
           ${showingQueuePreview ? renderQueuePreviewNavigationHtml() : ""}
           ${renderSelectedExplanationHtml(selected, workspaceMode, { showEvidence: detailsExpanded })}
           <div style="display:grid;gap:9px;">
-            ${label ? `<button type="button" data-ea-action="accept-suggestion" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">${finishingProviderUpdate ? `Apply ${escapeHtml(label)}` : `Accept ${escapeHtml(label)}`}</button>` : ""}
+            ${label ? `<button type="button" data-ea-action="accept-suggestion" data-tw-primary-action ${localDecisionPending ? "disabled" : ""} style="min-height:44px;border:2px solid #241812;background:${localDecisionPending ? "#c7d8cc" : "#2eb67d"};color:#241812;border-radius:11px;padding:9px 12px;cursor:${localDecisionPending ? "wait" : "pointer"};font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">${localDecisionPending ? "Saving previous decision…" : finishingProviderUpdate ? `Apply ${escapeHtml(label)}` : `Accept ${escapeHtml(label)}`}</button>` : ""}
             <button type="button" data-ea-action="change-suggestion" ${label ? "" : "data-tw-primary-action"} style="min-height:44px;border:${label ? "1px solid rgba(36,24,18,.16)" : "2px solid #241812"};background:${label ? "#f5efe2" : "#2eb67d"};color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:760;${label ? "" : "box-shadow:3px 3px 0 #241812;"}">Change label</button>
           </div>
         </div>
@@ -2074,7 +2898,11 @@
       `border:2px solid #241812;border-radius:11px;background:${activeSummaryFilter === key ? "#dff8ed" : "#fffdf7"};box-shadow:2px 2px 0 rgba(36,24,18,.18);padding:12px;text-align:left;cursor:pointer;font:inherit;color:#241812;`;
     const keptVisibleCount = summary.kept_visible_count ?? countForFilter("kept_visible_items");
     if (workspaceMode === "home") {
-      const needsReviewCount = countForFilter("needs_attention_items");
+      const progressionChecking = progressionCheck?.status === "checking"
+        && progressionCheck?.filter === "needs_attention_items";
+      const progressionRetry = progressionCheck?.status === "retry"
+        && progressionCheck?.filter === "needs_attention_items";
+      const needsReviewCount = progressionChecking || progressionRetry ? null : countForFilter("needs_attention_items");
       const analyticsStatus = lastHarnessState?.analytics_status || {};
       const analyticsState = analyticsStatus.state || "disabled";
       const analyticsTitle = analyticsState === "degraded"
@@ -2092,12 +2920,18 @@
             ? "PostHog is configured. No events have been queued during this service run."
             : "Analytics is disabled for this Threadwise environment.";
       const analyticsBackground = analyticsState === "degraded" ? "#fff1d6" : "#eef7f5";
-      const emptyQueueCopy = gmailCheckResult
-        ? `${activeProviderName()} sync completed. Threadwise handled everything automatically.`
-        : "There is no review queue right now.";
+      const emptyQueueCopy = progressionChecking
+        ? "Threadwise is verifying the current provider-scoped review queue."
+        : progressionRetry
+          ? "Threadwise could not verify the fresh provider-scoped review queue. No zero-state or sync-completion claim is available."
+        : gmailCheckResult?.kind === "review-progression-complete"
+          ? "The fresh provider-scoped state has no reviewable emails remaining."
+          : gmailCheckResult
+            ? `${activeProviderName()} sync completed. Threadwise handled everything automatically.`
+            : "There is no review queue right now.";
       setHtml(dailySummaryNode, `
         <div data-ea-selected-state="home" style="display:grid;gap:12px;margin-top:10px;">
-          <div style="font-size:1.3rem;font-weight:840;line-height:1.15;overflow-wrap:anywhere;">${needsReviewCount ? `${needsReviewCount} email${needsReviewCount === 1 ? "" : "s"} need your review` : "No emails need review"}</div>
+          <div style="font-size:1.3rem;font-weight:840;line-height:1.15;overflow-wrap:anywhere;">${progressionChecking ? "Checking review queue…" : progressionRetry ? "Review queue status unverified" : needsReviewCount ? `${needsReviewCount} email${needsReviewCount === 1 ? "" : "s"} need your review` : "No emails need review"}</div>
           ${needsReviewCount ? "" : `<div style="color:#0f766e;line-height:1.45;">${escapeHtml(emptyQueueCopy)}</div>`}
           <div style="color:#6b6255;line-height:1.45;">${Number(summary.processed_count || 0)} processed · ${Number(summary.auto_handled_count || 0)} auto-handled · ${Number(keptVisibleCount || 0)} kept visible</div>
           ${needsReviewCount ? '<button type="button" data-ea-action="open-needs-attention" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Review next</button>' : ""}
@@ -2223,27 +3057,42 @@
     return trustedHtmlPolicy.createHTML(html);
   }
 
-  function normalizeHarnessState(state) {
+  function normalizeHarnessState(state, { preserveMissingQueues = false } = {}) {
     const previous = lastHarnessState || {};
+    const queueValue = (key) => {
+      if (Array.isArray(state?.[key])) {
+        return state[key];
+      }
+      if (preserveMissingQueues || Object.prototype.hasOwnProperty.call(state || {}, key)) {
+        return state?.[key] ?? null;
+      }
+      return previous[key] || [];
+    };
     if (state && state.sidebar_state) {
       return {
         ...previous,
         ...state,
         selected_context: state.selected_context || state.sidebar_state.selected_context || previous.selected_context || {},
-        recent_items: Array.isArray(state.recent_items) ? state.recent_items : (previous.recent_items || []),
-        needs_attention_items: Array.isArray(state.needs_attention_items) ? state.needs_attention_items : (previous.needs_attention_items || []),
-        auto_handled_items: Array.isArray(state.auto_handled_items) ? state.auto_handled_items : (previous.auto_handled_items || []),
-        kept_visible_items: Array.isArray(state.kept_visible_items) ? state.kept_visible_items : (previous.kept_visible_items || []),
+        recent_items: queueValue("recent_items"),
+        needs_attention_items: queueValue("needs_attention_items"),
+        auto_handled_items: queueValue("auto_handled_items"),
+        kept_visible_items: queueValue("kept_visible_items"),
       };
     }
+    const standaloneQueueValue = (key) => {
+      if (preserveMissingQueues || Object.prototype.hasOwnProperty.call(state || {}, key)) {
+        return state?.[key] ?? null;
+      }
+      return previous[key] || [];
+    };
     return {
       ...previous,
       selected_context: state?.selected_context || previous.selected_context || {},
       sidebar_state: state || previous.sidebar_state || {},
-      recent_items: previous.recent_items || [],
-      needs_attention_items: previous.needs_attention_items || [],
-      auto_handled_items: previous.auto_handled_items || [],
-      kept_visible_items: previous.kept_visible_items || [],
+      recent_items: standaloneQueueValue("recent_items"),
+      needs_attention_items: standaloneQueueValue("needs_attention_items"),
+      auto_handled_items: standaloneQueueValue("auto_handled_items"),
+      kept_visible_items: standaloneQueueValue("kept_visible_items"),
     };
   }
 
@@ -2291,12 +3140,23 @@
     return summaryItemsForFilter("needs_attention_items");
   }
 
-  function filteredQueueItems(query = queueQuery) {
+  function filteredQueueItems(query = queueQuery, { excludeCommitted = true } = {}) {
     const items = queueSourceItems();
-    if (typeof QUEUE_NAVIGATION.filterQueueItems === "function") {
-      return QUEUE_NAVIGATION.filterQueueItems(items, ACTIVE_PROVIDER, query);
+    const filtered = typeof QUEUE_NAVIGATION.filterQueueItems === "function"
+      ? QUEUE_NAVIGATION.filterQueueItems(items, ACTIVE_PROVIDER, query)
+      : items;
+    if (!excludeCommitted) {
+      return REVIEW_PROGRESSION.eligibleItems({
+        items: filtered,
+        activeProvider: ACTIVE_PROVIDER,
+        committedIdentities: [],
+      });
     }
-    return items;
+    return REVIEW_PROGRESSION.eligibleItems({
+      items: filtered,
+      activeProvider: ACTIVE_PROVIDER,
+      committedIdentities: committedReviewIdentities,
+    });
   }
 
   function findQueueItem(messageId, query = queueQuery) {
@@ -2339,11 +3199,15 @@
     };
   }
 
-  function openQueuePreviewItem(item, origin = "needs_attention_queue") {
+  function openQueuePreviewItem(item, origin = "needs_attention_queue", preserveProgressionStatus = false) {
     if (!item || !findQueueItem(item.message_id)) {
       return false;
     }
-    return openItemPreview(item, { queueContext: true, origin });
+    return openItemPreview(item, {
+      queueContext: true,
+      origin,
+      preserveProgressionStatus,
+    });
   }
 
   function returnQueuePreviewToHome() {
@@ -2390,9 +3254,7 @@
   }
 
   function renderQueueFinderHtml() {
-    const sourceItems = QUEUE_NAVIGATION.filterQueueItems
-      ? QUEUE_NAVIGATION.filterQueueItems(queueSourceItems(), ACTIVE_PROVIDER, "")
-      : queueSourceItems();
+    const sourceItems = filteredQueueItems("");
     if (!sourceItems.length) {
       return "";
     }
@@ -2466,6 +3328,7 @@
     const selected = (lastSidebarState || {}).selected_email || {};
     const context = (lastSidebarState || {}).selected_context || {};
     return {
+      provider: selected.provider || context.provider || ACTIVE_PROVIDER,
       messageId: selected.message_id || context.message_id || "",
       threadId: selected.thread_id || context.thread_id || "",
       sender: normalizedSender(selected.sender || context.sender || ""),
@@ -2492,6 +3355,150 @@
     );
   }
 
+  function beginProgressionCheck(filter, query = "") {
+    clearProgressionRefreshTimer();
+    const generation = ++reviewProgressionGeneration;
+    const anchor = progressionContextAnchor(generation);
+    progressionCheck = {
+      generation,
+      filter,
+      query: String(query || ""),
+      status: "checking",
+      anchor,
+    };
+    forcedHome = true;
+    forcedHomeLiveContext = lastLiveContext ? { ...lastLiveContext } : null;
+    manualPreviewContext = null;
+    manualPreviewOriginContext = null;
+    queuePreviewActive = false;
+    clearPendingQueueNavigationFocus();
+    gmailCheckResult = {
+      kind: "review-progression-checking",
+      title: filter === "needs_attention_items" ? "Checking review queue…" : `Checking ${bucketLabelForFilter(filter)} queue…`,
+      message: filter === "needs_attention_items"
+        ? "Threadwise is verifying the current provider-scoped review queue."
+        : "Threadwise is verifying the current provider-scoped handled queue.",
+    };
+    if (lastHarnessState) {
+      renderState(lastHarnessState);
+    }
+    requestProgressionRefresh(generation);
+    return generation;
+  }
+
+  function rollbackSynchronousDecision(token, message) {
+    if (!optimisticDecision || optimisticDecision.token?.token !== token?.token) {
+      return;
+    }
+    forgetCommittedIdentity(token.identity);
+    clearOptimisticDecisionStatus();
+    applyInFlight = false;
+    currentApplyError = friendlyErrorMessage(message || "Could not apply the lesson.");
+    teachFlowState = "teaching";
+    selectedDecisionMode = "review";
+    renderState(lastHarnessState || lastSidebarState);
+  }
+
+  function markOptimisticDecisionRetry(token) {
+    if (!optimisticDecision || optimisticDecision.token?.token !== token?.token) {
+      return false;
+    }
+    forgetCommittedIdentity(token.identity);
+    optimisticDecision.providerWriteState = "retry";
+    optimisticDecision.retryStateLocked = true;
+    optimisticDecision.responseReceived = true;
+    optimisticDecision.responseAccepted = false;
+    optimisticDecision.flightActive = false;
+    return true;
+  }
+
+  function invalidateCompletionForDecisionFailure(token, message) {
+    const completionWasActive = Boolean(
+      progressionCheck
+      || gmailCheckResult?.kind === "review-progression-complete",
+    );
+    if (!markOptimisticDecisionRetry(token) || !completionWasActive) {
+      return false;
+    }
+    if (progressionCheck) {
+      supersedeProgressionCheckWithDecisionFailure(progressionCheck.generation, message);
+      return true;
+    }
+    refreshInFlight = false;
+    latestStateReadGeneration = ++stateReadGeneration;
+    gmailCheckResult = {
+      kind: "review-progression-retry",
+      title: "Review queue check needs a retry",
+      message: message || "The final decision was not confirmed. Threadwise needs a fresh queue check before completion can be trusted.",
+    };
+    renderCurrentStatePreservingFocus(lastHarnessState || lastSidebarState);
+    return true;
+  }
+
+  function beginCurrentDecisionProgression(mode, requestSnapshot) {
+    const identity = progressionIdentity(requestSnapshot.sidebarState, requestSnapshot.sidebarState?.selected_email);
+    if (!identity.messageId || optimisticDecision?.flightActive
+      || committedReviewIdentities.some((candidate) => progressionIdentityKey(candidate) === progressionIdentityKey(identity))) {
+      return null;
+    }
+    const token = REVIEW_PROGRESSION.createRequestToken({
+      generation: ++reviewProgressionGeneration,
+      kind: mode === "current-only" ? "teach-apply" : "decision",
+      identity,
+    });
+    rememberCommittedIdentity(identity);
+    optimisticDecision = {
+      token,
+      identity,
+      localAccepted: true,
+      decisionKind: "teach-apply",
+      providerWriteState: "working",
+      retryStateLocked: false,
+      flightActive: true,
+      advanceDone: false,
+      responseReceived: false,
+      responseAccepted: null,
+    };
+    return token;
+  }
+
+  function advanceAfterCommittedDecision(token, filter = "needs_attention_items") {
+    if (!token || !optimisticDecision || optimisticDecision.token.token !== token.token) {
+      return false;
+    }
+    if (optimisticDecision.advanceDone) {
+      return true;
+    }
+    optimisticDecision.advanceDone = true;
+    const next = nextProgressionItem(filter, token.identity);
+    if (next) {
+      return openItemPreview(next, {
+        queueContext: filter === "needs_attention_items",
+        origin: "review_progression",
+        preserveProgressionStatus: true,
+      });
+    }
+    if (filter === "needs_attention_items" && queueQuery) {
+      forcedHome = true;
+      forcedHomeLiveContext = lastLiveContext ? { ...lastLiveContext } : null;
+      manualPreviewContext = null;
+      manualPreviewOriginContext = null;
+      queuePreviewActive = false;
+      queueFinderOpen = true;
+      gmailCheckResult = {
+        kind: REVIEW_PROGRESSION.FILTERED_EMPTY,
+        title: "No loaded review emails match",
+        message: "Clear the filter to continue reviewing the active provider queue.",
+      };
+      if (lastHarnessState) {
+        renderState(lastHarnessState);
+      }
+      return false;
+    }
+    beginProgressionCheck(filter, filter === "needs_attention_items" ? queueQuery : "");
+    return false;
+  }
+
   function bucketLabelForFilter(filter) {
     return {
       recent_items: "Recent queue",
@@ -2509,6 +3516,13 @@
   }
 
   function liveNeedsAttentionCount() {
+    if (progressionCheck?.filter === "needs_attention_items") {
+      return 0;
+    }
+    const queuedItems = lastHarnessState?.needs_attention_items;
+    if (Array.isArray(queuedItems)) {
+      return filteredQueueItems("").length;
+    }
     const summaryCount = Number((((lastSidebarState || {}).daily_summary || {}).needs_attention_count));
     return Number.isFinite(summaryCount)
       ? Math.max(0, summaryCount)
@@ -2885,14 +3899,16 @@
     if (!result) {
       return "";
     }
-    const isError = String(result.kind || "").endsWith("-error");
+    const resultKind = String(result.kind || "");
+    const isError = resultKind.endsWith("-error") || resultKind.endsWith("-retry");
     const tone = isError
       ? { background: "#fff4dd", color: "#8a4b00" }
       : { background: "#d8f3ef", color: "#0f766e" };
     return `
-      <div style="box-sizing:border-box;width:100%;min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word;margin-top:12px;border-radius:14px;background:${tone.background};padding:12px;color:${tone.color};line-height:1.45;">
+      <div data-ea-review-progression="${escapeHtml(result.kind || "state")}" role="${isError ? "alert" : "status"}" aria-live="polite" style="box-sizing:border-box;width:100%;min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word;margin-top:12px;border-radius:14px;background:${tone.background};padding:12px;color:${tone.color};line-height:1.45;">
         <div style="font-weight:700;">${escapeHtml(result.title || "Gmail sync")}</div>
         <div style="margin-top:8px;">${escapeHtml(result.message || "")}</div>
+        ${isError ? '<button type="button" data-ea-action="force-refresh" style="margin-top:10px;border:2px solid #241812;background:#ffc64a;color:#241812;border-radius:9px;padding:7px 10px;cursor:pointer;font:inherit;font-weight:800;box-shadow:2px 2px 0 #241812;">Check again</button>' : ""}
       </div>
     `;
   }
@@ -2957,6 +3973,10 @@
     const localTeach = localTeachActivityItem();
     if (localTeach) {
       items.push(localTeach);
+    }
+    const localProgression = localProgressionActivityItem();
+    if (localProgression) {
+      items.push(localProgression);
     }
     const backendItems = (((sidebarState || {}).ui_state || {}).activity_feed) || [];
     for (const item of backendItems) {
@@ -3915,6 +4935,19 @@
     const forceRefreshButton = event.target.closest("[data-ea-action='force-refresh']");
     if (forceRefreshButton) {
       event.preventDefault();
+      if (progressionCheck) {
+        progressionCheck.status = "checking";
+        gmailCheckResult = {
+          kind: "review-progression-checking",
+          title: progressionCheck.filter === "needs_attention_items" ? "Checking review queue…" : `Checking ${bucketLabelForFilter(progressionCheck.filter)} queue…`,
+          message: "Threadwise is verifying the current provider-scoped review queue.",
+        };
+        if (lastHarnessState) {
+          renderState(lastHarnessState);
+        }
+        requestProgressionRefresh(progressionCheck.generation);
+        return;
+      }
       previousPayload = "";
       refreshSelection(true);
       return;
@@ -3934,7 +4967,11 @@
         path: "/api/provider-write-retry",
         method: "POST",
         body: { selected_context: lastSidebarState?.selected_context || { provider: ACTIVE_PROVIDER } },
-      }, () => {
+      }, (response) => {
+        if (optimisticDecision?.retryStateLocked && !chrome.runtime.lastError && response?.ok) {
+          optimisticDecision.retryStateLocked = false;
+          optimisticDecision.providerWriteState = "working";
+        }
         previousPayload = "";
         refreshSelection(true);
       });
@@ -4452,20 +5489,16 @@
     }
   }
 
-  function openFirstSummaryItemIfHelpful(filter) {
-    const current = currentReviewIdentity();
-    const seen = new Set();
-    const items = (filter === "needs_attention_items"
-      ? filteredQueueItems().filter((item) => !reviewItemMatchesIdentity(item, current))
-      : summaryItemsForFilter(filter).filter((item) => {
-          const messageId = item?.message_id || "";
-          if (!messageId || reviewItemMatchesIdentity(item, current) || seen.has(messageId)) {
-            return false;
-          }
-          seen.add(messageId);
-          return true;
-        }));
-    if (!items.length) {
+  function openFirstSummaryItemIfHelpful(filter, { preserveProgressionStatus = false, currentIdentity = null } = {}) {
+    const current = currentIdentity || currentReviewIdentity();
+    const items = progressionItemsForFilter(filter, { includeCommitted: true });
+    const next = REVIEW_PROGRESSION.nextEligibleItem({
+      items,
+      activeProvider: ACTIVE_PROVIDER,
+      currentIdentity: current,
+      committedIdentities: committedReviewIdentities,
+    });
+    if (!next) {
       if (filter === "needs_attention_items" && queueQuery) {
         forcedHome = true;
         forcedHomeLiveContext = lastLiveContext ? { ...lastLiveContext } : null;
@@ -4480,42 +5513,21 @@
         renderMinimized();
         return false;
       }
-      forcedHome = true;
-      forcedHomeLiveContext = lastLiveContext ? { ...lastLiveContext } : null;
-      manualPreviewContext = null;
-      manualPreviewOriginContext = null;
-      resetPerEmailInteraction();
-      gmailCheckResult = {
-        kind: "queue-refresh",
-        title: filter === "needs_attention_items" ? "Review queue complete" : `${bucketLabelForFilter(filter)} complete`,
-        message: filter === "needs_attention_items"
-          ? "No review emails remain. Threadwise is checking the live queue before offering another review."
-          : `No more ${bucketLabelForFilter(filter).toLowerCase()} emails remain in this view.`,
-      };
-      previousPayload = "";
-      if (lastHarnessState) {
-        const sidebarState = lastHarnessState.sidebar_state || {};
-        const completingNeedsAttention = filter === "needs_attention_items";
-        renderState({
-          ...lastHarnessState,
-          needs_attention_items: completingNeedsAttention ? [] : lastHarnessState.needs_attention_items,
-          sidebar_state: {
-            ...sidebarState,
-            daily_summary: {
-              ...(sidebarState.daily_summary || {}),
-              needs_attention_count: completingNeedsAttention
-                ? 0
-                : Number((sidebarState.daily_summary || {}).needs_attention_count || 0),
-            },
-          },
-        });
+      const syntheticToken = REVIEW_PROGRESSION.createRequestToken({
+        generation: ++reviewProgressionGeneration,
+        kind: "queue-check",
+        identity: current,
+      });
+      beginProgressionCheck(filter, filter === "needs_attention_items" ? queueQuery : "");
+      if (progressionCheck) {
+        progressionCheck.sourceToken = syntheticToken.token;
       }
-      refreshSelection(true);
       return false;
     }
-    return filter === "needs_attention_items"
-      ? openQueuePreviewItem(items[0])
-      : openItemPreview(items[0]);
+    return openItemPreview(next, {
+      queueContext: filter === "needs_attention_items",
+      preserveProgressionStatus,
+    });
   }
 
   function handlePanelInput(event) {
@@ -4696,29 +5708,82 @@
   }
 
   function confirmHandledAndOpenNext() {
+    if (handledProgressionFlight) {
+      return false;
+    }
     const current = currentReviewIdentity();
     const activeItems = summaryItemsForFilter(activeSummaryFilter);
     const currentBelongsToActiveQueue = activeItems.some((item) => reviewItemMatchesIdentity(item, current));
     const nextFilter = currentBelongsToActiveQueue ? activeSummaryFilter : "needs_attention_items";
+    const requestContext = { ...(lastSidebarState?.selected_context || {}) };
+    const token = REVIEW_PROGRESSION.createRequestToken({
+      generation: ++reviewProgressionGeneration,
+      kind: "handled-review-acknowledge",
+      identity: current,
+    });
+    handledProgressionFlight = { token, identity: current };
     handledAdvanceError = "";
     chrome.runtime.sendMessage({
       type: "email-agent:api",
       path: "/api/handled-review-acknowledge",
       method: "POST",
       body: {
-        selected_context: lastSidebarState?.selected_context || {},
+        selected_context: requestContext,
       },
     }, (response) => {
+      if (!handledProgressionFlight || handledProgressionFlight.token.token !== token.token) {
+        return;
+      }
+      const responseState = response?.payload?.harness_state?.sidebar_state || null;
+      const requestMayRender = progressionResponseCanRender(token, responseState);
+      const displayMayRender = progressionDisplayCanRender(token);
       if (chrome.runtime.lastError || !response?.ok) {
+        rejectProgressionResponse(token);
+        if (!requestMayRender && !displayMayRender) {
+          if (displayedStateIsSettled()) {
+            renderCurrentStatePreservingFocus(lastHarnessState || lastSidebarState);
+          }
+          return;
+        }
         handledAdvanceError = `${friendlyErrorMessage(
           chrome.runtime.lastError?.message || response?.payload?.error || response?.error || "Could not save this review.",
         )} Threadwise kept this email in the review flow. Try again.`;
         renderState(lastHarnessState || lastSidebarState);
         return;
       }
+      if (!progressionResponseIsAuthoritative(token, responseState)) {
+        rejectProgressionResponse(token);
+        if (displayedStateIsSettled()) {
+          renderCurrentStatePreservingFocus(lastHarnessState || lastSidebarState);
+        }
+        return;
+      }
+      rememberCommittedIdentity(token.identity);
+      optimisticDecision = {
+        token,
+        identity: token.identity,
+        localAccepted: true,
+        decisionKind: token.kind,
+        providerWriteState: "done",
+        retryStateLocked: false,
+        flightActive: false,
+        advanceDone: true,
+        responseReceived: true,
+        responseAccepted: true,
+      };
+      handledProgressionFlight = null;
       recordSuggestionDecisionOnce("approve");
+      if (!requestMayRender) {
+        if (displayedStateIsSettled()) {
+          renderCurrentStatePreservingFocus(lastHarnessState || lastSidebarState);
+        }
+        return;
+      }
       renderState(response.payload?.harness_state || lastHarnessState || lastSidebarState);
-      openFirstSummaryItemIfHelpful(nextFilter);
+      openFirstSummaryItemIfHelpful(nextFilter, {
+        preserveProgressionStatus: true,
+        currentIdentity: token.identity,
+      });
     });
     return true;
   }
@@ -4733,18 +5798,35 @@
       teachDraft.targetLabel = previewTargetLabel;
     }
     currentApplyError = "";
+    const requestSnapshot = {
+      sidebarState: lastSidebarState,
+      selectedContext: { ...(lastSidebarState.selected_context || {}) },
+      targetLabel: teachDraft.targetLabel,
+      note: teachDraft.note,
+    };
+    let progressionToken = null;
     if (mode === "current-only") {
       recordCommittedCurrentDecision();
+      progressionToken = beginCurrentDecisionProgression(mode, requestSnapshot);
+      if (!progressionToken) {
+        return false;
+      }
     }
     teachPreviewRequestId += 1;
     applyInFlight = true;
     activeTeachApplyMode = mode;
     teachFlowState = "applying";
     teachResult = teachPendingResult("apply", mode);
-    if (lastHarnessState || lastSidebarState) {
+    if ((lastHarnessState || lastSidebarState) && mode !== "current-only") {
       renderState(lastHarnessState || lastSidebarState);
     }
-    applyTeach(mode, lastSelectedMessageId);
+    applyTeach(mode, progressionToken, requestSnapshot);
+    if (mode === "current-only" && progressionToken) {
+      if (optimisticDecision?.responseReceived && optimisticDecision.responseAccepted === false) {
+        return true;
+      }
+      advanceAfterCommittedDecision(progressionToken);
+    }
     return true;
   }
 
@@ -4757,14 +5839,17 @@
       const payload = response?.payload;
       const sidebarState = payload?.sidebar_state || {};
       const selected = sidebarState.selected_email || {};
-      const selectedIdentity = selectedMessageIdentity(sidebarState, selected);
       const appliedLabel = internalLabelId(selected.internal_label || selected.classification || "");
       const writeApplied = selected.details?.write_status === "applied";
       const writeFailed = selected.details?.write_status === "failed";
       const inboxFailed = selected.details?.inbox_status === "failed";
-      const sameMessage = Boolean(requestIdentity && selectedIdentity === requestIdentity);
+      const sameMessage = Boolean(requestIdentity && REVIEW_PROGRESSION.responseMatchesToken(requestIdentity, {
+        generation: requestIdentity.generation,
+        identity: progressionIdentity(sidebarState, selected),
+      }));
       if (response?.ok && sameMessage && appliedLabel === targetLabel && writeApplied && !writeFailed && !inboxFailed) {
         const inboxRemoved = selected.details?.inbox_status === "applied";
+        rememberCommittedIdentity(requestIdentity.identity);
         teachPreview = null;
         previousTeachPreview = null;
         teachResult = {
@@ -4777,6 +5862,9 @@
           scope: "current-email",
           current_email_changed_locally: true,
           current_email_written_to_gmail: true,
+          local_decision_accepted: true,
+          provider_confirmation: true,
+          provider_write_queued: false,
           gmail_label_write_failed: 0,
         };
         teachWriteThrough = {
@@ -4786,6 +5874,13 @@
           inbox_remove_failed: 0,
         };
         currentApplyError = "";
+        if (optimisticDecision?.token?.token === requestIdentity.token) {
+          optimisticDecision.providerWriteState = "done";
+          optimisticDecision.retryStateLocked = false;
+          optimisticDecision.responseReceived = true;
+          optimisticDecision.responseAccepted = true;
+          optimisticDecision.flightActive = false;
+        }
         renderState(payload);
         return;
       }
@@ -4794,8 +5889,9 @@
     });
   }
 
-  async function applyTeach(mode, requestIdentity) {
-    if (!lastSidebarState || !lastSidebarState.selected_email || !lastSidebarState.selected_email.found) {
+  async function applyTeach(mode, requestToken, requestSnapshot = null) {
+    const requestState = requestSnapshot?.sidebarState || lastSidebarState;
+    if (!requestState || !requestState.selected_email || !requestState.selected_email.found) {
       applyInFlight = false;
       return;
     }
@@ -4810,16 +5906,16 @@
       : mode === "save-future-rule"
         ? 0
         : 1;
-    const previousQueueSize = Number((lastSidebarState.daily_summary || {}).needs_attention_count || 0);
+    const previousQueueSize = Number((requestState.daily_summary || {}).needs_attention_count || 0);
     ANALYTICS?.confirmRule(ruleScope, affectedCount, false);
-    const targetLabel = teachDraft.targetLabel;
-    const note = teachDraft.note;
+    const targetLabel = requestSnapshot?.targetLabel || teachDraft.targetLabel;
+    const note = requestSnapshot?.note ?? teachDraft.note;
     chrome.runtime.sendMessage({
       type: "email-agent:api",
       path: "/api/teach-apply",
       method: "POST",
       body: {
-        selected_context: lastSidebarState.selected_context || {},
+        selected_context: requestSnapshot?.selectedContext || requestState.selected_context || {},
         target_label: targetLabel,
         note,
         scope: "sender",
@@ -4831,39 +5927,106 @@
       },
     }, (response) => {
       applyInFlight = false;
-      if (requestIdentity && requestIdentity !== lastSelectedMessageId) {
-        previousPayload = "";
-        refreshSelection(true);
+      const transportError = chrome.runtime.lastError?.message || "";
+      const rawError = transportError || (response && (response.payload?.error || response.error)) || "Could not apply the lesson.";
+      if (requestToken && !progressionFlightIsCurrent(requestToken)) {
         return;
       }
-      if (chrome.runtime.lastError) {
-        teachResult = teachErrorResult("apply", chrome.runtime.lastError.message || "Could not apply the lesson.");
+      const responseState = response?.payload?.sidebar_state || null;
+      const requestMayRender = requestToken
+        ? progressionResponseCanRender(requestToken, responseState)
+        : true;
+      const displayMayRender = requestToken
+        ? progressionDisplayCanRender(requestToken)
+        : true;
+      if (requestToken && optimisticDecision?.token?.token === requestToken.token
+        && !transportError && response?.ok
+        && !progressionResponseIsAuthoritative(requestToken, responseState)) {
+        const completionBlocked = invalidateCompletionForDecisionFailure(
+          requestToken,
+          "Threadwise rejected a response for the wrong email or thread. The decision remains retryable.",
+        );
+        if (!completionBlocked) {
+          rejectProgressionResponse(requestToken);
+          if (displayedStateIsSettled()) {
+            renderCurrentStatePreservingFocus(lastHarnessState || lastSidebarState);
+          }
+        } else {
+          teachFlowState = "teaching";
+          selectedDecisionMode = "review";
+        }
+        return;
+      }
+      if (requestToken && optimisticDecision?.token?.token === requestToken.token) {
+        optimisticDecision.responseReceived = true;
+        optimisticDecision.responseAccepted = !transportError && Boolean(response?.ok);
+        if (optimisticDecision.responseAccepted) {
+          updateOptimisticDecisionLifecycle(response?.payload?.sidebar_state || lastSidebarState);
+        } else {
+          const completionBlocked = invalidateCompletionForDecisionFailure(
+            requestToken,
+            "The final decision was not confirmed. Threadwise kept this email eligible and needs a fresh queue check.",
+          );
+          if (completionBlocked) {
+            optimisticDecision.flightActive = false;
+            return;
+          }
+          markOptimisticDecisionRetry(requestToken);
+        }
+        if (!optimisticDecision.advanceDone) {
+          if (!optimisticDecision.responseAccepted) {
+            rollbackSynchronousDecision(requestToken, rawError);
+          }
+          return;
+        }
+        if (progressionCheck) {
+          if (!optimisticDecision.responseAccepted) {
+            supersedeProgressionCheckWithDecisionFailure(
+              progressionCheck.generation,
+              "The final decision was not confirmed. Threadwise kept this email eligible and needs a fresh queue check.",
+            );
+          }
+          optimisticDecision.flightActive = false;
+          return;
+        }
+        if (!requestMayRender && (!displayMayRender || optimisticDecision.responseAccepted)) {
+          optimisticDecision.flightActive = false;
+          if (displayedStateIsSettled()) {
+            renderCurrentStatePreservingFocus(lastHarnessState || lastSidebarState);
+          }
+          return;
+        }
+      }
+      if (transportError) {
+        teachResult = teachErrorResult("apply", transportError || "Could not apply the lesson.");
         teachFlowState = mode === "save-future-rule" || mode === "current-only" ? "teaching" : "scope-confirmation";
         if (mode === "save-future-rule") {
           futureLearningError = teachResult.message;
         } else if (mode === "current-only") {
           return reconcileCurrentApplyAfterTransportFailure(
-            chrome.runtime.lastError.message || "Could not apply the change.",
+            transportError || "Could not apply the change.",
             targetLabel,
-            requestIdentity,
+            requestToken,
           );
         }
         renderState(lastHarnessState || lastSidebarState);
         return;
       }
       if (!response || !response.ok) {
-        const rawError = (response && (response.payload?.error || response.error)) || "Could not apply the lesson.";
         teachResult = teachErrorResult("apply", rawError);
         teachFlowState = mode === "save-future-rule" || mode === "current-only" ? "teaching" : "scope-confirmation";
         if (mode === "save-future-rule") {
           futureLearningError = teachResult.message;
         } else if (mode === "current-only") {
-          return reconcileCurrentApplyAfterTransportFailure(rawError, targetLabel, requestIdentity);
+          return reconcileCurrentApplyAfterTransportFailure(rawError, targetLabel, requestToken);
         }
         renderState(lastHarnessState || lastSidebarState);
         return;
       }
       const payload = response.payload || {};
+      if (requestToken) {
+        optimisticDecision.flightActive = false;
+      }
       teachPreview = null;
       previousTeachPreview = null;
       teachResult = {
@@ -4872,7 +6035,14 @@
         message: payload.acknowledgment || "Lesson applied.",
       };
       teachFlowState = "result";
-      teachOutcome = payload.outcome || null;
+      teachOutcome = payload.outcome
+        ? {
+            ...payload.outcome,
+            local_decision_accepted: mode === "current-only" || Boolean(payload.outcome.local_decision_accepted),
+            provider_write_queued: mode === "current-only"
+              && payload.outcome.provider_confirmation !== true,
+          }
+        : null;
       teachWriteThrough = payload.provider_write || payload.gmail_write_through || null;
       futureLearningError = "";
       currentApplyError = "";
@@ -4885,9 +6055,8 @@
       }
       renderState(preserveHarnessQueues(payload.sidebar_state || lastSidebarState));
     });
-    if (mode !== "save-future-rule") {
+    if (mode !== "save-future-rule" && mode !== "current-only") {
       applyInFlight = false;
-      openFirstSummaryItemIfHelpful("needs_attention_items");
     }
   }
 
@@ -5172,6 +6341,7 @@
           activeSummaryFilter,
           manualPreviewContext,
           forcedHome,
+          forcedHomeLiveContext,
           detailsExpanded,
           lastLiveContext,
           selectedContext: lastSidebarState?.selected_context || {},
@@ -5189,6 +6359,24 @@
           contextActionsOpen,
           contextActionsActiveIndex,
           contextActionsGeneration,
+          reviewProgressionGeneration,
+          stateReadGeneration,
+          optimisticDecision: optimisticDecision
+            ? {
+                token: optimisticDecision.token?.token || "",
+                identity: optimisticDecision.identity,
+                decisionKind: optimisticDecision.decisionKind || "",
+                localAccepted: Boolean(optimisticDecision.localAccepted),
+                providerWriteState: optimisticDecision.providerWriteState || "",
+                retryStateLocked: Boolean(optimisticDecision.retryStateLocked),
+                advanceDone: Boolean(optimisticDecision.advanceDone),
+                responseReceived: Boolean(optimisticDecision.responseReceived),
+                responseAccepted: optimisticDecision.responseAccepted,
+              }
+            : null,
+          committedReviewIdentities: committedReviewIdentities.map((identity) => ({ ...identity })),
+          progressionCheck: progressionCheck ? { ...progressionCheck } : null,
+          handledProgressionFlight: Boolean(handledProgressionFlight),
         };
       },
       getContextActions() {
@@ -5239,6 +6427,10 @@
         activeSummaryFilter = filter;
         openFirstSummaryItemIfHelpful(filter);
         return { ok: true, filter };
+      },
+      startProgressionCheck(filter = "needs_attention_items", query = "") {
+        activeSummaryFilter = filter;
+        return { ok: true, generation: beginProgressionCheck(filter, query) };
       },
       setDraft(targetLabel, note) {
         if (typeof targetLabel === "string" && targetLabel) {
@@ -5404,6 +6596,7 @@
   }
 
   function teardown() {
+    companionLifecycleActive = false;
     if (refreshIntervalId !== null) {
       window.clearInterval(refreshIntervalId);
       refreshIntervalId = null;
@@ -5412,10 +6605,18 @@
       window.clearTimeout(understandingRefreshTimeoutId);
       understandingRefreshTimeoutId = null;
     }
+    clearProgressionRefreshTimer();
     if (hashChangeListener) {
       window.removeEventListener("hashchange", hashChangeListener);
       hashChangeListener = null;
     }
+    if (popStateListener) {
+      window.removeEventListener("popstate", popStateListener);
+      popStateListener = null;
+    }
+    hostContextMutationObserver?.disconnect();
+    hostContextMutationObserver = null;
+    hostContextInvalidationMicrotaskPending = false;
     if (contextMenuResizeListener) {
       window.removeEventListener("resize", contextMenuResizeListener);
       contextMenuResizeListener = null;

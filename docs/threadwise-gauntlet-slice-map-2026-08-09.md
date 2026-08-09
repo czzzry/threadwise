@@ -40,8 +40,9 @@ Each slice is a thin, demoable path. The Sol helm selects and triages one slice 
    - Type: AFK
    - Blocked by: Slice 2
    - Current issue: `#109`
-   - Status: Triaged and ready for bounded implementation
+   - Status: Implemented and paused for founder review; final fresh critic `PASS_NOT_WIN` at `82/100` versus `~70/100`, five of six tasks won
    - Outcome: Review → decision → background provider result → truthful receipt → next item → verified queue-complete state is fast, keyboard reachable, and never offers a nonexistent next item.
+   - Remaining bounded gap: late teach-apply and handled-acknowledgement callbacks need the same direct live-host anchor guard now protecting completion-state responses.
 
 6. **Bounded batch triage preview**
    - Type: AFK

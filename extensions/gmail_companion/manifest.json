@@ -28,6 +28,7 @@
         "queue_navigation.js",
         "context_actions.js",
         "selected_explanation.js",
+        "review_progression.js",
         "content.js"
       ],
       "run_at": "document_idle"
