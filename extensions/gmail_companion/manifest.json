@@ -25,6 +25,7 @@
         "provider_adapter.js",
         "analytics.js",
         "onboarding.js",
+        "queue_navigation.js",
         "content.js"
       ],
       "run_at": "document_idle"

@@ -10,11 +10,15 @@
   const ANALYTICS = globalThis.ThreadwiseAnalytics;
   const PROVIDER = globalThis.ThreadwiseProvider;
   const ONBOARDING = globalThis.ThreadwiseOnboarding;
+  const QUEUE_NAVIGATION = globalThis.ThreadwiseQueueNavigation;
   if (!PROVIDER) {
     throw new Error("Threadwise provider adapter did not load.");
   }
   if (!ONBOARDING) {
     throw new Error("Threadwise onboarding module did not load.");
+  }
+  if (!QUEUE_NAVIGATION) {
+    throw new Error("Threadwise queue navigation module did not load.");
   }
   const BRAND_ICON_URL = chrome.runtime.getURL("assets/brand/threadwise-app-icon.png");
   const ACTIVE_PROVIDER = PROVIDER.id;
@@ -23,6 +27,7 @@
   const PANEL_WIDTH_MINIMIZED = "70px";
   const REFRESH_INTERVAL_MS = 5000;
   const UNDERSTANDING_REFRESH_INTERVAL_MS = 400;
+  const QUEUE_RENDER_CAP = 6;
   let minimized = true;
   let previousPayload = "";
   let lastHarnessState = null;
@@ -86,6 +91,13 @@
   let onboardingVisible = false;
   let onboardingActionInFlight = false;
   let onboardingMessage = "";
+  let queueQuery = "";
+  let queueFinderOpen = false;
+  let queueHelpOpen = false;
+  let queuePreviewActive = false;
+  let queueProvider = ACTIVE_PROVIDER;
+  let pendingQueueNavigationFocus = null;
+  let keyboardListener = null;
 
   function boot() {
     ensureRoot();
@@ -105,6 +117,9 @@
     hashChangeListener = () => refreshSelection();
     window.addEventListener("hashchange", hashChangeListener);
     documentClickListener = (event) => {
+      if (pendingQueueNavigationFocus && !isQueueFocusHandoffTrigger(event)) {
+        clearPendingQueueNavigationFocus();
+      }
       releaseCompletedQueuePreviewOnGmailClick(event);
       window.setTimeout(refreshSelection, 150);
     };
@@ -129,6 +144,8 @@
 
     const root = document.createElement("div");
     root.id = ROOT_ID;
+    root.tabIndex = 0;
+    root.setAttribute("aria-label", "Threadwise Companion");
     Object.assign(root.style, {
       position: "fixed",
       top: "14px",
@@ -339,6 +356,8 @@
     root.addEventListener("click", handlePanelClick);
     root.addEventListener("input", handlePanelInput);
     root.addEventListener("change", handlePanelInput);
+    keyboardListener = handlePanelKeydown;
+    root.addEventListener("keydown", keyboardListener);
     renderMinimized();
     renderFeedbackPanel();
   }
@@ -422,9 +441,18 @@
     if (!item) {
       return false;
     }
+    if (options.queueContext && !findQueueItem(item.message_id)) {
+      return false;
+    }
     forcedHome = false;
     manualPreviewContext = contextFromItem(item);
     manualPreviewOriginContext = lastLiveContext ? { ...lastLiveContext } : null;
+    queuePreviewActive = Boolean(options.queueContext);
+    if (queuePreviewActive) {
+      requestQueueNavigationFocus();
+    } else {
+      clearPendingQueueNavigationFocus();
+    }
     teachPreview = null;
     previousTeachPreview = null;
     teachResult = null;
@@ -591,8 +619,52 @@
     }
     manualPreviewContext = null;
     manualPreviewOriginContext = null;
+    clearPendingQueueNavigationFocus();
     previousPayload = "";
     resetPerEmailInteraction();
+  }
+
+  function isQueueFocusHandoffTrigger(event) {
+    return Boolean(event?.target?.closest?.(
+      `#${ROOT_ID} [data-ea-queue-item], #${ROOT_ID} [data-ea-queue-nav], #${ROOT_ID} [data-ea-action='open-needs-attention']`,
+    ));
+  }
+
+  function requestQueueNavigationFocus() {
+    pendingQueueNavigationFocus = {
+      origin: document.activeElement,
+    };
+  }
+
+  function clearPendingQueueNavigationFocus() {
+    pendingQueueNavigationFocus = null;
+  }
+
+  function restorePendingQueueNavigationFocus() {
+    const pending = pendingQueueNavigationFocus;
+    if (!pending) {
+      return;
+    }
+    if (!queuePreviewActive || !manualPreviewContext) {
+      clearPendingQueueNavigationFocus();
+      return;
+    }
+    const root = document.getElementById(ROOT_ID);
+    const navigation = root?.querySelector?.("[data-ea-queue-navigation]");
+    if (!navigation) {
+      return;
+    }
+    const activeElement = document.activeElement;
+    if (
+      activeElement
+      && activeElement !== document.body
+      && activeElement !== pending.origin
+    ) {
+      clearPendingQueueNavigationFocus();
+      return;
+    }
+    navigation.focus({ preventScroll: true });
+    clearPendingQueueNavigationFocus();
   }
 
   function stabilizedLiveContext(nextContext) {
@@ -971,6 +1043,7 @@
     forcedHomeLiveContext = { ...selectedContext() };
     manualPreviewContext = null;
     manualPreviewOriginContext = null;
+    resetQueueState();
     gmailCheckResult = null;
     resetPerEmailInteraction();
     previousPayload = "";
@@ -994,6 +1067,7 @@
     forcedHomeLiveContext = null;
     lastLiveContext = stabilizedLiveContext(selectedContext());
     if (isMeaningfulContext(lastLiveContext)) {
+      resetQueueState();
       manualPreviewContext = null;
       manualPreviewOriginContext = null;
       previousPayload = "";
@@ -1313,6 +1387,7 @@
   }
 
   function renderState(state) {
+    ensureQueueProvider();
     lastHarnessState = normalizeHarnessState(state);
     lastSidebarState = lastHarnessState.sidebar_state;
     const selected = lastSidebarState.selected_email || null;
@@ -1631,6 +1706,7 @@
             <div style="margin-top:6px;color:#6b6255;font-size:0.88rem;overflow-wrap:anywhere;">${escapeHtml(selected.sender || "(unknown sender)")}</div>
             ${reviewReceivedLabel(selected.received_at) ? `<div data-ea-review-received-at style="margin-top:4px;color:#6b6255;font-size:0.8rem;">${escapeHtml(reviewReceivedLabel(selected.received_at))}</div>` : ""}
           </div>
+          ${showingQueuePreview ? renderQueuePreviewNavigationHtml() : ""}
           <div data-ea-review-suggestion style="font-size:1.05rem;font-weight:760;line-height:1.4;">${label ? finishingProviderUpdate ? `Threadwise classified this as ${escapeHtml(label)}, but ${escapeHtml(activeProviderName())} was not confirmed.` : `Threadwise suggests ${escapeHtml(label)}` : "Threadwise needs you to choose a label"}</div>
           <div style="border-radius:14px;background:#fff4dd;padding:12px;color:#1f1a14;line-height:1.45;">${escapeHtml(likelyReasonForSelected(selected).slice(0, 160))}</div>
           <div style="display:grid;gap:9px;">
@@ -1854,11 +1930,11 @@
       const previewModeBanner = showingQueuePreview
         ? `
           <div style="margin-top:14px;border-radius:14px;background:#fff8eb;padding:12px;color:#1f1a14;line-height:1.45;">
-            <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">Queue preview</div>
             <div style="margin-top:8px;">You are previewing a stored queue email from the local snapshot.</div>
             <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;">
               <button type="button" data-ea-action="return-to-live" style="border:0;background:#ebe4d7;color:#1f1a14;border-radius:999px;padding:9px 12px;cursor:pointer;font:inherit;">Close preview</button>
             </div>
+            ${renderQueuePreviewNavigationHtml()}
           </div>
         `
         : "";
@@ -1930,6 +2006,7 @@
       `);
     }
     renderMinimized();
+    restorePendingQueueNavigationFocus();
 
     const changedToday = summary.changed_today || {};
     const selectedUnsubscribeExamples = changedToday.selected_unsubscribe_examples || [];
@@ -1971,6 +2048,7 @@
           ${needsReviewCount ? "" : `<div style="color:#0f766e;line-height:1.45;">${escapeHtml(emptyQueueCopy)}</div>`}
           <div style="color:#6b6255;line-height:1.45;">${Number(summary.processed_count || 0)} processed · ${Number(summary.auto_handled_count || 0)} auto-handled · ${Number(keptVisibleCount || 0)} kept visible</div>
           ${needsReviewCount ? '<button type="button" data-ea-action="open-needs-attention" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Review next</button>' : ""}
+          ${renderQueueFinderHtml()}
           <div style="display:flex;flex-wrap:wrap;gap:12px;">
             <a href="${LOCAL_ORIGIN}/daily-dashboard" target="_blank" rel="noreferrer" style="border:0;background:transparent;color:#5d5342;border-radius:0;padding:7px 2px;display:inline-flex;align-items:center;text-decoration:underline;text-underline-offset:3px;font:inherit;font-weight:760;box-shadow:none;">Activity</a>
             <a href="${LOCAL_ORIGIN}/unsubscribe-review" target="_blank" rel="noreferrer" style="border:0;background:transparent;color:#5d5342;border-radius:0;padding:7px 2px;display:inline-flex;align-items:center;text-decoration:underline;text-underline-offset:3px;font:inherit;font-weight:760;box-shadow:none;">Subscription cleanup</a>
@@ -1983,6 +2061,7 @@
           ${activityHtml}
         </div>
       `);
+      restorePendingQueueNavigationFocus();
       return;
     }
     setHtml(dailySummaryNode, `
@@ -2135,10 +2214,190 @@
     return Array.isArray(lastHarnessState[filter]) ? lastHarnessState[filter] : [];
   }
 
+  function resetQueueState() {
+    queueQuery = "";
+    queueFinderOpen = false;
+    queueHelpOpen = false;
+    queuePreviewActive = false;
+    clearPendingQueueNavigationFocus();
+  }
+
+  function ensureQueueProvider() {
+    if (queueProvider === ACTIVE_PROVIDER) {
+      return;
+    }
+    queueProvider = ACTIVE_PROVIDER;
+    resetQueueState();
+  }
+
+  function queueSourceItems() {
+    ensureQueueProvider();
+    return summaryItemsForFilter("needs_attention_items");
+  }
+
+  function filteredQueueItems(query = queueQuery) {
+    const items = queueSourceItems();
+    if (typeof QUEUE_NAVIGATION.filterQueueItems === "function") {
+      return QUEUE_NAVIGATION.filterQueueItems(items, ACTIVE_PROVIDER, query);
+    }
+    return items;
+  }
+
+  function findQueueItem(messageId, query = queueQuery) {
+    if (!messageId) {
+      return null;
+    }
+    const items = filteredQueueItems(query);
+    if (typeof QUEUE_NAVIGATION.findCurrentItem === "function") {
+      return QUEUE_NAVIGATION.findCurrentItem(items, messageId);
+    }
+    return items.find((item) => item?.message_id === messageId) || null;
+  }
+
+  function adjacentQueueItem(direction) {
+    const currentId = manualPreviewContext?.message_id || "";
+    if (!currentId) {
+      return null;
+    }
+    const items = filteredQueueItems();
+    if (!findQueueItem(currentId)) {
+      return null;
+    }
+    if (typeof QUEUE_NAVIGATION.findAdjacentItem === "function") {
+      return QUEUE_NAVIGATION.findAdjacentItem(items, currentId, direction);
+    }
+    const index = items.findIndex((item) => item?.message_id === currentId);
+    const nextIndex = index < 0 ? -1 : index + direction;
+    return nextIndex >= 0 && nextIndex < items.length ? items[nextIndex] : null;
+  }
+
+  function queuePreviewPosition() {
+    const items = filteredQueueItems();
+    const currentId = manualPreviewContext?.message_id || "";
+    const index = items.findIndex((item) => item?.message_id === currentId);
+    return {
+      items,
+      index,
+      currentPresent: index >= 0,
+      position: index >= 0 ? `${index + 1} of ${items.length}` : `Current item not in this filter`,
+    };
+  }
+
+  function openQueuePreviewItem(item, origin = "needs_attention_queue") {
+    if (!item || !findQueueItem(item.message_id)) {
+      return false;
+    }
+    return openItemPreview(item, { queueContext: true, origin });
+  }
+
+  function returnQueuePreviewToHome() {
+    if (!queuePreviewActive) {
+      return false;
+    }
+    manualPreviewContext = null;
+    manualPreviewOriginContext = null;
+    queuePreviewActive = false;
+    clearPendingQueueNavigationFocus();
+    forcedHome = true;
+    forcedHomeLiveContext = lastLiveContext ? { ...lastLiveContext } : null;
+    minimized = false;
+    resetPerEmailInteraction();
+    previousPayload = "";
+    if (lastHarnessState) {
+      renderState(lastHarnessState);
+    }
+    refreshSelection(true);
+    renderMinimized();
+    return true;
+  }
+
+  function leaveQueueFlow() {
+    resetQueueState();
+    manualPreviewContext = null;
+    manualPreviewOriginContext = null;
+  }
+
+  function renderQueueResultCards(items) {
+    if (!items.length) {
+      return '<div data-ea-queue-empty role="status" style="color:#6b6255;line-height:1.45;">No loaded review emails match this filter.</div>';
+    }
+    return items.slice(0, QUEUE_RENDER_CAP).map((item) => `
+      <button type="button" data-ea-queue-item="${escapeHtml(item.message_id || "")}" style="width:100%;text-align:left;border:1px solid #d7cfbf;border-radius:12px;background:#fffdfa;color:#1f1a14;padding:10px 11px;cursor:pointer;font:inherit;">
+        <span style="display:block;font-weight:780;line-height:1.25;overflow-wrap:anywhere;">${escapeHtml(item.subject || "(no subject)")}</span>
+        <span style="display:block;margin-top:4px;color:#6b6255;font-size:.82rem;overflow-wrap:anywhere;">${escapeHtml(item.sender || "(unknown sender)")}</span>
+        <span style="display:flex;flex-wrap:wrap;gap:6px;margin-top:7px;">
+          <span style="border-radius:999px;padding:4px 8px;background:#f1eadb;color:#5d5342;font-size:.74rem;">${escapeHtml(item.classification || item.label || "Uncategorized")}</span>
+          <span style="border-radius:999px;padding:4px 8px;background:#f1eadb;color:#5d5342;font-size:.74rem;">${escapeHtml(item.status_label || item.status || "")}</span>
+        </span>
+      </button>
+    `).join("");
+  }
+
+  function renderQueueFinderHtml() {
+    const sourceItems = QUEUE_NAVIGATION.filterQueueItems
+      ? QUEUE_NAVIGATION.filterQueueItems(queueSourceItems(), ACTIVE_PROVIDER, "")
+      : queueSourceItems();
+    if (!sourceItems.length) {
+      return "";
+    }
+    if (!queueFinderOpen) {
+      return `
+        <button type="button" data-ea-action="open-queue-finder" aria-expanded="false" style="justify-self:start;border:0;background:transparent;color:#5d5342;border-radius:0;padding:7px 2px;cursor:pointer;font:inherit;font-weight:780;text-decoration:underline;text-underline-offset:3px;">Find in review queue</button>
+      `;
+    }
+    const matches = filteredQueueItems();
+    const capNotice = matches.length > QUEUE_RENDER_CAP
+      ? `<div data-ea-queue-cap role="status" style="color:#6b6255;font-size:.8rem;line-height:1.35;">Showing the first ${QUEUE_RENDER_CAP} matches here. Open a result to traverse all ${matches.length} loaded matches.</div>`
+      : "";
+    const help = queueHelpOpen
+      ? `<div data-ea-queue-help role="note" style="border-radius:10px;background:#f5efe2;padding:8px 10px;color:#5d5342;font-size:.78rem;line-height:1.4;">Open a result, then J / K move through its filtered queue · Enter runs the visible primary action · Escape backs out safely.</div>`
+      : "";
+    return `
+      <section data-ea-queue-finder tabindex="0" aria-label="Find in review queue" style="display:grid;gap:9px;border-top:1px solid rgba(36,24,18,.2);padding-top:12px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+          <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:#6b6255;font-weight:820;">Review queue</div>
+          <span data-ea-queue-count aria-live="polite" style="color:#6b6255;font-size:.78rem;">${matches.length} of ${sourceItems.length}</span>
+        </div>
+        <label for="ea-queue-query" style="font-size:.84rem;font-weight:760;">Find by sender, subject, label, or status</label>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input id="ea-queue-query" data-ea-queue-query type="search" value="${escapeHtml(queueQuery)}" placeholder="Search loaded review emails" autocomplete="off" style="box-sizing:border-box;min-width:0;flex:1;padding:9px 10px;border:1px solid #241812;border-radius:10px;background:#fffdf7;color:#241812;font:inherit;">
+          ${queueQuery ? '<button type="button" data-ea-action="clear-queue-filter" aria-label="Clear filter" style="border:0;background:transparent;color:#5d5342;padding:6px 2px;cursor:pointer;font:inherit;font-weight:780;text-decoration:underline;text-underline-offset:3px;white-space:nowrap;">Clear</button>' : ""}
+        </div>
+        ${!matches.length && queueQuery ? '<div data-ea-queue-no-results role="status" style="color:#8a4b00;line-height:1.4;">No loaded review emails match this filter.</div>' : ""}
+        ${capNotice}
+        <div data-ea-queue-results style="display:grid;gap:7px;max-height:255px;overflow:auto;">${renderQueueResultCards(matches)}</div>
+        <button type="button" data-ea-action="toggle-queue-help" aria-expanded="${queueHelpOpen ? "true" : "false"}" aria-controls="ea-queue-help" style="justify-self:start;border:0;background:transparent;color:#5d5342;padding:3px 2px;cursor:pointer;font:inherit;font-size:.8rem;font-weight:780;text-decoration:underline;text-underline-offset:3px;">${queueHelpOpen ? "Hide keyboard help" : "Keyboard help"}</button>
+        ${help.replace('data-ea-queue-help', 'id="ea-queue-help" data-ea-queue-help')}
+      </section>
+    `;
+  }
+
+  function renderQueuePreviewNavigationHtml() {
+    if (!queuePreviewActive) {
+      return "";
+    }
+    const { index, currentPresent, position } = queuePreviewPosition();
+    const previousDisabled = !currentPresent || index <= 0;
+    const nextDisabled = !currentPresent || index >= filteredQueueItems().length - 1;
+    return `
+      <div data-ea-queue-navigation tabindex="0" style="margin-top:14px;border-radius:12px;background:#f5efe2;padding:10px 11px;color:#1f1a14;line-height:1.4;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+          <div><div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:#6b6255;font-weight:820;">Queue preview</div><div data-ea-queue-position style="margin-top:4px;font-weight:780;">${escapeHtml(position)}</div></div>
+          <button type="button" data-ea-action="return-queue-home" style="border:0;background:transparent;color:#5d5342;padding:4px 2px;cursor:pointer;font:inherit;font-size:.8rem;font-weight:780;text-decoration:underline;text-underline-offset:3px;">Back to queue</button>
+        </div>
+        ${currentPresent ? "" : '<div role="status" style="margin-top:7px;color:#8a4b00;font-size:.8rem;">This email is no longer in the current loaded filter.</div>'}
+        <div style="display:flex;gap:8px;margin-top:9px;">
+          <button type="button" data-ea-queue-nav="previous" ${previousDisabled ? "disabled" : ""} aria-label="Previous review email" style="flex:1;border:1px solid #241812;background:#fffdf7;color:#241812;border-radius:9px;padding:8px 9px;cursor:${previousDisabled ? "not-allowed" : "pointer"};font:inherit;font-weight:780;opacity:${previousDisabled ? ".5" : "1"};">Previous</button>
+          <button type="button" data-ea-queue-nav="next" ${nextDisabled ? "disabled" : ""} aria-label="Next review email" style="flex:1;border:1px solid #241812;background:#fffdf7;color:#241812;border-radius:9px;padding:8px 9px;cursor:${nextDisabled ? "not-allowed" : "pointer"};font:inherit;font-weight:780;opacity:${nextDisabled ? ".5" : "1"};">Next</button>
+        </div>
+      </div>
+    `;
+  }
+
   function remainingNeedsAttentionItems() {
     const current = currentReviewIdentity();
     const seen = new Set();
-    return summaryItemsForFilter("needs_attention_items").filter((item) => {
+    return filteredQueueItems().filter((item) => {
       const messageId = item?.message_id || "";
       if (!messageId || reviewItemMatchesIdentity(item, current) || seen.has(messageId)) {
         return false;
@@ -3053,6 +3312,80 @@
     return `Messages from ${sender} like this should be labeled ${label}.`;
   }
 
+  function visibleEnabledPrimaryActions(root) {
+    return Array.from(root?.querySelectorAll?.("[data-tw-primary-action]") || []).filter((node) => {
+      if (node.disabled || node.getAttribute("aria-disabled") === "true" || node.hidden) {
+        return false;
+      }
+      const style = globalThis.getComputedStyle?.(node);
+      if (style && (style.display === "none" || style.visibility === "hidden")) {
+        return false;
+      }
+      const rect = node.getBoundingClientRect?.();
+      return !rect || rect.width > 0 || rect.height > 0;
+    });
+  }
+
+  function panelKeyCommand(event, root) {
+    if (typeof QUEUE_NAVIGATION.classifyPanelKey === "function") {
+      return QUEUE_NAVIGATION.classifyPanelKey(event, root);
+    }
+    if (typeof QUEUE_NAVIGATION.classifyKey === "function") {
+      return QUEUE_NAVIGATION.classifyKey(event, root);
+    }
+    return null;
+  }
+
+  function handlePanelKeydown(event) {
+    const root = document.getElementById(ROOT_ID);
+    const command = panelKeyCommand(event, root);
+    if (!command) {
+      return;
+    }
+    if (command === "primary-action") {
+      const actions = visibleEnabledPrimaryActions(root);
+      if (actions.length !== 1) {
+        return;
+      }
+      event.preventDefault();
+      actions[0].click();
+      return;
+    }
+    if (command === "escape") {
+      event.preventDefault();
+      if (queueHelpOpen) {
+        queueHelpOpen = false;
+        renderState(lastHarnessState);
+        return;
+      }
+      if (queueQuery) {
+        queueQuery = "";
+        queueFinderOpen = true;
+        renderState(lastHarnessState);
+        document.getElementById("ea-queue-query")?.focus({ preventScroll: true });
+        return;
+      }
+      if (queuePreviewActive) {
+        returnQueuePreviewToHome();
+        return;
+      }
+      minimized = true;
+      renderMinimized();
+      return;
+    }
+    if (command !== "next" && command !== "previous") {
+      return;
+    }
+    if (!queuePreviewActive) {
+      return;
+    }
+    event.preventDefault();
+    const item = adjacentQueueItem(command === "next" ? 1 : -1);
+    if (item) {
+      openQueuePreviewItem(item, "queue_keyboard");
+    }
+  }
+
   async function handlePanelClick(event) {
     const onboardingContinueButton = event.target.closest("[data-ea-action='onboarding-continue']");
     if (onboardingContinueButton) {
@@ -3126,6 +3459,53 @@
       activeSummaryFilter = summaryFilterButton.getAttribute("data-ea-summary-filter") || "needs_attention_items";
       openFirstSummaryItemIfHelpful(activeSummaryFilter);
       return;
+    }
+    const openQueueFinderButton = event.target.closest("[data-ea-action='open-queue-finder']");
+    if (openQueueFinderButton) {
+      event.preventDefault();
+      queueFinderOpen = true;
+      renderState(lastHarnessState);
+      document.getElementById("ea-queue-query")?.focus({ preventScroll: true });
+      return;
+    }
+    const clearQueueFilterButton = event.target.closest("[data-ea-action='clear-queue-filter']");
+    if (clearQueueFilterButton) {
+      event.preventDefault();
+      queueQuery = "";
+      queueFinderOpen = true;
+      renderState(lastHarnessState);
+      document.getElementById("ea-queue-query")?.focus({ preventScroll: true });
+      return;
+    }
+    const queueHelpButton = event.target.closest("[data-ea-action='toggle-queue-help']");
+    if (queueHelpButton) {
+      event.preventDefault();
+      queueHelpOpen = !queueHelpOpen;
+      renderState(lastHarnessState);
+      document.querySelector("[data-ea-action='toggle-queue-help']")?.focus({ preventScroll: true });
+      return;
+    }
+    const queueItemButton = event.target.closest("[data-ea-queue-item]");
+    if (queueItemButton) {
+      event.preventDefault();
+      const item = findQueueItem(queueItemButton.getAttribute("data-ea-queue-item") || "");
+      openQueuePreviewItem(item, "queue_finder");
+      return;
+    }
+    const queueNavigationButton = event.target.closest("[data-ea-queue-nav]");
+    if (queueNavigationButton) {
+      event.preventDefault();
+      if (queueNavigationButton.disabled) {
+        return;
+      }
+      const direction = queueNavigationButton.getAttribute("data-ea-queue-nav") === "previous" ? -1 : 1;
+      openQueuePreviewItem(adjacentQueueItem(direction), "queue_navigation");
+      return;
+    }
+    const returnQueueHomeButton = event.target.closest("[data-ea-action='return-queue-home']");
+    if (returnQueueHomeButton) {
+      event.preventDefault();
+      return returnQueuePreviewToHome();
     }
     const summaryItemButton = event.target.closest("[data-ea-summary-item]");
     if (summaryItemButton) {
@@ -3560,6 +3940,10 @@
     const returnButton = event.target.closest("[data-ea-action='return-to-live']");
     if (returnButton) {
       event.preventDefault();
+      const wasQueuePreview = queuePreviewActive;
+      if (wasQueuePreview) {
+        leaveQueueFlow();
+      }
       manualPreviewContext = null;
       manualPreviewOriginContext = null;
       forcedHome = false;
@@ -3582,7 +3966,7 @@
     const current = currentReviewIdentity();
     const seen = new Set();
     const items = (filter === "needs_attention_items"
-      ? remainingNeedsAttentionItems()
+      ? filteredQueueItems().filter((item) => !reviewItemMatchesIdentity(item, current))
       : summaryItemsForFilter(filter).filter((item) => {
           const messageId = item?.message_id || "";
           if (!messageId || reviewItemMatchesIdentity(item, current) || seen.has(messageId)) {
@@ -3592,6 +3976,20 @@
           return true;
         }));
     if (!items.length) {
+      if (filter === "needs_attention_items" && queueQuery) {
+        forcedHome = true;
+        forcedHomeLiveContext = lastLiveContext ? { ...lastLiveContext } : null;
+        manualPreviewContext = null;
+        manualPreviewOriginContext = null;
+        queuePreviewActive = false;
+        queueFinderOpen = true;
+        resetPerEmailInteraction();
+        if (lastHarnessState) {
+          renderState(lastHarnessState);
+        }
+        renderMinimized();
+        return false;
+      }
       forcedHome = true;
       forcedHomeLiveContext = lastLiveContext ? { ...lastLiveContext } : null;
       manualPreviewContext = null;
@@ -3625,10 +4023,24 @@
       refreshSelection(true);
       return false;
     }
-    return openItemPreview(items[0]);
+    return filter === "needs_attention_items"
+      ? openQueuePreviewItem(items[0])
+      : openItemPreview(items[0]);
   }
 
   function handlePanelInput(event) {
+    if (event.target?.id === "ea-queue-query") {
+      queueQuery = event.target.value || "";
+      queueFinderOpen = true;
+      renderState(lastHarnessState);
+      const queryInput = document.getElementById("ea-queue-query");
+      queryInput?.focus({ preventScroll: true });
+      if (typeof queryInput?.setSelectionRange === "function") {
+        const cursor = Math.min(queueQuery.length, queryInput.value.length);
+        queryInput.setSelectionRange(cursor, cursor);
+      }
+      return;
+    }
     if (event.target?.id === "ea-target-label" && event.type === "change") {
       teachDraft.targetLabelExplicit = true;
     }
@@ -4274,6 +4686,14 @@
           lastLiveContext,
           selectedContext: lastSidebarState?.selected_context || {},
           selectedEmail: lastSidebarState?.selected_email || null,
+          queueQuery,
+          queueFinderOpen,
+          queueHelpOpen,
+          queuePreviewActive,
+          pendingQueueNavigationFocus: Boolean(pendingQueueNavigationFocus),
+          queueProvider,
+          queueCurrentIdentity: manualPreviewContext?.message_id || "",
+          queueMatchCount: filteredQueueItems().length,
           recentCount: (lastHarnessState?.recent_items || []).length,
           needsAttentionCount: (lastHarnessState?.needs_attention_items || []).length,
         };
@@ -4376,6 +4796,7 @@
         };
       },
       returnToLive() {
+        resetQueueState();
         manualPreviewContext = null;
         manualPreviewOriginContext = null;
         forcedHome = false;
@@ -4390,6 +4811,43 @@
       openHome() {
         openThreadwiseHome();
         return { ok: true };
+      },
+      getQueueSnapshot() {
+        const position = queuePreviewPosition();
+        return {
+          query: queueQuery,
+          finderOpen: queueFinderOpen,
+          helpOpen: queueHelpOpen,
+          previewActive: queuePreviewActive,
+          pendingFocus: Boolean(pendingQueueNavigationFocus),
+          provider: queueProvider,
+          currentMessageId: manualPreviewContext?.message_id || "",
+          matchCount: position.items.length,
+          position: position.index >= 0 ? position.index + 1 : null,
+          total: position.items.length,
+          items: position.items.map((item) => ({
+            message_id: item.message_id || "",
+            provider: item.provider || queueProvider,
+          })),
+        };
+      },
+      setQueueQuery(query) {
+        queueQuery = typeof query === "string" ? query : "";
+        queueFinderOpen = true;
+        forcedHome = true;
+        minimized = false;
+        if (lastHarnessState) {
+          renderState(lastHarnessState);
+        }
+        return this.getQueueSnapshot();
+      },
+      openQueueItem(messageId) {
+        const item = findQueueItem(messageId);
+        return { ok: openQueuePreviewItem(item, "queue_test_hook"), messageId: item?.message_id || "" };
+      },
+      navigateQueue(direction) {
+        const item = adjacentQueueItem(direction === "previous" || direction === -1 ? -1 : 1);
+        return { ok: openQueuePreviewItem(item, "queue_test_hook"), messageId: item?.message_id || "" };
       },
     };
   }
@@ -4411,6 +4869,11 @@
       document.removeEventListener("click", documentClickListener, true);
       documentClickListener = null;
     }
+    const root = document.getElementById(ROOT_ID);
+    if (root && keyboardListener) {
+      root.removeEventListener("keydown", keyboardListener);
+    }
+    keyboardListener = null;
     if (
       runtimeMessageListener &&
       chrome?.runtime?.onMessage &&
@@ -4419,7 +4882,6 @@
       chrome.runtime.onMessage.removeListener(runtimeMessageListener);
     }
     runtimeMessageListener = null;
-    const root = document.getElementById(ROOT_ID);
     if (root) {
       root.remove();
     }

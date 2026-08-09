@@ -1,6 +1,6 @@
 # Issue 106: Add queue-local filtering and panel-scoped keyboard navigation
 
-Status: Ready for bounded implementation
+Status: Completed; Gauntlet WIN at 85/100
 Current as of: 2026-08-09
 GitHub issue: `#106`
 Parent: `#104`
@@ -12,6 +12,20 @@ Builds on: `docs/prd-threadwise-gauntlet-2026-08-09.md`
 Make the already-loaded Threadwise review queue fast to find and traverse inside the existing provider-aware companion. The selected Gmail email remains the primary context. A compact queue finder appears only on Threadwise Home, and queue-preview navigation appears only after the user explicitly enters that queue context.
 
 This slice is local interaction only: it must not search Gmail, fetch another page, index mailbox content, run a provider sync, or mutate mail.
+
+## Completion evidence
+
+- Home discloses a compact finder for the already-loaded active-provider review queue; the provider-selected first view remains finder-free.
+- Case-insensitive sender, subject, displayed classification/label, and status filtering preserves active-provider order, excludes explicit cross-provider items, reports `N of M`, distinguishes filter misses, and clears in one action.
+- Queue previews use the existing `manualPreviewContext` path, expose pointer Previous/Next controls, and support panel-scoped J/K without wrapping or accepting stale identities.
+- Pointer entry and each async queue rerender hand focus to the fresh navigation surface only while the queue remains active and the user has not moved focus elsewhere.
+- The real CDP trace sends J/K to `activeElement`, preserves nonzero Gmail-page scroll `180` and companion scroll `72` through pointer and keyboard rerenders, and proves inputs and outside-host events remain untouched.
+- Explicit Home/reopen boundaries clear query, finder/help, preview, and pending-focus state; `Back to queue` preserves the active filtered context.
+- Controlled acceptance passes at `1280x800`, `756x469`, and `360x800`, records every request, and reports zero forbidden provider sync, teaching, safety, unsubscribe, handled-acknowledgement, write, reply, or send requests.
+- Independent critic rounds: `82/100` for missing real focus handoff; not-WIN for vacuous zero-scroll proof; not-WIN for stale queue state after explicit exit; fresh round-four critic WIN at `85/100` versus the documented `~70/100` baseline, with five of six tasks won and no hard gate triggered.
+- Focused Node and browser checks pass; the repo-wide suite passes `795/795` tests.
+
+Handoff: `docs/handoff/2026-08-09-threadwise-gauntlet-queue-navigation.md`
 
 ## Exact interaction contract
 
