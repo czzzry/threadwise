@@ -25,6 +25,8 @@ Each slice is a thin, demoable path. The Sol helm selects and triages one slice 
 3. **Contextual action panel**
    - Type: AFK
    - Blocked by: Slice 2
+   - Current issue: `#107`
+   - Status: Triaged and ready for bounded implementation
    - Outcome: One Raycast-style action entry point exposes only the actions valid for the current selected email, queue item, teaching preview, receipt, or blocked state, with visible shortcuts and no global AI chat.
 
 4. **Selected-email explanation and one-click correction**
