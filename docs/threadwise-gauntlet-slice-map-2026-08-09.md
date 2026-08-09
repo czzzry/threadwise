@@ -32,6 +32,8 @@ Each slice is a thin, demoable path. The Sol helm selects and triages one slice 
 4. **Selected-email explanation and one-click correction**
    - Type: AFK
    - Blocked by: Slice 3
+   - Current issue: `#108`
+   - Status: Triaged ready-for-agent
    - Outcome: Classification, queue reason, matched evidence, uncertainty, and the single correction entry point are attached to the selected email with deeper detail progressively disclosed.
 
 5. **High-throughput review completion**
