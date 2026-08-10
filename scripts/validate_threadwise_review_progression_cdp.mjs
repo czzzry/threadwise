@@ -557,13 +557,13 @@ try {
     snapshot: await evaluate("globalThis.__eaTestHooks.getSnapshot()"),
   });
   await evaluate("window.__reviewProgressionRespondState('handled-b')");
-  await waitFor(() => evaluate("document.querySelector('[data-ea-selected-state=handled-receipt]')?.textContent.includes('Handled synthetic B') && Boolean(document.querySelector('[data-ea-previous-decision-status=retry]'))"));
-  assert(await evaluate("document.querySelector('[data-ea-previous-decision-status=retry]')?.textContent.includes('review acknowledgement')"), "late handled failure is visible as a truthful retryable prior decision on the current item");
+  await waitFor(() => evaluate("document.querySelector('[data-ea-selected-state=handled-receipt]')?.textContent.includes('Handled synthetic B')"));
+  assert(!(await evaluate("document.querySelector('[data-ea-previous-decision-status=retry]')")), "late handled failure does not attach a stale acknowledgement error to the new host item");
   assert(!(await evaluate("document.querySelector('[data-ea-auto-handled-heading]')?.textContent.includes('Handled synthetic A')")), "late handled failure never renders the stale handled item");
-  await captureViewportSet("handled-late-failure");
+  await captureViewportSet("handled-late-response-inert");
   const handledLateFailureEvidence = await progressionEvidence("handled-failure-after-navigation", handledBeforeTrace);
-  results.handledTrace.push({ step: "handled-failure-after-navigation", activation: "keyboard-enter", acknowledgementCount: handledBefore + 1, evidence: handledLateFailureEvidence, snapshot: handledLateFailureEvidence.snapshot });
-  results.responseBoundaryTrace.push({ step: "handled-failure-after-navigation", response: "rejected-after-navigation", evidence: handledLateFailureEvidence });
+  results.handledTrace.push({ step: "handled-failure-after-navigation", activation: "keyboard-enter", acknowledgementCount: handledBefore + 1, staleResponseInert: true, evidence: handledLateFailureEvidence, snapshot: handledLateFailureEvidence.snapshot });
+  results.responseBoundaryTrace.push({ step: "handled-failure-after-navigation", response: "discarded-after-navigation", evidence: handledLateFailureEvidence });
 
   await setHostMessage("handled-a", "Handled synthetic A", "handled-a@example.test");
   await waitFor(() => evaluate("document.querySelector('[data-ea-selected-state=handled-receipt]')?.textContent.includes('Handled synthetic A')"));
@@ -628,6 +628,17 @@ try {
   await waitFor(() => evaluate("document.querySelector('[data-ea-review-progression=review-progression-complete]')?.textContent.includes('queue complete')"));
   results.handledTrace.push({ step: "handled-complete", activation: "keyboard-enter", evidence: await progressionEvidence("handled-complete", handledRetryBefore), snapshot: await evaluate("globalThis.__eaTestHooks.getSnapshot()") });
   await captureViewportSet("handled-complete");
+
+  activeStep = "stale-action-responses-after-live-host-navigation";
+  for (const scenario of [
+    { kind: "teach", outcome: "success" },
+    { kind: "teach", outcome: "failure" },
+    { kind: "handled", outcome: "success" },
+    { kind: "handled", outcome: "failure" },
+  ]) {
+    results.responseBoundaryTrace.push(await proveStaleActionResponseIsInert(scenario));
+  }
+  results.responseBoundaryTrace.push(await proveStaleReconciliationResponseIsInert());
 
   const requests = await requestTrace();
   const forbidden = requests.filter((request) => !(
@@ -709,6 +720,21 @@ async function setHostRoute(messageId) {
   })()`);
 }
 
+async function setHostMessageAndSettleLiveContext(messageId, subject, sender) {
+  await evaluate(`(() => {
+    const host = document.getElementById('synthetic-gmail-host');
+    const threadId = window.__reviewProgressionPhase === 'handled' ? 'thread-handled' : 'thread-review';
+    host.querySelector('h2').textContent = ${JSON.stringify(subject)};
+    host.querySelector('h2').setAttribute('data-thread-perm-id', threadId);
+    const message = host.querySelector('[data-legacy-message-id]');
+    message.setAttribute('data-legacy-message-id', ${JSON.stringify(messageId)});
+    message.setAttribute('data-thread-perm-id', threadId);
+    message.querySelector('[email]').setAttribute('email', ${JSON.stringify(sender)});
+    window.location.hash = ${JSON.stringify(`#inbox/FM${messageId}`)};
+    return globalThis.__eaTestHooks.returnToLive();
+  })()`);
+}
+
 async function installBridge() {
   const allowedLabels = [
     ["travel", "Travel"], ["receipt-billing", "Receipts"], ["shopping-order", "Orders"], ["financial-account", "Finance"],
@@ -737,6 +763,7 @@ async function installBridge() {
     const pendingHandled = [];
     const pendingCompletions = [];
     const pendingStateReads = [];
+    let holdNextStateRead = false;
     let completionStates = [];
     const append = (request) => {
       const log = JSON.parse(localStorage.getItem(logKey) || '[]');
@@ -780,6 +807,7 @@ async function installBridge() {
       window.__reviewProgressionHeldStateMessage = String(messageId || '');
       return window.__reviewProgressionHeldStateMessage;
     };
+    window.__reviewProgressionHoldNextStateRead = () => { holdNextStateRead = true; return true; };
     window.__reviewProgressionRespondState = (messageId) => {
       const wanted = String(messageId || '');
       const entries = pendingStateReads.filter((entry) => entry.messageId === wanted);
@@ -795,10 +823,17 @@ async function installBridge() {
       }
       return entries.length;
     };
+    window.__reviewProgressionRespondNextStateRead = () => {
+      const entry = pendingStateReads.shift();
+      if (!entry) return { delivered: false, messageId: '' };
+      entry.callback({ ok: true, payload: stateForContext(entry.context), connection_state: { kind: 'ready', label: 'Ready', details: 'Synthetic fixture state.' } });
+      return { delivered: true, messageId: entry.messageId };
+    };
     window.__reviewProgressionPendingStateReadCount = (messageId = '') => {
       const wanted = String(messageId || '');
       return pendingStateReads.filter((entry) => !wanted || entry.messageId === wanted).length;
     };
+    window.__reviewProgressionResetReviewQueue = () => { reviewQueue = clone(reviewItems); providerFailure = false; return reviewQueue.length; };
     window.__reviewProgressionResetHandledQueue = () => { handledQueue = clone(handledItems); return handledQueue.length; };
     window.__reviewProgressionSetAsyncFollowUp = (enabled) => { staleAsyncFollowUpDone = Boolean(enabled); return staleAsyncFollowUpDone; };
     window.__reviewProgressionFailNextHandled = () => { forceHandledFailure = true; return true; };
@@ -884,6 +919,11 @@ async function installBridge() {
         const request = { type: message?.type || 'unknown', path: message?.path || '', method: message?.method || '', identity: context?.message_id || '' };
         append(request);
         if (message?.type === 'email-agent:get-state') {
+          if (holdNextStateRead) {
+            holdNextStateRead = false;
+            pendingStateReads.push({ messageId: context.message_id || '', context: clone(context), callback });
+            return true;
+          }
           if (!context?.message_id && window.__reviewProgressionCompletionMode) {
             pendingCompletions.push({ callback });
             return true;
@@ -1024,6 +1064,221 @@ async function progressionEvidence(step, beforeRequests = []) {
       after: requestSummary(requests),
       added: requests.slice(Array.isArray(beforeRequests) ? beforeRequests.length : 0),
     },
+  };
+}
+
+async function proveStaleActionResponseIsInert({ kind, outcome }) {
+  const handled = kind === "handled";
+  const source = handled
+    ? { messageId: "handled-a", subject: "Handled synthetic A", sender: "handled-a@example.test" }
+    : { messageId: "review-a", subject: "Finance approval A", sender: "a@example.test" };
+  const destination = handled
+    ? { messageId: "handled-b", subject: "Handled synthetic B", sender: "handled-b@example.test" }
+    : { messageId: "review-c", subject: "Finance approval C", sender: "c@example.test" };
+  const action = handled ? "confirm-handled-and-next" : "accept-suggestion";
+  const route = handled ? "/api/handled-review-acknowledge" : "/api/teach-apply";
+  const label = `${kind}-${outcome}-after-host-navigation`;
+
+  await evaluate("globalThis.__eaCompanionSingleton?.teardown(); true");
+  await evaluate(`window.__reviewProgressionPhase = ${JSON.stringify(handled ? "handled" : "review")}; window.__reviewProgressionCompletionMode = false; window.${handled ? "__reviewProgressionResetHandledQueue" : "__reviewProgressionResetReviewQueue"}()`);
+  await setHostDomMessage(source.messageId, source.subject, source.sender);
+  await setHostRoute(source.messageId);
+  await injectContentScript();
+  await waitFor(() => evaluate(`globalThis.__eaTestHooks?.getSnapshot()?.selectedEmail?.message_id === ${JSON.stringify(source.messageId)}`));
+  await evaluate("document.getElementById('ea-brand-toggle')?.click()");
+  await waitFor(() => evaluate(`Boolean(document.querySelector('[data-ea-action=${action}]'))`));
+  await send("Emulation.setDeviceMetricsOverride", { width: 756, height: 469, deviceScaleFactor: 1, mobile: false });
+  await evaluate("document.querySelector('#ea-workspace').style.minHeight = '900px'; true");
+  await seedScroll();
+
+  const activationBefore = await requestTrace();
+  await evaluate(`document.querySelector('[data-ea-action=${action}]')?.focus({ preventScroll: true })`);
+  await pressKey("Enter");
+  await waitFor(async () => (await requestTrace()).filter((request) => request.path === route).length === activationBefore.filter((request) => request.path === route).length + 1);
+  if (handled) {
+    await waitFor(() => evaluate("globalThis.__eaTestHooks.getSnapshot().handledProgressionFlight === true"));
+  } else {
+    await waitFor(() => evaluate("globalThis.__eaTestHooks.getSnapshot().optimisticDecision?.responseReceived === false"));
+  }
+
+  const navigationBefore = await requestTrace();
+  if (handled) {
+    await setHostDomMessage(destination.messageId, destination.subject, destination.sender);
+    await setHostRoute(destination.messageId);
+  } else {
+    await setHostMessageAndSettleLiveContext(destination.messageId, destination.subject, destination.sender);
+  }
+  await waitFor(() => evaluate(`globalThis.__eaTestHooks.getSnapshot().selectedEmail?.message_id === ${JSON.stringify(destination.messageId)} && globalThis.__eaTestHooks.getSnapshot().lastLiveContext?.message_id === ${JSON.stringify(destination.messageId)} && window.location.hash.endsWith(${JSON.stringify(`FM${destination.messageId}`)})`));
+  const navigationAfter = await requestTrace();
+  assert(
+    navigationAfter.filter((request) => request.type === "email-agent:get-state").length
+      === navigationBefore.filter((request) => request.type === "email-agent:get-state").length + 1,
+    `${label} performs exactly one navigation state read after real DOM plus route navigation`,
+  );
+  await seedScroll();
+  await evaluate("document.querySelector('#ea-brand-toggle')?.focus({ preventScroll: true })");
+  const beforeResponse = {
+    requests: await requestTrace(),
+    focus: await activeFocusSnapshot(),
+    scroll: await scrollSnapshot(),
+    surface: await staleActionSurfaceSnapshot(),
+  };
+
+  if (handled) {
+    if (outcome === "failure") {
+      await evaluate("window.__reviewProgressionFailNextHandled()");
+    }
+    assert(await evaluate(`window.__reviewProgressionRespondHandled(${JSON.stringify(source.messageId)}, ${outcome === "success"})`), `${label} dispatches the pending same-token handled response`);
+  } else {
+    assert(await evaluate(`window.__reviewProgressionRespondApply(${JSON.stringify(source.messageId)}, ${outcome === "success"})`), `${label} dispatches the pending same-token teach response`);
+  }
+
+  const afterResponse = {
+    requests: await requestTrace(),
+    focus: await activeFocusSnapshot(),
+    scroll: await scrollSnapshot(),
+    surface: await staleActionSurfaceSnapshot(),
+  };
+  const beforeSummary = requestSummary(beforeResponse.requests);
+  const afterSummary = requestSummary(afterResponse.requests);
+  assert(afterSummary.stateReads === beforeSummary.stateReads, `${label} schedules no duplicate state read`);
+  assert(afterSummary.analytics === beforeSummary.analytics, `${label} emits no stale analytics`);
+  assert(JSON.stringify(afterResponse.surface) === JSON.stringify(beforeResponse.surface), `${label} changes no new-message controls, lifecycle, receipt, or error`);
+  assertScrollUnchanged(beforeResponse.scroll, afterResponse.scroll, label);
+  assert(JSON.stringify(afterResponse.focus) === JSON.stringify(beforeResponse.focus), `${label} preserves focus`);
+  assert(
+    handled
+      ? (await evaluate("globalThis.__eaTestHooks.getSnapshot().handledProgressionFlight")) === false
+      : (await evaluate("globalThis.__eaTestHooks.getApplyState().applyInFlight")) === false,
+    `${label} safely releases the stale action flight`,
+  );
+
+  return {
+    step: label,
+    source,
+    destination,
+    outcome,
+    before: beforeResponse,
+    after: afterResponse,
+  };
+}
+
+async function staleActionSurfaceSnapshot() {
+  return evaluate(`(() => {
+    const snapshot = globalThis.__eaTestHooks.getSnapshot();
+    const workspace = document.querySelector('#ea-workspace');
+    return {
+      workspaceHtml: workspace?.innerHTML || '',
+      selectedContext: snapshot.selectedContext,
+      selectedEmail: snapshot.selectedEmail,
+      manualPreviewContext: snapshot.manualPreviewContext,
+      forcedHome: snapshot.forcedHome,
+      optimisticDecision: snapshot.optimisticDecision,
+      progressionCheck: snapshot.progressionCheck,
+      previousDecision: document.querySelector('[data-ea-previous-decision-status]')?.textContent || '',
+      progression: document.querySelector('[data-ea-review-progression]')?.textContent || '',
+      selectedReceipt: document.querySelector('[data-ea-selected-state=receipt], [data-ea-selected-state=teach-result-receipt], [data-ea-selected-state=handled-receipt]')?.textContent || '',
+      controls: Array.from(workspace?.querySelectorAll('button, input, select, textarea, a') || []).map((node) => ({
+        tag: node.tagName,
+        action: node.getAttribute('data-ea-action') || '',
+        text: node.textContent || '',
+        value: node.value || '',
+        disabled: Boolean(node.disabled),
+      })),
+    };
+  })()`);
+}
+
+async function proveStaleReconciliationResponseIsInert() {
+  const source = { messageId: "review-a", subject: "Finance approval A", sender: "a@example.test" };
+  const destination = { messageId: "review-c", subject: "Finance approval C", sender: "c@example.test" };
+  const label = "teach-reconciliation-after-host-navigation";
+
+  await evaluate("globalThis.__eaCompanionSingleton?.teardown(); true");
+  await evaluate("window.__reviewProgressionPhase = 'review'; window.__reviewProgressionCompletionMode = false; window.__reviewProgressionResetReviewQueue()");
+  await setHostDomMessage(source.messageId, source.subject, source.sender);
+  await setHostRoute(source.messageId);
+  await injectContentScript();
+  await waitFor(() => evaluate(`globalThis.__eaTestHooks?.getSnapshot()?.selectedEmail?.message_id === ${JSON.stringify(source.messageId)}`));
+  await evaluate("document.getElementById('ea-brand-toggle')?.click()");
+  await waitFor(() => evaluate("Boolean(document.querySelector('[data-ea-action=accept-suggestion]'))"));
+  await evaluate("document.getElementById('ea-brand-toggle')?.click()");
+  await waitFor(() => evaluate("Boolean(document.querySelector('[data-ea-selected-state=home]'))"));
+  await evaluate("document.querySelector('[data-ea-action=open-queue-finder]')?.click()");
+  await waitFor(() => evaluate("Boolean(document.querySelector('#ea-queue-query'))"));
+  await evaluate(`(() => {
+    const input = document.querySelector('#ea-queue-query');
+    input.value = ${JSON.stringify(source.sender)};
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    document.querySelector(${JSON.stringify(`[data-ea-queue-item=${source.messageId}]`)})?.click();
+    return true;
+  })()`);
+  await waitFor(() => evaluate(`globalThis.__eaTestHooks.getSnapshot().manualPreviewContext?.message_id === ${JSON.stringify(source.messageId)} && globalThis.__eaTestHooks.getSnapshot().queueMatchCount === 1`));
+  await send("Emulation.setDeviceMetricsOverride", { width: 756, height: 469, deviceScaleFactor: 1, mobile: false });
+  await evaluate("document.querySelector('#ea-workspace').style.minHeight = '900px'; true");
+  await seedScroll();
+
+  await evaluate("document.querySelector('[data-ea-action=accept-suggestion]')?.focus({ preventScroll: true })");
+  const activationBefore = await requestTrace();
+  await pressKey("Enter");
+  await waitFor(() => evaluate("globalThis.__eaTestHooks.getSnapshot().manualPreviewContext === null && document.querySelector('[data-ea-queue-no-results]')?.textContent.includes('No loaded review emails match')"));
+  assert(
+    (await requestTrace()).filter((request) => request.path === "/api/teach-apply").length
+      === activationBefore.filter((request) => request.path === "/api/teach-apply").length + 1,
+    `${label} sends exactly one current-only teaching request`,
+  );
+
+  await evaluate("window.__reviewProgressionHoldNextStateRead()");
+  assert(await evaluate("window.__reviewProgressionRespondApply('review-a', false)"), `${label} dispatches the source teaching failure while its host is current`);
+  await waitFor(() => evaluate("window.__reviewProgressionPendingStateReadCount() === 1"));
+
+  const navigationBefore = await requestTrace();
+  await setHostDomMessage(destination.messageId, destination.subject, destination.sender);
+  await setHostRoute(destination.messageId);
+  await waitFor(() => evaluate(`globalThis.__eaTestHooks.getSnapshot().selectedEmail?.message_id === ${JSON.stringify(destination.messageId)} && globalThis.__eaTestHooks.getSnapshot().lastLiveContext?.message_id === ${JSON.stringify(destination.messageId)} && window.location.hash.endsWith(${JSON.stringify(`FM${destination.messageId}`)})`));
+  const navigationAfter = await requestTrace();
+  assert(
+    navigationAfter.filter((request) => request.type === "email-agent:get-state" && request.identity === destination.messageId).length
+      === navigationBefore.filter((request) => request.type === "email-agent:get-state" && request.identity === destination.messageId).length + 1,
+    `${label} settles exactly one new-context state read after DOM plus route navigation`,
+  );
+  assert(await evaluate("window.__reviewProgressionPendingStateReadCount() === 1"), `${label} still holds the exact old reconciliation read`);
+
+  await seedScroll();
+  await evaluate("document.querySelector('#ea-brand-toggle')?.focus({ preventScroll: true })");
+  const beforeResponse = {
+    requests: await requestTrace(),
+    focus: await activeFocusSnapshot(),
+    scroll: await scrollSnapshot(),
+    surface: await staleActionSurfaceSnapshot(),
+    apply: await evaluate("globalThis.__eaTestHooks.getApplyState()"),
+  };
+  const reconciliationDelivery = await evaluate("window.__reviewProgressionRespondNextStateRead()");
+  assert(reconciliationDelivery.delivered, `${label} delivers exactly one old reconciliation response`);
+  const afterResponse = {
+    requests: await requestTrace(),
+    focus: await activeFocusSnapshot(),
+    scroll: await scrollSnapshot(),
+    surface: await staleActionSurfaceSnapshot(),
+    apply: await evaluate("globalThis.__eaTestHooks.getApplyState()"),
+  };
+  const beforeSummary = requestSummary(beforeResponse.requests);
+  const afterSummary = requestSummary(afterResponse.requests);
+  assert(afterSummary.stateReads === beforeSummary.stateReads, `${label} schedules no duplicate state read`);
+  assert(afterSummary.analytics === beforeSummary.analytics, `${label} emits no stale analytics`);
+  assert(JSON.stringify(afterResponse.surface) === JSON.stringify(beforeResponse.surface), `${label} changes no new-message controls, lifecycle, receipt, or error`);
+  assertScrollUnchanged(beforeResponse.scroll, afterResponse.scroll, label);
+  assert(JSON.stringify(afterResponse.focus) === JSON.stringify(beforeResponse.focus), `${label} preserves focus`);
+  assert(afterResponse.apply.applyInFlight === false, `${label} leaves the stale teaching flight safely released`);
+  assert(JSON.stringify(afterResponse.apply) === JSON.stringify(beforeResponse.apply), `${label} does not change the settled new-context apply lifecycle`);
+
+  return {
+    step: label,
+    source,
+    destination,
+    reconciliationReadIdentity: reconciliationDelivery.messageId,
+    before: beforeResponse,
+    after: afterResponse,
   };
 }
 

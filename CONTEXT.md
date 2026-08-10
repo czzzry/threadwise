@@ -1,7 +1,7 @@
 # CONTEXT.md
 
 Status: Current repo context
-Current as of: 2026-08-09
+Current as of: 2026-08-10
 
 This file is the short "you are here" guide for the repo.
 
@@ -35,9 +35,9 @@ Do not infer approval from `docs/v2-issue-map.md`, archived PRDs, or old handoff
 
 The founder has approved the Threadwise World-Class Triage Gauntlet in `docs/prd-threadwise-gauntlet-2026-08-09.md`. It preserves the existing Threadwise logo and Gmail-overlay architecture, excludes AI auto-response and writing, and uses Mail-0/Zero, Grammarly, Refined GitHub, Raycast, and Linear as the specified functionality and interaction bars.
 
-The Gauntlet is decomposed in `docs/threadwise-gauntlet-slice-map-2026-08-09.md`. Implementation still proceeds one triaged vertical slice at a time. The first-run companion slice in issue `#105` is implemented and won its second independent critic round at `97/100`; see `docs/handoff/2026-08-09-threadwise-gauntlet-onboarding.md`. Queue-local search and panel-scoped keyboard navigation in issue `#106` is also complete: its fourth fresh critic declared a WIN at `85/100` versus the documented `~70/100` baseline after real focus, nonzero-scroll, and explicit-exit corrections. See `docs/handoff/2026-08-09-threadwise-gauntlet-queue-navigation.md`. The contextual action panel in issue `#107` is complete: its third fresh critic declared a WIN at `94/100`, approximately `+24` over baseline, after closed-loop scroll/focus and collision-aware placement corrections. See `docs/handoff/2026-08-09-threadwise-gauntlet-contextual-actions.md`. Selected-email explanation and one-click correction in issue `#108` is also complete: its first fresh critic declared a WIN at `87/100`, `+17` over baseline, with five of six tasks and all safety gates clear. See `docs/handoff/2026-08-09-threadwise-gauntlet-selected-email-explanation.md`. High-throughput review completion in issue `#109` is implemented and validated, then paused by the founder after its final fresh critic scored `82/100` versus `~70/100` and awarded five of six tasks. The former stale completion-response race is closed; direct live-host anchoring still needs to be applied to late teach-apply and handled-acknowledgement callbacks before the slice can claim `WIN`. See `docs/handoff/2026-08-09-threadwise-gauntlet-review-progression.md`.
+The Gauntlet is decomposed in `docs/threadwise-gauntlet-slice-map-2026-08-09.md`. Implementation still proceeds one triaged vertical slice at a time. The first-run companion slice in issue `#105` is implemented and won its second independent critic round at `97/100`; see `docs/handoff/2026-08-09-threadwise-gauntlet-onboarding.md`. Queue-local search and panel-scoped keyboard navigation in issue `#106` is also complete: its fourth fresh critic declared a WIN at `85/100` versus the documented `~70/100` baseline after real focus, nonzero-scroll, and explicit-exit corrections. See `docs/handoff/2026-08-09-threadwise-gauntlet-queue-navigation.md`. The contextual action panel in issue `#107` is complete: its third fresh critic declared a WIN at `94/100`, approximately `+24` over baseline, after closed-loop scroll/focus and collision-aware placement corrections. See `docs/handoff/2026-08-09-threadwise-gauntlet-contextual-actions.md`. Selected-email explanation and one-click correction in issue `#108` is also complete: its first fresh critic declared a WIN at `87/100`, `+17` over baseline, with five of six tasks and all safety gates clear. See `docs/handoff/2026-08-09-threadwise-gauntlet-selected-email-explanation.md`. High-throughput review completion in issue `#109` is now complete: its final fresh critic declared a WIN at `96/100` versus the documented `~70/100` baseline after every direct and chained late-response boundary was anchored to the live provider, message, thread, URL, and route. See `docs/handoff/2026-08-09-threadwise-gauntlet-review-progression.md`.
 
-The founder requested a review checkpoint after slice 5. Do not begin slice 6 or another correction loop until the founder explicitly resumes the Gauntlet.
+The founder requested the Gauntlet stop after completing slice 5. Do not begin slice 6 until the founder explicitly resumes it.
 
 The universal Threadwise experience in `docs/prd-universal-threadwise-experience-2026-08-01.md` is implemented behind one minimized-by-default browser side panel for Gmail and ProtonMail. The two inboxes remain provider-scoped, while review, teaching, scope selection, optimistic advancement, background writes, retry, and activity use one implementation.
 
@@ -73,7 +73,7 @@ For the active Gauntlet direction and bounded slice, use:
 
 1. `docs/prd-threadwise-gauntlet-2026-08-09.md`
 2. `docs/threadwise-gauntlet-slice-map-2026-08-09.md`
-3. `docs/handoff/2026-08-09-threadwise-gauntlet-review-progression.md`, `docs/issues/109-make-optimistic-review-advancement-truthful.md`, and GitHub issue `#109` for the implemented but paused high-throughput review-completion slice
+3. `docs/handoff/2026-08-09-threadwise-gauntlet-review-progression.md`, `docs/issues/109-make-optimistic-review-advancement-truthful.md`, and GitHub issue `#109` for the completed high-throughput review-completion slice
 4. `docs/handoff/2026-08-09-threadwise-gauntlet-selected-email-explanation.md`, `docs/issues/108-attach-truthful-explanation-and-one-click-correction.md`, and GitHub issue `#108` for the completed selected-email explanation slice
 5. `docs/handoff/2026-08-09-threadwise-gauntlet-contextual-actions.md`, `docs/issues/107-add-contextual-action-panel-to-companion.md`, and GitHub issue `#107` for the completed contextual-action slice
 6. `docs/handoff/2026-08-09-threadwise-gauntlet-queue-navigation.md`, `docs/issues/106-add-queue-filtering-and-panel-keyboard-navigation.md`, and GitHub issue `#106` for the completed queue-local interaction slice

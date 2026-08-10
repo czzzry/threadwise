@@ -1,7 +1,7 @@
 # Issue 109: Make optimistic review advancement end in truthful completion
 
-Status: Implemented and validated; paused after fresh critic `PASS_NOT_WIN` at `82/100`
-Current as of: 2026-08-09
+Status: Completed; final fresh critic `WIN` at `96/100`
+Current as of: 2026-08-10
 GitHub issue: `#109`
 Parent: `#104`
 Depends on: `#106`, `#107`, and `#108` (completed)
@@ -130,10 +130,12 @@ The builder may narrow this set when an existing seam proves behavior more direc
 
 ## Implementation checkpoint
 
-The bounded implementation is present on `codex/threadwise-gauntlet` and passed the controlled synthetic gates. It preserves immediate optimistic advancement, adds exact-identity duplicate protection, keeps a truthful previous-decision lifecycle visible on the next item, and requires a fresh provider-scoped state before declaring the review queue complete.
+The bounded implementation is complete on `codex/threadwise-gauntlet` and passed the controlled synthetic gates. It preserves immediate optimistic advancement, adds exact-identity duplicate protection, keeps a truthful previous-decision lifecycle visible on the next item, and requires a fresh provider-scoped state before declaring the review queue complete.
 
-The final fresh-context critic scored the slice `82/100` versus an estimated `~70/100` baseline and awarded five of six fixed tasks. It confirmed that the former stale completion-response race is closed: a response arriving after DOM and route navigation is discarded before completion or lifecycle state can change, exactly one current-context read is issued, and focus and scroll remain stable.
+Every direct and chained late-response boundary now validates a captured live-host anchor before it can mutate UI or lifecycle state. The anchor covers provider, message, thread, page URL, and host route. This protects teach success and failure, handled acknowledgement success and failure, transport-failure reconciliation, and completion refreshes.
 
-The critic withheld `WIN` for one remaining bounded gap. Successful or failed `/api/teach-apply` and `/api/handled-review-acknowledge` callbacks still decide whether they may render from cached request/display identities. They do not yet share the direct live-host anchor validation used by completion-state responses. A late same-token response may therefore mutate cached UI after the real Gmail or Proton host has navigated to another message.
+The final fresh-context critic scored the complete slice `96/100` versus an estimated `~70/100` baseline and declared `WIN`. Five controlled host-navigation races proved unchanged new-message UI, controls, lifecycle, receipts, errors, focus, and nonzero Gmail/companion scroll; they also proved no duplicate reads or stale analytics and safe release of the old action flight.
 
-Per the founder's instruction, no further correction loop starts until this checkpoint has been reviewed. Resume by centralizing live-host anchor validation before every response-driven mutation and add controlled browser cases for valid same-token apply and handled responses arriving after real DOM plus route navigation.
+Validation passed with `42/42` contained dedicated screenshots, zero forbidden routes, `121/121` focused extension tests, `797/797` repository tests, and all prior queue-navigation, contextual-action, and selected-explanation browser validators. No live inbox, private email, OAuth, provider mutation, AI writing, logo, or overlay-architecture boundary changed.
+
+Per the founder's instruction, the Gauntlet stops after this slice. Do not begin slice 6 until the founder explicitly resumes it.

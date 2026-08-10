@@ -583,6 +583,36 @@
     ].join("|");
   }
 
+  function progressionAnchorPartMatches(expected, actual) {
+    return (
+      expected?.provider === actual?.provider
+      && expected?.messageId === actual?.messageId
+      && expected?.threadId === actual?.threadId
+      && expected?.pageUrl === actual?.pageUrl
+      && expected?.route === actual?.route
+    );
+  }
+
+  function currentProgressionHostAnchor(actualHostContext = null) {
+    const sampledHostContext = actualHostContext || sampleActualProgressionHostContext();
+    return progressionContextAnchorPart(sampledHostContext, {
+      pageUrl: window.location.href,
+      route: currentHostRoute(),
+    });
+  }
+
+  function progressionHostAnchorMatches(expectedHost, actualHostContext = null) {
+    const currentHost = currentProgressionHostAnchor(actualHostContext);
+    return Boolean(
+      expectedHost
+      && currentHost.provider
+      && currentHost.provider === String(ACTIVE_PROVIDER || "").trim().toLowerCase()
+      && currentHost.pageUrl === window.location.href
+      && currentHost.route === currentHostRoute()
+      && progressionAnchorPartMatches(expectedHost, currentHost)
+    );
+  }
+
   function currentProgressionDisplayContext() {
     if (manualPreviewContext?.message_id) {
       return manualPreviewContext;
@@ -605,11 +635,7 @@
   }
 
   function progressionContextAnchor(generation) {
-    const actualHostContext = sampleActualProgressionHostContext();
-    const host = progressionContextAnchorPart(actualHostContext, {
-      pageUrl: window.location.href,
-      route: currentHostRoute(),
-    });
+    const host = currentProgressionHostAnchor();
     const display = progressionContextAnchorPart(currentProgressionDisplayContext(), {
       pageUrl: host.pageUrl,
       route: host.route,
@@ -629,35 +655,16 @@
       return false;
     }
     const sampledHostContext = actualHostContext || sampleActualProgressionHostContext();
-    const currentHost = progressionContextAnchorPart(sampledHostContext, {
-      pageUrl: window.location.href,
-      route: currentHostRoute(),
-    });
+    const currentHost = currentProgressionHostAnchor(sampledHostContext);
     const currentDisplay = progressionContextAnchorPart(currentProgressionDisplayContext(), {
       pageUrl: currentHost.pageUrl,
       route: currentHost.route,
     });
-    const samePart = (expected, actual) => (
-      expected?.provider === actual?.provider
-      && expected?.messageId === actual?.messageId
-      && expected?.threadId === actual?.threadId
-      && expected?.pageUrl === actual?.pageUrl
-      && expected?.route === actual?.route
-    );
-    const actualHostIsTrustworthy = Boolean(
-      currentHost.provider
-      && currentHost.provider === String(ACTIVE_PROVIDER || "").trim().toLowerCase()
-      && currentHost.pageUrl === window.location.href
-      && currentHost.route === currentHostRoute()
-      && anchor.host?.messageId === currentHost.messageId
-      && anchor.host?.threadId === currentHost.threadId
-    );
-    const displayMatches = samePart(anchor.display, currentDisplay)
+    const displayMatches = progressionAnchorPartMatches(anchor.display, currentDisplay)
       && anchor.displayIdentity === progressionDisplayIdentity(currentDisplay);
     return (
       anchor.provider === String(ACTIVE_PROVIDER || "").trim().toLowerCase()
-      && actualHostIsTrustworthy
-      && samePart(anchor.host, currentHost)
+      && progressionHostAnchorMatches(anchor.host, sampledHostContext)
       && displayMatches
     );
   }
@@ -746,6 +753,29 @@
       && flight.token.generation === token.generation
       && flight.token.kind === token.kind,
     );
+  }
+
+  function progressionFlightHostIsCurrent(token) {
+    if (!token || !progressionFlightIsCurrent(token)) {
+      return false;
+    }
+    const flight = token.kind === "handled-review-acknowledge"
+      ? handledProgressionFlight
+      : optimisticDecision;
+    return progressionHostAnchorMatches(flight?.hostAnchor);
+  }
+
+  function releaseStaleProgressionFlight(token) {
+    if (!token || !progressionFlightIsCurrent(token)) {
+      return false;
+    }
+    if (token.kind === "handled-review-acknowledge") {
+      handledProgressionFlight = null;
+    } else if (optimisticDecision?.token?.token === token.token) {
+      optimisticDecision.flightActive = false;
+      applyInFlight = false;
+    }
+    return true;
   }
 
   function progressionResponseCanRender(token, responseState = null) {
@@ -3450,6 +3480,7 @@
     optimisticDecision = {
       token,
       identity,
+      hostAnchor: currentProgressionHostAnchor(),
       localAccepted: true,
       decisionKind: "teach-apply",
       providerWriteState: "working",
@@ -5721,7 +5752,11 @@
       kind: "handled-review-acknowledge",
       identity: current,
     });
-    handledProgressionFlight = { token, identity: current };
+    handledProgressionFlight = {
+      token,
+      identity: current,
+      hostAnchor: currentProgressionHostAnchor(),
+    };
     handledAdvanceError = "";
     chrome.runtime.sendMessage({
       type: "email-agent:api",
@@ -5732,6 +5767,10 @@
       },
     }, (response) => {
       if (!handledProgressionFlight || handledProgressionFlight.token.token !== token.token) {
+        return;
+      }
+      if (!progressionFlightHostIsCurrent(token)) {
+        releaseStaleProgressionFlight(token);
         return;
       }
       const responseState = response?.payload?.harness_state?.sidebar_state || null;
@@ -5836,6 +5875,10 @@
       type: "email-agent:get-state",
       context: selectedContext,
     }, (response) => {
+      if (requestIdentity && !progressionFlightHostIsCurrent(requestIdentity)) {
+        releaseStaleProgressionFlight(requestIdentity);
+        return;
+      }
       const payload = response?.payload;
       const sidebarState = payload?.sidebar_state || {};
       const selected = sidebarState.selected_email || {};
@@ -5926,12 +5969,16 @@
           : [],
       },
     }, (response) => {
-      applyInFlight = false;
-      const transportError = chrome.runtime.lastError?.message || "";
-      const rawError = transportError || (response && (response.payload?.error || response.error)) || "Could not apply the lesson.";
       if (requestToken && !progressionFlightIsCurrent(requestToken)) {
         return;
       }
+      if (requestToken && !progressionFlightHostIsCurrent(requestToken)) {
+        releaseStaleProgressionFlight(requestToken);
+        return;
+      }
+      applyInFlight = false;
+      const transportError = chrome.runtime.lastError?.message || "";
+      const rawError = transportError || (response && (response.payload?.error || response.error)) || "Could not apply the lesson.";
       const responseState = response?.payload?.sidebar_state || null;
       const requestMayRender = requestToken
         ? progressionResponseCanRender(requestToken, responseState)
