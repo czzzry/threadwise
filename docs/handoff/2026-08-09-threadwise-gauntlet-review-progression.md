@@ -87,4 +87,4 @@ This is a score for issue `#109` behavior, not for Threadwise's whole-product vi
 
 ## Stop point
 
-Issue `#109` is complete and may close. The founder asked to stop the Gauntlet after this slice. Do not triage or begin slice 6 until the founder explicitly resumes the run.
+Issue `#109` is complete and may close. Its founder pause was satisfied on 2026-08-11: the founder resumed the Gauntlet, approved the Variant C production milestone, and separately authorized Slice 7's truthful read-only Gmail coverage implementation. Keep this slice's live-host anchoring and real-queue progress semantics locked while implementing coverage.

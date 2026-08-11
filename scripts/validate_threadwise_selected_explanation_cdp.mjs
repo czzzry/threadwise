@@ -182,7 +182,22 @@ try {
   assert(await evaluate("document.querySelector('[data-ea-explanation-confidence]').textContent.trim() === 'High confidence'"), "high-confidence review shows the stored confidence band");
   assert(await evaluate("document.querySelector('[data-ea-explanation-queue-reason]').textContent.trim() === 'Waiting for your review'"), "review shows the pending queue reason");
   assert(await evaluate("document.querySelector('[data-ea-explanation-rationale]').textContent.includes('same-day approval')"), "review shows the stored rationale");
-  assert(await evaluate("document.querySelector('[data-ea-action=change-suggestion]')?.textContent.trim() === 'Change label'"), "review keeps one-click Change label visible");
+  assert(await evaluate("document.querySelectorAll('[data-tw-primary-action]').length === 1"), "review exposes exactly one visible primary action");
+  assert(await evaluate("!document.querySelector('[data-ea-action=change-suggestion]:not([data-ea-context-item])')"), "review keeps secondary correction out of the primary dock");
+  const correctionBeforeRequests = await requestCount();
+  await evaluate("document.querySelector('[data-ea-context-trigger]').click()");
+  await waitFor(() => evaluate("globalThis.__eaTestHooks.getContextActions().open && document.querySelector('[data-ea-context-item=change-label]')"));
+  assert(await evaluate("document.activeElement?.getAttribute('data-ea-context-item') === 'change-label'"), "one click opens and focuses Change label for keyboard discovery");
+  assert(await evaluate("document.querySelector('[data-ea-context-item=change-label]').getBoundingClientRect().height >= 44"), "contextual Change label keeps a 44px target");
+  await pressKey("Enter");
+  await waitFor(() => evaluate("document.querySelector('[data-ea-selected-state=change]') && !globalThis.__eaTestHooks.getContextActions().open"));
+  assert((await requestCount()) === correctionBeforeRequests, "opening and entering correction makes no provider request");
+  results.steps.push({ step: "contextual-correction-discovery", activation: "one pointer click then Enter", requests: await requestCount() });
+  await evaluate("document.querySelector('[data-ea-context-trigger]').click()");
+  await waitFor(() => evaluate("globalThis.__eaTestHooks.getContextActions().open && document.querySelector('[data-ea-context-item=cancel-change]')"));
+  await pressKey("Enter");
+  await waitFor(() => evaluate("document.querySelector('[data-ea-selected-state=review]') && !globalThis.__eaTestHooks.getContextActions().open"));
+  assert((await requestCount()) === correctionBeforeRequests, "cancelling correction makes no provider request");
   await captureViewportSet("high-confidence-review");
 
   activeStep = "evidence-pointer-focus-and-scroll";
@@ -213,7 +228,8 @@ try {
   assert(await evaluate("document.querySelector('[data-ea-explanation-confidence]').textContent.trim() === 'Low confidence'"), "low-confidence review shows Low confidence");
   assert(await evaluate("document.querySelector('[data-ea-explanation-queue-reason]').textContent.trim() === 'Threadwise needs your label'"), "no-label review names the label decision");
   assert(await evaluate("document.querySelector('[data-ea-explanation-rationale]').textContent.trim() === 'No classification rationale was stored for this email'"), "missing rationale uses the explicit fallback");
-  assert(await evaluate("document.querySelector('[data-ea-action=change-suggestion]')?.textContent.trim() === 'Change label'"), "no-label review keeps Change label directly hit-testable");
+  assert(await evaluate("document.querySelector('[data-tw-primary-action]')?.textContent.trim().startsWith('Choose label')"), "no-label review keeps label choice as its single valid primary action");
+  assert(await evaluate("document.querySelectorAll('[data-tw-primary-action]').length === 1"), "no-label review exposes exactly one primary action");
   await captureViewportSet("low-confidence-no-label-review");
 
   activeStep = "missing-evidence-review";
@@ -367,8 +383,28 @@ async function captureViewportSet(stateName) {
     const containment = await containmentSnapshot();
     assert(containment.contained, `${stateName} is contained at ${viewport.name}`);
     if (["high-confidence-review", "low-confidence-no-label-review", "write-unconfirmed-recovery"].includes(stateName)) {
-      const controls = await evaluate(`(() => { const node = document.querySelector('[data-ea-action="change-suggestion"]'); const rect = node?.getBoundingClientRect(); return { visible: Boolean(rect && rect.width > 0 && rect.height > 0), height: rect?.height || 0, text: node?.textContent.trim() || "" }; })()`);
-      assert(controls.visible && controls.height >= 44 && controls.text === "Change label", `${stateName} keeps a 44px Change label at ${viewport.name}`);
+      const controls = await evaluate(`(() => {
+        const primary = document.querySelector('[data-tw-primary-action]');
+        const trigger = document.querySelector('[data-ea-context-trigger]');
+        const directChange = document.querySelector('[data-ea-action="change-suggestion"]:not([data-ea-context-item])');
+        const primaryRect = primary?.getBoundingClientRect();
+        const triggerRect = trigger?.getBoundingClientRect();
+        return {
+          primaryCount: document.querySelectorAll('[data-tw-primary-action]').length,
+          primaryVisible: Boolean(primaryRect && primaryRect.width > 0 && Math.abs(primaryRect.height - 40) <= 1),
+          primaryText: primary?.textContent.trim() || "",
+          triggerWidth: triggerRect?.width || 0,
+          triggerHeight: triggerRect?.height || 0,
+          triggerVisible: Boolean(triggerRect && Math.abs(triggerRect.width - 38) <= 1 && Math.abs(triggerRect.height - 40) <= 1),
+          directChangeVisible: Boolean(directChange && directChange.getBoundingClientRect().width > 0 && directChange.getBoundingClientRect().height > 0),
+        };
+      })()`);
+      assert(controls.primaryCount === 1 && controls.primaryVisible, `${stateName} keeps exactly one Variant C 40px primary action at ${viewport.name}`);
+      if (stateName === "low-confidence-no-label-review") {
+        assert(controls.primaryText.startsWith("Choose label"), `${stateName} keeps Choose label primary at ${viewport.name}`);
+      } else {
+        assert(controls.triggerVisible && !controls.directChangeVisible, `${stateName} keeps correction contextual without a second visible primary at ${viewport.name}: ${JSON.stringify(controls)}`);
+      }
     }
     const outputPath = path.join(artifactRoot, `${stateName}-${viewport.name}.png`);
     await captureScreenshot(outputPath);
@@ -380,7 +416,8 @@ async function seedScroll() {
   await evaluate(`(() => { const content = document.getElementById('ea-content'); window.scrollTo(0, ${seededPageScrollY}); content.scrollTop = ${seededContentScrollTop}; return true; })()`);
   const snapshot = await scrollSnapshot();
   assert(snapshot.pageY === seededPageScrollY, `seeded Gmail-page scroll is ${seededPageScrollY}`);
-  assert(snapshot.contentScrollTop > 0, `seeded companion scroll is nonzero: ${snapshot.contentScrollTop}`);
+  const expectedContentScrollTop = Math.min(seededContentScrollTop, Math.max(0, snapshot.contentScrollHeight - snapshot.contentClientHeight));
+  assert(snapshot.contentScrollTop === expectedContentScrollTop, `seeded companion scroll matches available overflow: ${snapshot.contentScrollTop} of ${expectedContentScrollTop}`);
   return snapshot;
 }
 

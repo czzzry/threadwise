@@ -40,9 +40,8 @@ Each slice is a thin, demoable path. The Sol helm selects and triages one slice 
    - Type: AFK
    - Blocked by: Slice 2
    - Current issue: `#109`
-   - Status: Implemented and paused for founder review; final fresh critic `PASS_NOT_WIN` at `82/100` versus `~70/100`, five of six tasks won
+   - Status: Complete; final fresh critic WIN at `96/100` versus `~70/100`, with all live-host anchor boundaries protected
    - Outcome: Review → decision → background provider result → truthful receipt → next item → verified queue-complete state is fast, keyboard reachable, and never offers a nonexistent next item.
-   - Remaining bounded gap: late teach-apply and handled-acknowledgement callbacks need the same direct live-host anchor guard now protecting completion-state responses.
 
 6. **Bounded batch triage preview**
    - Type: AFK
@@ -52,6 +51,7 @@ Each slice is a thin, demoable path. The Sol helm selects and triages one slice 
 7. **Truthful zero and freshness states**
    - Type: AFK
    - Blocked by: Slice 5
+   - Status: Founder-approved and implementation-ready on 2026-08-11; visual authority is `codex/threadwise-coverage-prototype` commit `e4f1b58`, with an explicit user-triggered read-only `Check Gmail` refresh and LIVE Gmail deferred to a founder-present follow-up
    - Outcome: Distinguish verified provider Inbox zero, no Threadwise-reviewable items, stale sync, unavailable sync, unsynced mail, and unresolved items remaining.
 
 8. **Compact Home and activity hierarchy**

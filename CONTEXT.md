@@ -1,7 +1,7 @@
 # CONTEXT.md
 
 Status: Current repo context
-Current as of: 2026-08-10
+Current as of: 2026-08-11
 
 This file is the short "you are here" guide for the repo.
 
@@ -35,9 +35,11 @@ Do not infer approval from `docs/v2-issue-map.md`, archived PRDs, or old handoff
 
 The founder has approved the Threadwise World-Class Triage Gauntlet in `docs/prd-threadwise-gauntlet-2026-08-09.md`. It preserves the existing Threadwise logo and Gmail-overlay architecture, excludes AI auto-response and writing, and uses Mail-0/Zero, Grammarly, Refined GitHub, Raycast, and Linear as the specified functionality and interaction bars.
 
+On 2026-08-11 the founder approved the real-Gmail Variant C production visual milestone after the live offline/recovery correction. The next bounded slice is truthful provider coverage: a selected-message or narrow local snapshot must never be presented as if it represents the whole inbox. The founder approved the Variant C coverage prototype at `codex/threadwise-coverage-prototype` commit `e4f1b58`, chose an explicit user-triggered read-only `Check Gmail` refresh, and authorized Slice 7 implementation. Production work must keep selected-message handling and provider coverage as separate axes and must never route coverage through provider mutation behavior.
+
 The Gauntlet is decomposed in `docs/threadwise-gauntlet-slice-map-2026-08-09.md`. Implementation still proceeds one triaged vertical slice at a time. The first-run companion slice in issue `#105` is implemented and won its second independent critic round at `97/100`; see `docs/handoff/2026-08-09-threadwise-gauntlet-onboarding.md`. Queue-local search and panel-scoped keyboard navigation in issue `#106` is also complete: its fourth fresh critic declared a WIN at `85/100` versus the documented `~70/100` baseline after real focus, nonzero-scroll, and explicit-exit corrections. See `docs/handoff/2026-08-09-threadwise-gauntlet-queue-navigation.md`. The contextual action panel in issue `#107` is complete: its third fresh critic declared a WIN at `94/100`, approximately `+24` over baseline, after closed-loop scroll/focus and collision-aware placement corrections. See `docs/handoff/2026-08-09-threadwise-gauntlet-contextual-actions.md`. Selected-email explanation and one-click correction in issue `#108` is also complete: its first fresh critic declared a WIN at `87/100`, `+17` over baseline, with five of six tasks and all safety gates clear. See `docs/handoff/2026-08-09-threadwise-gauntlet-selected-email-explanation.md`. High-throughput review completion in issue `#109` is now complete: its final fresh critic declared a WIN at `96/100` versus the documented `~70/100` baseline after every direct and chained late-response boundary was anchored to the live provider, message, thread, URL, and route. See `docs/handoff/2026-08-09-threadwise-gauntlet-review-progression.md`.
 
-The founder requested the Gauntlet stop after completing slice 5. Do not begin slice 6 until the founder explicitly resumes it.
+The founder resumed the Gauntlet on 2026-08-11, approved the Variant C production visual milestone, then approved the Slice 7 coverage prototype and read-only refresh contract. Slice 7 is implementation-ready as one bounded founder-reviewable checkpoint; LIVE Gmail remains a separate founder-present follow-up gate.
 
 The universal Threadwise experience in `docs/prd-universal-threadwise-experience-2026-08-01.md` is implemented behind one minimized-by-default browser side panel for Gmail and ProtonMail. The two inboxes remain provider-scoped, while review, teaching, scope selection, optimistic advancement, background writes, retry, and activity use one implementation.
 

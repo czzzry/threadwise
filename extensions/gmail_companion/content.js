@@ -34,7 +34,7 @@
   }
   const BRAND_ICON_URL = chrome.runtime.getURL("assets/brand/threadwise-app-icon.png");
   const ACTIVE_PROVIDER = PROVIDER.id;
-  const PANEL_WIDTH = "420px";
+  const PANEL_WIDTH = "408px";
   const PANEL_WIDTH_EXPANDED = "min(920px, calc(100vw - 84px))";
   const PANEL_WIDTH_MINIMIZED = "70px";
   const REFRESH_INTERVAL_MS = 5000;
@@ -96,6 +96,11 @@
   let refreshIntervalId = null;
   let understandingRefreshTimeoutId = null;
   let refreshInFlight = false;
+  let connectionPollInFlight = false;
+  let pendingRefreshAfterConnectionPoll = null;
+  let connectionRetryInFlight = false;
+  let connectionRetryFeedback = "";
+  let lastRecoveryMessage = "";
   let hashChangeListener = null;
   let popStateListener = null;
   let documentClickListener = null;
@@ -115,6 +120,7 @@
   let queueProvider = ACTIVE_PROVIDER;
   let pendingQueueNavigationFocus = null;
   let keyboardListener = null;
+  let documentKeydownListener = null;
   let contextMenuResizeListener = null;
   let contextMenuResizeObserver = null;
   let contextActionFocusPending = false;
@@ -122,6 +128,8 @@
   let contextActionsOpen = false;
   let contextActionsActiveIndex = 0;
   let contextActionsGeneration = 0;
+  let contextEscapeRetreatArmed = false;
+  let contextEscapeRetreatTimer = null;
   let explanationFocusPending = false;
   let reviewProgressionGeneration = 0;
   let stateReadGeneration = 0;
@@ -148,7 +156,7 @@
         return onboardingState;
       });
     refreshSelection();
-    refreshIntervalId = window.setInterval(refreshSelection, REFRESH_INTERVAL_MS);
+    refreshIntervalId = window.setInterval(pollConnectionHealth, REFRESH_INTERVAL_MS);
     hashChangeListener = () => {
       if (!invalidateProgressionForHostNavigation()) {
         refreshSelection();
@@ -168,6 +176,7 @@
     };
     window.addEventListener("resize", contextMenuResizeListener);
     documentClickListener = (event) => {
+      disarmContextEscapeRetreat();
       if (pendingQueueNavigationFocus && !isQueueFocusHandoffTrigger(event)) {
         clearPendingQueueNavigationFocus();
       }
@@ -176,6 +185,8 @@
       window.setTimeout(refreshSelection, 150);
     };
     document.addEventListener("click", documentClickListener, true);
+    documentKeydownListener = handleDocumentKeydown;
+    document.addEventListener("keydown", documentKeydownListener, true);
     runtimeMessageListener = (message) => {
       if (!message || message.type !== "email-agent:toggle") {
         return;
@@ -211,27 +222,65 @@
     setHtml(root, `
       <style id="ea-editorial-utility-styles">
         #${ROOT_ID} {
-          --tw-ink: #241812;
-          --tw-paper: #fff7e8;
-          --tw-paper-raised: #fffdf7;
-          --tw-hairline: rgba(36,24,18,.28);
-          --tw-focus: #3d6df2;
+          --tw-ink: #1f2328;
+          --tw-muted: #60666f;
+          --tw-faint: #8a9099;
+          --tw-surface: #fff;
+          --tw-subtle: #f6f7f9;
+          --tw-hover: #f0f2f5;
+          --tw-line: #e2e5e9;
+          --tw-line-strong: #cdd2d8;
+          --tw-accent: #635bff;
+          --tw-accent-hover: #554df0;
+          --tw-success: #16815d;
+          --tw-warning: #946200;
+          --tw-danger: #b42318;
+          --tw-focus: #1a73e8;
+          color: var(--tw-ink);
+          font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         }
         #${ROOT_ID} #ea-panel {
-          border-width: 2px !important;
-          box-shadow: 0 14px 34px rgba(36,24,18,.14) !important;
+          width: 100%;
+          border: 1px solid var(--tw-line-strong) !important;
+          border-radius: 12px !important;
+          background: var(--tw-surface) !important;
+          color: var(--tw-ink) !important;
+          box-shadow: 0 4px 8px rgba(31, 35, 40, .12) !important;
         }
         #${ROOT_ID} #ea-panel * {
           box-shadow: none !important;
         }
         #${ROOT_ID} #ea-header {
-          border-bottom: 1px solid var(--tw-hairline) !important;
+          box-sizing: border-box;
+          height: 52px !important;
+          flex: 0 0 52px;
+          grid-template-columns: 28px minmax(0, 1fr) 30px !important;
+          gap: 10px !important;
+          padding: 0 14px !important;
+          border-bottom: 1px solid var(--tw-line) !important;
+          background: rgba(255,255,255,.98) !important;
         }
-        #${ROOT_ID} #ea-brand-toggle,
-        #${ROOT_ID} #ea-status,
-        #${ROOT_ID} #ea-minimize {
-          border-width: 1px !important;
-          box-shadow: none !important;
+        #${ROOT_ID} #ea-brand-toggle {
+          width: 28px !important;
+          height: 28px !important;
+          border: 0 !important;
+          border-radius: 7px !important;
+          background: transparent !important;
+        }
+        #${ROOT_ID} #ea-header > div:first-child {
+          width: 28px;
+        }
+        #${ROOT_ID} #ea-header > div:nth-child(2) > div {
+          display: flex !important;
+          align-items: center;
+          gap: 9px !important;
+        }
+        #${ROOT_ID} #ea-title {
+          color: var(--tw-ink) !important;
+          font-size: 14px !important;
+          font-weight: 720 !important;
+          letter-spacing: -.02em !important;
+          line-height: 1.2 !important;
         }
         #${ROOT_ID} #ea-header-tagline {
           display: none !important;
@@ -239,16 +288,166 @@
         #${ROOT_ID} #ea-status {
           min-width: 0;
           max-width: 100%;
+          padding: 0 !important;
+          border: 0 !important;
+          border-radius: 0 !important;
+          background: transparent !important;
+          color: var(--tw-muted) !important;
+          font-size: 12px !important;
+          font-weight: 500 !important;
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
         }
+        #${ROOT_ID} #ea-minimize {
+          width: 30px;
+          height: 30px;
+          display: grid !important;
+          place-items: center;
+          padding: 0 !important;
+          border: 0 !important;
+          border-radius: 7px !important;
+          background: transparent !important;
+          color: var(--tw-muted) !important;
+          font-size: 18px !important;
+          font-weight: 500 !important;
+          line-height: 1 !important;
+        }
+        #${ROOT_ID} #ea-minimize:hover,
+        #${ROOT_ID} #ea-brand-toggle:hover {
+          background: var(--tw-hover) !important;
+        }
         #${ROOT_ID} #ea-content {
           padding: 12px !important;
+          gap: 0 !important;
+          background: var(--tw-surface) !important;
+        }
+        #${ROOT_ID} #ea-content[data-ea-workspace-mode="review"] {
+          padding: 0 !important;
         }
         #${ROOT_ID} #ea-workspace > [data-ea-workspace-body] {
-          border: 1px solid var(--tw-hairline) !important;
+          border: 0 !important;
+          border-radius: 0 !important;
+          background: var(--tw-surface) !important;
+          color: var(--tw-ink) !important;
           box-shadow: none !important;
+        }
+        #${ROOT_ID} #ea-workspace > [data-ea-workspace-body="review"] {
+          padding: 0 !important;
+          overflow: hidden;
+          background: var(--tw-surface) !important;
+        }
+        #${ROOT_ID} [data-ea-current-message-context] {
+          padding: 15px 16px 13px;
+          border-bottom: 1px solid var(--tw-line);
+        }
+        #${ROOT_ID} [data-ea-current-message-context] > div:first-child > div:first-child > div:first-child {
+          color: var(--tw-ink) !important;
+          font-size: 14px !important;
+          font-weight: 650 !important;
+        }
+        #${ROOT_ID} [data-ea-current-message-context] [style*="color:#6b6255"],
+        #${ROOT_ID} [data-ea-review-progress] {
+          color: var(--tw-muted) !important;
+        }
+        #${ROOT_ID} [data-ea-review-progress-track] {
+          height: 3px;
+          margin-top: 12px;
+          overflow: hidden;
+          border-radius: 2px;
+          background: var(--tw-line);
+        }
+        #${ROOT_ID} [data-ea-review-progress-fill] {
+          height: 100%;
+          border-radius: inherit;
+          background: var(--tw-accent);
+        }
+        #${ROOT_ID} [data-ea-review-judgment] {
+          padding: 18px 16px 0;
+          color: var(--tw-ink) !important;
+        }
+        #${ROOT_ID} [data-ea-explanation-suggestion] {
+          color: var(--tw-ink) !important;
+          font-size: 19px !important;
+          font-weight: 700 !important;
+          letter-spacing: -.025em !important;
+          line-height: 1.2 !important;
+        }
+        #${ROOT_ID} [data-ea-explanation-confidence] {
+          color: var(--tw-success) !important;
+          padding: 2px 0 !important;
+          font-size: 11px !important;
+          font-weight: 650 !important;
+        }
+        #${ROOT_ID} [data-ea-explanation-rationale] {
+          max-width: 38ch;
+          margin-top: 8px !important;
+          color: var(--tw-muted) !important;
+          font-size: 13px;
+          line-height: 1.5;
+        }
+        #${ROOT_ID} [data-ea-explanation-queue-reason] {
+          display: flex;
+          align-items: center;
+          gap: 7px;
+          margin-top: 16px !important;
+          color: var(--tw-muted) !important;
+          font-size: 12px !important;
+          font-weight: 500 !important;
+        }
+        #${ROOT_ID} [data-ea-explanation-queue-reason]::before {
+          width: 7px;
+          height: 7px;
+          flex: 0 0 auto;
+          border-radius: 50%;
+          background: var(--tw-success);
+          content: "";
+        }
+        #${ROOT_ID} [data-ea-review-facts] {
+          margin: 18px 16px 0;
+          border-top: 1px solid var(--tw-line);
+        }
+        #${ROOT_ID} [data-ea-review-fact] {
+          display:flex;
+          justify-content:space-between;
+          gap:18px;
+          padding:10px 0;
+          border-bottom:1px solid var(--tw-line);
+          color:var(--tw-ink);
+          font-size:12px;
+        }
+        #${ROOT_ID} [data-ea-review-fact] > span {
+          color: var(--tw-muted) !important;
+        }
+        #${ROOT_ID} [data-ea-review-fact] > strong {
+          font-weight: 620 !important;
+        }
+        #${ROOT_ID} [data-ea-review-dock] {
+          display:grid;
+          grid-template-columns:minmax(0,1fr) 38px;
+          gap:8px;
+          padding:12px 14px;
+          margin-top: 18px;
+          border-top: 1px solid var(--tw-line);
+          background: var(--tw-surface);
+        }
+        #${ROOT_ID} [data-ea-review-dock] #ea-context-actions {
+          min-width:0;
+        }
+        #${ROOT_ID} [data-ea-review-dock] [data-ea-context-actions-surface] {
+          margin-top:0 !important;
+          height:100%;
+        }
+        #${ROOT_ID} [data-ea-review-dock] [data-ea-context-trigger] {
+          width:38px !important;
+          min-height:40px !important;
+          height:40px !important;
+          padding:0 !important;
+          border: 1px solid var(--tw-line-strong) !important;
+          border-radius: 8px !important;
+          background: var(--tw-surface) !important;
+          color: var(--tw-ink) !important;
+          font-size:18px !important;
         }
         #${ROOT_ID} #ea-workspace [data-ea-selected-state],
         #${ROOT_ID} #ea-workspace [data-ea-selected-state] * {
@@ -256,25 +455,174 @@
         }
         #${ROOT_ID} #ea-panel button:not([data-tw-primary-action]),
         #${ROOT_ID} #ea-panel a:not([data-tw-primary-action]) {
-          border-width: 1px !important;
           box-shadow: none !important;
         }
         #${ROOT_ID} #ea-panel button:not([data-tw-primary-action])[style*="background:#2eb67d"],
         #${ROOT_ID} #ea-panel button:not([data-tw-primary-action])[style*="background:#3d6df2"],
         #${ROOT_ID} #ea-panel button:not([data-tw-primary-action])[style*="background:#ffc64a"] {
-          background: var(--tw-paper-raised) !important;
+          background: var(--tw-surface) !important;
           color: var(--tw-ink) !important;
         }
         #${ROOT_ID} #ea-panel [data-tw-primary-action] {
-          border-width: 2px !important;
-          box-shadow: 3px 3px 0 var(--tw-ink) !important;
+          border: 0 !important;
+          border-radius: 8px !important;
+          background:var(--tw-accent) !important;
+          color:#fff !important;
+          box-shadow: none !important;
+        }
+        #${ROOT_ID} #ea-panel [data-tw-primary-action]:hover {
+          background: var(--tw-accent-hover) !important;
+        }
+        #${ROOT_ID} [data-ea-review-dock] [data-tw-primary-action] {
+          min-height: 40px !important;
+          height: 40px;
+          padding: 0 12px !important;
+          font-size: 14px !important;
+          font-weight: 680 !important;
         }
         #${ROOT_ID} :where(button, a, input, select, textarea, summary, [tabindex]):focus-visible {
-          outline: 3px solid var(--tw-focus) !important;
+          outline: 2px solid var(--tw-focus) !important;
           outline-offset: 2px !important;
         }
         #${ROOT_ID} #ea-panel [data-tw-primary-action]:focus-visible {
-          box-shadow: 3px 3px 0 var(--tw-ink) !important;
+          box-shadow: none !important;
+        }
+        #${ROOT_ID} [data-ea-recovery-surface] {
+          display: grid;
+          gap: 0;
+          padding: 18px 16px 16px;
+          color: var(--tw-ink);
+        }
+        #${ROOT_ID} [data-ea-recovery-eyebrow] {
+          display: flex;
+          align-items: center;
+          gap: 7px;
+          color: var(--tw-muted);
+          font-size: 12px;
+          font-weight: 600;
+          line-height: 1.3;
+        }
+        #${ROOT_ID} [data-ea-recovery-eyebrow]::before {
+          width: 7px;
+          height: 7px;
+          flex: 0 0 auto;
+          border-radius: 50%;
+          background: var(--tw-danger);
+          content: "";
+        }
+        #${ROOT_ID} [data-ea-recovery-surface][data-ea-retry-state="checking"] [data-ea-recovery-eyebrow]::before,
+        #${ROOT_ID} [data-ea-recovery-surface][data-ea-recovery-kind="connecting"] [data-ea-recovery-eyebrow]::before,
+        #${ROOT_ID} [data-ea-recovery-surface][data-ea-recovery-kind="loading"] [data-ea-recovery-eyebrow]::before {
+          background: var(--tw-accent);
+        }
+        #${ROOT_ID} [data-ea-recovery-title] {
+          margin: 10px 0 0;
+          color: var(--tw-ink);
+          font-size: 19px;
+          font-weight: 700;
+          letter-spacing: -.025em;
+          line-height: 1.25;
+        }
+        #${ROOT_ID} [data-ea-recovery-copy] {
+          max-width: 38ch;
+          margin: 8px 0 0;
+          color: var(--tw-muted);
+          font-size: 13px;
+          line-height: 1.5;
+        }
+        #${ROOT_ID} [data-ea-recovery-action] {
+          width: 100%;
+          min-height: 40px !important;
+          margin-top: 18px;
+          padding: 0 12px !important;
+          font-size: 14px;
+          font-weight: 680 !important;
+        }
+        #${ROOT_ID} [data-ea-recovery-action][disabled] {
+          background: #ebeafd !important;
+          color: #7771c8 !important;
+          cursor: wait !important;
+        }
+        #${ROOT_ID} [data-ea-recovery-status] {
+          min-height: 18px;
+          margin-top: 8px;
+          color: var(--tw-muted);
+          font-size: 12px;
+          line-height: 1.45;
+        }
+        #${ROOT_ID} [data-ea-recovery-details] {
+          margin-top: 15px;
+          padding-top: 11px;
+          border-top: 1px solid var(--tw-line);
+          color: var(--tw-muted);
+          font-size: 12px;
+          line-height: 1.45;
+        }
+        #${ROOT_ID} [data-ea-recovery-details] summary {
+          width: max-content;
+          cursor: pointer;
+          color: var(--tw-muted) !important;
+          font-weight: 600 !important;
+        }
+        #${ROOT_ID} [data-ea-recovery-diagnostic] {
+          display: grid;
+          gap: 8px;
+          margin-top: 10px;
+          padding: 10px;
+          border: 1px solid var(--tw-line);
+          border-radius: 8px;
+          background: var(--tw-subtle);
+          overflow-wrap: anywhere;
+        }
+        #${ROOT_ID} [data-ea-recovery-diagnostic] strong {
+          color: var(--tw-ink);
+          font-weight: 620;
+        }
+        #${ROOT_ID} [data-ea-recovery-progress] {
+          height: 3px;
+          margin-top: 18px;
+          overflow: hidden;
+          border-radius: 2px;
+          background: var(--tw-line);
+        }
+        #${ROOT_ID} [data-ea-recovery-progress] > span {
+          display: block;
+          width: 42%;
+          height: 100%;
+          border-radius: inherit;
+          background: var(--tw-accent);
+          animation: ea-recovery-progress 1.2s ease-in-out infinite alternate;
+        }
+        @keyframes ea-recovery-progress {
+          from { transform: translateX(-15%); }
+          to { transform: translateX(150%); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          #${ROOT_ID} [data-ea-recovery-progress] > span {
+            animation: none;
+            transform: none;
+          }
+        }
+        #${ROOT_ID} #ea-workspace [data-ea-selected-state] [style*="background:#fff4dd"],
+        #${ROOT_ID} #ea-workspace [data-ea-selected-state] [style*="background:#fff8eb"],
+        #${ROOT_ID} #ea-workspace [data-ea-selected-state] [style*="background:#f5efe2"] {
+          background: var(--tw-subtle) !important;
+          color: var(--tw-ink) !important;
+        }
+        #${ROOT_ID}[data-ea-minimized="true"] #ea-panel {
+          border-color: transparent !important;
+          background: transparent !important;
+          box-shadow: none !important;
+        }
+        #${ROOT_ID}[data-ea-minimized="true"] #ea-header {
+          height: 48px !important;
+          grid-template-columns: 28px !important;
+          justify-content: center;
+          padding: 10px !important;
+          border: 0 !important;
+          border-radius: 12px;
+          background: var(--tw-surface) !important;
+          box-shadow: 0 2px 6px rgba(31,35,40,.12) !important;
         }
         @media (min-width: 481px) and (max-height: 520px) {
           #${ROOT_ID}:not([data-ea-minimized="true"]) {
@@ -282,6 +630,35 @@
           }
           #${ROOT_ID}:not([data-ea-minimized="true"]) #ea-panel {
             max-height: calc(100vh - 14px) !important;
+          }
+          #${ROOT_ID} [data-ea-review-facts] {
+            margin-top: 14px;
+          }
+          #${ROOT_ID} [data-ea-review-fact] {
+            padding: 9px 0;
+          }
+          #${ROOT_ID} [data-ea-review-dock] {
+            padding: 10px 14px;
+          }
+          #${ROOT_ID} [data-ea-recovery-surface] {
+            padding: 14px;
+          }
+          #${ROOT_ID} [data-ea-recovery-action] {
+            margin-top: 14px;
+          }
+          #${ROOT_ID} [data-ea-recovery-details] {
+            margin-top: 11px;
+            padding-top: 9px;
+          }
+          #${ROOT_ID} #ea-workspace:has([data-ea-explanation-disclosure]) [data-ea-review-judgment] {
+            padding-top: 14px;
+          }
+          #${ROOT_ID} #ea-workspace:has([data-ea-explanation-disclosure]) [data-ea-explanation-queue-reason] {
+            margin-top: 10px !important;
+          }
+          #${ROOT_ID} #ea-workspace:has([data-ea-explanation-disclosure]) [data-ea-explanation-disclosure] {
+            margin-top: 6px !important;
+            padding: 3px 2px !important;
           }
         }
         @media (max-width: 480px) {
@@ -297,14 +674,12 @@
             max-height: calc(100vh - 16px) !important;
           }
           #${ROOT_ID}:not([data-ea-minimized="true"]) #ea-header {
-            grid-template-columns: 36px minmax(0, 1fr) auto !important;
-            gap: 8px !important;
-            padding: 10px !important;
+            grid-template-columns: 28px minmax(0, 1fr) 30px !important;
           }
           #${ROOT_ID} #ea-brand-toggle {
-            width: 34px !important;
-            height: 34px !important;
-            border-radius: 10px !important;
+            width: 28px !important;
+            height: 28px !important;
+            border-radius: 7px !important;
           }
           #${ROOT_ID} #ea-title {
             min-width: 0;
@@ -318,15 +693,14 @@
             font-size: .66rem !important;
           }
           #${ROOT_ID} #ea-minimize {
-            min-width: 0;
-            padding: 7px 8px !important;
-            font-size: .78rem !important;
+            width: 30px;
+            height: 30px;
           }
           #${ROOT_ID} #ea-content {
             padding: 10px !important;
           }
-          #${ROOT_ID} #ea-workspace > [data-ea-workspace-body] {
-            padding: 14px !important;
+          #${ROOT_ID} #ea-workspace > [data-ea-workspace-body="review"] {
+            padding: 0 !important;
           }
         }
         @media (min-width: 481px) and (max-height: 520px) {
@@ -380,21 +754,21 @@
           }
         }
       </style>
-      <div id="ea-panel" style="background:#fff7e8;border:3px solid #241812;border-radius:18px;box-shadow:6px 6px 0 #241812;overflow:hidden;font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#241812;display:flex;flex-direction:column;max-height:calc(100vh - 28px);">
-        <div id="ea-header" style="display:grid;grid-template-columns:52px 1fr auto;align-items:center;gap:12px;padding:17px 18px;border-bottom:3px solid #241812;background:#fff4d7;">
+      <div id="ea-panel" style="background:#fff;border:1px solid #cdd2d8;border-radius:12px;box-shadow:0 4px 8px rgba(31,35,40,.12);overflow:hidden;font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#1f2328;display:flex;flex-direction:column;max-height:calc(100vh - 28px);">
+        <div id="ea-header" style="height:52px;display:grid;grid-template-columns:28px minmax(0,1fr) 30px;align-items:center;gap:10px;padding:0 14px;border-bottom:1px solid #e2e5e9;background:#fff;">
           <div style="display:flex;align-items:center;gap:10px;min-width:0;">
-            <button id="ea-brand-toggle" type="button" title="Open Threadwise" style="position:relative;width:42px;height:42px;border-radius:12px;border:2px solid #241812;box-shadow:3px 3px 0 #241812;flex:0 0 auto;background:#fff8df;padding:0;cursor:pointer;overflow:hidden;">
-              <img src="${BRAND_ICON_URL}" alt="" aria-hidden="true" data-ea-brand-img="true" style="width:100%;height:100%;display:block;object-fit:cover;background:#fff8df;">
+            <button id="ea-brand-toggle" type="button" title="Open Threadwise" style="position:relative;width:28px;height:28px;border-radius:7px;border:0;flex:0 0 auto;background:transparent;padding:0;cursor:pointer;overflow:hidden;">
+              <img src="${BRAND_ICON_URL}" alt="" aria-hidden="true" data-ea-brand-img="true" style="width:100%;height:100%;display:block;object-fit:cover;background:#fff;">
             </button>
           </div>
           <div style="display:flex;align-items:center;gap:10px;min-width:0;">
-            <div style="display:grid;gap:3px;min-width:0;">
-              <div id="ea-title" style="font-size:1.35rem;font-weight:840;letter-spacing:-0.04em;line-height:1;">Threadwise</div>
-              <div id="ea-status" style="display:inline-flex;align-items:center;gap:6px;width:max-content;border:2px solid #241812;border-radius:999px;padding:4px 8px;background:#d8f3ef;color:#0f766e;font-size:0.72rem;font-weight:800;line-height:1;">Connecting</div>
+            <div style="display:flex;align-items:center;gap:9px;min-width:0;">
+              <div id="ea-title" style="font-size:14px;font-weight:720;letter-spacing:-0.02em;line-height:1.2;">Threadwise</div>
+              <div id="ea-status" style="display:inline-flex;align-items:center;gap:6px;width:max-content;border:0;padding:0;background:transparent;color:#60666f;font-size:12px;font-weight:500;line-height:1.2;">Connecting</div>
               <div id="ea-header-tagline" style="color:#ad6400;font-family:ui-serif,Georgia,'Times New Roman',serif;font-size:0.58rem;font-weight:900;letter-spacing:0.08em;text-transform:uppercase;line-height:1.05;white-space:nowrap;">CLEAR THREADS. BETTER INBOX.</div>
             </div>
           </div>
-          <button id="ea-minimize" type="button" style="border:2px solid #241812;background:#e9efe2;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:760;box-shadow:2px 2px 0 #241812;">Minimize</button>
+          <button id="ea-minimize" type="button" aria-label="Minimize Threadwise" title="Minimize Threadwise" style="width:30px;height:30px;border:0;background:transparent;color:#60666f;border-radius:7px;padding:0;cursor:pointer;font:inherit;font-size:18px;line-height:1;">−</button>
         </div>
         <div id="ea-content" style="padding:14px;display:grid;gap:13px;overflow-y:auto;min-height:0;">
           <main id="ea-workspace"></main>
@@ -457,23 +831,24 @@
       root.dataset.eaFounderTools = founderFeedbackVisible ? "true" : "false";
     }
     root.style.width = minimized ? PANEL_WIDTH_MINIMIZED : (affectedReviewOpen ? PANEL_WIDTH_EXPANDED : PANEL_WIDTH);
-    header.style.gridTemplateColumns = minimized ? "1fr" : "52px 1fr auto";
-    header.style.padding = minimized ? "10px" : "17px 18px";
-    header.style.borderBottom = minimized ? "0" : "3px solid #241812";
-    button.style.display = minimized ? "none" : "block";
+    header.style.gridTemplateColumns = minimized ? "1fr" : "28px minmax(0, 1fr) 30px";
+    header.style.padding = minimized ? "10px" : "0 14px";
+    header.style.borderBottom = minimized ? "0" : "1px solid #e2e5e9";
+    button.style.setProperty("display", minimized ? "none" : "grid", "important");
     if (headerCopy) {
       headerCopy.style.display = minimized ? "none" : "flex";
     }
     brandButton.title = minimized ? `${statusCopy.label} - open Threadwise Home` : "Threadwise Home";
-    button.textContent = "Minimize";
-    button.title = statusCopy.label;
+    button.textContent = "−";
+    button.title = "Minimize Threadwise";
+    button.setAttribute("aria-label", "Minimize Threadwise");
     if (status) {
       status.textContent = statusCopy.label;
       status.style.background = statusCopy.background;
       status.style.color = statusCopy.foreground;
     }
     if (title) {
-      title.style.fontSize = minimized ? "1.12rem" : "1.35rem";
+      title.style.fontSize = "14px";
     }
     const subtitle = root.querySelector("#ea-status")?.nextElementSibling;
     if (subtitle) {
@@ -1129,8 +1504,67 @@
     return true;
   }
 
+  function pollConnectionHealth() {
+    if (!companionLifecycleActive || refreshInFlight || connectionPollInFlight || progressionCheck) {
+      return latestStateReadGeneration;
+    }
+    if (lastConnectionState.kind !== "ready") {
+      return refreshSelection();
+    }
+    connectionPollInFlight = true;
+    chrome.runtime.sendMessage({ type: "email-agent:probe-health" }, (response) => {
+      const runtimeError = chrome.runtime.lastError?.message || "";
+      if (releaseConnectionPoll()) {
+        return;
+      }
+      if (!companionLifecycleActive) {
+        return;
+      }
+      if (runtimeError) {
+        previousPayload = "";
+        renderError(runtimeError || "Could not reach extension background.", {
+          kind: "helper-unreachable",
+          label: "Helper unreachable",
+          details: runtimeError || "Could not reach extension background.",
+        });
+        return;
+      }
+      const connectionState = normalizeConnectionState(response && response.connection_state);
+      if (response?.ok && connectionState.kind === "ready") {
+        connectionRetryFeedback = "";
+        lastConnectionState = connectionState;
+        renderMinimized();
+        return;
+      }
+      previousPayload = "";
+      renderError((response && response.error) || "Could not reach local companion server.", connectionState);
+    });
+    return latestStateReadGeneration;
+  }
+
+  function releaseConnectionPoll() {
+    connectionPollInFlight = false;
+    const pendingRefresh = pendingRefreshAfterConnectionPoll;
+    pendingRefreshAfterConnectionPoll = null;
+    if (!companionLifecycleActive || !pendingRefresh) {
+      return false;
+    }
+    refreshSelection(pendingRefresh.force, pendingRefresh.options);
+    return true;
+  }
+
   function refreshSelection(force = false) {
     const options = arguments[1] || {};
+    if (connectionPollInFlight) {
+      const pendingRefresh = pendingRefreshAfterConnectionPoll;
+      if (force || !pendingRefresh || !pendingRefresh.force) {
+        pendingRefreshAfterConnectionPoll = {
+          force: Boolean(force || pendingRefresh?.force),
+          options,
+        };
+      }
+      return latestStateReadGeneration;
+    }
     const sampledHostContext = options.actualHostContext || sampleActualProgressionHostContext();
     const nextLiveContext = options.contextInvalidation
       ? sampledHostContext
@@ -1190,7 +1624,12 @@
         return;
       }
       refreshInFlight = false;
+      const manualConnectionRetry = connectionRetryInFlight;
+      connectionRetryInFlight = false;
       if (chrome.runtime.lastError) {
+        if (manualConnectionRetry) {
+          connectionRetryFeedback = "failed";
+        }
         previousPayload = "";
         if (options.progressionGeneration != null) {
           if (!progressionResponseContextIsCurrent(options.progressionGeneration)) {
@@ -1220,8 +1659,12 @@
         }
         const connectionState = normalizeConnectionState(response && response.connection_state);
         if (connectionState.kind === "ready") {
+          connectionRetryFeedback = "";
           renderLoadingState((response && response.error) || "Threadwise is connected but the inbox state is still loading.");
           return;
+        }
+        if (manualConnectionRetry) {
+          connectionRetryFeedback = "failed";
         }
         renderError((response && response.error) || "Could not reach local companion server.", connectionState);
         return;
@@ -1232,6 +1675,7 @@
         }
         return;
       }
+      connectionRetryFeedback = "";
       previousPayload = payload;
       lastConnectionState = normalizeConnectionState(response.connection_state || {
         kind: "ready",
@@ -1429,9 +1873,11 @@
       return;
     }
     renderStandaloneWorkspace("loading", `
-      <div data-ea-selected-state="loading" role="status" aria-live="polite" aria-busy="true" style="display:grid;gap:12px;">
-        <h2 style="margin:0;font-size:1.3rem;line-height:1.2;">Loading Threadwise</h2>
-        <div style="border-radius:14px;background:#d8f3ef;padding:12px;color:#0f766e;line-height:1.45;">${escapeHtml(message)}</div>
+      <div data-ea-selected-state="loading" data-ea-recovery-surface data-ea-recovery-kind="loading" role="status" aria-live="polite" aria-busy="true">
+        <div data-ea-recovery-eyebrow>Getting ready</div>
+        <h2 data-ea-recovery-title>Loading Threadwise\u2026</h2>
+        <p data-ea-recovery-copy>${escapeHtml(message)}</p>
+        <div data-ea-recovery-progress aria-hidden="true"><span></span></div>
       </div>
     `);
   }
@@ -1667,6 +2113,13 @@
   function connectionStatusCopy() {
     const state = normalizeConnectionState(lastConnectionState);
     const needsAttentionCount = ((lastSidebarState && lastSidebarState.needs_attention_items) || []).length;
+    if (connectionRetryInFlight) {
+      return {
+        label: "Checking\u2026",
+        background: "transparent",
+        foreground: "#60666f",
+      };
+    }
     if (state.kind !== "ready") {
       if (state.kind === "wrong-service") {
         return {
@@ -1726,52 +2179,102 @@
 
   function renderError(message, connectionState) {
     lastConnectionState = normalizeConnectionState(connectionState || lastConnectionState);
+    lastRecoveryMessage = String(message || lastRecoveryMessage || "Threadwise did not return a response.");
     if (onboardingVisible) {
       renderOnboarding();
       return;
     }
     const statusCopy = connectionStatusCopy();
-    const remediation = connectionRemediationCopy(lastConnectionState);
     const errorTitle = errorTitleForConnection(lastConnectionState);
-    const friendlyMessage = friendlyErrorMessage(message);
+    const friendlyMessage = recoveryFriendlyMessage(lastConnectionState, lastRecoveryMessage);
+    const recoveryKind = lastConnectionState.kind;
+    const retryLabel = connectionRetryInFlight ? "Checking\u2026" : "Check again";
+    const recoveryStatus = connectionRetryInFlight
+      ? "Trying the connection now\u2026"
+      : connectionRetryFeedback === "failed"
+        ? recoveryCheckedCopy(lastConnectionState)
+        : "Threadwise will keep checking automatically.";
     renderStandaloneWorkspace("error", `
-      <div data-ea-selected-state="error" role="alert" style="display:grid;gap:12px;">
-        <div style="margin-top:10px;border:2px solid #241812;border-radius:14px;background:#fff4dd;padding:12px;color:#8a4b00;line-height:1.45;box-shadow:2px 2px 0 rgba(36,24,18,.18);">
-          <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#8a4b00;font-weight:900;">${escapeHtml(statusCopy.label)}</div>
-          <div style="margin-top:8px;font-size:1.05rem;font-weight:840;color:#241812;">${escapeHtml(errorTitle)}</div>
-          <div style="margin-top:8px;">${escapeHtml(friendlyMessage)}</div>
-          <details style="margin-top:8px;">
-            <summary style="cursor:pointer;font-weight:800;color:#241812;">Technical detail</summary>
-            <div style="margin-top:6px;overflow-wrap:anywhere;">${escapeHtml(message)}</div>
-          </details>
-        </div>
-        <div style="margin-top:10px;border-radius:14px;background:#fffdf7;padding:12px;color:#8a4b00;line-height:1.45;">
-          <div style="font-weight:700;">What to do</div>
-          <div style="margin-top:6px;">Reconnect Threadwise before teaching corrections.</div>
-          <ul style="margin:8px 0 0;padding-left:18px;">
-            ${remediation.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
-          </ul>
-          <button type="button" data-ea-action="force-refresh" data-tw-primary-action style="margin-top:12px;min-height:44px;border:2px solid #241812;background:#ffc64a;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Check again</button>
-        </div>
-        <details style="margin-top:10px;color:#6b6255;line-height:1.45;">
-          <summary style="cursor:pointer;font-weight:800;color:#241812;">Connection details</summary>
-          <div style="margin-top:8px;overflow-wrap:anywhere;">${escapeHtml(lastConnectionState.details || "Threadwise did not provide a connection detail.")}</div>
+      <div
+        data-ea-selected-state="error"
+        data-ea-recovery-surface
+        data-ea-recovery-kind="${escapeHtml(recoveryKind)}"
+        data-ea-retry-state="${connectionRetryInFlight ? "checking" : connectionRetryFeedback === "failed" ? "checked" : "idle"}"
+        role="${connectionRetryInFlight ? "status" : "alert"}"
+        aria-live="polite"
+        aria-busy="${connectionRetryInFlight ? "true" : "false"}"
+      >
+        <div data-ea-recovery-eyebrow>${escapeHtml(connectionRetryInFlight ? "Checking\u2026" : statusCopy.label)}</div>
+        <h2 data-ea-recovery-title>${escapeHtml(errorTitle)}</h2>
+        <p data-ea-recovery-copy>${escapeHtml(friendlyMessage)}</p>
+        <button
+          type="button"
+          data-ea-action="force-refresh"
+          data-ea-recovery-action
+          data-tw-primary-action
+          ${connectionRetryInFlight ? "disabled" : ""}
+          aria-busy="${connectionRetryInFlight ? "true" : "false"}"
+        >${escapeHtml(retryLabel)}</button>
+        <div data-ea-recovery-status role="status">${escapeHtml(recoveryStatus)}</div>
+        <details data-ea-recovery-details>
+          <summary>Details</summary>
+          <div data-ea-recovery-diagnostic>
+            <div><strong>Reason:</strong> ${escapeHtml(recoveryReasonLabel(lastConnectionState))}</div>
+            <div><strong>Status:</strong> ${escapeHtml(lastConnectionState.details || "No status detail was returned.")}</div>
+            <div><strong>Last response:</strong> ${escapeHtml(lastRecoveryMessage)}</div>
+          </div>
         </details>
       </div>
     `);
   }
 
-  function errorTitleForConnection(state) {
-    if (state.kind === "wrong-service") {
-      return "Something else is using the Threadwise port.";
-    }
-    if (state.kind === "health-failed") {
-      return "Threadwise answered, but it is not ready.";
+  function recoveryReasonLabel(state) {
+    return {
+      "helper-unreachable": "unreachable",
+      "wrong-service": "wrong service",
+      "health-failed": "health failed",
+      connecting: "connecting",
+    }[state.kind] || state.kind || "unavailable";
+  }
+
+  function recoveryCheckedCopy(state) {
+    if (state.kind === "helper-unreachable") {
+      return "Still offline \u00b7 checked just now";
     }
     if (state.kind === "connecting") {
-      return "Threadwise is still connecting.";
+      return "Still connecting \u00b7 checked just now";
     }
-    return "Threadwise is not connected.";
+    return "Still unavailable \u00b7 checked just now";
+  }
+
+  function errorTitleForConnection(state) {
+    if (state.kind === "wrong-service") {
+      return "Threadwise can't connect.";
+    }
+    if (state.kind === "health-failed") {
+      return "Threadwise isn't ready yet.";
+    }
+    if (state.kind === "connecting") {
+      return "Connecting to Threadwise\u2026";
+    }
+    return "Threadwise isn't available.";
+  }
+
+  function recoveryFriendlyMessage(state, message) {
+    const normalized = String(message || "").toLowerCase();
+    if (state.kind === "wrong-service") {
+      return "Another app is using the connection Threadwise needs. Gmail is unchanged.";
+    }
+    if (state.kind === "health-failed") {
+      return "Threadwise responded, but it is not ready to review this email. Gmail is unchanged.";
+    }
+    if (state.kind === "connecting") {
+      return "This usually takes a few seconds. You can keep using Gmail while Threadwise connects.";
+    }
+    if (normalized.includes("aborterror") || normalized.includes("signal is aborted")) {
+      return "The last check was interrupted. Threadwise will try again automatically.";
+    }
+    return "Your review is safe. You can keep using Gmail while Threadwise reconnects.";
   }
 
   function friendlyErrorMessage(message) {
@@ -1876,6 +2379,7 @@
   }
 
   function invalidateContextActions() {
+    disarmContextEscapeRetreat();
     contextActionsOpen = false;
     contextActionsActiveIndex = 0;
     contextActionsGeneration += 1;
@@ -2076,6 +2580,10 @@
     }
 
     workspace.dataset.eaWorkspaceMode = mode;
+    const content = document.getElementById("ea-content");
+    if (content) {
+      content.dataset.eaWorkspaceMode = mode;
+    }
     if (mode !== "home") {
       setHtml(workspace, `
         <section data-ea-workspace-body="${escapeHtml(mode)}" style="border:3px solid #241812;border-radius:18px;padding:16px;background:#fffdf7;box-shadow:2px 2px 0 rgba(36,24,18,.18);">
@@ -2612,19 +3120,33 @@
       const label = suggestedLabelId ? decisionLabelName(suggestedLabelId) : "";
       const finishingProviderUpdate = selected.status === "write-unconfirmed";
       const localDecisionPending = Boolean(optimisticDecision?.flightActive);
+      const progress = currentReviewProgress(selected);
+      const progressPercent = Math.max(0, Math.min(100, (progress.value / progress.max) * 100));
+      const facts = reviewActionFacts(selected, label);
       setHtml(selectedEmailNode, `
-        <div data-ea-selected-state="review" style="display:grid;gap:12px;margin-top:10px;">
-          <div>
-            <div style="font-size:1.3rem;font-weight:840;line-height:1.15;overflow-wrap:anywhere;">${escapeHtml(selected.subject || "(no subject)")}</div>
-            <div style="margin-top:6px;color:#6b6255;font-size:0.88rem;overflow-wrap:anywhere;">${escapeHtml(selected.sender || "(unknown sender)")}</div>
+        <div data-ea-selected-state="review">
+          <section data-ea-current-message-context>
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;">
+              <div style="min-width:0;">
+                <div style="font-size:.93rem;font-weight:780;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(selected.subject || "(no subject)")}</div>
+                <div style="margin-top:3px;color:#6b6255;font-size:.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(selected.sender || "(unknown sender)")}</div>
+              </div>
+              <span data-ea-review-progress aria-label="Review progress ${escapeHtml(progress.label)}" style="flex:0 0 auto;color:#6b6255;font-size:.74rem;font-variant-numeric:tabular-nums;white-space:nowrap;">${escapeHtml(progress.label)}</span>
+            </div>
             ${reviewReceivedLabel(selected.received_at) ? `<div data-ea-review-received-at style="margin-top:4px;color:#6b6255;font-size:0.8rem;">${escapeHtml(reviewReceivedLabel(selected.received_at))}</div>` : ""}
-          </div>
+            <div data-ea-review-progress-track role="progressbar" aria-label="Review queue progress" aria-valuemin="0" aria-valuemax="${progress.max}" aria-valuenow="${progress.value}"><div data-ea-review-progress-fill style="width:${progressPercent}%;"></div></div>
+          </section>
           ${renderPreviousDecisionStatusHtml()}
           ${showingQueuePreview ? renderQueuePreviewNavigationHtml() : ""}
           ${renderSelectedExplanationHtml(selected, workspaceMode, { showEvidence: detailsExpanded })}
-          <div style="display:grid;gap:9px;">
-            ${label ? `<button type="button" data-ea-action="accept-suggestion" data-tw-primary-action ${localDecisionPending ? "disabled" : ""} style="min-height:44px;border:2px solid #241812;background:${localDecisionPending ? "#c7d8cc" : "#2eb67d"};color:#241812;border-radius:11px;padding:9px 12px;cursor:${localDecisionPending ? "wait" : "pointer"};font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">${localDecisionPending ? "Saving previous decision…" : finishingProviderUpdate ? `Apply ${escapeHtml(label)}` : `Accept ${escapeHtml(label)}`}</button>` : ""}
-            <button type="button" data-ea-action="change-suggestion" ${label ? "" : "data-tw-primary-action"} style="min-height:44px;border:${label ? "1px solid rgba(36,24,18,.16)" : "2px solid #241812"};background:${label ? "#f5efe2" : "#2eb67d"};color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:760;${label ? "" : "box-shadow:3px 3px 0 #241812;"}">Change label</button>
+          <div data-ea-review-facts aria-label="Review action details">
+            <div data-ea-review-fact><span style="color:#6b6255;">Action</span><strong style="text-align:right;">${escapeHtml(facts.action)}</strong></div>
+            <div data-ea-review-fact><span style="color:#6b6255;">Inbox</span><strong style="text-align:right;">${escapeHtml(facts.inbox)}</strong></div>
+            <div data-ea-review-fact><span style="color:#6b6255;">Scope</span><strong style="text-align:right;">${escapeHtml(facts.scope)}</strong></div>
+          </div>
+          <div data-ea-review-dock>
+            ${label ? `<button type="button" data-ea-action="accept-suggestion" data-tw-primary-action ${localDecisionPending ? "disabled" : ""} style="height:40px;border:0;background:${localDecisionPending ? "#a9a5ff" : "#635bff"};color:#fff;border-radius:8px;padding:0 12px;cursor:${localDecisionPending ? "wait" : "pointer"};font:inherit;font-weight:680;">${localDecisionPending ? "Saving previous decision…" : finishingProviderUpdate ? `Apply ${escapeHtml(label)}` : `Accept ${escapeHtml(label)}`} <span aria-hidden="true" style="float:right;opacity:.72;">↵</span></button>` : ""}
+            ${label ? "" : '<button type="button" data-ea-action="change-suggestion" data-tw-primary-action style="height:40px;border:0;background:#635bff;color:#fff;border-radius:8px;padding:0 12px;cursor:pointer;font:inherit;font-weight:680;">Choose label <span aria-hidden="true" style="float:right;opacity:.72;">↵</span></button>'}
           </div>
         </div>
       `);
@@ -3229,6 +3751,39 @@
     };
   }
 
+  function currentReviewProgress(selected) {
+    const items = filteredQueueItems("");
+    const identity = progressionIdentity(lastSidebarState, selected);
+    const index = items.findIndex((item) => reviewItemMatchesIdentity(item, identity));
+    const summaryCount = Number(lastSidebarState?.daily_summary?.needs_attention_count);
+    const total = items.length || (Number.isFinite(summaryCount) ? Math.max(0, summaryCount) : 0);
+    if (index >= 0) {
+      return {
+        label: `${index + 1} of ${Math.max(total, index + 1)}`,
+        value: index + 1,
+        max: Math.max(total, index + 1),
+      };
+    }
+    return {
+      label: total ? `${total} in review` : "Current email",
+      value: total ? 1 : 0,
+      max: Math.max(total, 1),
+    };
+  }
+
+  function reviewActionFacts(selected, label) {
+    const labelId = internalLabelId(label || decisionSuggestedLabelId(selected));
+    const removesFromGmailInbox = ACTIVE_PROVIDER === "gmail"
+      && ["promotions", "spam-low-value"].includes(labelId);
+    return {
+      action: label ? `Apply ${label} label` : "Choose a label",
+      inbox: removesFromGmailInbox
+        ? "Remove after provider confirmation"
+        : "Keep visible",
+      scope: "This email only",
+    };
+  }
+
   function openQueuePreviewItem(item, origin = "needs_attention_queue", preserveProgressionStatus = false) {
     if (!item || !findQueueItem(item.message_id)) {
       return false;
@@ -3642,17 +4197,21 @@
         ` : ""}
       `
       : "";
+    const quietReview = workspaceMode === "review";
+    const suggestionLabel = model.suggestionLabel
+      ? decisionLabelName(model.suggestionLabel)
+      : "Needs your label";
     return `
-      <section data-ea-selected-explanation style="margin-top:0;border:1px solid rgba(36,24,18,.18);border-radius:13px;background:#fff8eb;padding:11px 12px;color:#1f1a14;line-height:1.4;">
+      <section data-ea-selected-explanation ${quietReview ? "data-ea-review-judgment" : ""} style="${quietReview ? "" : "margin-top:0;border:1px solid rgba(36,24,18,.18);border-radius:13px;background:#fff8eb;padding:11px 12px;"}color:#1f1a14;line-height:1.4;">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;">
           <div style="min-width:0;">
-            <div style="font-size:.68rem;text-transform:uppercase;letter-spacing:.08em;color:#6b6255;font-weight:820;">Threadwise's read</div>
-            <div data-ea-explanation-suggestion style="margin-top:4px;font-weight:800;overflow-wrap:anywhere;">${escapeHtml(model.suggestionText)}</div>
+            ${quietReview ? "" : '<div style="font-size:.68rem;text-transform:uppercase;letter-spacing:.08em;color:#6b6255;font-weight:820;">Threadwise\'s read</div>'}
+            <div data-ea-explanation-suggestion style="${quietReview ? "font-size:1.25rem;letter-spacing:-.025em;" : "margin-top:4px;"}font-weight:800;overflow-wrap:anywhere;">${escapeHtml(quietReview ? suggestionLabel : model.suggestionText)}</div>
           </div>
-          <span data-ea-explanation-confidence style="flex:0 0 auto;border-radius:999px;background:#f1eadf;color:#5d5342;padding:5px 8px;font-size:.74rem;font-weight:800;white-space:nowrap;">${escapeHtml(model.confidenceText)}</span>
+          <span data-ea-explanation-confidence style="flex:0 0 auto;${quietReview ? "color:#0f766e;padding:4px 0;" : "border-radius:999px;background:#f1eadf;color:#5d5342;padding:5px 8px;"}font-size:.74rem;font-weight:800;white-space:nowrap;">${escapeHtml(model.confidenceText)}</span>
         </div>
-        <div data-ea-explanation-queue-reason style="margin-top:8px;color:#8a4b00;font-size:.86rem;font-weight:760;">${escapeHtml(model.queueReason)}</div>
-        <div data-ea-explanation-rationale style="margin-top:7px;overflow-wrap:anywhere;">${escapeHtml(model.rationale)}</div>
+        <div data-ea-explanation-rationale style="margin-top:8px;color:#5d5342;overflow-wrap:anywhere;">${escapeHtml(model.rationale)}</div>
+        <div data-ea-explanation-queue-reason style="margin-top:8px;color:#8a4b00;font-size:.82rem;font-weight:760;">${escapeHtml(model.queueReason)}</div>
         ${evidenceDisclosure}
       </section>
     `;
@@ -4500,6 +5059,7 @@
       workspaceMode,
       queuePreviewActive,
       detailsExpanded,
+      hasSuggestedLabel: Boolean(decisionSuggestedLabelId(selected)),
       canOpenEmail: Boolean(selected && selected.found),
       canKeepDiscussing: Boolean(teachPreview),
       providerChangeSucceeded: !labelWriteFailed && !inboxFailed,
@@ -4691,13 +5251,20 @@
     if (!host) {
       host = document.createElement("div");
       host.id = "ea-context-actions";
-      secondary.appendChild(host);
+    }
+    let parent = secondary;
+    if (workspaceMode === "review") {
+      parent = root.querySelector("[data-ea-review-dock]") || secondary;
+    }
+    if (host.parentNode !== parent) {
+      parent.appendChild(host);
     }
     host.dataset.eaWorkspaceMode = workspaceMode;
+    const quietDock = workspaceMode === "review";
     setHtml(host, `
       <div data-ea-context-actions-surface style="display:grid;gap:0;margin-top:14px;">
-        <button type="button" data-ea-context-trigger aria-haspopup="menu" aria-expanded="${contextActionsOpen ? "true" : "false"}" aria-controls="ea-context-menu" style="display:inline-flex;align-items:center;justify-content:space-between;gap:10px;min-height:44px;width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid rgba(36,24,18,.24);border-radius:10px;background:#fffdf7;color:#241812;cursor:pointer;font:inherit;font-weight:800;">
-          <span>Actions</span><span aria-hidden="true" style="color:#6b6255;font-size:.82rem;">· .</span>
+        <button type="button" data-ea-context-trigger aria-haspopup="menu" aria-expanded="${contextActionsOpen ? "true" : "false"}" aria-controls="ea-context-menu" aria-label="Open contextual actions" title="Actions (.)" style="display:inline-flex;align-items:center;justify-content:${quietDock ? "center" : "space-between"};gap:10px;min-height:44px;width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid rgba(36,24,18,.24);border-radius:9px;background:#fffdf7;color:#241812;cursor:pointer;font:inherit;font-weight:800;">
+          ${quietDock ? '<span aria-hidden="true">⋯</span>' : '<span>Actions</span><span aria-hidden="true" style="color:#6b6255;font-size:.82rem;">· .</span>'}
         </button>
       </div>
     `);
@@ -4751,6 +5318,43 @@
     contextActionsActiveIndex = 0;
     renderContextActions(contextActionsWorkspaceMode());
     return true;
+  }
+
+  function disarmContextEscapeRetreat() {
+    contextEscapeRetreatArmed = false;
+    if (contextEscapeRetreatTimer !== null) {
+      window.clearTimeout(contextEscapeRetreatTimer);
+      contextEscapeRetreatTimer = null;
+    }
+  }
+
+  function armContextEscapeRetreat() {
+    disarmContextEscapeRetreat();
+    if (minimized) {
+      return;
+    }
+    contextEscapeRetreatArmed = true;
+    contextEscapeRetreatTimer = window.setTimeout(disarmContextEscapeRetreat, 2000);
+  }
+
+  function handleDocumentKeydown(event) {
+    if (!contextEscapeRetreatArmed) {
+      return;
+    }
+    disarmContextEscapeRetreat();
+    const isEscape = event?.key === "Escape" || event?.key === "Esc";
+    const isModified = Boolean(event?.altKey || event?.ctrlKey || event?.metaKey || event?.shiftKey);
+    if (!isEscape || isModified || QUEUE_NAVIGATION.isEditableTarget?.(event?.target)) {
+      return;
+    }
+    const root = document.getElementById(ROOT_ID);
+    if (!root || minimized || contextActionsOpen) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    minimized = true;
+    renderMinimized();
   }
 
   function closeContextActions({ restoreFocus = false, render = true, hide = true } = {}) {
@@ -4854,6 +5458,7 @@
       if (contextCommand === "close") {
         event.preventDefault();
         closeContextActions({ restoreFocus: true });
+        armContextEscapeRetreat();
         return;
       }
       if (contextCommand === "consume") {
@@ -4966,6 +5571,20 @@
     const forceRefreshButton = event.target.closest("[data-ea-action='force-refresh']");
     if (forceRefreshButton) {
       event.preventDefault();
+      if (forceRefreshButton.hasAttribute("data-ea-recovery-action")) {
+        if (connectionRetryInFlight) {
+          return;
+        }
+        connectionRetryInFlight = true;
+        connectionRetryFeedback = "checking";
+        renderError(lastRecoveryMessage, lastConnectionState);
+        previousPayload = "";
+        if (refreshInFlight) {
+          return;
+        }
+        refreshSelection(true, { suppressTransition: true });
+        return;
+      }
       if (progressionCheck) {
         progressionCheck.status = "checking";
         gmailCheckResult = {
@@ -6408,6 +7027,12 @@
           contextActionsGeneration,
           reviewProgressionGeneration,
           stateReadGeneration,
+          refreshInFlight,
+          connectionPollInFlight,
+          pendingRefreshAfterConnectionPoll: Boolean(pendingRefreshAfterConnectionPoll),
+          connectionRetryInFlight,
+          connectionRetryFeedback,
+          connectionKind: lastConnectionState.kind,
           optimisticDecision: optimisticDecision
             ? {
                 token: optimisticDecision.token?.token || "",
@@ -6562,6 +7187,10 @@
         refreshSelection(true);
         return { ok: true };
       },
+      pollConnectionHealth() {
+        pollConnectionHealth();
+        return { ok: true };
+      },
       previewTeach(targetLabel, note) {
         if (!lastSidebarState || !lastSidebarState.selected_email || !lastSidebarState.selected_email.found) {
           return { ok: false, error: "selected-email-not-found" };
@@ -6644,6 +7273,8 @@
 
   function teardown() {
     companionLifecycleActive = false;
+    connectionPollInFlight = false;
+    pendingRefreshAfterConnectionPoll = null;
     if (refreshIntervalId !== null) {
       window.clearInterval(refreshIntervalId);
       refreshIntervalId = null;
@@ -6678,6 +7309,11 @@
       document.removeEventListener("click", documentClickListener, true);
       documentClickListener = null;
     }
+    if (documentKeydownListener) {
+      document.removeEventListener("keydown", documentKeydownListener, true);
+      documentKeydownListener = null;
+    }
+    disarmContextEscapeRetreat();
     const root = document.getElementById(ROOT_ID);
     if (root && keyboardListener) {
       root.removeEventListener("keydown", keyboardListener);

@@ -148,14 +148,21 @@ function run() {
 
   const root = node("ASIDE");
   const panelChild = node("DIV", {}, root);
+  const contextualTrigger = node("BUTTON", {}, root);
   const outside = node("DIV");
   assert.equal(navigation.classifyPanelKey({ key: "j", target: panelChild }, root), "next");
   assert.equal(navigation.classifyPanelKey({ key: "K", target: panelChild }, root), "previous");
   assert.equal(navigation.classifyPanelKey({ key: "Enter", target: root }, root), "primary-action");
   assert.equal(navigation.classifyPanelKey({ key: "Escape", target: panelChild }, root), "escape");
+  assert.equal(
+    navigation.classifyPanelKey({ key: "Escape", target: contextualTrigger }, root),
+    "escape",
+    "Escape retreats after a contextual menu restores focus to its interactive trigger",
+  );
   assert.equal(navigation.classifyPanelKey({ key: "j", target: outside }, root), null);
   assert.equal(navigation.classifyPanelKey({ key: "Enter", target: buttonChild }, root), null);
   assert.equal(navigation.classifyPanelKey({ key: "Escape", target: input }, root), null);
+  assert.equal(navigation.classifyPanelKey({ key: "Escape", target: contextualTrigger, shiftKey: true }, root), null);
   assert.equal(navigation.classifyPanelKey({ key: "j", target: panelChild, ctrlKey: true }, root), null);
   assert.equal(navigation.classifyPanelKey({ key: "x", target: panelChild }, root), null);
   assert.equal(navigation.classifyPanelKey({ key: "j", target: panelChild }), null);

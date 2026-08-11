@@ -261,23 +261,25 @@
   }
 
   function hasModifier(event) {
-    return Boolean(event?.altKey || event?.ctrlKey || event?.metaKey);
+    return Boolean(event?.altKey || event?.ctrlKey || event?.metaKey || event?.shiftKey);
   }
 
   function classifyPanelKey(event, root) {
     if (!event || typeof event !== "object") return null;
     const panelRoot = root || event.currentTarget;
     const target = event.target || panelRoot;
-    if (!isWithinRoot(target, panelRoot) || isInteractiveTarget(target) || hasModifier(event)) {
+    if (!isWithinRoot(target, panelRoot) || hasModifier(event)) {
       return null;
     }
+
+    if (event.key === "Escape" || event.key === "Esc") {
+      return isEditableTarget(target) ? null : "escape";
+    }
+    if (isInteractiveTarget(target)) return null;
 
     switch (event.key) {
       case "Enter":
         return "primary-action";
-      case "Escape":
-      case "Esc":
-        return "escape";
       case "j":
       case "J":
         return "next";

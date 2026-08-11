@@ -2,6 +2,7 @@
   const MAX_ACTIONS = 4;
 
   const ACTIONS = [
+    { id: "change-label", label: "Change label", dataAction: "change-suggestion" },
     { id: "open-email", label: "Open email", dataAction: "open-selected-gmail" },
     { id: "back-to-queue", label: "Back to queue", dataAction: "return-queue-home" },
     { id: "why", label: "Why", dataAction: "toggle-details" },
@@ -196,6 +197,8 @@
     const result = [];
     switch (mode) {
       case "review":
+        if (bool(input.hasSuggestedLabel)) addAction(result, "change-label", input);
+        if (input.canExplain !== false) addAction(result, "why", input);
         if (input.canOpenEmail !== false) addAction(result, "open-email", input);
         if (bool(input.queuePreviewActive)) addAction(result, "back-to-queue", input);
         break;

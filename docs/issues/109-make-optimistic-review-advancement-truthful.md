@@ -138,4 +138,4 @@ The final fresh-context critic scored the complete slice `96/100` versus an esti
 
 Validation passed with `42/42` contained dedicated screenshots, zero forbidden routes, `121/121` focused extension tests, `797/797` repository tests, and all prior queue-navigation, contextual-action, and selected-explanation browser validators. No live inbox, private email, OAuth, provider mutation, AI writing, logo, or overlay-architecture boundary changed.
 
-Per the founder's instruction, the Gauntlet stops after this slice. Do not begin slice 6 until the founder explicitly resumes it.
+The founder pause after this slice was satisfied. On 2026-08-11 the founder resumed the Gauntlet, approved the Variant C production milestone, and separately authorized Slice 7's truthful read-only Gmail coverage implementation. Issue `#109` remains complete; its review-queue progress semantics are a locked dependency for the new coverage work.

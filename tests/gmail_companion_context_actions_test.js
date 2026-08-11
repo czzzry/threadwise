@@ -29,12 +29,12 @@ function run() {
   )));
 
   assert.deepEqual(
-    ids(contextActions.deriveActions({ workspaceMode: "review" })),
-    ["open-email"],
+    ids(contextActions.deriveActions({ workspaceMode: "review", hasSuggestedLabel: true })),
+    ["change-label", "why", "open-email"],
   );
   assert.deepEqual(
-    ids(contextActions.deriveActions({ workspaceMode: "review", queuePreviewActive: true })),
-    ["open-email", "back-to-queue"],
+    ids(contextActions.deriveActions({ workspaceMode: "review", hasSuggestedLabel: true, queuePreviewActive: true })),
+    ["change-label", "why", "open-email", "back-to-queue"],
   );
   assert.deepEqual(
     ids(contextActions.deriveActions({ workspaceMode: "handled-receipt", detailsExpanded: false })),

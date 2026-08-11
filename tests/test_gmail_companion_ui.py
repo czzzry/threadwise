@@ -310,7 +310,7 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("return itemThreadId === current.threadId;", content_js)
 
     def test_handled_receipt_offers_a_direct_looks_right_next_action(self) -> None:
-        content_js = Path("extensions/gmail_companion/content.js").read_text()
+        content_js = Path("extensions/gmail_companion/content.js").read_text(encoding="utf-8")
 
         self.assertIn('data-ea-action="confirm-handled-and-next"', content_js)
         self.assertIn("Looks right · Next", content_js)
@@ -401,7 +401,7 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn('title: filter === "needs_attention_items" ? "Review queue complete"', content_js)
 
     def test_new_gmail_selection_leaves_home_for_a_reading_transition_immediately(self) -> None:
-        content_js = Path("extensions/gmail_companion/content.js").read_text()
+        content_js = Path("extensions/gmail_companion/content.js").read_text(encoding="utf-8")
 
         self.assertIn("renderSelectedEmailTransition(context)", content_js)
         self.assertIn("Reading this email…", content_js)
@@ -611,7 +611,7 @@ class GmailCompanionUiTests(unittest.TestCase):
             })
 
     def test_extension_renders_rule_before_requesting_deferred_inbox_impact(self) -> None:
-        content_js = Path("extensions/gmail_companion/content.js").read_text()
+        content_js = Path("extensions/gmail_companion/content.js").read_text(encoding="utf-8")
 
         self.assertIn('path: "/api/teach-preview-impact"', content_js)
         self.assertIn("Checking matching inbox emails…", content_js)
@@ -730,7 +730,7 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertTrue(preview["inbox_backfill"]["requires_confirmation"])
 
     def test_apply_included_writes_only_explicitly_reviewed_message_ids(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=sys.platform == "win32") as temp_dir:
             storage_dir = Path(temp_dir)
             gmail_client = MockGmailLabelClient(
                 search_results_by_query={
@@ -1150,6 +1150,124 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("${providerName} has not confirmed this label update", explanation_js)
         self.assertIn('["needs-attention", "write-unconfirmed"].includes(selected?.status)', content_js)
 
+    def test_extension_review_state_uses_the_approved_quiet_hybrid_hierarchy(self) -> None:
+        content_js = (
+            Path(__file__).parent.parent / "extensions" / "gmail_companion" / "content.js"
+        ).read_text()
+
+        review_renderer = content_js.split('workspaceMode === "review"', 1)[1].split(
+            'workspaceMode === "change"', 1
+        )[0]
+        self.assertIn("data-ea-current-message-context", review_renderer)
+        self.assertIn("data-ea-review-progress", review_renderer)
+        self.assertIn("data-ea-review-judgment", content_js)
+        self.assertIn("data-ea-review-facts", review_renderer)
+        self.assertIn(">Action<", review_renderer)
+        self.assertIn(">Inbox<", review_renderer)
+        self.assertIn(">Scope<", review_renderer)
+        self.assertIn('data-ea-review-dock', review_renderer)
+        self.assertEqual(review_renderer.count("data-tw-primary-action"), 2)
+        self.assertEqual(review_renderer.count('data-ea-action="change-suggestion"'), 1)
+        self.assertIn("function currentReviewProgress", content_js)
+        self.assertIn("function reviewActionFacts", content_js)
+        self.assertIn('parent = root.querySelector("[data-ea-review-dock]")', content_js)
+
+    def test_extension_review_shell_uses_variant_c_visual_contract(self) -> None:
+        content_js = (
+            Path(__file__).parent.parent / "extensions" / "gmail_companion" / "content.js"
+        ).read_text()
+
+        visual_styles = content_js.split(
+            '<style id="ea-editorial-utility-styles">', 1
+        )[1].split("</style>", 1)[0]
+        review_renderer = content_js.split('workspaceMode === "review"', 1)[1].split(
+            'workspaceMode === "change"', 1
+        )[0]
+
+        self.assertIn('const PANEL_WIDTH = "408px"', content_js)
+        for token in (
+            "--tw-ink: #1f2328",
+            "--tw-muted: #60666f",
+            "--tw-surface: #fff",
+            "--tw-line: #e2e5e9",
+            "--tw-line-strong: #cdd2d8",
+            "--tw-accent: #635bff",
+        ):
+            self.assertIn(token, visual_styles)
+        self.assertIn("height: 52px !important", visual_styles)
+        self.assertIn("width: 28px !important", visual_styles)
+        self.assertIn("border-radius: 12px !important", visual_styles)
+        self.assertIn("box-shadow: 0 4px 8px rgba(31, 35, 40, .12) !important", visual_styles)
+        self.assertIn("grid-template-columns:minmax(0,1fr) 38px", visual_styles)
+        self.assertIn("padding:12px 14px", visual_styles)
+        self.assertIn("background:var(--tw-accent) !important", visual_styles)
+        self.assertNotIn("#fff7e8", visual_styles)
+        self.assertNotIn("#241812", visual_styles)
+        self.assertNotIn("3px 3px", visual_styles)
+        self.assertNotIn("6px 6px", visual_styles)
+        self.assertIn("<div data-ea-review-facts", review_renderer)
+        self.assertNotIn("<summary>Action details", review_renderer)
+
+    def test_extension_recovery_surface_uses_variant_c_and_truthful_retry(self) -> None:
+        content_js = (
+            Path(__file__).parent.parent / "extensions" / "gmail_companion" / "content.js"
+        ).read_text()
+        background_js = (
+            Path(__file__).parent.parent / "extensions" / "gmail_companion" / "background.js"
+        ).read_text()
+
+        visual_styles = content_js.split(
+            '<style id="ea-editorial-utility-styles">', 1
+        )[1].split("</style>", 1)[0]
+        recovery_renderer = content_js.split("function renderError", 1)[1].split(
+            "function errorTitleForConnection", 1
+        )[0]
+        recovery_handler = content_js.split(
+            'const forceRefreshButton = event.target.closest("[data-ea-action=\'force-refresh\']")', 1
+        )[1].split("const runProviderSyncButton", 1)[0]
+
+        for marker in (
+            "data-ea-recovery-surface",
+            "data-ea-recovery-kind",
+            "data-ea-recovery-details",
+            "data-ea-recovery-status",
+        ):
+            self.assertIn(marker, recovery_renderer)
+        self.assertIn("#1f2328", visual_styles)
+        self.assertIn("#60666f", visual_styles)
+        self.assertIn("#e2e5e9", visual_styles)
+        self.assertIn("#cdd2d8", visual_styles)
+        self.assertIn("#635bff", visual_styles)
+        self.assertNotIn("#241812", recovery_renderer)
+        self.assertNotIn("#fff4dd", recovery_renderer)
+        self.assertNotIn("#fffdf7", recovery_renderer)
+        self.assertNotIn("startup helper", recovery_renderer.lower())
+        self.assertNotIn("local companion", recovery_renderer.lower())
+        self.assertIn(
+            r'const retryLabel = connectionRetryInFlight ? "Checking\u2026" : "Check again"',
+            recovery_renderer,
+        )
+        self.assertIn("connectionRetryInFlight ? \"disabled\" : \"\"", recovery_renderer)
+        self.assertIn("connectionRetryInFlight = true", recovery_handler)
+        self.assertIn('connectionRetryFeedback = "checking"', recovery_handler)
+        self.assertIn("if (refreshInFlight)", recovery_handler)
+        self.assertIn("refreshSelection(true, { suppressTransition: true })", recovery_handler)
+        self.assertIn("connectionRetryInFlight = false", content_js)
+        self.assertIn('connectionRetryFeedback = "failed"', content_js)
+        self.assertIn('connectionRetryFeedback = ""', content_js)
+        self.assertIn("Still offline", recovery_renderer)
+        self.assertIn("checked just now", recovery_renderer)
+        self.assertIn("REFRESH_INTERVAL_MS = 5000", content_js)
+        self.assertIn("function pollConnectionHealth()", content_js)
+        self.assertIn("window.setInterval(pollConnectionHealth, REFRESH_INTERVAL_MS)", content_js)
+        self.assertNotIn("window.setInterval(refreshSelection, REFRESH_INTERVAL_MS)", content_js)
+        self.assertIn("refreshInFlight || connectionPollInFlight || progressionCheck", content_js)
+        self.assertIn("pendingRefreshAfterConnectionPoll", content_js)
+        self.assertIn("function releaseConnectionPoll()", content_js)
+        self.assertIn('type: "email-agent:probe-health"', content_js)
+        self.assertIn('message.type === "email-agent:probe-health"', background_js)
+        self.assertIn("probeHealth()", background_js)
+
     def test_extension_keeps_refreshing_until_selected_email_is_ready(self) -> None:
         content_js = (
             Path(__file__).parent.parent / "extensions" / "gmail_companion" / "content.js"
@@ -1161,12 +1279,12 @@ class GmailCompanionUiTests(unittest.TestCase):
 
     def test_extension_uses_harness_state_and_clickable_summary_filters(self) -> None:
         repo_root = Path(__file__).resolve().parent.parent
-        background_js = (repo_root / "extensions" / "gmail_companion" / "background.js").read_text()
-        content_js = (repo_root / "extensions" / "gmail_companion" / "content.js").read_text()
+        background_js = (repo_root / "extensions" / "gmail_companion" / "background.js").read_text(encoding="utf-8")
+        content_js = (repo_root / "extensions" / "gmail_companion" / "content.js").read_text(encoding="utf-8")
         provider_adapter_js = (
             repo_root / "extensions" / "gmail_companion" / "provider_adapter.js"
-        ).read_text()
-        manifest = json.loads((repo_root / "extensions" / "gmail_companion" / "manifest.json").read_text())
+        ).read_text(encoding="utf-8")
+        manifest = json.loads((repo_root / "extensions" / "gmail_companion" / "manifest.json").read_text(encoding="utf-8"))
 
         self.assertIn("/api/harness-state", background_js)
         self.assertIn("/api/health", background_js)
@@ -1237,7 +1355,7 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("founderFeedbackVisible = false", content_js)
         self.assertIn("setFounderFeedbackVisible", content_js)
         self.assertIn("!minimized && founderFeedbackVisible", content_js)
-        self.assertIn("grid-template-columns: 36px minmax(0, 1fr) auto", content_js)
+        self.assertIn("grid-template-columns: 28px minmax(0, 1fr) 30px", content_js)
         self.assertIn('chrome.runtime.getURL("assets/brand/threadwise-app-icon.png")', content_js)
         self.assertIn("open Threadwise", content_js)
         self.assertIn("Check again", content_js)
@@ -1259,7 +1377,7 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("Needs attention", content_js)
         self.assertIn("Health check failed", content_js)
         self.assertIn("Wrong service on port", content_js)
-        self.assertIn("Reconnect Threadwise before teaching corrections.", content_js)
+        self.assertNotIn("Reconnect Threadwise before teaching corrections.", content_js)
         self.assertIn("Threadwise has not synced this email yet.", content_js)
         refresh_selection = content_js.split("function refreshSelection", 1)[1].split(
             "function asyncFollowUpIsWorking", 1
@@ -1268,7 +1386,7 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("Threadwise can explain emails it has already synced.", content_js)
         self.assertIn("`Run ${activeProviderName()} sync now`", content_js)
         self.assertIn("/api/provider-sync-run", content_js)
-        self.assertIn("Connection details", content_js)
+        self.assertNotIn("Connection details", content_js)
         self.assertNotIn("This email is not in the current local sync.", content_js)
         self.assertIn("Current Queue", content_js)
         self.assertIn("Previous interpretation", content_js)
@@ -4185,7 +4303,7 @@ class GmailCompanionUiTests(unittest.TestCase):
             )
 
     def test_teach_apply_apply_included_backfills_matching_inbox_messages(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=sys.platform == "win32") as temp_dir:
             storage_dir = Path(temp_dir)
             gmail_client = MockGmailLabelClient(
                 search_results_by_query={

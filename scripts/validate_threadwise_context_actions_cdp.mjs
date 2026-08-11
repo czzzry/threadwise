@@ -87,6 +87,7 @@ try {
   await waitFor(() => evaluate("globalThis.__eaTestHooks?.getSnapshot()?.selectedEmail?.message_id === 'selected-live' && document.querySelector('[data-ea-selected-state=review]')"));
   assert(await evaluate("Boolean(document.querySelector('[data-ea-context-trigger]'))"), "review has one contextual-actions trigger");
   assert(await evaluate("document.querySelectorAll('[data-ea-context-trigger]').length === 1"), "review has exactly one trigger");
+  await assertVariantCVisualContract();
   await captureViewportSet("review");
 
   activeStep = "review-pointer-open-focus-and-scroll";
@@ -100,7 +101,7 @@ try {
   recordScroll("review-pointer-open", reviewOpenBefore, reviewOpenAfter);
   assertScrollUnchanged(reviewOpenBefore, reviewOpenAfter, "review pointer open");
   assertScrollRangeUnchanged(reviewOpenBefore, reviewOpenAfter, "review pointer open");
-  assert((await evaluate("document.activeElement.getAttribute('data-ea-context-item')")) === "open-email", "pointer open focuses first enabled action");
+  assert((await evaluate("document.activeElement.getAttribute('data-ea-context-item')")) === "change-label", "pointer open focuses the first contextual correction action");
   await recordFocus("review-pointer-open");
   const reviewRoveBefore = await scrollSnapshot();
   await pressKey("ArrowDown");
@@ -108,6 +109,7 @@ try {
   recordScroll("review-roving", reviewRoveBefore, reviewRoveAfter);
   assertScrollUnchanged(reviewRoveBefore, reviewRoveAfter, "review roving");
   assertScrollRangeUnchanged(reviewRoveBefore, reviewRoveAfter, "review roving");
+  assert((await evaluate("document.activeElement.getAttribute('data-ea-context-item')")) === "why", "review correction is keyboard-discoverable before roving to Why");
   const reviewCloseBefore = await scrollSnapshot();
   await pressKey("Escape");
   await waitFor(() => evaluate("!globalThis.__eaTestHooks.getContextActions().open"));
@@ -116,6 +118,96 @@ try {
   assertScrollUnchanged(reviewCloseBefore, reviewCloseAfter, "review escape close");
   assertScrollRangeUnchanged(reviewCloseBefore, reviewCloseAfter, "review escape close");
   assert(await evaluate("document.activeElement?.hasAttribute('data-ea-context-trigger')"), "Escape restores review trigger focus");
+  activeStep = "review-second-escape-retreats-from-trigger";
+  const retreatRequestCount = await evaluate(`JSON.parse(localStorage.getItem(${JSON.stringify(requestLogStorageKey)}) || '[]').filter((request) => request.type !== 'email-agent:probe-health').length`);
+  const outsideEscape = await evaluate(`(() => {
+    const host = document.getElementById('synthetic-gmail-host');
+    const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    const dispatched = host.dispatchEvent(event);
+    return { dispatched, defaultPrevented: event.defaultPrevented };
+  })()`);
+  assert(!outsideEscape.dispatched && outsideEscape.defaultPrevented, "one-shot retreat owns the immediate post-menu Escape even when Gmail receives the key event");
+  await waitFor(() => evaluate(`(() => {
+    const root = document.getElementById('email-agent-companion-root');
+    const content = document.getElementById('ea-content');
+    const minimize = document.getElementById('ea-minimize');
+    return root?.dataset.eaMinimized === 'true'
+      && root.getBoundingClientRect().width <= 71
+      && getComputedStyle(content).display === 'none'
+      && getComputedStyle(minimize).display === 'none';
+  })()`));
+  const collapsedLayout = await evaluate(`(() => {
+    const root = document.getElementById('email-agent-companion-root');
+    const content = document.getElementById('ea-content');
+    const workspace = document.getElementById('ea-workspace');
+    const minimize = document.getElementById('ea-minimize');
+    return {
+      minimized: root?.dataset.eaMinimized || '',
+      rootWidth: root?.getBoundingClientRect().width || 0,
+      contentDisplay: content ? getComputedStyle(content).display : '',
+      workspaceWidth: workspace?.getBoundingClientRect().width || 0,
+      minimizeDisplay: minimize ? getComputedStyle(minimize).display : '',
+    };
+  })()`);
+  assert(collapsedLayout.minimized === 'true' && collapsedLayout.rootWidth <= 71 && collapsedLayout.contentDisplay === 'none' && collapsedLayout.workspaceWidth === 0 && collapsedLayout.minimizeDisplay === 'none', `outside-root Escape visibly collapses the overlay: ${JSON.stringify(collapsedLayout)}`);
+  assert(
+    (await evaluate(`JSON.parse(localStorage.getItem(${JSON.stringify(requestLogStorageKey)}) || '[]').filter((request) => request.type !== 'email-agent:probe-health').length`)) === retreatRequestCount,
+    "Escape retreat from the restored contextual trigger invokes no provider or product request",
+  );
+  results.steps.push({ step: "review-second-escape-retreats-from-trigger", requestCount: retreatRequestCount, collapsedLayout });
+  await evaluate("document.querySelector('#ea-brand-toggle').click()");
+  await waitFor(() => evaluate("document.getElementById('email-agent-companion-root')?.dataset.eaMinimized === 'false' && document.querySelector('[data-ea-selected-state=review]') && document.querySelector('[data-ea-context-trigger]')"));
+  const ordinaryGmailEscape = await evaluate(`(() => {
+    const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    const dispatched = document.getElementById('synthetic-gmail-host').dispatchEvent(event);
+    return { dispatched, defaultPrevented: event.defaultPrevented };
+  })()`);
+  assert(ordinaryGmailEscape.dispatched && !ordinaryGmailEscape.defaultPrevented, "an unarmed Gmail Escape remains untouched");
+  assert(await evaluate("document.getElementById('email-agent-companion-root')?.dataset.eaMinimized === 'false'"), "unarmed Gmail Escape does not retreat Threadwise");
+  await evaluate("document.querySelector('[data-ea-context-trigger]').click()");
+  await waitFor(() => evaluate("globalThis.__eaTestHooks.getContextActions().open"));
+  await pressKey("Escape");
+  await waitFor(() => evaluate("!globalThis.__eaTestHooks.getContextActions().open"));
+  const shiftedThenEscape = await evaluate(`(() => {
+    const host = document.getElementById('synthetic-gmail-host');
+    const shifted = new KeyboardEvent('keydown', { key: 'Escape', shiftKey: true, bubbles: true, cancelable: true });
+    const shiftedDispatched = host.dispatchEvent(shifted);
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    const escapeDispatched = host.dispatchEvent(escape);
+    return { shiftedDispatched, shiftedPrevented: shifted.defaultPrevented, escapeDispatched, escapePrevented: escape.defaultPrevented };
+  })()`);
+  assert(shiftedThenEscape.shiftedDispatched && !shiftedThenEscape.shiftedPrevented, "Shift+Escape is untouched and disarms one-shot retreat");
+  assert(shiftedThenEscape.escapeDispatched && !shiftedThenEscape.escapePrevented, "ordinary Gmail Escape remains untouched after Shift+Escape disarms retreat");
+  assert(await evaluate("document.getElementById('email-agent-companion-root')?.dataset.eaMinimized === 'false'"), "Shift+Escape and the following disarmed Escape leave Threadwise open");
+  await evaluate("document.querySelector('[data-ea-context-trigger]').click()");
+  await waitFor(() => evaluate("globalThis.__eaTestHooks.getContextActions().open"));
+  await pressKey("Escape");
+  await waitFor(() => evaluate("!globalThis.__eaTestHooks.getContextActions().open"));
+  const unrelatedThenEscape = await evaluate(`(() => {
+    const host = document.getElementById('synthetic-gmail-host');
+    const unrelated = new KeyboardEvent('keydown', { key: 'x', bubbles: true, cancelable: true });
+    const unrelatedDispatched = host.dispatchEvent(unrelated);
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    const escapeDispatched = host.dispatchEvent(escape);
+    return { unrelatedDispatched, unrelatedPrevented: unrelated.defaultPrevented, escapeDispatched, escapePrevented: escape.defaultPrevented };
+  })()`);
+  assert(unrelatedThenEscape.unrelatedDispatched && !unrelatedThenEscape.unrelatedPrevented, "unrelated Gmail input is untouched and disarms one-shot retreat");
+  assert(unrelatedThenEscape.escapeDispatched && !unrelatedThenEscape.escapePrevented, "Gmail Escape remains untouched after unrelated input disarms retreat");
+  assert(await evaluate("document.getElementById('email-agent-companion-root')?.dataset.eaMinimized === 'false'"), "disarmed Gmail Escape leaves Threadwise open");
+  await evaluate("document.querySelector('[data-ea-context-trigger]').click()");
+  await waitFor(() => evaluate("globalThis.__eaTestHooks.getContextActions().open"));
+  await pressKey("Escape");
+  await waitFor(() => evaluate("!globalThis.__eaTestHooks.getContextActions().open"));
+  const editableEscape = await evaluate(`(() => {
+    const input = document.createElement('input');
+    document.getElementById('synthetic-gmail-host').appendChild(input);
+    const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    const dispatched = input.dispatchEvent(event);
+    input.remove();
+    return { dispatched, defaultPrevented: event.defaultPrevented };
+  })()`);
+  assert(editableEscape.dispatched && !editableEscape.defaultPrevented, "editable Gmail Escape remains untouched and disarms one-shot retreat");
+  assert(await evaluate("document.getElementById('email-agent-companion-root')?.dataset.eaMinimized === 'false'"), "editable Gmail Escape leaves Threadwise open");
   await evaluate("document.querySelector('[data-ea-context-trigger]').click()");
   await waitFor(() => evaluate("globalThis.__eaTestHooks.getContextActions().open && document.activeElement?.hasAttribute('data-ea-context-item')"));
   await captureViewportSet("review-open");
@@ -133,7 +225,7 @@ try {
   assert(await evaluate("globalThis.__eaTestHooks.getContextActions().open"), "J is consumed while the menu is open");
   const menuBefore = await evaluate("globalThis.__eaTestHooks.getContextActions().activeIndex");
   await pressKey("ArrowDown");
-  assert((await evaluate("globalThis.__eaTestHooks.getContextActions().activeIndex")) === menuBefore, "Arrow Down clamps a one-item menu");
+  assert((await evaluate("globalThis.__eaTestHooks.getContextActions().activeIndex")) === menuBefore + 1, "Arrow Down roves from Change label to Why");
   await pressKey("Escape");
   await waitFor(() => evaluate("!globalThis.__eaTestHooks.getContextActions().open && document.activeElement?.hasAttribute('data-ea-context-trigger')"));
   await recordFocus("review-escape-close");
@@ -148,7 +240,7 @@ try {
   await seedScroll();
   const queueOpenBefore = await scrollSnapshot();
   await evaluate("document.querySelector('[data-ea-context-trigger]').click()");
-  await waitFor(() => evaluate("globalThis.__eaTestHooks.getContextActions().open && globalThis.__eaTestHooks.getContextActions().items.map((item) => item.id).join(',') === 'open-email,back-to-queue'"));
+  await waitFor(() => evaluate("globalThis.__eaTestHooks.getContextActions().open && globalThis.__eaTestHooks.getContextActions().items.map((item) => item.id).join(',') === 'change-label,why,open-email,back-to-queue'"));
   const queueOpenAfter = await scrollSnapshot();
   assertScrollUnchanged(queueOpenBefore, queueOpenAfter, "queue pointer open");
   assertScrollRangeUnchanged(queueOpenBefore, queueOpenAfter, "queue pointer open");
@@ -173,7 +265,7 @@ try {
   await waitFor(() => evaluate("globalThis.__eaTestHooks.getQueueSnapshot().currentMessageId === 'queue-a'"));
   assert(await evaluate("document.activeElement?.matches('[data-ea-queue-navigation]')"), "K restores queue navigation focus");
   await evaluate("document.querySelector('[data-ea-context-trigger]').click()");
-  await waitFor(() => evaluate("globalThis.__eaTestHooks.getContextActions().open && globalThis.__eaTestHooks.getContextActions().items.map((item) => item.id).join(',') === 'open-email,back-to-queue'"));
+  await waitFor(() => evaluate("globalThis.__eaTestHooks.getContextActions().open && globalThis.__eaTestHooks.getContextActions().items.map((item) => item.id).join(',') === 'change-label,why,open-email,back-to-queue'"));
   await evaluate("document.querySelector('[data-ea-context-item=back-to-queue]').click()");
   await waitFor(() => evaluate("!globalThis.__eaTestHooks.getContextActions().open && globalThis.__eaTestHooks.getQueueSnapshot().currentMessageId === ''"));
   await captureViewportSet("queue-preview-exit");
@@ -237,7 +329,7 @@ try {
   await setHostMessage("handled-1", "Handled synthetic email", "handled@example.test");
   await evaluate("globalThis.__eaTestHooks.forceRefresh()");
   await waitFor(() => evaluate("document.querySelector('[data-ea-selected-state=handled-receipt]') && !globalThis.__eaTestHooks.getContextActions().open"));
-  const staleRequestCount = await evaluate("JSON.parse(localStorage.getItem('__tw_context_actions_request_log') || '[]').length");
+  const staleRequestCount = await evaluate("JSON.parse(localStorage.getItem('__tw_context_actions_request_log') || '[]').filter((request) => request.type !== 'email-agent:probe-health').length");
   assert((await evaluate("globalThis.__eaTestHooks.getContextActions().generation")) > staleGeneration, "state rerender invalidates the open action set");
   const staleAttempt = await evaluate(`(() => {
     const stale = window.__twStaleContextItem;
@@ -259,7 +351,7 @@ try {
   assert(staleAttempt.staleGeneration < staleAttempt.currentGeneration, "stale item generation is older than current context");
   assert(staleAttempt.state === "handled-receipt", "stale item cannot change the current selected state");
   assert(staleAttempt.selectedDecisionMode === "review", "stale item cannot revive its old action");
-  assert((await evaluate("JSON.parse(localStorage.getItem('__tw_context_actions_request_log') || '[]').length")) === staleRequestCount, "stale item causes no request");
+  assert((await evaluate("JSON.parse(localStorage.getItem('__tw_context_actions_request_log') || '[]').filter((request) => request.type !== 'email-agent:probe-health').length")) === staleRequestCount, "stale item causes no request");
   results.steps.push({ step: "stale-action-rejection", staleAttempt, requestCount: staleRequestCount });
   await setHostMessage("selected-live", "Selected synthetic email", "live@example.test");
   await evaluate("globalThis.__eaTestHooks.forceRefresh()");
@@ -323,6 +415,269 @@ try {
   assertScrollRangeUnchanged(receiptScrollBefore, receiptScrollAfterClose, "receipt close");
   assert((await evaluate("document.activeElement?.hasAttribute('data-ea-context-trigger')")), "Escape restores trigger focus");
   await recordFocus("receipt-escape-close");
+
+  activeStep = "reset-to-clean-review-before-recovery";
+  await evaluate("window.__twSetConnectionScenario({ kind: 'ready' })");
+  await injectContentScript();
+  await waitFor(() => evaluate("document.querySelectorAll('#email-agent-companion-root').length === 1 && globalThis.__eaTestHooks?.getSnapshot()?.selectedEmail?.message_id === 'selected-live'"));
+  await evaluate("document.querySelector('#ea-brand-toggle').click()");
+  await waitFor(() => evaluate("document.querySelector('[data-ea-selected-state=review]') && document.getElementById('email-agent-companion-root')?.dataset.eaMinimized === 'false'"));
+  await send("Emulation.setDeviceMetricsOverride", {
+    width: 1280,
+    height: 800,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  await waitFor(() => evaluate("window.innerWidth === 1280 && window.innerHeight === 800"));
+  await evaluate("new Promise((resolve) => setTimeout(resolve, 300))");
+  await waitFor(() => evaluate("!globalThis.__eaTestHooks.getSnapshot().refreshInFlight && !globalThis.__eaTestHooks.getSnapshot().connectionPollInFlight"));
+
+  activeStep = "health-poll-single-flight";
+  const singleFlightBefore = await evaluate(`(() => {
+    const requests = JSON.parse(localStorage.getItem(${JSON.stringify(requestLogStorageKey)}) || '[]');
+    window.__twSetConnectionScenario({ kind: 'ready', delayMs: 300 });
+    globalThis.__eaTestHooks.pollConnectionHealth();
+    globalThis.__eaTestHooks.forceRefresh();
+    const snapshot = globalThis.__eaTestHooks.getSnapshot();
+    return {
+      probes: requests.filter((request) => request.type === 'email-agent:probe-health').length,
+      stateReads: requests.filter((request) => request.type === 'email-agent:get-state').length,
+      pollInFlight: snapshot.connectionPollInFlight,
+      refreshQueued: snapshot.pendingRefreshAfterConnectionPoll,
+      refreshInFlight: snapshot.refreshInFlight,
+    };
+  })()`);
+  assert(singleFlightBefore.pollInFlight && singleFlightBefore.refreshQueued && !singleFlightBefore.refreshInFlight, `full refresh waits behind an in-flight health probe: ${JSON.stringify(singleFlightBefore)}`);
+  await waitFor(() => evaluate("!globalThis.__eaTestHooks.getSnapshot().connectionPollInFlight && !globalThis.__eaTestHooks.getSnapshot().pendingRefreshAfterConnectionPoll && !globalThis.__eaTestHooks.getSnapshot().refreshInFlight"));
+  const singleFlightAfter = await evaluate(`(() => {
+    const requests = JSON.parse(localStorage.getItem(${JSON.stringify(requestLogStorageKey)}) || '[]');
+    const snapshot = globalThis.__eaTestHooks.getSnapshot();
+    return {
+      probes: requests.filter((request) => request.type === 'email-agent:probe-health').length,
+      stateReads: requests.filter((request) => request.type === 'email-agent:get-state').length,
+      connectionKind: snapshot.connectionKind,
+      selectedMessageId: snapshot.selectedEmail?.message_id || '',
+    };
+  })()`);
+  assert(singleFlightAfter.probes - singleFlightBefore.probes === 1 && singleFlightAfter.stateReads - singleFlightBefore.stateReads === 1, `queued refresh runs exactly once after the probe: ${JSON.stringify({ singleFlightBefore, singleFlightAfter })}`);
+  assert(singleFlightAfter.connectionKind === "ready" && singleFlightAfter.selectedMessageId === "selected-live", `single-flight refresh preserves the selected review: ${JSON.stringify(singleFlightAfter)}`);
+  await evaluate("window.__twSetConnectionScenario({ kind: 'ready' })");
+  results.steps.push({ step: "health-poll-single-flight", before: singleFlightBefore, after: singleFlightAfter });
+  await injectContentScript();
+  await waitFor(() => evaluate("globalThis.__eaTestHooks?.getSnapshot()?.connectionKind === 'ready' && globalThis.__eaTestHooks?.getSnapshot()?.selectedEmail?.message_id === 'selected-live'"));
+  await evaluate("document.querySelector('#ea-brand-toggle').click()");
+  await waitFor(() => evaluate("document.querySelector('[data-ea-selected-state=review]') && document.getElementById('email-agent-companion-root')?.dataset.eaMinimized === 'false'"));
+  await evaluate("new Promise((resolve) => setTimeout(resolve, 300))");
+  await waitFor(() => evaluate("!globalThis.__eaTestHooks.getSnapshot().refreshInFlight && !globalThis.__eaTestHooks.getSnapshot().connectionPollInFlight"));
+
+  activeStep = "automatic-ready-outage-detection";
+  const automaticOutageBefore = await evaluate(`(() => {
+    const requests = JSON.parse(localStorage.getItem(${JSON.stringify(requestLogStorageKey)}) || '[]');
+    const snapshot = globalThis.__eaTestHooks.getSnapshot();
+    return {
+      probes: requests.filter((request) => request.type === 'email-agent:probe-health').length,
+      stateReads: requests.filter((request) => request.type === 'email-agent:get-state').length,
+      messageId: snapshot.selectedEmail?.message_id || '',
+      pageUrl: snapshot.lastLiveContext?.page_url || '',
+    };
+  })()`);
+  await evaluate("window.__twSetConnectionScenario({ kind: 'helper-unreachable', error: 'Automatic health probe could not connect.', details: 'The unchanged selected context lost its Threadwise health response.' })");
+  const outageStartedAt = Date.now();
+  await waitFor(() => evaluate("document.querySelector('[data-ea-recovery-kind=helper-unreachable]') && !globalThis.__eaTestHooks.getSnapshot().connectionPollInFlight"), 6500);
+  const automaticOutage = await evaluate(`(() => {
+    const requests = JSON.parse(localStorage.getItem(${JSON.stringify(requestLogStorageKey)}) || '[]');
+    const snapshot = globalThis.__eaTestHooks.getSnapshot();
+    const details = document.querySelector('[data-ea-recovery-details]');
+    return {
+      probes: requests.filter((request) => request.type === 'email-agent:probe-health').length,
+      stateReads: requests.filter((request) => request.type === 'email-agent:get-state').length,
+      messageId: snapshot.selectedEmail?.message_id || '',
+      pageUrl: snapshot.lastLiveContext?.page_url || '',
+      connectionKind: snapshot.connectionKind,
+      pollInFlight: snapshot.connectionPollInFlight,
+      visibleText: document.querySelector('[data-ea-recovery-surface]')?.innerText || '',
+      detailsOpen: Boolean(details?.open),
+      diagnostics: details?.textContent || '',
+    };
+  })()`);
+  const outageElapsedMs = Date.now() - outageStartedAt;
+  assert(automaticOutage.probes - automaticOutageBefore.probes === 1, `unchanged ready context sends exactly one bounded health probe: ${JSON.stringify({ automaticOutageBefore, automaticOutage })}`);
+  assert(automaticOutage.stateReads === automaticOutageBefore.stateReads, `ready health polling does not re-render through a full state read: ${JSON.stringify({ automaticOutageBefore, automaticOutage })}`);
+  assert(outageElapsedMs <= 6500 && automaticOutage.connectionKind === "helper-unreachable" && !automaticOutage.pollInFlight, `helper outage becomes truthful within one bounded interval: ${JSON.stringify({ outageElapsedMs, automaticOutage })}`);
+  assert(automaticOutage.messageId === automaticOutageBefore.messageId && automaticOutage.pageUrl === automaticOutageBefore.pageUrl, `outage detection preserves the unchanged selected context: ${JSON.stringify({ automaticOutageBefore, automaticOutage })}`);
+  assert(!automaticOutage.detailsOpen && automaticOutage.diagnostics.includes("lost its Threadwise health response"), `automatic outage retains the exact cause behind closed details: ${JSON.stringify(automaticOutage)}`);
+  await captureScreenshot(path.join(artifactRoot, "recovery-automatic-outage-1280x800.png"));
+  results.screenshots.push({ state: "recovery-automatic-outage", viewport: "1280x800", path: path.join(artifactRoot, "recovery-automatic-outage-1280x800.png"), containment: await containmentSnapshot() });
+
+  activeStep = "automatic-helper-restoration";
+  await evaluate("window.__twSetConnectionScenario({ kind: 'ready' })");
+  const restorationStartedAt = Date.now();
+  await waitFor(() => evaluate("document.querySelector('[data-ea-selected-state=review]') && globalThis.__eaTestHooks.getSnapshot().connectionKind === 'ready' && !globalThis.__eaTestHooks.getSnapshot().connectionPollInFlight"), 6500);
+  const automaticRestoration = await evaluate(`(() => {
+    const requests = JSON.parse(localStorage.getItem(${JSON.stringify(requestLogStorageKey)}) || '[]');
+    const snapshot = globalThis.__eaTestHooks.getSnapshot();
+    return {
+      probes: requests.filter((request) => request.type === 'email-agent:probe-health').length,
+      stateReads: requests.filter((request) => request.type === 'email-agent:get-state').length,
+      messageId: snapshot.selectedEmail?.message_id || '',
+      pageUrl: snapshot.lastLiveContext?.page_url || '',
+      feedback: snapshot.connectionRetryFeedback,
+    };
+  })()`);
+  const restorationElapsedMs = Date.now() - restorationStartedAt;
+  assert(automaticRestoration.stateReads - automaticOutage.stateReads === 1, `offline recovery performs exactly one bounded full state read: ${JSON.stringify({ automaticOutage, automaticRestoration })}`);
+  assert(restorationElapsedMs <= 6500 && automaticRestoration.feedback === "", `restored helper automatically clears recovery state within one interval: ${JSON.stringify({ restorationElapsedMs, automaticRestoration })}`);
+  assert(automaticRestoration.messageId === automaticOutageBefore.messageId && automaticRestoration.pageUrl === automaticOutageBefore.pageUrl, `automatic recovery returns to the unchanged selected review: ${JSON.stringify({ automaticOutageBefore, automaticRestoration })}`);
+  results.steps.push({ step: "automatic-ready-outage-and-recovery", outageElapsedMs, restorationElapsedMs, before: automaticOutageBefore, outage: automaticOutage, restored: automaticRestoration });
+
+  activeStep = "variant-c-recovery-unreachable";
+  await evaluate("window.__twSetConnectionScenario({ kind: 'helper-unreachable', error: 'Failed to fetch synthetic Threadwise state.', details: 'No Threadwise service answered on the configured loopback endpoint.' }); globalThis.__eaTestHooks.forceRefresh()");
+  await waitFor(() => evaluate("document.querySelector('[data-ea-recovery-kind=helper-unreachable]')?.getAttribute('data-ea-retry-state') === 'idle'"));
+  await assertRecoveryVisualContract("helper-unreachable");
+  await captureViewportSet("recovery-unreachable");
+
+  activeStep = "variant-c-recovery-immediate-failure-feedback";
+  await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+  await waitFor(() => evaluate("innerWidth === 1280 && innerHeight === 800"));
+  await evaluate("window.__twSetConnectionScenario({ kind: 'helper-unreachable', error: 'Immediate connection refused.', details: 'The configured loopback endpoint refused the connection.' })");
+  const immediateFailure = await evaluate(`(() => {
+    const getStateCountBefore = JSON.parse(localStorage.getItem(${JSON.stringify(requestLogStorageKey)}) || '[]').filter((request) => request.type === 'email-agent:get-state').length;
+    document.querySelector('[data-ea-recovery-action]').click();
+    const surface = document.querySelector('[data-ea-recovery-surface]');
+    const button = surface?.querySelector('[data-ea-recovery-action]');
+    const details = surface?.querySelector('[data-ea-recovery-details]');
+    const getStateCountAfter = JSON.parse(localStorage.getItem(${JSON.stringify(requestLogStorageKey)}) || '[]').filter((request) => request.type === 'email-agent:get-state').length;
+    return {
+      getStateDelta: getStateCountAfter - getStateCountBefore,
+      inFlight: globalThis.__eaTestHooks.getSnapshot().connectionRetryInFlight,
+      feedback: globalThis.__eaTestHooks.getSnapshot().connectionRetryFeedback,
+      retryState: surface?.getAttribute('data-ea-retry-state') || '',
+      status: surface?.querySelector('[data-ea-recovery-status]')?.textContent.trim() || '',
+      buttonText: button?.textContent.trim() || '',
+      buttonDisabled: Boolean(button?.disabled),
+      detailsOpen: Boolean(details?.open),
+      diagnostics: details?.textContent || '',
+    };
+  })()`);
+  assert(immediateFailure.getStateDelta === 1 && !immediateFailure.inFlight && immediateFailure.feedback === "failed", `immediate refusal completes one truthful retry: ${JSON.stringify(immediateFailure)}`);
+  assert(immediateFailure.retryState === "checked" && immediateFailure.status === "Still offline \u00b7 checked just now", `immediate refusal leaves persistent visible checked feedback: ${JSON.stringify(immediateFailure)}`);
+  assert(!immediateFailure.buttonDisabled && immediateFailure.buttonText === "Check again", `immediate refusal remains retryable without a false checking state: ${JSON.stringify(immediateFailure)}`);
+  assert(!immediateFailure.detailsOpen && immediateFailure.diagnostics.includes("connection refused"), `immediate refusal retains the exact cause in collapsed details: ${JSON.stringify(immediateFailure)}`);
+  const immediateFailureVisual = await assertRecoveryVisualContract("helper-unreachable");
+  assert(immediateFailureVisual.visibleText.includes("Still offline") && !immediateFailureVisual.visibleText.includes("Ready"), `immediate refusal is visibly different and never claims recovery: ${immediateFailureVisual.visibleText}`);
+  await captureScreenshot(path.join(artifactRoot, "recovery-checked-1280x800.png"));
+  results.screenshots.push({ state: "recovery-checked", viewport: "1280x800", path: path.join(artifactRoot, "recovery-checked-1280x800.png"), containment: await containmentSnapshot() });
+  results.steps.push({ step: "recovery-immediate-failure-feedback", evidence: immediateFailure });
+
+  activeStep = "variant-c-recovery-delayed-failure-feedback";
+  await evaluate("window.__twSetConnectionScenario({ kind: 'helper-unreachable', delayMs: 300, error: 'Failed to fetch synthetic Threadwise state.', details: 'No Threadwise service answered on the configured loopback endpoint.' })");
+  const failedRetryChecking = await evaluate(`(() => {
+    document.querySelector('[data-ea-recovery-action]').click();
+    const surface = document.querySelector('[data-ea-recovery-surface]');
+    const button = surface?.querySelector('[data-ea-recovery-action]');
+    return {
+      inFlight: globalThis.__eaTestHooks.getSnapshot().connectionRetryInFlight,
+      retryState: surface?.getAttribute('data-ea-retry-state') || '',
+      busy: surface?.getAttribute('aria-busy') || '',
+      buttonText: button?.textContent.trim() || '',
+      buttonDisabled: Boolean(button?.disabled),
+      status: surface?.querySelector('[data-ea-recovery-status]')?.textContent.trim() || '',
+    };
+  })()`);
+  assert(failedRetryChecking.inFlight && failedRetryChecking.retryState === "checking" && failedRetryChecking.busy === "true", `retry immediately exposes an honest checking state: ${JSON.stringify(failedRetryChecking)}`);
+  assert(failedRetryChecking.buttonDisabled && failedRetryChecking.buttonText === "Checking\u2026", `retry immediately disables the Checking action: ${JSON.stringify(failedRetryChecking)}`);
+  assert(failedRetryChecking.status.includes("Trying the connection now"), `retry immediately announces progress: ${JSON.stringify(failedRetryChecking)}`);
+  await captureScreenshot(path.join(artifactRoot, "recovery-checking-1280x800.png"));
+  results.screenshots.push({ state: "recovery-checking", viewport: "1280x800", path: path.join(artifactRoot, "recovery-checking-1280x800.png"), containment: await containmentSnapshot() });
+  await waitFor(() => evaluate("document.querySelector('[data-ea-recovery-kind=helper-unreachable]')?.getAttribute('data-ea-retry-state') === 'checked' && !globalThis.__eaTestHooks.getSnapshot().connectionRetryInFlight"));
+  const failedRetryTruth = await assertRecoveryVisualContract("helper-unreachable");
+  assert(!failedRetryTruth.visibleText.includes("Ready"), `failed retry returns to the truthful error without a recovery claim: ${failedRetryTruth.visibleText}`);
+  results.steps.push({ step: "recovery-failed-retry-feedback", checking: failedRetryChecking, returnedKind: failedRetryTruth.kind });
+
+  activeStep = "automatic-offline-read-manual-retry-coalescing";
+  await evaluate("window.__twSetConnectionScenario({ kind: 'helper-unreachable', delayMs: 400, error: 'Coalesced connection check stayed offline.', details: 'The single coalesced state read could not reach Threadwise.' })");
+  const coalescedRetryChecking = await evaluate(`(() => {
+    const countReads = () => JSON.parse(localStorage.getItem(${JSON.stringify(requestLogStorageKey)}) || '[]').filter((request) => request.type === 'email-agent:get-state').length;
+    const readsBefore = countReads();
+    globalThis.__eaTestHooks.pollConnectionHealth();
+    const afterAutomaticStart = globalThis.__eaTestHooks.getSnapshot();
+    const readsAfterAutomaticStart = countReads();
+    document.querySelector('[data-ea-recovery-action]').click();
+    const afterManualClick = globalThis.__eaTestHooks.getSnapshot();
+    const surface = document.querySelector('[data-ea-recovery-surface]');
+    const button = surface?.querySelector('[data-ea-recovery-action]');
+    return {
+      readsBefore,
+      readsAfterAutomaticStart,
+      readsAfterManualClick: countReads(),
+      automaticRefreshInFlight: afterAutomaticStart.refreshInFlight,
+      manualRefreshInFlight: afterManualClick.refreshInFlight,
+      retryInFlight: afterManualClick.connectionRetryInFlight,
+      feedback: afterManualClick.connectionRetryFeedback,
+      retryState: surface?.getAttribute('data-ea-retry-state') || '',
+      buttonText: button?.textContent.trim() || '',
+      buttonDisabled: Boolean(button?.disabled),
+    };
+  })()`);
+  assert(coalescedRetryChecking.automaticRefreshInFlight && coalescedRetryChecking.manualRefreshInFlight, `manual retry joins the automatic full read already in flight: ${JSON.stringify(coalescedRetryChecking)}`);
+  assert(coalescedRetryChecking.readsAfterAutomaticStart - coalescedRetryChecking.readsBefore === 1 && coalescedRetryChecking.readsAfterManualClick === coalescedRetryChecking.readsAfterAutomaticStart, `automatic and manual recovery coalesce into exactly one full read: ${JSON.stringify(coalescedRetryChecking)}`);
+  assert(coalescedRetryChecking.retryInFlight && coalescedRetryChecking.feedback === "checking" && coalescedRetryChecking.retryState === "checking", `coalesced retry remains truthfully checking while the shared read is pending: ${JSON.stringify(coalescedRetryChecking)}`);
+  assert(coalescedRetryChecking.buttonDisabled && coalescedRetryChecking.buttonText === "Checking…", `coalesced retry exposes one disabled Checking action: ${JSON.stringify(coalescedRetryChecking)}`);
+  await waitFor(() => evaluate("document.querySelector('[data-ea-recovery-kind=helper-unreachable]')?.getAttribute('data-ea-retry-state') === 'checked' && !globalThis.__eaTestHooks.getSnapshot().refreshInFlight && !globalThis.__eaTestHooks.getSnapshot().connectionRetryInFlight"));
+  const coalescedRetryFinal = await evaluate(`(() => {
+    const surface = document.querySelector('[data-ea-recovery-surface]');
+    const snapshot = globalThis.__eaTestHooks.getSnapshot();
+    return {
+      totalReads: JSON.parse(localStorage.getItem(${JSON.stringify(requestLogStorageKey)}) || '[]').filter((request) => request.type === 'email-agent:get-state').length,
+      feedback: snapshot.connectionRetryFeedback,
+      connectionKind: snapshot.connectionKind,
+      visibleText: surface?.innerText || '',
+      diagnostics: surface?.querySelector('[data-ea-recovery-details]')?.textContent || '',
+    };
+  })()`);
+  assert(coalescedRetryFinal.totalReads - coalescedRetryChecking.readsBefore === 1, `shared recovery completes with exactly one full read: ${JSON.stringify({ coalescedRetryChecking, coalescedRetryFinal })}`);
+  assert(coalescedRetryFinal.feedback === "failed" && coalescedRetryFinal.connectionKind === "helper-unreachable" && coalescedRetryFinal.visibleText.includes("Still offline") && !coalescedRetryFinal.visibleText.includes("Ready"), `shared failed result returns one truthful offline state: ${JSON.stringify(coalescedRetryFinal)}`);
+  assert(coalescedRetryFinal.diagnostics.includes("single coalesced state read"), `shared failed result retains the exact cause in diagnostics: ${JSON.stringify(coalescedRetryFinal)}`);
+  results.steps.push({ step: "automatic-offline-read-manual-retry-coalescing", checking: coalescedRetryChecking, final: coalescedRetryFinal });
+
+  for (const scenario of [
+    { kind: "wrong-service", error: "Unexpected service identity.", details: "Expected threadwise-gmail-companion but received another service." },
+    { kind: "health-failed", error: "Threadwise health response was not ready.", details: "Health endpoint returned status starting." },
+    { kind: "connecting", error: "Connection is still opening.", details: "Waiting for the Threadwise health response." },
+  ]) {
+    activeStep = `variant-c-recovery-${scenario.kind}`;
+    await evaluate(`window.__twSetConnectionScenario(${JSON.stringify(scenario)}); globalThis.__eaTestHooks.forceRefresh()`);
+    await waitFor(() => evaluate(`Boolean(document.querySelector('[data-ea-recovery-kind=${scenario.kind}]')) && !globalThis.__eaTestHooks.getSnapshot().connectionRetryInFlight`));
+    await assertRecoveryVisualContract(scenario.kind);
+    await captureViewportSet(`recovery-${scenario.kind}`);
+  }
+
+  activeStep = "variant-c-recovery-loading";
+  await evaluate("window.__twSetConnectionScenario({ kind: 'ready-loading', error: 'Threadwise is connected but the inbox state is still loading.' }); globalThis.__eaTestHooks.forceRefresh()");
+  await waitFor(() => evaluate("Boolean(document.querySelector('[data-ea-recovery-kind=loading]'))"));
+  await assertRecoveryVisualContract("loading");
+  await captureViewportSet("recovery-loading");
+
+  activeStep = "variant-c-recovery-successful-retry";
+  await evaluate("window.__twSetConnectionScenario({ kind: 'helper-unreachable', error: 'Failed to fetch synthetic Threadwise state.' }); globalThis.__eaTestHooks.forceRefresh()");
+  await waitFor(() => evaluate("Boolean(document.querySelector('[data-ea-recovery-kind=helper-unreachable]'))"));
+  await evaluate("window.__twSetConnectionScenario({ kind: 'ready', delayMs: 300 })");
+  const successRetryChecking = await evaluate(`(() => {
+    document.querySelector('[data-ea-recovery-action]').click();
+    const button = document.querySelector('[data-ea-recovery-action]');
+    return { text: button?.textContent.trim() || '', disabled: Boolean(button?.disabled), inFlight: globalThis.__eaTestHooks.getSnapshot().connectionRetryInFlight };
+  })()`);
+  assert(successRetryChecking.inFlight && successRetryChecking.disabled && successRetryChecking.text === "Checking\u2026", `successful retry begins with the same truthful checking state: ${JSON.stringify(successRetryChecking)}`);
+  await waitFor(() => evaluate("Boolean(document.querySelector('[data-ea-selected-state=review]')) && globalThis.__eaTestHooks.getSnapshot().connectionKind === 'ready' && globalThis.__eaTestHooks.getSnapshot().connectionRetryFeedback === ''"));
+  results.steps.push({ step: "recovery-successful-retry", checking: successRetryChecking, returnedState: "review" });
+
+  activeStep = "variant-c-recovery-automatic-five-second-recovery";
+  await evaluate("window.__twSetConnectionScenario({ kind: 'helper-unreachable', error: 'Failed to fetch synthetic Threadwise state.' }); globalThis.__eaTestHooks.forceRefresh()");
+  await waitFor(() => evaluate("Boolean(document.querySelector('[data-ea-recovery-kind=helper-unreachable]'))"));
+  await evaluate("window.__twSetConnectionScenario({ kind: 'ready' })");
+  const automaticRecoveryStartedAt = Date.now();
+  await waitFor(() => evaluate("Boolean(document.querySelector('[data-ea-selected-state=review]')) && globalThis.__eaTestHooks.getSnapshot().connectionKind === 'ready' && globalThis.__eaTestHooks.getSnapshot().connectionRetryFeedback === ''"), 8000);
+  results.steps.push({ step: "recovery-automatic-five-second-recovery", elapsedMs: Date.now() - automaticRecoveryStartedAt, returnedState: "review" });
   results.ok = true;
 } catch (error) {
   failure = error;
@@ -346,6 +701,8 @@ try {
   results.unexpectedRequests = results.requests.filter((request) => !(
     request?.type === "email-agent:get-state" && request.path === "" && request.method === ""
   ) && !(
+    request?.type === "email-agent:probe-health" && request.path === "" && request.method === ""
+  ) && !(
     request?.type === "threadwise:analytics" && request.path === "" && request.method === ""
   ));
   await fs.writeFile(tracePath, JSON.stringify(results, null, 2));
@@ -360,8 +717,13 @@ async function installBridge() {
     const logKey = ${JSON.stringify(requestLogStorageKey)};
     localStorage.setItem(${JSON.stringify(onboardingStorageKey)}, JSON.stringify({ version: ${JSON.stringify(onboardingVersion)}, status: "dismissed" }));
     localStorage.setItem(logKey, "[]");
-    const append = (request) => { const log = JSON.parse(localStorage.getItem(logKey) || "[]"); log.push(request); localStorage.setItem(logKey, JSON.stringify(log)); };
+    const append = (request) => { const log = JSON.parse(localStorage.getItem(logKey) || "[]"); log.push({ ...request, at: performance.now() }); localStorage.setItem(logKey, JSON.stringify(log)); };
     const clone = (value) => JSON.parse(JSON.stringify(value));
+    let connectionScenario = { kind: "ready", delayMs: 0 };
+    window.__twSetConnectionScenario = (scenario) => {
+      connectionScenario = { kind: "ready", delayMs: 0, ...(scenario || {}) };
+      return clone(connectionScenario);
+    };
     const queueItems = ${JSON.stringify(queueItems)};
     const itemById = (id) => queueItems.find((item) => item.message_id === id) || null;
     const stateForContext = (context) => {
@@ -384,7 +746,62 @@ async function installBridge() {
       getManifest: () => ({ version: "0.3.2" }),
       sendMessage(message, callback) {
         append({ type: message?.type || "unknown", path: message?.path || "", method: message?.method || "" });
-        if (message?.type === "email-agent:get-state") { callback?.({ ok: true, payload: stateForContext(message.context || {}), connection_state: { kind: "ready", label: "Ready", details: "Synthetic fixture state." } }); return true; }
+        if (message?.type === "email-agent:probe-health") {
+          const scenario = clone(connectionScenario);
+          const respond = () => {
+            if (scenario.kind === "ready" || scenario.kind === "ready-loading") {
+              callback?.({ ok: true, connection_state: { kind: "ready", label: "Ready", details: "Synthetic health fixture is ready." } });
+              return;
+            }
+            const labels = {
+              "helper-unreachable": "Helper unreachable",
+              "wrong-service": "Wrong service on port",
+              "health-failed": "Health check failed",
+              connecting: "Connecting",
+            };
+            callback?.({
+              ok: false,
+              error: scenario.error || "Synthetic health probe failed.",
+              connection_state: {
+                kind: scenario.kind,
+                label: labels[scenario.kind] || "Unavailable",
+                details: scenario.details || "Synthetic exact health failure detail.",
+              },
+            });
+          };
+          if (scenario.delayMs > 0) window.setTimeout(respond, scenario.delayMs); else respond();
+          return true;
+        }
+        if (message?.type === "email-agent:get-state") {
+          const scenario = clone(connectionScenario);
+          const respond = () => {
+            if (scenario.kind === "ready") {
+              callback?.({ ok: true, payload: stateForContext(message.context || {}), connection_state: { kind: "ready", label: "Ready", details: "Synthetic fixture state." } });
+              return;
+            }
+            if (scenario.kind === "ready-loading") {
+              callback?.({ ok: false, error: scenario.error || "Threadwise is connected but the inbox state is still loading.", connection_state: { kind: "ready", label: "Ready", details: "Synthetic fixture is loading." } });
+              return;
+            }
+            const labels = {
+              "helper-unreachable": "Helper unreachable",
+              "wrong-service": "Wrong service on port",
+              "health-failed": "Health check failed",
+              connecting: "Connecting",
+            };
+            callback?.({
+              ok: false,
+              error: scenario.error || "Synthetic " + scenario.kind + " response.",
+              connection_state: {
+                kind: scenario.kind,
+                label: labels[scenario.kind] || "Unavailable",
+                details: scenario.details || "Synthetic exact " + scenario.kind + " detail.",
+              },
+            });
+          };
+          if (scenario.delayMs > 0) window.setTimeout(respond, scenario.delayMs); else respond();
+          return true;
+        }
         if (message?.type === "threadwise:analytics") { callback?.({ ok: true }); return true; }
         callback?.({ ok: false, error: "Synthetic context-actions validator rejects " + (message?.path || message?.type || "unknown") + "." });
         return true;
@@ -506,11 +923,8 @@ async function captureViewportSet(stateName) {
         const menu = document.querySelector('#ea-context-menu');
         const root = document.querySelector('#email-agent-companion-root');
         const accept = document.querySelector('[data-ea-action="accept-suggestion"]');
-        const change = document.querySelector('[data-ea-action="change-suggestion"]');
-        const protectedControls = [
-          ...document.querySelectorAll('#email-agent-companion-root [data-tw-primary-action]'),
-          ...document.querySelectorAll('#email-agent-companion-root [data-ea-action="change-suggestion"], #email-agent-companion-root [data-ea-action="change-auto-handled"]'),
-        ].filter((node, index, nodes) => nodes.indexOf(node) === index && !node.disabled && node.getAttribute('aria-disabled') !== 'true' && !node.hidden && node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0);
+        const change = document.querySelector('[data-ea-context-item="change-label"]');
+        const directChange = document.querySelector('[data-ea-action="change-suggestion"]:not([data-ea-context-item])');
         const menuRect = rectOf(menu);
         const acceptRect = rectOf(accept);
         const changeRect = rectOf(change);
@@ -522,41 +936,33 @@ async function captureViewportSet(stateName) {
           root: rootRect,
           accept: acceptRect,
           change: changeRect,
-          protected: protectedControls.map(rectOf),
           menuIntersectsAccept: intersects(menuRect, acceptRect),
-          menuIntersectsChange: intersects(menuRect, changeRect),
           controlsVisible: Boolean(
             acceptRect && changeRect
             && acceptRect.width > 0 && acceptRect.height > 0
             && changeRect.width > 0 && changeRect.height > 0
             && acceptRect.left + acceptRect.width / 2 >= 0 && acceptRect.left + acceptRect.width / 2 <= innerWidth
             && acceptRect.top + acceptRect.height / 2 >= 0 && acceptRect.top + acceptRect.height / 2 <= innerHeight
-            && changeRect.left + changeRect.width / 2 >= 0 && changeRect.left + changeRect.width / 2 <= innerWidth
-            && changeRect.top + changeRect.height / 2 >= 0 && changeRect.top + changeRect.height / 2 <= innerHeight
             && getComputedStyle(accept).visibility !== 'hidden'
             && getComputedStyle(change).visibility !== 'hidden'
             && getComputedStyle(change).pointerEvents !== 'none'
             && change.textContent.trim() === 'Change label'
           ),
+          directChangeVisible: Boolean(directChange && directChange.getBoundingClientRect().width > 0 && directChange.getBoundingClientRect().height > 0),
           hitTargetIsChange: Boolean(hitTarget && (hitTarget === change || change.contains(hitTarget))),
           hitTarget: hitTarget?.outerHTML?.slice(0, 180) || '',
         };
       })()`);
       assert(!placement.menuIntersectsAccept, `review-open menu does not intersect Accept at ${viewport.name}`);
-      assert(!placement.menuIntersectsChange, `review-open menu does not intersect Change label at ${viewport.name}`);
-      assert(placement.controlsVisible, `review-open keeps full readable Accept and Change label controls at ${viewport.name}`);
-      assert(placement.hitTargetIsChange, `review-open Change label center remains hit-testable at ${viewport.name}`);
-      const requestCountBeforeChange = await evaluate(`JSON.parse(localStorage.getItem(${JSON.stringify(requestLogStorageKey)}) || '[]').length`);
-      await evaluate(`(() => {
-        const change = document.querySelector('[data-ea-action="change-suggestion"]');
-        const rect = change.getBoundingClientRect();
-        const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
-        if (hit && (hit === change || change.contains(hit))) hit.click();
-        return true;
-      })()`);
+      assert(placement.controlsVisible, `review-open keeps Accept and contextual Change label readable at ${viewport.name}`);
+      assert(!placement.directChangeVisible, `review-open does not restore a second visible Change label action at ${viewport.name}`);
+      assert(placement.hitTargetIsChange, `review-open contextual Change label remains hit-testable at ${viewport.name}`);
+      const requestCountBeforeChange = await evaluate(`JSON.parse(localStorage.getItem(${JSON.stringify(requestLogStorageKey)}) || '[]').filter((request) => request.type !== 'email-agent:probe-health').length`);
+      assert(await evaluate("document.activeElement?.getAttribute('data-ea-context-item') === 'change-label'"), `review-open focuses Change label for keyboard discovery at ${viewport.name}`);
+      await pressKey("Enter");
       await waitFor(() => evaluate("document.querySelector('[data-ea-selected-state=change]') && !globalThis.__eaTestHooks.getContextActions().open"));
       assert((await evaluate("document.querySelectorAll('[data-ea-selected-state=change]').length")) === 1, `Change label enters change state exactly once at ${viewport.name}`);
-      assert((await evaluate(`JSON.parse(localStorage.getItem(${JSON.stringify(requestLogStorageKey)}) || '[]').length`)) === requestCountBeforeChange, `Change label hit-test causes no unexpected request at ${viewport.name}`);
+      assert((await evaluate(`JSON.parse(localStorage.getItem(${JSON.stringify(requestLogStorageKey)}) || '[]').filter((request) => request.type !== 'email-agent:probe-health').length`)) === requestCountBeforeChange, `keyboard Change label causes no unexpected request at ${viewport.name}`);
       await evaluate("document.querySelector('[data-ea-context-trigger]').click()");
       await waitFor(() => evaluate("globalThis.__eaTestHooks.getContextActions().open && globalThis.__eaTestHooks.getContextActions().items.map((item) => item.id).join(',') === 'cancel-change'"));
       await evaluate("document.querySelector('[data-ea-context-item=cancel-change]').click()");
@@ -575,8 +981,120 @@ async function seedScroll() {
   await evaluate(`(() => { const content = document.getElementById('ea-content'); window.scrollTo(0, ${seededPageScrollY}); content.scrollTop = ${seededContentScrollTop}; return true; })()`);
   const snapshot = await scrollSnapshot();
   assert(snapshot.pageY === seededPageScrollY, `seeded Gmail-page scroll is ${seededPageScrollY}`);
-  assert(snapshot.contentScrollTop > 0, `seeded companion scroll is nonzero: ${snapshot.contentScrollTop}`);
+  const expectedContentScrollTop = Math.min(seededContentScrollTop, Math.max(0, snapshot.contentScrollHeight - snapshot.contentClientHeight));
+  assert(snapshot.contentScrollTop === expectedContentScrollTop, `seeded companion scroll matches available overflow: ${snapshot.contentScrollTop} of ${expectedContentScrollTop}`);
   return snapshot;
+}
+
+async function assertVariantCVisualContract() {
+  const visual = await evaluate(`(() => {
+    const root = document.getElementById('email-agent-companion-root');
+    const panel = document.getElementById('ea-panel');
+    const header = document.getElementById('ea-header');
+    const logo = document.getElementById('ea-brand-toggle');
+    const primary = document.querySelector('[data-ea-review-dock] [data-tw-primary-action]');
+    const contextual = document.querySelector('[data-ea-review-dock] [data-ea-context-trigger]');
+    const context = document.querySelector('[data-ea-current-message-context]');
+    const facts = document.querySelector('[data-ea-review-facts]');
+    const style = (node) => node ? getComputedStyle(node) : null;
+    const panelStyle = style(panel);
+    const primaryStyle = style(primary);
+    return {
+      rootWidth: root?.getBoundingClientRect().width || 0,
+      panelBackground: panelStyle?.backgroundColor || '',
+      panelBorderWidth: panelStyle?.borderTopWidth || '',
+      panelBorderColor: panelStyle?.borderTopColor || '',
+      panelRadius: panelStyle?.borderTopLeftRadius || '',
+      panelShadow: panelStyle?.boxShadow || '',
+      headerHeight: header?.getBoundingClientRect().height || 0,
+      logoWidth: logo?.getBoundingClientRect().width || 0,
+      primaryHeight: primary?.getBoundingClientRect().height || 0,
+      primaryBackground: primaryStyle?.backgroundColor || '',
+      primaryColor: primaryStyle?.color || '',
+      primaryBorderWidth: primaryStyle?.borderTopWidth || '',
+      primaryShadow: primaryStyle?.boxShadow || '',
+      contextualWidth: contextual?.getBoundingClientRect().width || 0,
+      factsVisible: Boolean(facts && facts.getBoundingClientRect().height > 0),
+      factsRows: facts?.querySelectorAll('[data-ea-review-fact]').length || 0,
+      contextPadding: style(context)?.padding || '',
+    };
+  })()`);
+  assert(Math.abs(visual.rootWidth - 408) <= 1, `Variant C shell is 408px wide: ${visual.rootWidth}`);
+  assert(visual.panelBackground === 'rgb(255, 255, 255)', `Variant C shell is white: ${visual.panelBackground}`);
+  assert(visual.panelBorderWidth === '1px', `Variant C shell uses a 1px border: ${visual.panelBorderWidth}`);
+  assert(visual.panelBorderColor === 'rgb(205, 210, 216)', `Variant C shell uses the strong line token: ${visual.panelBorderColor}`);
+  assert(visual.panelRadius === '12px', `Variant C shell uses a 12px radius: ${visual.panelRadius}`);
+  assert(visual.panelShadow.includes('rgba(31, 35, 40, 0.12)'), `Variant C shell uses only the soft native shadow: ${visual.panelShadow}`);
+  assert(Math.abs(visual.headerHeight - 52) <= 1, `Variant C header is 52px high: ${visual.headerHeight}`);
+  assert(Math.abs(visual.logoWidth - 28) <= 1, `Variant C logo is 28px: ${visual.logoWidth}`);
+  assert(Math.abs(visual.primaryHeight - 40) <= 1, `Variant C primary action is 40px high: ${visual.primaryHeight}`);
+  assert(visual.primaryBackground === 'rgb(99, 91, 255)', `Variant C primary uses #635bff: ${visual.primaryBackground}`);
+  assert(visual.primaryColor === 'rgb(255, 255, 255)', `Variant C primary uses white ink: ${visual.primaryColor}`);
+  assert(visual.primaryBorderWidth === '0px', `Variant C primary has no heavy border: ${visual.primaryBorderWidth}`);
+  assert(visual.primaryShadow === 'none', `Variant C primary has no block shadow: ${visual.primaryShadow}`);
+  assert(Math.abs(visual.contextualWidth - 38) <= 1, `Variant C contextual action is 38px wide: ${visual.contextualWidth}`);
+  assert(visual.factsVisible && visual.factsRows === 3, `Variant C shows all three exact facts: ${JSON.stringify(visual)}`);
+  assert(visual.contextPadding === '15px 16px 13px', `Variant C context density matches the reference: ${visual.contextPadding}`);
+  results.steps.push({ step: 'variant-c-visual-contract', visual });
+}
+
+async function assertRecoveryVisualContract(expectedKind) {
+  const visual = await evaluate(`(() => {
+    const root = document.getElementById('email-agent-companion-root');
+    const panel = document.getElementById('ea-panel');
+    const surface = document.querySelector('[data-ea-recovery-surface]');
+    const primary = surface?.querySelector('[data-tw-primary-action]');
+    const details = surface?.querySelector('[data-ea-recovery-details]');
+    const panelStyle = panel ? getComputedStyle(panel) : null;
+    const surfaceStyle = surface ? getComputedStyle(surface) : null;
+    const primaryStyle = primary ? getComputedStyle(primary) : null;
+    return {
+      kind: surface?.getAttribute('data-ea-recovery-kind') || '',
+      retryState: surface?.getAttribute('data-ea-retry-state') || '',
+      visibleText: surface?.innerText || '',
+      diagnostics: details?.textContent || '',
+      detailsOpen: Boolean(details?.open),
+      viewportWidth: innerWidth,
+      rootWidth: root?.getBoundingClientRect().width || 0,
+      panelBackground: panelStyle?.backgroundColor || '',
+      panelBorderWidth: panelStyle?.borderTopWidth || '',
+      panelBorderColor: panelStyle?.borderTopColor || '',
+      panelShadow: panelStyle?.boxShadow || '',
+      surfaceBackground: surfaceStyle?.backgroundColor || '',
+      surfaceFont: surfaceStyle?.fontFamily || '',
+      primaryCount: surface?.querySelectorAll('[data-tw-primary-action]').length || 0,
+      progressVisible: Boolean(surface?.querySelector('[data-ea-recovery-progress]')?.getBoundingClientRect().height),
+      primaryBackground: primaryStyle?.backgroundColor || '',
+      primaryColor: primaryStyle?.color || '',
+      primaryBorderWidth: primaryStyle?.borderTopWidth || '',
+      primaryShadow: primaryStyle?.boxShadow || '',
+      primaryHeight: primary?.getBoundingClientRect().height || 0,
+    };
+  })()`);
+  assert(visual.kind === expectedKind, `recovery exposes truthful ${expectedKind} kind: ${JSON.stringify(visual)}`);
+  if (visual.viewportWidth > 480) {
+    assert(Math.abs(visual.rootWidth - 408) <= 1, `recovery keeps the 408px Variant C shell: ${visual.rootWidth}`);
+  } else {
+    assert(visual.rootWidth >= 300 && visual.rootWidth <= visual.viewportWidth - 16, `recovery keeps the responsive Variant C shell at narrow width: ${JSON.stringify(visual)}`);
+  }
+  assert(visual.panelBackground === 'rgb(255, 255, 255)', `recovery panel is white: ${visual.panelBackground}`);
+  assert(visual.panelBorderWidth === '1px' && visual.panelBorderColor === 'rgb(205, 210, 216)', `recovery panel uses the neutral 1px border: ${JSON.stringify(visual)}`);
+  assert(visual.panelShadow.includes('rgba(31, 35, 40, 0.12)'), `recovery panel uses only the soft native shadow: ${visual.panelShadow}`);
+  assert(visual.surfaceBackground === 'rgba(0, 0, 0, 0)', `recovery surface has no cream card fill: ${visual.surfaceBackground}`);
+  assert(!visual.visibleText.toLowerCase().includes('local companion') && !visual.visibleText.toLowerCase().includes('startup helper'), `visible recovery copy hides implementation terms: ${visual.visibleText}`);
+  if (expectedKind !== 'loading') {
+    assert(!visual.detailsOpen && visual.diagnostics.toLowerCase().includes(expectedKind === 'helper-unreachable' ? 'unreachable' : expectedKind.replace('-', ' ')), `collapsed diagnostics retain the exact reason: ${visual.diagnostics}`);
+  }
+  if (expectedKind === 'loading') {
+    assert(visual.primaryCount === 0 && visual.progressVisible, `loading uses quiet progress without a false recovery action: ${JSON.stringify(visual)}`);
+    results.steps.push({ step: `recovery-visual-${expectedKind}`, visual });
+    return visual;
+  }
+  assert(visual.primaryCount === 1 && Math.abs(visual.primaryHeight - 40) <= 1, `recovery has one 40px primary action: ${JSON.stringify(visual)}`);
+  assert(visual.primaryBackground === 'rgb(99, 91, 255)' && visual.primaryColor === 'rgb(255, 255, 255)', `recovery primary uses Variant C purple: ${JSON.stringify(visual)}`);
+  assert(visual.primaryBorderWidth === '0px' && visual.primaryShadow === 'none', `recovery primary has no heavy border or block shadow: ${JSON.stringify(visual)}`);
+  results.steps.push({ step: `recovery-visual-${expectedKind}`, visual });
+  return visual;
 }
 
 async function scrollSnapshot() {

@@ -123,6 +123,39 @@ class CompanionRuntimeStateTests(unittest.TestCase):
             self.assertEqual(activity["state"], "retry")
             self.assertIn("timeout", activity["message"])
 
+    def test_gmail_setup_failure_surfaces_provider_retry_in_sidebar(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            queued: list = []
+            runtime = _runtime(Path(temp_dir), background_runner=queued.append)
+            runtime.start_teaching_write(
+                lambda: {
+                    "mode": "gmail-write-failed",
+                    "error": "Gmail client secret is unavailable",
+                    "label_write_failed": 0,
+                    "inbox_remove_failed": 0,
+                }
+            )
+            queued.pop(0)()
+
+            with (
+                patch(
+                    "src.companion_runtime_state.build_selected_email_state",
+                    return_value={"found": False},
+                ),
+                patch(
+                    "src.companion_runtime_state.build_daily_summary",
+                    return_value={},
+                ),
+            ):
+                state = runtime.sidebar({})
+
+            provider_write = state["ui_state"]["provider_write"]
+            activity = state["ui_state"]["activity_feed"][0]
+            self.assertEqual(provider_write["state"], "error")
+            self.assertEqual(activity["action"], "retry-provider-write")
+            self.assertEqual(activity["action_label"], "Try again")
+            self.assertNotEqual(activity["label"], "Gmail labels applied")
+
 
 def _runtime(
     storage_dir: Path,

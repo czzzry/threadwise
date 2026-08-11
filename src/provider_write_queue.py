@@ -85,7 +85,10 @@ class ProviderWriteQueue:
                 work = self._pending.pop(0)
             try:
                 summary = work() or {}
-                failed = any(int(summary.get(key) or 0) for key in self._failure_keys)
+                failed = summary.get("mode") in {
+                    "gmail-write-failed",
+                    "provider-write-failed",
+                } or any(int(summary.get(key) or 0) for key in self._failure_keys)
             except Exception:
                 failed = True
             with self._lock:

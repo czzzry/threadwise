@@ -142,6 +142,30 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return false;
   }
 
+  if (message.type === "email-agent:probe-health") {
+    probeHealth()
+      .then((connectionState) => {
+        sendResponse({
+          ok: connectionState.kind === "ready",
+          error: connectionState.kind === "ready" ? "" : "Threadwise is unavailable.",
+          connection_state: connectionState,
+        });
+      })
+      .catch((error) => {
+        sendResponse({
+          ok: false,
+          error: String(error),
+          connection_state: {
+            kind: "helper-unreachable",
+            label: "Helper unreachable",
+            details: String(error),
+            health_path: HEALTH_PATH,
+          },
+        });
+      });
+    return true;
+  }
+
   if (message.type === "email-agent:get-state") {
     const query = new URLSearchParams(message.context || {});
     fetchJson(`/api/harness-state?${query.toString()}`, { timeoutMs: HARNESS_STATE_TIMEOUT_MS })
