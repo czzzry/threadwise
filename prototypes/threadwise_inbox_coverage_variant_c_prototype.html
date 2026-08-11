@@ -1,0 +1,719 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Threadwise · Inbox coverage prototype</title>
+  <style>
+    :root {
+      --tw-bg: #ffffff;
+      --tw-subtle: #f7f7f9;
+      --tw-subtle-2: #f1f2f5;
+      --tw-border: #e3e4e8;
+      --tw-border-strong: #d5d7dc;
+      --tw-text: #24252a;
+      --tw-muted: #686a73;
+      --tw-faint: #8b8e97;
+      --tw-purple: #635bff;
+      --tw-purple-hover: #554de8;
+      --tw-purple-soft: #f0efff;
+      --tw-green: #16835f;
+      --tw-green-soft: #eaf7f1;
+      --tw-amber: #946200;
+      --tw-amber-soft: #fff6dd;
+      --tw-red: #b4233c;
+      --tw-red-soft: #fff0f2;
+      --tw-shadow: 0 8px 28px rgba(31, 35, 48, .14), 0 1px 3px rgba(31, 35, 48, .08);
+      --gmail-blue: #0b57d0;
+      --gmail-shell: #f6f8fc;
+      --gmail-line: #e6e9ef;
+      --panel-width: 408px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body { height: 100%; }
+
+    body {
+      margin: 0;
+      overflow: hidden;
+      color: var(--tw-text);
+      background: #eef1f5;
+      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button, input { font: inherit; }
+    button { color: inherit; }
+    [hidden] { display: none !important; }
+
+    .gmail {
+      position: relative;
+      height: 100vh;
+      min-height: 520px;
+      background: var(--gmail-shell);
+      overflow: hidden;
+    }
+
+    .gmail-topbar {
+      height: 64px;
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      padding: 0 18px;
+      color: #45474d;
+    }
+
+    .gmail-menu { width: 22px; height: 16px; border-block: 2px solid #5f6368; position: relative; }
+    .gmail-menu::after { content: ""; position: absolute; inset: 5px 0 auto; border-top: 2px solid #5f6368; }
+    .gmail-wordmark { display: flex; align-items: center; gap: 10px; min-width: 186px; font-size: 21px; }
+    .gmail-mark { width: 28px; height: 21px; border: 3px solid #ea4335; border-top: 0; border-radius: 2px; transform: skewY(-1deg); opacity: .9; }
+    .gmail-search { height: 46px; width: min(640px, 50vw); border-radius: 24px; background: #eaf1fb; display: flex; align-items: center; gap: 12px; padding: 0 18px; color: #60646b; font-size: 14px; }
+    .gmail-search-icon { width: 15px; height: 15px; border: 2px solid #5f6368; border-radius: 50%; position: relative; }
+    .gmail-search-icon::after { content: ""; position: absolute; width: 6px; border-top: 2px solid #5f6368; transform: rotate(45deg); right: -5px; bottom: -2px; }
+    .gmail-avatar { margin-left: auto; width: 32px; height: 32px; display: grid; place-items: center; border-radius: 50%; background: #8765a8; color: white; font-weight: 650; font-size: 13px; }
+
+    .gmail-body { display: grid; grid-template-columns: 238px minmax(520px, 1fr); height: calc(100vh - 64px); }
+    .gmail-nav { padding: 8px 12px; color: #3c4043; }
+    .compose { width: 142px; height: 56px; border: 0; border-radius: 16px; background: #c2e7ff; color: #001d35; box-shadow: 0 1px 2px rgba(0,0,0,.08); font-weight: 600; }
+    .nav-list { margin-top: 14px; }
+    .nav-item { height: 32px; display: flex; align-items: center; gap: 14px; padding: 0 14px 0 20px; border-radius: 16px; font-size: 14px; }
+    .nav-item.active { background: #d3e3fd; font-weight: 650; }
+    .nav-icon { width: 14px; color: #575b61; }
+    .nav-count { margin-left: auto; font-size: 12px; }
+
+    .gmail-main { margin: 0 16px 16px 0; background: white; border-radius: 16px; overflow: hidden; position: relative; }
+    .mail-toolbar { height: 48px; display: flex; align-items: center; gap: 22px; padding: 0 18px; border-bottom: 1px solid var(--gmail-line); color: #5f6368; font-size: 13px; }
+    .email-layout { display: grid; grid-template-columns: minmax(440px, 1fr) 320px; height: calc(100% - 48px); }
+    .message { padding: 20px 28px; overflow: hidden; }
+    .message h1 { margin: 8px 0 18px; color: #202124; font-size: 22px; font-weight: 500; }
+    .sender { display: flex; gap: 12px; align-items: center; margin-bottom: 26px; }
+    .sender-avatar { width: 38px; height: 38px; display: grid; place-items: center; background: #dae7ff; color: #3f5f8d; border-radius: 50%; font-weight: 700; }
+    .sender-copy { font-size: 13px; line-height: 1.45; }
+    .sender-copy strong { font-size: 14px; }
+    .message-copy { max-width: 650px; color: #3c4043; font: 14px/1.65 Arial, sans-serif; }
+    .message-copy p { margin: 0 0 16px; }
+    .message-button { display: inline-block; margin-top: 10px; padding: 11px 18px; background: #1a73e8; color: white; border-radius: 4px; font-weight: 600; }
+    .inbox-glimpse { border-left: 1px solid var(--gmail-line); background: #fbfcfe; padding: 12px 0; overflow: hidden; }
+    .glimpse-head { display: flex; align-items: center; padding: 0 14px 10px; font-size: 12px; color: #6f7278; }
+    .glimpse-head strong { color: #3c4043; font-size: 13px; }
+    .glimpse-head span { margin-left: auto; }
+    .mail-row { display: grid; grid-template-columns: 9px 1fr auto; gap: 10px; padding: 10px 14px; border-top: 1px solid #edf0f3; font-size: 12px; color: #52555c; background: white; }
+    .mail-row.unread { color: #202124; font-weight: 650; background: #f3f6fb; }
+    .unread-dot { width: 7px; height: 7px; margin-top: 4px; border-radius: 50%; background: var(--gmail-blue); }
+    .mail-row:not(.unread) .unread-dot { background: transparent; }
+    .mail-subject { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+    .companion {
+      position: absolute;
+      z-index: 5;
+      top: 76px;
+      right: 18px;
+      bottom: auto;
+      width: var(--panel-width);
+      min-height: 360px;
+      max-height: calc(100vh - 92px);
+      display: flex;
+      flex-direction: column;
+      background: var(--tw-bg);
+      border: 1px solid var(--tw-border);
+      border-radius: 12px;
+      box-shadow: var(--tw-shadow);
+      overflow: hidden;
+    }
+
+    .tw-header {
+      flex: 0 0 auto;
+      min-height: 52px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 12px;
+      border-bottom: 1px solid var(--tw-border);
+      background: rgba(255,255,255,.98);
+    }
+
+    .tw-logo { width: 30px; height: 30px; border-radius: 8px; display: block; }
+    .tw-brand { min-width: 0; }
+    .tw-brand strong { display: block; font-size: 13px; line-height: 1.2; font-weight: 680; }
+    .tw-brand span { display: block; margin-top: 2px; color: var(--tw-muted); font-size: 11px; line-height: 1.25; }
+    .tw-header-actions { display: flex; align-items: center; gap: 2px; margin-left: auto; }
+    .icon-button { width: 30px; height: 30px; border: 0; border-radius: 7px; background: transparent; display: grid; place-items: center; color: #64666e; cursor: pointer; }
+    .icon-button:hover { background: var(--tw-subtle-2); }
+    .icon-button:focus-visible, .button:focus-visible, .scenario-button:focus-visible, .view-button:focus-visible { outline: 2px solid var(--tw-purple); outline-offset: 2px; }
+    .kebab { font-size: 19px; letter-spacing: 1px; transform: translateY(-2px); }
+    .minimize { width: 12px; border-top: 2px solid currentColor; }
+
+    .tw-scroll { min-height: 0; flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #c9cbd1 transparent; }
+    .tw-content { padding: 14px 14px 16px; }
+
+    .scope-receipt {
+      display: grid;
+      grid-template-columns: 28px minmax(0, 1fr) auto;
+      gap: 9px;
+      align-items: start;
+      padding-bottom: 13px;
+      border-bottom: 1px solid var(--tw-border);
+    }
+    .status-icon { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 50%; background: var(--tw-green-soft); color: var(--tw-green); font-size: 14px; font-weight: 800; }
+    .status-icon.neutral { background: var(--tw-purple-soft); color: var(--tw-purple); }
+    .status-icon.warn { background: var(--tw-amber-soft); color: var(--tw-amber); }
+    .status-icon.error { background: var(--tw-red-soft); color: var(--tw-red); }
+    .receipt-title { font-size: 13px; line-height: 1.35; font-weight: 680; }
+    .receipt-meta { margin-top: 2px; color: var(--tw-muted); font-size: 11.5px; line-height: 1.4; }
+    .text-button { border: 0; background: transparent; color: var(--tw-purple); padding: 2px 0; font-size: 11.5px; font-weight: 650; cursor: pointer; }
+
+    .coverage { padding-top: 16px; }
+    .scope-label { display: flex; align-items: center; gap: 7px; color: var(--tw-muted); font-size: 11.5px; font-weight: 620; }
+    .scope-label::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--state-color, var(--tw-faint)); box-shadow: 0 0 0 3px var(--state-soft, var(--tw-subtle-2)); }
+    .coverage h2 { margin: 9px 0 5px; font-size: 19px; line-height: 1.25; letter-spacing: -.015em; font-weight: 690; }
+    .coverage-summary { margin: 0; color: var(--tw-muted); font-size: 12.5px; line-height: 1.5; }
+
+    .coverage-stats { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 14px; padding: 10px 0; border-block: 1px solid var(--tw-border); }
+    .stat { min-width: 0; padding: 0 10px; border-right: 1px solid var(--tw-border); }
+    .stat:first-child { padding-left: 0; }
+    .stat:last-child { padding-right: 0; border-right: 0; }
+    .stat strong { display: block; font-size: 14px; line-height: 1.2; font-weight: 690; }
+    .stat span { display: block; margin-top: 3px; color: var(--tw-muted); font-size: 10.5px; line-height: 1.2; }
+
+    .progress-track { height: 5px; margin-top: 14px; overflow: hidden; border-radius: 3px; background: #ebecef; }
+    .progress-fill { width: var(--progress, 0%); height: 100%; border-radius: inherit; background: var(--tw-purple); transition: width .35s ease; }
+    .checking .progress-fill { width: 44%; animation: checking 1.4s ease-in-out infinite; }
+    @keyframes checking { 0% { transform: translateX(-85%); } 60% { transform: translateX(115%); } 100% { transform: translateX(115%); } }
+    @media (prefers-reduced-motion: reduce) { .checking .progress-fill { animation: none; width: 55%; } }
+
+    .truth-note { display: flex; gap: 8px; margin-top: 13px; padding: 9px 10px; background: var(--tw-subtle); border-radius: 7px; color: #5c5f67; font-size: 11.5px; line-height: 1.42; }
+    .truth-note svg { flex: 0 0 auto; margin-top: 1px; }
+
+    details.scope-details { margin-top: 10px; border-top: 1px solid var(--tw-border); }
+    details.scope-details summary { list-style: none; cursor: pointer; padding: 11px 0 2px; color: #565861; font-size: 11.5px; font-weight: 620; }
+    details.scope-details summary::-webkit-details-marker { display: none; }
+    details.scope-details summary::after { content: "⌄"; float: right; color: var(--tw-faint); font-size: 14px; }
+    details.scope-details[open] summary::after { transform: rotate(180deg); }
+    .detail-grid { margin-top: 8px; display: grid; grid-template-columns: 80px 1fr; gap: 7px 10px; font-size: 11.5px; line-height: 1.4; }
+    .detail-grid dt { color: var(--tw-muted); }
+    .detail-grid dd { margin: 0; color: #3f4148; }
+
+    .next-review { display: grid; grid-template-columns: 42px minmax(0, 1fr); gap: 8px; align-items: center; margin-top: 12px; padding: 10px 0; border-block: 1px solid var(--tw-border); }
+    .next-review > span { color: var(--tw-muted); font-size: 10.5px; }
+    .next-review strong { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12px; }
+    .next-review small { display: block; margin-top: 3px; color: var(--tw-muted); font-size: 10.5px; }
+
+    .tw-actions { flex: 0 0 auto; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 10px 12px 12px; border-top: 1px solid var(--tw-border); background: rgba(255,255,255,.98); }
+    .button { min-height: 36px; border: 1px solid transparent; border-radius: 7px; padding: 8px 12px; font-size: 12.5px; line-height: 1.2; font-weight: 680; cursor: pointer; }
+    .button.primary { background: var(--tw-purple); color: white; }
+    .button.primary:hover { background: var(--tw-purple-hover); }
+    .button.primary:disabled { background: #b6b3e8; cursor: wait; }
+    .button.secondary { border-color: var(--tw-border-strong); background: white; color: #464851; }
+    .button.secondary:hover { background: var(--tw-subtle); }
+    .button.icon-only { width: 38px; padding-inline: 0; font-size: 18px; letter-spacing: 1px; }
+    .shortcut { opacity: .65; margin-left: 5px; font-size: 10px; font-weight: 500; }
+
+    .toast { position: absolute; z-index: 8; right: 14px; bottom: 62px; max-width: 260px; padding: 8px 10px; border-radius: 7px; background: #2f3037; color: white; box-shadow: 0 4px 16px rgba(0,0,0,.18); font-size: 11.5px; opacity: 0; transform: translateY(5px); pointer-events: none; transition: .18s ease; }
+    .toast.show { opacity: 1; transform: translateY(0); }
+
+    .context-menu { position: absolute; z-index: 9; right: 12px; bottom: 56px; width: 180px; padding: 5px; border: 1px solid var(--tw-border); border-radius: 8px; background: white; box-shadow: 0 10px 24px rgba(22,25,35,.16); }
+    .context-menu button { width: 100%; border: 0; border-radius: 5px; padding: 8px 9px; background: transparent; text-align: left; font-size: 12px; cursor: pointer; }
+    .context-menu button:hover { background: var(--tw-subtle); }
+    .context-menu .menu-separator { margin: 4px 5px; border-top: 1px solid var(--tw-border); }
+
+    .prototype-controls { position: fixed; z-index: 20; left: 16px; bottom: 16px; width: min(560px, calc(100vw - 470px)); min-width: 480px; padding: 9px; border: 1px solid rgba(255,255,255,.15); border-radius: 11px; background: rgba(34,36,43,.94); box-shadow: 0 10px 32px rgba(0,0,0,.2); color: white; backdrop-filter: blur(10px); }
+    .control-row { display: flex; align-items: center; gap: 6px; }
+    .control-row + .control-row { margin-top: 7px; }
+    .control-label { flex: 0 0 58px; color: #b8bac2; font-size: 10.5px; }
+    .control-scroll { display: flex; gap: 4px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+    .control-scroll::-webkit-scrollbar { display: none; }
+    .scenario-button, .view-button { flex: 0 0 auto; border: 0; border-radius: 6px; padding: 6px 8px; background: transparent; color: #d9dae0; font-size: 10.5px; cursor: pointer; }
+    .scenario-button:hover, .view-button:hover { background: rgba(255,255,255,.1); }
+    .scenario-button.active, .view-button.active { background: white; color: #24252a; }
+
+    .compare-view { height: 100vh; overflow: auto; padding: 64px 28px 32px; background: #f3f4f7; }
+    .compare-head { max-width: 1280px; margin: 0 auto 18px; }
+    .compare-head h1 { margin: 0; font-size: 22px; letter-spacing: -.02em; }
+    .compare-head p { margin: 6px 0 0; color: var(--tw-muted); font-size: 13px; }
+    .comparison-grid { max-width: 1280px; margin: 0 auto; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; align-items: start; }
+    .comparison-cell { min-width: 0; }
+    .comparison-label { height: 42px; padding: 0 2px; }
+    .comparison-label strong { display: block; font-size: 12.5px; }
+    .comparison-label span { display: block; margin-top: 3px; color: var(--tw-muted); font-size: 10.5px; }
+    .comparison-panel { height: 470px; display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--tw-border); border-radius: 12px; background: white; box-shadow: 0 6px 18px rgba(31,35,48,.08); }
+    .comparison-panel .tw-header { min-height: 50px; }
+    .compare-body { min-height: 0; flex: 1; overflow: auto; padding: 14px; }
+    .compare-body h2 { margin: 10px 0 6px; font-size: 18px; }
+    .compare-body p { margin: 0; color: var(--tw-muted); font-size: 12px; line-height: 1.48; }
+    .compare-actions { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 10px 12px 12px; border-top: 1px solid var(--tw-border); }
+    .old-complete { margin-top: 14px; padding: 16px; border: 1px solid #d9dce2; border-radius: 9px; text-align: center; }
+    .old-complete .big-check { width: 40px; height: 40px; margin: 0 auto 10px; display: grid; place-items: center; border-radius: 50%; background: var(--tw-green-soft); color: var(--tw-green); font-weight: 800; }
+    .old-complete h2 { margin: 0 0 6px; }
+    .reference-card { margin-top: 13px; padding-top: 13px; border-top: 1px solid var(--tw-border); }
+    .reference-row { display: grid; grid-template-columns: 70px 1fr; gap: 8px; padding: 7px 0; border-bottom: 1px solid var(--tw-border); font-size: 11.5px; }
+    .reference-row span { color: var(--tw-muted); }
+    .reference-row strong { font-weight: 620; }
+    .compare-problem { margin-top: 12px; display: flex; gap: 7px; padding: 9px; border-radius: 7px; background: var(--tw-red-soft); color: #792336; font-size: 10.5px; line-height: 1.4; }
+
+    .surface-view { height: 100vh; overflow: auto; padding: 62px 26px 34px; background: #f3f4f7; }
+    .surface-head { max-width: 1180px; margin: 0 auto 18px; }
+    .surface-head h1 { margin: 0; font-size: 22px; }
+    .surface-head p { margin: 6px 0 0; color: var(--tw-muted); font-size: 13px; }
+    .surface-grid { max-width: 1180px; margin: 0 auto; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .surface-card { min-height: 210px; overflow: hidden; border: 1px solid var(--tw-border); border-radius: 10px; background: white; box-shadow: 0 4px 14px rgba(31,35,48,.06); }
+    .surface-title { display: flex; align-items: center; gap: 9px; padding: 10px 11px; border-bottom: 1px solid var(--tw-border); }
+    .surface-title img { width: 24px; height: 24px; border-radius: 6px; }
+    .surface-title strong { font-size: 11.5px; }
+    .surface-title span { display: block; margin-top: 2px; color: var(--tw-muted); font-size: 9.5px; }
+    .surface-content { padding: 13px; }
+    .surface-content h2 { margin: 7px 0 5px; font-size: 16px; letter-spacing: -.01em; }
+    .surface-content p { margin: 0; color: var(--tw-muted); font-size: 11px; line-height: 1.45; }
+    .surface-actions { display: flex; gap: 6px; margin-top: 13px; }
+    .surface-actions .button { min-height: 32px; padding: 7px 10px; font-size: 11px; }
+    .surface-kicker { color: var(--tw-purple); font-size: 10.5px; font-weight: 680; }
+    .mini-progress { display: flex; gap: 4px; margin-top: 10px; }
+    .mini-progress i { width: 26px; height: 3px; border-radius: 2px; background: var(--tw-border); }
+    .mini-progress i.on { background: var(--tw-purple); }
+    .mini-field { margin-top: 10px; padding: 9px 10px; border: 1px solid var(--tw-border-strong); border-radius: 7px; color: #3f4148; font-size: 11px; }
+    .activity-row { display: grid; grid-template-columns: 22px 1fr auto; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--tw-border); }
+    .activity-row .status-icon { width: 22px; height: 22px; font-size: 11px; }
+    .activity-row strong { display: block; font-size: 10.5px; }
+    .activity-row span { color: var(--tw-muted); font-size: 9.5px; }
+
+    .approach-note { position: absolute; top: 11px; left: 50%; transform: translateX(-50%); z-index: 6; padding: 5px 8px; border-radius: 6px; background: rgba(32,34,40,.84); color: white; font-size: 10px; pointer-events: none; opacity: 0; transition: opacity .15s; }
+    body.show-approach .approach-note { opacity: 1; }
+    body.minimized .companion { width: 222px; min-height: 0; max-height: 52px; }
+    body.minimized .tw-scroll, body.minimized .tw-actions { display: none; }
+
+    body[data-approach="checkpoint"] .scope-receipt { display: none; }
+    body[data-approach="checkpoint"] .coverage { padding-top: 2px; }
+    body[data-approach="checkpoint"] .coverage::before { content: "Selected email handled"; display: block; margin-bottom: 14px; padding: 9px 10px; border-radius: 7px; background: var(--tw-green-soft); color: #19684f; font-size: 11.5px; font-weight: 650; }
+    body[data-approach="badge"] .scope-receipt { padding-bottom: 10px; }
+    body[data-approach="badge"] .coverage { margin-inline: -14px; padding: 11px 14px 0; background: var(--tw-subtle); }
+    body[data-approach="badge"] .coverage-stats, body[data-approach="badge"] .next-review { background: white; margin-inline: -14px; padding-inline: 14px; }
+
+    @media (max-width: 1120px) {
+      .gmail-body { grid-template-columns: 190px minmax(480px, 1fr); }
+      .gmail-wordmark { min-width: 145px; }
+      .email-layout { grid-template-columns: 1fr; }
+      .inbox-glimpse { display: none; }
+      .prototype-controls { width: min(500px, calc(100vw - 455px)); min-width: 400px; }
+      .comparison-grid { grid-template-columns: 1fr; max-width: 408px; }
+      .comparison-cell { margin-bottom: 18px; }
+      .surface-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    @media (max-height: 680px) {
+      .companion { top: 70px; bottom: auto; max-height: calc(100vh - 80px); }
+      .tw-content { padding-top: 11px; }
+      .coverage { padding-top: 12px; }
+      .coverage h2 { font-size: 17px; margin-top: 7px; }
+      .coverage-stats { margin-top: 10px; padding-block: 8px; }
+      .truth-note { margin-top: 9px; }
+      .queue-list { margin-top: 9px; }
+      .prototype-controls { bottom: 10px; }
+      .compare-view { padding-top: 30px; padding-bottom: 104px; }
+      .compare-head { margin-bottom: 12px; }
+      .comparison-label { height: 34px; }
+      .comparison-panel { height: 428px; }
+      .surface-view { padding-top: 30px; padding-bottom: 104px; }
+    }
+
+    @media (max-width: 800px) {
+      .gmail-nav { display: none; }
+      .gmail-body { display: block; }
+      .gmail-main { margin-left: 10px; }
+      .companion { left: 12px; right: 12px; width: auto; }
+      .prototype-controls { left: 12px; right: 12px; width: auto; min-width: 0; }
+      .surface-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body data-approach="split">
+  <main id="prototypeView" class="gmail" aria-label="Threadwise inside a simulated Gmail reading view">
+    <div class="gmail-topbar" aria-hidden="true">
+      <span class="gmail-menu"></span>
+      <div class="gmail-wordmark"><span class="gmail-mark"></span><span>Gmail</span></div>
+      <div class="gmail-search"><span class="gmail-search-icon"></span><span>Search mail</span></div>
+      <div class="gmail-avatar">CB</div>
+    </div>
+    <div class="gmail-body" aria-hidden="true">
+      <nav class="gmail-nav">
+        <div class="compose" style="display:flex;align-items:center;justify-content:center">＋ &nbsp; Compose</div>
+        <div class="nav-list">
+          <div class="nav-item active"><span class="nav-icon">▰</span> Inbox <span class="nav-count">18</span></div>
+          <div class="nav-item"><span class="nav-icon">☆</span> Starred</div>
+          <div class="nav-item"><span class="nav-icon">◷</span> Snoozed</div>
+          <div class="nav-item"><span class="nav-icon">➤</span> Sent</div>
+          <div class="nav-item"><span class="nav-icon">▤</span> Drafts <span class="nav-count">3</span></div>
+        </div>
+      </nav>
+      <section class="gmail-main">
+        <div class="mail-toolbar">← &nbsp;&nbsp; Archive &nbsp;&nbsp; Report spam &nbsp;&nbsp; More <span style="margin-left:auto">1 of 4,281 &nbsp; ‹ &nbsp; ›</span></div>
+        <div class="email-layout">
+          <article class="message">
+            <h1>Your Acme Cloud receipt for July</h1>
+            <div class="sender"><div class="sender-avatar">A</div><div class="sender-copy"><strong>Acme Cloud</strong> &lt;billing@acme.example&gt;<br><span style="color:#6f7074">to me</span></div></div>
+            <div class="message-copy">
+              <p>Thanks for your payment. Your July workspace invoice is ready.</p>
+              <p>Invoice #AC-28417 &nbsp; · &nbsp; Total €84.00</p>
+              <span class="message-button">View invoice</span>
+            </div>
+          </article>
+          <aside class="inbox-glimpse">
+            <div class="glimpse-head"><strong>Inbox</strong><span>18 unread</span></div>
+            <div class="mail-row unread"><i class="unread-dot"></i><span class="mail-subject">Maya · Revised launch brief</span><span>10:42</span></div>
+            <div class="mail-row unread"><i class="unread-dot"></i><span class="mail-subject">Vercel · Deployment needs attention</span><span>10:31</span></div>
+            <div class="mail-row"><i class="unread-dot"></i><span class="mail-subject">Acme Cloud · Your July receipt</span><span>10:12</span></div>
+            <div class="mail-row unread"><i class="unread-dot"></i><span class="mail-subject">Rina · Tomorrow's customer call</span><span>09:57</span></div>
+            <div class="mail-row unread"><i class="unread-dot"></i><span class="mail-subject">GitHub · Security alert</span><span>09:41</span></div>
+            <div class="mail-row"><i class="unread-dot"></i><span class="mail-subject">Figma · 4 new comments</span><span>09:15</span></div>
+            <div class="mail-row unread"><i class="unread-dot"></i><span class="mail-subject">Jon · Quick question</span><span>08:50</span></div>
+          </aside>
+        </div>
+      </section>
+    </div>
+
+    <section class="companion" aria-label="Threadwise companion">
+      <div class="approach-note" id="approachNote">Two scopes · recommended</div>
+      <header class="tw-header">
+        <img class="tw-logo" src="../extensions/gmail_companion/assets/brand/threadwise-app-icon.png" alt="Threadwise">
+        <div class="tw-brand"><strong>Threadwise</strong><span id="shellStatus">Coverage not checked</span></div>
+        <div class="tw-header-actions">
+          <button class="icon-button" id="homeButton" aria-label="Threadwise home" title="Home">⌂</button>
+          <button class="icon-button" id="minimizeButton" aria-label="Minimize Threadwise" title="Minimize"><span class="minimize"></span></button>
+        </div>
+      </header>
+      <div class="tw-scroll">
+        <div class="tw-content" id="panelContent" aria-live="polite"></div>
+      </div>
+      <footer class="tw-actions" id="panelActions"></footer>
+      <div class="toast" id="toast" role="status"></div>
+      <div class="context-menu" id="contextMenu" hidden>
+        <button data-action="details">What was checked?</button>
+        <button data-action="activity">Open activity</button>
+        <div class="menu-separator"></div>
+        <button data-action="why">Why isn’t every unread email here?</button>
+      </div>
+    </section>
+  </main>
+
+  <section id="compareView" class="compare-view" hidden>
+    <div class="compare-head">
+      <h1>One action, three product promises</h1>
+      <p>The proposed model keeps “this email” and “Gmail coverage” visibly separate.</p>
+    </div>
+    <div class="comparison-grid">
+      <article class="comparison-cell">
+        <div class="comparison-label"><strong>Current · ambiguous</strong><span>Completion without scope or freshness</span></div>
+        <div class="comparison-panel">
+          <header class="tw-header"><img class="tw-logo" src="../extensions/gmail_companion/assets/brand/threadwise-app-icon.png" alt=""><div class="tw-brand"><strong>Threadwise</strong><span>Ready</span></div></header>
+          <div class="compare-body">
+            <div class="old-complete"><div class="big-check">✓</div><h2>Review queue complete</h2><p>Everything is handled. You’re all caught up.</p></div>
+            <div class="compare-problem">! &nbsp; Gmail still shows unread mail, but this state never says what Threadwise checked or when.</div>
+          </div>
+          <footer class="compare-actions"><button class="button primary">Done</button><button class="button secondary icon-only" aria-label="More actions">⋯</button></footer>
+        </div>
+      </article>
+      <article class="comparison-cell">
+        <div class="comparison-label"><strong>Reference · Variant C</strong><span>Compact, contextual selected-email judgment</span></div>
+        <div class="comparison-panel">
+          <header class="tw-header"><img class="tw-logo" src="../extensions/gmail_companion/assets/brand/threadwise-app-icon.png" alt=""><div class="tw-brand"><strong>Threadwise</strong><span>1 of 6 to review</span></div></header>
+          <div class="compare-body">
+            <div class="scope-label" style="--state-color:var(--tw-purple);--state-soft:var(--tw-purple-soft)">Current email</div>
+            <h2 style="margin-top:9px">Receipts</h2><p>Looks like a paid invoice from Acme Cloud.</p>
+            <div class="reference-card">
+              <div class="reference-row"><span>Action</span><strong>Apply Receipts</strong></div>
+              <div class="reference-row"><span>Inbox</span><strong>Keep in inbox</strong></div>
+              <div class="reference-row"><span>Scope</span><strong>This email</strong></div>
+            </div>
+          </div>
+          <footer class="compare-actions"><button class="button primary">Accept Receipts</button><button class="button secondary icon-only" aria-label="More actions">⋯</button></footer>
+        </div>
+      </article>
+      <article class="comparison-cell">
+        <div class="comparison-label"><strong>Proposed · two scopes</strong><span>Selected email resolved; Gmail coverage honest</span></div>
+        <div class="comparison-panel">
+          <header class="tw-header"><img class="tw-logo" src="../extensions/gmail_companion/assets/brand/threadwise-app-icon.png" alt=""><div class="tw-brand"><strong>Threadwise</strong><span>Coverage not checked</span></div></header>
+          <div class="compare-body">
+            <div class="scope-receipt"><span class="status-icon">✓</span><div><div class="receipt-title">This email is handled</div><div class="receipt-meta">Receipts · kept in Inbox</div></div><button class="text-button">Change</button></div>
+            <div class="coverage" style="--state-color:var(--tw-faint);--state-soft:var(--tw-subtle-2)"><div class="scope-label">Gmail coverage</div><h2>Inbox not checked</h2>
+              <div class="truth-note">ⓘ <span>Unread mail stays in Gmail. Only checked messages needing your judgment enter this queue.</span></div>
+            </div>
+          </div>
+          <footer class="compare-actions"><button class="button primary">Check Gmail</button><button class="button secondary icon-only" aria-label="More actions">⋯</button></footer>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section id="surfaceView" class="surface-view" hidden>
+    <div class="surface-head">
+      <h1>Variant C surface sweep</h1>
+      <p>The same compact grammar applied to the secondary states that still carry the old editorial treatment.</p>
+    </div>
+    <div class="surface-grid">
+      <article class="surface-card"><div class="surface-title"><img src="../extensions/gmail_companion/assets/brand/threadwise-app-icon.png" alt=""><div><strong>Onboarding</strong><span>First-run, current context</span></div></div><div class="surface-content"><span class="surface-kicker">Start here</span><h2>Review the email you opened</h2><p>Threadwise suggests an action. You decide, then teach it what to handle next time.</p><div class="mini-progress"><i class="on"></i><i></i><i></i></div><div class="surface-actions"><button class="button primary">Review this email</button><button class="button secondary">Not now</button></div></div></article>
+      <article class="surface-card"><div class="surface-title"><img src="../extensions/gmail_companion/assets/brand/threadwise-app-icon.png" alt=""><div><strong>Understanding</strong><span>Current email only</span></div></div><div class="surface-content"><span class="surface-kicker">Current email</span><h2>Checking this message…</h2><p>Reading sender, subject, and thread context. This does not check the rest of Gmail.</p><div class="progress-track checking" role="progressbar" aria-label="Checking current email" aria-valuetext="In progress"><div class="progress-fill"></div></div><div class="surface-actions"><button class="button secondary">Cancel</button></div></div></article>
+      <article class="surface-card"><div class="surface-title"><img src="../extensions/gmail_companion/assets/brand/threadwise-app-icon.png" alt=""><div><strong>Action failure</strong><span>Outcome preserved</span></div></div><div class="surface-content"><span class="surface-kicker" style="color:var(--tw-red)">Needs attention</span><h2>Couldn’t apply Receipts</h2><p>The email was not changed. Your decision is saved so you can retry without re-reviewing.</p><div class="surface-actions"><button class="button primary">Try again</button><button class="button secondary">Details</button></div></div></article>
+      <article class="surface-card"><div class="surface-title"><img src="../extensions/gmail_companion/assets/brand/threadwise-app-icon.png" alt=""><div><strong>Correction</strong><span>One compact decision</span></div></div><div class="surface-content"><span class="surface-kicker">Change label</span><h2>What should this be?</h2><div class="mini-field">Finance / Receipts <span style="float:right;color:var(--tw-muted)">⌄</span></div><p style="margin-top:8px">Preview shows only what will change on this email.</p><div class="surface-actions"><button class="button primary">Preview change</button><button class="button secondary">Cancel</button></div></div></article>
+      <article class="surface-card"><div class="surface-title"><img src="../extensions/gmail_companion/assets/brand/threadwise-app-icon.png" alt=""><div><strong>Teach future emails</strong><span>Progressive disclosure</span></div></div><div class="surface-content"><span class="surface-kicker">Optional</span><h2>Handle Acme receipts?</h2><p>Future receipts from billing@acme.example can use the same label. Nothing is enabled until you confirm.</p><div class="surface-actions"><button class="button primary">Review rule</button><button class="button secondary">Skip</button></div></div></article>
+      <article class="surface-card"><div class="surface-title"><img src="../extensions/gmail_companion/assets/brand/threadwise-app-icon.png" alt=""><div><strong>Activity</strong><span>Factual, scannable history</span></div></div><div class="surface-content"><div class="activity-row"><span class="status-icon">✓</span><div><strong>Applied Receipts</strong><span>Acme Cloud · just now</span></div><span>›</span></div><div class="activity-row"><span class="status-icon neutral">↻</span><div><strong>Checked 42 messages</strong><span>6 need review · 1 min ago</span></div><span>›</span></div><div class="activity-row"><span class="status-icon warn">!</span><div><strong>Check incomplete</strong><span>11 not checked · yesterday</span></div><span>›</span></div></div></article>
+    </div>
+  </section>
+
+  <aside class="prototype-controls" aria-label="Prototype controls">
+    <div class="control-row"><span class="control-label">View</span><div class="control-scroll" id="viewControls"><button class="view-button active" data-view="prototype">Prototype</button><button class="view-button" data-view="compare">Compare</button><button class="view-button" data-view="surfaces">Surface sweep</button></div></div>
+    <div class="control-row" id="stateRow"><span class="control-label">State</span><div class="control-scroll" id="stateControls"></div></div>
+    <div class="control-row" id="approachRow"><span class="control-label">Approach</span><div class="control-scroll" id="approachControls"><button class="scenario-button" data-approach="checkpoint">Checkpoint</button><button class="scenario-button" data-approach="badge">Coverage band</button><button class="scenario-button active" data-approach="split">Two scopes · recommended</button></div></div>
+  </aside>
+
+  <script>
+    const states = [
+      ["handled-unknown", "Handled · unknown"],
+      ["checking", "Checking Gmail"],
+      ["queue-ready", "Queue ready"],
+      ["verified-clear", "Verified clear"],
+      ["partial", "Partial"],
+      ["failed", "Failed"],
+      ["stale", "Stale"],
+      ["offline", "Offline"]
+    ];
+
+    const stateModel = {
+      "handled-unknown": {
+        shell: "Coverage not checked", tone: "unknown", label: "Gmail coverage", title: "Inbox not checked",
+        summary: "Threadwise handled the email you opened. Check Gmail before judging the wider review queue.",
+        stats: [["—", "checked"], ["—", "need review"], ["Unknown", "freshness"]],
+        showStats: false,
+        note: "Unread mail stays in Gmail. Only checked messages needing your judgment enter this queue.",
+        primary: "Check Gmail", primaryAction: "check", progress: 0,
+        details: [["Coverage", "No provider-wide check in this session"], ["Queue", "Not verified"], ["Selected", "This email only"]]
+      },
+      checking: {
+        shell: "Checking Gmail…", tone: "neutral", label: "Gmail coverage", title: "Checking new and changed mail…",
+        summary: "Threadwise is checking provider state. You can keep using Gmail while this runs.",
+        stats: [["18", "checked"], ["4", "need review"], ["In progress", "freshness"]],
+        note: "The review count can change until the check finishes.",
+        primary: "Checking…", primaryAction: "none", progress: 43, disabled: true,
+        details: [["Coverage", "18 of about 42 new or changed messages"], ["Queue", "4 found so far"], ["Selected", "Already handled"]]
+      },
+      "queue-ready": {
+        shell: "6 need review", tone: "neutral", label: "Gmail coverage", title: "6 emails need your review",
+        summary: "Threadwise checked 42 new and changed messages. The rest did not need a decision.",
+        stats: [["42", "checked"], ["6", "need review"], ["Just now", "freshness"]],
+        note: "This is a review queue, not an unread count. Gmail still owns the Inbox.",
+        primary: "Review first", primaryAction: "review", secondary: "Check again", progress: 100,
+        next: ["Revised launch brief", "Maya · Project update"],
+        details: [["Coverage", "42 new or changed messages"], ["Queue", "6 need human judgment"], ["Excluded", "36 did not need review"]]
+      },
+      "verified-clear": {
+        shell: "Queue clear · just now", tone: "success", label: "Gmail coverage", title: "Review queue clear",
+        summary: "Threadwise freshly checked 42 new and changed messages. None need your judgment.",
+        stats: [["42", "checked"], ["0", "need review"], ["Just now", "freshness"]],
+        note: "Gmail may still contain unread mail. Clear means no checked messages need review.",
+        primary: "Back to Gmail", primaryAction: "gmail", secondary: "Check again", progress: 100,
+        details: [["Coverage", "42 new or changed messages"], ["Queue", "Freshly verified clear"], ["Gmail", "Unread and Inbox counts are unchanged"]]
+      },
+      partial: {
+        shell: "Check incomplete", tone: "warning", label: "Gmail coverage", title: "11 messages weren’t checked",
+        summary: "Threadwise checked 31 of 42 new and changed messages. Two of those need review.",
+        stats: [["31 / 42", "checked"], ["2", "need review"], ["Partial", "coverage"]],
+        note: "The queue is not clear. Finish the check, or review the two messages already found.",
+        primary: "Finish check", primaryAction: "check", secondary: "Review 2", progress: 74,
+        details: [["Checked", "31 messages"], ["Not checked", "11 messages"], ["Cause", "Gmail check stopped early"]]
+      },
+      failed: {
+        shell: "Check failed", tone: "error", label: "Gmail coverage", title: "Gmail check failed",
+        summary: "Threadwise checked 18 of 42 new and changed messages before the check stopped.",
+        stats: [["18 / 42", "checked"], ["4", "found so far"], ["Failed", "coverage"]],
+        note: "The queue is not clear. Retry the check, or review the four messages already found.",
+        primary: "Try again", primaryAction: "retry", secondary: "Review 4", progress: 43,
+        details: [["Checked", "18 messages"], ["Not checked", "24 messages"], ["Cause", "Gmail stopped responding"]]
+      },
+      stale: {
+        shell: "Coverage out of date", tone: "warning", label: "Gmail coverage", title: "Queue status is out of date",
+        summary: "Gmail has changed since Threadwise last checked. The previous queue result may no longer be accurate.",
+        stats: [["42", "last checked"], ["0", "then needed review"], ["2h ago", "freshness"]],
+        note: "Threadwise won’t claim the queue is clear until Gmail is checked again.",
+        primary: "Check Gmail", primaryAction: "check", progress: 100,
+        details: [["Last check", "Today at 08:17"], ["Then", "No messages needed review"], ["Now", "Provider state has changed"]]
+      },
+      offline: {
+        shell: "Offline · last checked 2h ago", tone: "error", label: "Gmail coverage", title: "Can’t check Gmail",
+        summary: "Threadwise is offline. Your handled email is saved, but the wider queue cannot be verified.",
+        stats: [["42", "last checked"], ["0", "then needed review"], ["Offline", "now"]],
+        note: "No completion claim is shown while provider coverage is unavailable.",
+        primary: "Try again", primaryAction: "retry", secondary: "Details", progress: 100,
+        details: [["Last verified", "Today at 08:17"], ["Connection", "Gmail unavailable"], ["Selected", "Decision saved"]]
+      }
+    };
+
+    const views = { prototype: document.querySelector("#prototypeView"), compare: document.querySelector("#compareView"), surfaces: document.querySelector("#surfaceView") };
+    const panelContent = document.querySelector("#panelContent");
+    const panelActions = document.querySelector("#panelActions");
+    const shellStatus = document.querySelector("#shellStatus");
+    const contextMenu = document.querySelector("#contextMenu");
+    const toast = document.querySelector("#toast");
+    let params = new URLSearchParams(location.search);
+    let currentState = stateModel[params.get("state")] ? params.get("state") : "handled-unknown";
+    let currentView = ["prototype", "compare", "surfaces"].includes(params.get("view")) ? params.get("view") : "prototype";
+    let currentApproach = ["checkpoint", "badge", "split"].includes(params.get("approach")) ? params.get("approach") : "split";
+    let checkTimer;
+
+    const infoIcon = `<svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="6.25" stroke="currentColor"/><path d="M8 7.1v3.6M8 5.1h.01" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>`;
+
+    function toneVars(tone) {
+      if (tone === "success") return "--state-color:var(--tw-green);--state-soft:var(--tw-green-soft)";
+      if (tone === "warning") return "--state-color:var(--tw-amber);--state-soft:var(--tw-amber-soft)";
+      if (tone === "error") return "--state-color:var(--tw-red);--state-soft:var(--tw-red-soft)";
+      if (tone === "unknown") return "--state-color:var(--tw-faint);--state-soft:var(--tw-subtle-2)";
+      return "--state-color:var(--tw-purple);--state-soft:var(--tw-purple-soft)";
+    }
+
+    function iconClass(tone) { return tone === "error" ? "error" : tone === "warning" ? "warn" : tone === "neutral" ? "neutral" : ""; }
+    function statusGlyph(tone) { return tone === "error" ? "!" : tone === "warning" ? "!" : tone === "neutral" ? "✓" : "✓"; }
+
+    function render() {
+      const model = stateModel[currentState];
+      document.body.dataset.approach = currentApproach;
+      shellStatus.textContent = model.shell;
+      document.querySelectorAll(".scenario-button[data-state]").forEach(button => button.classList.toggle("active", button.dataset.state === currentState));
+      document.querySelectorAll(".scenario-button[data-approach]").forEach(button => button.classList.toggle("active", button.dataset.approach === currentApproach));
+
+      const stats = model.stats.map(([value, label]) => `<div class="stat"><strong>${value}</strong><span>${label}</span></div>`).join("");
+      const nextReview = model.next ? `<div class="next-review"><span>First up</span><div><strong>${model.next[0]}</strong><small>${model.next[1]}</small></div></div>` : "";
+      const details = `<details class="scope-details" id="coverageDetails"><summary>What was checked</summary><dl class="detail-grid">${model.details.map(([term, value]) => `<dt>${term}</dt><dd>${value}</dd>`).join("")}</dl></details>`;
+
+      panelContent.innerHTML = `
+        <div class="scope-receipt">
+          <span class="status-icon ${iconClass("success")}">✓</span>
+          <div><div class="receipt-title">This email is handled</div><div class="receipt-meta">Receipts · kept in Inbox</div></div>
+          <button class="text-button" data-action="change">Change</button>
+        </div>
+        <section class="coverage ${currentState === "checking" ? "checking" : ""}" style="${toneVars(model.tone)}">
+          <div class="scope-label">${model.label}</div>
+          <h2>${model.title}</h2>
+          ${model.showStats === false ? "" : `<div class="coverage-stats">${stats}</div>`}
+          ${currentState === "checking" || (model.progress > 0 && model.progress < 100) ? `<div class="progress-track" style="--progress:${model.progress}%" role="progressbar" aria-label="Gmail check progress" aria-valuemin="0" aria-valuemax="100" ${currentState === "checking" ? `aria-valuetext="Checking"` : `aria-valuenow="${model.progress}"`}><div class="progress-fill"></div></div>` : ""}
+          <div class="truth-note">${infoIcon}<span>${model.note}</span></div>
+          ${nextReview}${details}
+        </section>`;
+
+      const secondaryAction = model.secondary === "Check again" ? "check" : model.secondary === "Details" ? "details" : model.secondary && model.secondary.startsWith("Review") ? "review" : "menu";
+      panelActions.innerHTML = `<button class="button primary" ${model.disabled ? "disabled" : ""} data-action="${model.primaryAction}">${model.primary}${!model.disabled && ["check","review","retry"].includes(model.primaryAction) ? `<span class="shortcut">↵</span>` : ""}</button><button class="button secondary ${model.secondary ? "" : "icon-only"}" data-action="${secondaryAction}" ${model.secondary ? "" : `aria-label="More actions"`}>${model.secondary || "⋯"}</button>`;
+      [...panelContent.querySelectorAll("[data-action]"), ...panelActions.querySelectorAll("[data-action]")].forEach(button => {
+        button.addEventListener("click", event => {
+          event.stopPropagation();
+          handleAction(button.dataset.action);
+        });
+      });
+      contextMenu.hidden = true;
+      writeParams();
+    }
+
+    function writeParams() {
+      const next = new URLSearchParams();
+      if (currentView !== "prototype") next.set("view", currentView);
+      if (currentState !== "handled-unknown") next.set("state", currentState);
+      if (currentApproach !== "split") next.set("approach", currentApproach);
+      history.replaceState({}, "", `${location.pathname}${next.toString() ? `?${next}` : ""}`);
+    }
+
+    function setState(state) {
+      clearTimeout(checkTimer);
+      currentState = state;
+      render();
+    }
+
+    function setView(view) {
+      currentView = view;
+      document.body.dataset.view = view;
+      Object.entries(views).forEach(([name, node]) => node.hidden = name !== view);
+      document.querySelectorAll(".view-button").forEach(button => button.classList.toggle("active", button.dataset.view === view));
+      document.querySelector("#stateRow").hidden = view !== "prototype";
+      document.querySelector("#approachRow").hidden = view !== "prototype";
+      writeParams();
+    }
+
+    function showToast(message) {
+      toast.textContent = message;
+      toast.classList.add("show");
+      setTimeout(() => toast.classList.remove("show"), 1700);
+    }
+
+    function handleAction(action) {
+      if (action === "check" || action === "retry") {
+        setState("checking");
+        checkTimer = setTimeout(() => setState("queue-ready"), 1400);
+      } else if (action === "review") {
+        showToast("Opening the first checked message that needs judgment");
+      } else if (action === "gmail") {
+        showToast("Threadwise stays minimized; Gmail remains yours");
+      } else if (action === "change") {
+        showToast("Opens the compact label correction flow");
+      } else if (action === "details") {
+        contextMenu.hidden = true;
+        document.querySelector("#coverageDetails").open = true;
+      } else if (action === "activity") {
+        setView("surfaces");
+      } else if (action === "why") {
+        contextMenu.hidden = true;
+        showToast("Unread is a Gmail status; review means Threadwise needs your judgment");
+      } else if (action === "menu") {
+        contextMenu.hidden = !contextMenu.hidden;
+      }
+    }
+
+    const stateControls = document.querySelector("#stateControls");
+    states.forEach(([key, label]) => {
+      const button = document.createElement("button");
+      button.className = "scenario-button";
+      button.dataset.state = key;
+      button.textContent = label;
+      stateControls.append(button);
+    });
+
+    contextMenu.querySelectorAll("[data-action]").forEach(button => {
+      button.addEventListener("click", event => {
+        event.stopPropagation();
+        handleAction(button.dataset.action);
+      });
+    });
+
+    document.addEventListener("click", event => {
+      const stateButton = event.target.closest("[data-state]");
+      const viewButton = event.target.closest("[data-view]");
+      const approachButton = event.target.closest("[data-approach]");
+      const actionButton = event.target.closest("[data-action]");
+      if (stateButton) setState(stateButton.dataset.state);
+      else if (viewButton) setView(viewButton.dataset.view);
+      else if (approachButton) {
+        currentApproach = approachButton.dataset.approach;
+        document.body.classList.add("show-approach");
+        document.querySelector("#approachNote").textContent = approachButton.textContent;
+        setTimeout(() => document.body.classList.remove("show-approach"), 1100);
+        render();
+      } else if (actionButton) handleAction(actionButton.dataset.action);
+      else if (!event.target.closest("#contextMenu")) contextMenu.hidden = true;
+    });
+
+    document.addEventListener("keydown", event => {
+      if (event.key === "Escape") {
+        contextMenu.hidden = true;
+        const details = document.querySelector("#coverageDetails");
+        if (details) details.open = false;
+      }
+      if (event.key === "Enter" && currentView === "prototype" && !event.target.closest("button, summary")) {
+        const model = stateModel[currentState];
+        if (!model.disabled) handleAction(model.primaryAction);
+      }
+    });
+
+    document.querySelector("#homeButton").addEventListener("click", () => setView("surfaces"));
+    document.querySelector("#minimizeButton").addEventListener("click", event => {
+      const minimized = document.body.classList.toggle("minimized");
+      event.currentTarget.setAttribute("aria-label", minimized ? "Expand Threadwise" : "Minimize Threadwise");
+      event.currentTarget.title = minimized ? "Expand" : "Minimize";
+    });
+    render();
+    setView(currentView);
+  </script>
+</body>
+</html>
