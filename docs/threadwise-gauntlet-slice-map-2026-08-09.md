@@ -51,7 +51,7 @@ Each slice is a thin, demoable path. The Sol helm selects and triages one slice 
 7. **Truthful zero and freshness states**
    - Type: AFK
    - Blocked by: Slice 5
-   - Status: Founder-approved and implementation-ready on 2026-08-11; visual authority is `codex/threadwise-coverage-prototype` commit `e4f1b58`, with an explicit user-triggered read-only `Check Gmail` refresh and LIVE Gmail deferred to a founder-present follow-up
+   - Status: Implemented locally on 2026-08-11; fresh critic PASS/SHIP after one bounded truth-projection correction, automated browser evidence complete, LIVE Gmail deferred to a founder-present follow-up
    - Outcome: Distinguish verified provider Inbox zero, no Threadwise-reviewable items, stale sync, unavailable sync, unsynced mail, and unresolved items remaining.
 
 8. **Compact Home and activity hierarchy**

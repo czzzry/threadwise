@@ -220,6 +220,22 @@ The founder approved this milestone's LIVE checkpoint on 2026-08-11. Later work 
 - The corrected recovery loop detects and restores the helper in about five seconds; a dedicated LIVE keyboard-only recovery capture remains evidence backlog rather than a material blocker.
 - The first intro dismissal did not persist, while completing the intro via `Review this email` did persist across reload.
 - Standard browser capture and external console/request inspection were unavailable; fallback screenshots succeeded, but console/network diagnostics remain a validation limitation.
+
+## Slice 7 — Truthful Gmail coverage and freshness
+
+- Visual authority: `codex/threadwise-coverage-prototype` commit `e4f1b58`, with the approved Variant C production review surface preserved.
+- Product boundary: selected-email handling and provider coverage are independent. `Check Gmail` is explicit and read-only; unread mail is not presented as the review queue.
+- Provider boundary: dedicated `/api/gmail-coverage-check` uses Gmail read-only list/get access only. It never calls `/api/gmail-check-run`, `/api/provider-sync-run`, or label/archive/delete/trash/send routes.
+- Truth boundary: bounded or failed reads return partial/failed, never clear. Verified clear includes checked count, Gmail Inbox scope, freshness, and the explicit warning that Gmail may still contain unread mail.
+- States: handled/unknown, checking, queue ready, direct Variant C review, verified clear, partial, stale, failed, and offline.
+- AUTOMATED: `809/809` full repository tests; `131/131` focused coverage/UI tests; all companion Node suites; dedicated controlled-browser gate `18/18` normal/short screenshots, all contained, zero forbidden routes.
+- Evidence: `docs/gauntlet-evidence/coverage-2026-08-11/coverage-trace.json` plus paired state screenshots in the same directory.
+- Fresh critic round 1: ONE MORE ROUND because forced-Home coverage states retained `Ready` and failed/offline invented `Just now` without a completed check.
+- Bounded correction: every displayed coverage state now owns the header; failed/offline without a check show `— / — / Unknown`, while previous counts and age are preserved when available.
+- Fresh re-critique: PASS. Scores — Gmail nativeness `4/5`; visual clarity `5/5`; action efficiency `4/5`; information density `5/5`; keyboard/accessibility `4/5`; automated reliability `4/5`.
+- Single biggest material remaining gap: none in the automated slice.
+- Recommendation: `SHIP` to founder checkpoint.
+- LIVE: pending. The production unpacked extension must be reloaded and exercised in real Gmail with the founder present before this slice is called complete or pushed/deployed.
 - Opening the selected unread Gmail message caused Gmail's native unread count to change from 36 to 35; it was intentionally not restored without explicit write approval.
 - Visual restructuring must not hide recovery, receipts, correction, or provider-scoped truth in less common states.
 - The prototype's simplified accept-and-advance behavior cannot replace the production async and live-anchor contracts.

@@ -14,6 +14,7 @@
   const CONTEXT_ACTIONS = globalThis.ThreadwiseContextActions;
   const SELECTED_EXPLANATION = globalThis.ThreadwiseSelectedExplanation;
   const REVIEW_PROGRESSION = globalThis.ThreadwiseReviewProgression;
+  const COVERAGE = globalThis.ThreadwiseCoverage;
   if (!PROVIDER) {
     throw new Error("Threadwise provider adapter did not load.");
   }
@@ -31,6 +32,9 @@
   }
   if (!REVIEW_PROGRESSION) {
     throw new Error("Threadwise review progression module did not load.");
+  }
+  if (!COVERAGE) {
+    throw new Error("Threadwise coverage module did not load.");
   }
   const BRAND_ICON_URL = chrome.runtime.getURL("assets/brand/threadwise-app-icon.png");
   const ACTIVE_PROVIDER = PROVIDER.id;
@@ -139,6 +143,10 @@
   let progressionCheck = null;
   let progressionRefreshTimeoutId = null;
   let handledProgressionFlight = null;
+  let coverageState = COVERAGE.normalize({ status: "unknown" });
+  let coverageCheckInFlight = false;
+  let coverageDetailsOpen = false;
+  let coverageSyntheticNavigation = false;
 
   function boot() {
     companionLifecycleActive = true;
@@ -2113,6 +2121,14 @@
   function connectionStatusCopy() {
     const state = normalizeConnectionState(lastConnectionState);
     const needsAttentionCount = ((lastSidebarState && lastSidebarState.needs_attention_items) || []).length;
+    if (document.querySelector("[data-ea-coverage-state]")) {
+      const coverage = COVERAGE.model(coverageState);
+      return {
+        label: coverage.shell,
+        background: "transparent",
+        foreground: coverage.status === "failed" || coverage.status === "offline" ? "#b42318" : "#60666f",
+      };
+    }
     if (connectionRetryInFlight) {
       return {
         label: "Checking\u2026",
@@ -2793,6 +2809,61 @@
     handoffFromOnboarding(target);
   }
 
+  function coverageSummary(model) {
+    if (model.status === "unknown") return "Threadwise handled the email you opened. Check Gmail before judging the wider review queue.";
+    if (model.status === "checking") return "Reading current Gmail Inbox membership. No labels, archive actions, or other provider changes can run.";
+    if (model.status === "queue-ready") return `Threadwise checked ${model.checked_count} current Inbox message${model.checked_count === 1 ? "" : "s"}. Only the messages needing a decision entered this queue.`;
+    if (model.status === "verified-clear") return `Threadwise freshly checked ${model.checked_count} current Inbox message${model.checked_count === 1 ? "" : "s"}. None need your judgment.`;
+    if (model.status === "partial") return `Threadwise checked ${model.checked_count} of ${model.candidate_count || model.checked_count} messages in the stated scope. This is not a clear result.`;
+    if (model.status === "stale") return "Gmail may have changed since the last check. The previous queue result is no longer authoritative.";
+    if (model.status === "offline") return "The handled email is saved, but Threadwise cannot verify the wider queue while the companion is offline.";
+    return model.error || "Threadwise could not finish the read-only Gmail check. No queue-clear claim is available.";
+  }
+
+  function coverageActionKind(model) {
+    if (model.status === "queue-ready") return "coverage-review";
+    if (model.status === "verified-clear") return "coverage-back";
+    return "coverage-check";
+  }
+
+  function renderCoverageHtml({ includeHandledReceipt = false, handledMeta = "", showChange = false } = {}) {
+    const model = COVERAGE.model(coverageState);
+    const partialChecked = model.status === "partial" && model.candidate_count
+      ? `${model.checked_count} of ${model.candidate_count}`
+      : model.facts.checked;
+    const indicator = model.indicator === "indeterminate"
+      ? '<div data-ea-coverage-indicator="indeterminate" role="progressbar" aria-label="Checking Gmail coverage" style="height:3px;overflow:hidden;border-radius:999px;background:#ecebff;"><div style="width:42%;height:100%;border-radius:999px;background:#635bff;animation:ea-coverage-slide 1.1s ease-in-out infinite;"></div></div>'
+      : model.indicator === "determinate"
+        ? `<div data-ea-coverage-indicator="determinate" role="progressbar" aria-label="Gmail coverage checked" aria-valuemin="0" aria-valuemax="${Math.max(1, model.candidate_count)}" aria-valuenow="${model.checked_count}" style="height:3px;overflow:hidden;border-radius:999px;background:#ecebff;"><div style="width:${Math.min(100, Math.round((model.checked_count / Math.max(1, model.candidate_count)) * 100))}%;height:100%;border-radius:999px;background:#635bff;"></div></div>`
+        : "";
+    const nextItem = model.review_items[0] || null;
+    const nextHtml = model.status === "queue-ready" && nextItem
+      ? `<div data-ea-coverage-next style="border-top:1px solid #e2e5e9;padding-top:10px;min-width:0;"><div style="font-size:.7rem;letter-spacing:.06em;text-transform:uppercase;color:#7b8088;font-weight:760;">First up</div><div style="margin-top:4px;font-size:.86rem;font-weight:760;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(nextItem.subject || "(no subject)")}</div><div style="margin-top:2px;color:#6b6255;font-size:.75rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(nextItem.sender || "(unknown sender)")}</div></div>`
+      : "";
+    const secondaryAction = model.secondary
+      ? `<button type="button" data-ea-action="${model.secondary.startsWith("Review") ? "coverage-review" : model.secondary === "Details" ? "coverage-details" : "coverage-check"}" style="border:0;background:transparent;color:#5f5a78;padding:7px 2px;cursor:pointer;font:inherit;font-size:.78rem;font-weight:720;">${escapeHtml(model.secondary)}</button>`
+      : "";
+    const details = coverageDetailsOpen
+      ? `<div data-ea-coverage-details style="border-top:1px solid #e2e5e9;padding-top:9px;color:#6b6255;font-size:.73rem;line-height:1.45;"><div>Coverage: ${escapeHtml(model.scope)}</div><div>Queue: ${model.status === "verified-clear" ? "Freshly verified" : model.status === "queue-ready" ? "Freshly built" : "Not verified clear"}</div><div>Provider changes: None · read-only check</div></div>`
+      : "";
+    return `
+      <section data-ea-coverage-state="${escapeHtml(model.status)}" aria-live="polite" style="display:grid;gap:10px;color:#1f2328;">
+        ${includeHandledReceipt ? `<div data-ea-handled-coverage-receipt><div style="font-size:1.02rem;color:#1f2328;font-weight:820;">This email is handled</div><div style="margin-top:3px;color:#60666f;font-size:.76rem;">${escapeHtml(handledMeta || "Handled · kept in Inbox")}</div>${showChange ? '<button type="button" data-ea-action="edit-current-apply" style="margin-top:5px;border:0;background:transparent;color:#5f5a78;padding:3px 0;cursor:pointer;font:inherit;font-size:.73rem;font-weight:720;">Change</button>' : ""}</div>` : ""}
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;"><span data-ea-coverage-shell style="color:#6b6255;font-size:.72rem;font-weight:760;">${escapeHtml(model.shell)}</span><button type="button" data-ea-action="coverage-details" aria-label="Coverage details" style="border:0;background:transparent;color:#7b8088;padding:2px 4px;cursor:pointer;font:inherit;font-weight:800;">···</button></div>
+        ${indicator}
+        <div><h2 data-ea-coverage-heading style="margin:0;font-size:1.08rem;line-height:1.2;font-weight:820;letter-spacing:-.01em;">${escapeHtml(model.title)}</h2><div style="margin-top:5px;color:#60666f;font-size:.78rem;line-height:1.42;">${escapeHtml(coverageSummary(model))}</div></div>
+        <div data-ea-coverage-facts style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border:1px solid #e2e5e9;border-radius:9px;overflow:hidden;background:#f8f9fb;">
+          <div style="padding:8px 7px;"><strong style="display:block;font-size:.86rem;font-variant-numeric:tabular-nums;">${escapeHtml(partialChecked)}</strong><span style="color:#7b8088;font-size:.65rem;">checked</span></div>
+          <div style="padding:8px 7px;border-left:1px solid #e2e5e9;"><strong style="display:block;font-size:.86rem;font-variant-numeric:tabular-nums;">${escapeHtml(model.facts.review)}</strong><span style="color:#7b8088;font-size:.65rem;">need review</span></div>
+          <div style="padding:8px 7px;border-left:1px solid #e2e5e9;"><strong style="display:block;font-size:.76rem;">${escapeHtml(model.facts.freshness)}</strong><span style="color:#7b8088;font-size:.65rem;">freshness</span></div>
+        </div>
+        ${nextHtml}
+        <div data-ea-coverage-truth-note style="color:#60666f;font-size:.72rem;line-height:1.4;">${escapeHtml(model.truthNote)}</div>
+        <div style="display:grid;gap:5px;"><button type="button" data-ea-action="${coverageActionKind(model)}" ${model.disabled ? "disabled" : ""} data-tw-primary-action style="width:100%;min-height:39px;border:0;border-radius:8px;background:${model.disabled ? "#b9b5ee" : "#635bff"};color:#fff;padding:8px 12px;cursor:${model.disabled ? "wait" : "pointer"};font:inherit;font-size:.8rem;font-weight:800;">${escapeHtml(model.action)}</button>${secondaryAction}</div>
+        ${details}
+      </section>`;
+  }
+
   function renderState(state) {
     const preservedScroll = captureContextScroll();
     invalidateContextActions();
@@ -2835,7 +2906,7 @@
       );
     }
     const activityHtml = renderRecentActivityHtml(recentActivityItems(lastSidebarState));
-    const showingQueuePreview = !!manualPreviewContext;
+    const showingQueuePreview = Boolean(manualPreviewContext && queuePreviewActive);
     const stepCopy = nextStepCopy(selected, showingQueuePreview);
     const understandingActive = selectedUnderstandingActive(selected);
     scheduleUnderstandingRefresh(understandingActive);
@@ -3027,7 +3098,7 @@
       setHtml(selectedEmailNode, `
         <div data-ea-selected-state="teach-result-receipt" role="status">
           ${renderTeachReceiptHtml(teachResult.message || "Rule applied.", teachOutcome, ((lastSidebarState || {}).ui_state || {}).async_follow_up)}
-          ${hasNextReviewItem ? '<button type="button" data-ea-action="open-needs-attention" data-tw-primary-action style="width:100%;min-height:44px;margin-top:12px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Next email</button>' : '<div data-ea-review-complete role="status" style="margin-top:12px;border-radius:14px;background:#dff8ed;padding:12px;color:#0f5f4c;line-height:1.45;">Review queue complete.</div>'}
+          ${hasNextReviewItem ? '<button type="button" data-ea-action="open-needs-attention" data-tw-primary-action style="width:100%;min-height:44px;margin-top:12px;border:0;background:#635bff;color:#fff;border-radius:8px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;">Next email</button>' : `<div style="margin-top:12px;">${renderCoverageHtml({ includeHandledReceipt: true })}</div>`}
         </div>
       `);
       setHtml(selectedEmailSecondaryNode, "");
@@ -3067,7 +3138,11 @@
             <div data-ea-receipt-outcome>${escapeHtml(activeProviderName())} label updated.</div>
             <div data-ea-receipt-outcome>${inboxFailed ? "Couldn’t remove from Inbox. Open Activity to review the failed step." : inboxRemoved ? "Removed from Inbox." : "Kept in Inbox."}</div>
           `;
-      setHtml(selectedEmailNode, `
+      const coverageOnlyReceipt = !hasNextReviewItem && successfulProviderChange;
+      const handledMeta = `${label} · ${inboxRemoved ? "removed from Inbox" : "kept in Inbox"}`;
+      setHtml(selectedEmailNode, coverageOnlyReceipt
+        ? `<div data-ea-selected-state="receipt" style="margin-top:6px;">${renderCoverageHtml({ includeHandledReceipt: true, handledMeta, showChange: true })}</div>`
+        : `
         <div data-ea-selected-state="receipt" style="display:grid;gap:12px;margin-top:10px;">
           <div>
             <div data-ea-receipt-heading style="font-size:1.3rem;font-weight:840;line-height:1.15;overflow-wrap:anywhere;">${escapeHtml(receiptHeading)}</div>
@@ -3077,7 +3152,6 @@
             ${receiptOutcomes}
           </div>
           ${hasNextReviewItem && successfulProviderChange ? '<button type="button" data-ea-action="open-needs-attention" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Next email</button>' : ""}
-          ${!hasNextReviewItem && successfulProviderChange ? '<div data-ea-review-complete role="status" style="border-radius:14px;background:#dff8ed;padding:12px;color:#0f665e;font-weight:800;">Review queue complete</div>' : ""}
         </div>
       `);
       setHtml(selectedEmailSecondaryNode, "");
@@ -3102,7 +3176,7 @@
           <div data-ea-auto-handled-receipt style="border-radius:14px;background:#eef7f5;padding:12px;color:#1f1a14;line-height:1.45;">${escapeHtml(handlingReceipt)}</div>
           ${renderPreviousDecisionStatusHtml()}
           ${selected.handled_review_acknowledged
-            ? '<div data-ea-handled-reviewed role="status" style="border-radius:14px;background:#dff8ed;padding:12px;color:#0f665e;font-weight:800;">Reviewed · Threadwise will not offer this email again</div>'
+            ? `<div data-ea-handled-reviewed role="status" style="color:#16815d;font-size:.76rem;font-weight:800;">Reviewed · Threadwise will not offer this email again</div>${remainingNeedsAttentionItems().length ? "" : renderCoverageHtml()}`
             : '<button type="button" data-ea-action="confirm-handled-and-next" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Looks right · Next</button>'}
           ${handledAdvanceError ? `<div data-ea-handled-advance-error role="alert" style="border-radius:14px;background:#f7e2e2;padding:12px;color:#8a1f1f;line-height:1.45;">${escapeHtml(handledAdvanceError)}</div>` : ""}
           <div style="display:flex;gap:12px;flex-wrap:wrap;">
@@ -3450,6 +3524,13 @@
       `border:2px solid #241812;border-radius:11px;background:${activeSummaryFilter === key ? "#dff8ed" : "#fffdf7"};box-shadow:2px 2px 0 rgba(36,24,18,.18);padding:12px;text-align:left;cursor:pointer;font:inherit;color:#241812;`;
     const keptVisibleCount = summary.kept_visible_count ?? countForFilter("kept_visible_items");
     if (workspaceMode === "home") {
+      setHtml(dailySummaryNode, `<div data-ea-selected-state="home" style="margin-top:8px;">${renderCoverageHtml()}</div>`);
+      renderMinimized();
+      restorePendingQueueNavigationFocus();
+      restoreContextScroll(preservedScroll);
+      restorePendingContextActionFocus();
+      return;
+      /* istanbul ignore next -- retained legacy dashboard markup is unreachable during the bounded coverage slice. */
       const progressionChecking = progressionCheck?.status === "checking"
         && progressionCheck?.filter === "needs_attention_items";
       const progressionRetry = progressionCheck?.status === "retry"
@@ -4968,6 +5049,9 @@
     const suggestedLabel = decisionSuggestedLabelId(selected);
     const targetLabel = internalLabelId(teachDraft.targetLabel);
     recordSuggestionDecisionOnce(targetLabel && targetLabel === suggestedLabel ? "approve" : "edit");
+    if (["queue-ready", "verified-clear"].includes(coverageState.status)) {
+      coverageState = COVERAGE.normalize({ ...coverageState, status: "stale" });
+    }
   }
 
   function labelConflictForDraft() {
@@ -5239,6 +5323,11 @@
     const root = document.getElementById(ROOT_ID);
     const secondary = root?.querySelector("#ea-selected-email-secondary");
     if (!secondary) return;
+    if (root.querySelector("[data-ea-coverage-state]")) {
+      root.querySelector("#ea-context-actions")?.remove();
+      root.querySelector("#ea-context-menu")?.remove();
+      return;
+    }
     const policyInput = contextActionPolicyInput(workspaceMode);
     const actions = CONTEXT_ACTIONS.deriveActions(policyInput);
     let host = root.querySelector("#ea-context-actions");
@@ -5515,6 +5604,30 @@
   }
 
   async function handlePanelClick(event) {
+    const coverageCheckButton = event.target.closest("[data-ea-action='coverage-check']");
+    if (coverageCheckButton) {
+      event.preventDefault();
+      return startCoverageCheck();
+    }
+    const coverageReviewButton = event.target.closest("[data-ea-action='coverage-review']");
+    if (coverageReviewButton) {
+      event.preventDefault();
+      return openCoverageQueue();
+    }
+    const coverageBackButton = event.target.closest("[data-ea-action='coverage-back']");
+    if (coverageBackButton) {
+      event.preventDefault();
+      minimized = true;
+      renderMinimized();
+      return true;
+    }
+    const coverageDetailsButton = event.target.closest("[data-ea-action='coverage-details']");
+    if (coverageDetailsButton) {
+      event.preventDefault();
+      coverageDetailsOpen = !coverageDetailsOpen;
+      renderState(lastHarnessState || lastSidebarState);
+      return true;
+    }
     const contextTrigger = event.target.closest("[data-ea-context-trigger]");
     if (contextTrigger) {
       event.preventDefault();
@@ -6726,6 +6839,78 @@
     }
   }
 
+  function mergeCoverageReviewQueue(items, count) {
+    const queue = Array.isArray(items) ? items : [];
+    const nextSummary = {
+      ...((lastHarnessState?.sidebar_state || lastSidebarState || {}).daily_summary || {}),
+      needs_attention_count: Number(count || queue.length),
+    };
+    lastHarnessState = {
+      ...(lastHarnessState || {}),
+      needs_attention_items: queue,
+      recent_items: queue,
+      sidebar_state: {
+        ...(lastHarnessState?.sidebar_state || lastSidebarState || {}),
+        daily_summary: nextSummary,
+      },
+    };
+    lastSidebarState = lastHarnessState.sidebar_state;
+  }
+
+  function startCoverageCheck() {
+    if (coverageCheckInFlight || ACTIVE_PROVIDER !== "gmail") {
+      return false;
+    }
+    coverageCheckInFlight = true;
+    coverageDetailsOpen = false;
+    coverageState = COVERAGE.normalize({ ...coverageState, status: "checking", error: "" });
+    renderState(lastHarnessState || lastSidebarState);
+    chrome.runtime.sendMessage({
+      type: "email-agent:api",
+      path: "/api/gmail-coverage-check",
+      method: "POST",
+      body: { provider: "gmail" },
+    }, (response) => {
+      coverageCheckInFlight = false;
+      const connectionKind = response?.connection_state?.kind || "";
+      if (chrome.runtime.lastError || !response?.ok) {
+        coverageState = COVERAGE.normalize({
+          ...coverageState,
+          status: connectionKind && connectionKind !== "ready" ? "offline" : "failed",
+          previous_status: coverageState.previous_status || "",
+          error: friendlyErrorMessage(
+            chrome.runtime.lastError?.message || response?.payload?.error || response?.error || "Could not check Gmail.",
+          ),
+        });
+        renderState(lastHarnessState || lastSidebarState);
+        return;
+      }
+      coverageState = COVERAGE.normalize(response.payload || {});
+      renderState(lastHarnessState || lastSidebarState);
+    });
+    return true;
+  }
+
+  function openCoverageQueue() {
+    const items = coverageState.review_items || [];
+    if (!items.length) {
+      return false;
+    }
+    mergeCoverageReviewQueue(items, coverageState.needs_review_count);
+    activeSummaryFilter = "needs_attention_items";
+    forcedHome = false;
+    if (coverageSyntheticNavigation) {
+      return openItemPreview(items[0], { queueContext: false, origin: "gmail_coverage" });
+    }
+    manualPreviewContext = null;
+    manualPreviewOriginContext = null;
+    queuePreviewActive = false;
+    openGmailItem(items[0]);
+    previousPayload = "";
+    refreshSelection(true);
+    return true;
+  }
+
   function triggerProviderSync() {
     if (gmailCheckPending) {
       return;
@@ -7051,6 +7236,34 @@
           handledProgressionFlight: Boolean(handledProgressionFlight),
         };
       },
+      getCoverageState() {
+        return {
+          ...COVERAGE.model(coverageState),
+          checkInFlight: coverageCheckInFlight,
+          detailsOpen: coverageDetailsOpen,
+        };
+      },
+      setCoverageState(state) {
+        coverageCheckInFlight = state?.status === "checking";
+        coverageState = COVERAGE.normalize(state || { status: "unknown" });
+        if (!state?.preserve_surface) {
+          forcedHome = true;
+          manualPreviewContext = null;
+          queuePreviewActive = false;
+        }
+        renderState(lastHarnessState || lastSidebarState);
+        return { ok: true, state: COVERAGE.model(coverageState) };
+      },
+      startCoverageCheckForTest() {
+        return { ok: startCoverageCheck() };
+      },
+      openCoverageQueueForTest() {
+        return { ok: openCoverageQueue() };
+      },
+      setCoverageSyntheticNavigation(enabled) {
+        coverageSyntheticNavigation = Boolean(enabled);
+        return { ok: true, enabled: coverageSyntheticNavigation };
+      },
       getContextActions() {
         return {
           open: contextActionsOpen,
@@ -7144,7 +7357,7 @@
         }
         return { ok: true };
       },
-      showReceipt({ success = true, complete = false } = {}) {
+      showReceipt({ success = true, complete = false, inboxRemoved = true } = {}) {
         if (complete && lastHarnessState) {
           lastHarnessState = {
             ...lastHarnessState,
@@ -7171,7 +7384,7 @@
         teachWriteThrough = {
           label_write_failed: success ? 0 : 1,
           inbox_remove_failed: 0,
-          inbox_removed: success ? 1 : 0,
+          inbox_removed: success && inboxRemoved ? 1 : 0,
         };
         renderState(lastHarnessState || lastSidebarState);
         return { ok: true, success: Boolean(success), complete: Boolean(complete) };

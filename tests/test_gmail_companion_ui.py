@@ -373,7 +373,8 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("remainingNeedsAttentionItems().length > 0", receipt_body)
         self.assertIn('data-ea-action="open-needs-attention"', receipt_body)
         self.assertIn("Next email", receipt_body)
-        self.assertIn("Review queue complete.", receipt_body)
+        self.assertIn("renderCoverageHtml({ includeHandledReceipt: true })", receipt_body)
+        self.assertNotIn("Review queue complete.", receipt_body)
 
     def test_completed_receipt_does_not_pin_the_previous_gmail_message(self) -> None:
         content_js = Path("extensions/gmail_companion/content.js").read_text()
@@ -2744,6 +2745,57 @@ class GmailCompanionUiTests(unittest.TestCase):
 
             self.assertEqual(handler.code, 200)
             self.assertEqual(payload["status"], "succeeded")
+
+    def test_gmail_coverage_endpoint_is_separate_and_read_only(self) -> None:
+        class CoverageService:
+            def __init__(self):
+                self.calls = []
+
+            def check(self, account_id):
+                self.calls.append(account_id)
+                return {
+                    "status": "verified-clear",
+                    "checked_count": 42,
+                    "needs_review_count": 0,
+                    "scope": "Current Gmail Inbox messages",
+                    "gmail_mutation": "none",
+                }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = CoverageService()
+            app = GmailCompanionApp(Path(temp_dir), gmail_coverage_service=service)
+            handler = _FakeRequestHandler(
+                "/api/gmail-coverage-check",
+                method="POST",
+                json_body={"account_id": "founder-test"},
+            )
+
+            app.handle_request(handler)
+            payload = json.loads(handler.wfile.value.decode("utf-8"))
+
+            self.assertEqual(handler.code, 200)
+            self.assertEqual(service.calls, ["founder-test"])
+            self.assertEqual(payload["status"], "verified-clear")
+            self.assertEqual(payload["gmail_mutation"], "none")
+
+    def test_companion_coverage_check_never_uses_sync_or_mutation_routes(self) -> None:
+        content_js = Path("extensions/gmail_companion/content.js").read_text(encoding="utf-8")
+        coverage_body = content_js.split("function startCoverageCheck()", 1)[1].split(
+            "function openCoverageQueue", 1
+        )[0]
+        manifest = json.loads(Path("extensions/gmail_companion/manifest.json").read_text(encoding="utf-8"))
+
+        self.assertIn('path: "/api/gmail-coverage-check"', coverage_body)
+        for forbidden in [
+            "/api/provider-sync-run",
+            "/api/gmail-check-run",
+            "/api/teach-apply",
+            "/api/safety-apply",
+            "/api/provider-write-retry",
+        ]:
+            self.assertNotIn(forbidden, coverage_body)
+        scripts = manifest["content_scripts"][0]["js"]
+        self.assertLess(scripts.index("coverage.js"), scripts.index("content.js"))
 
     def test_attention_rule_proposal_endpoints_preview_and_approve_without_gmail_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

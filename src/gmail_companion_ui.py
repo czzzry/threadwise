@@ -13,6 +13,7 @@ from src.attention_feedback import record_attention_feedback
 from src.gmail_automation import run_daily_gmail_automation
 from src.gmail_cli_support import default_gmail_client_factory
 from src.gmail_run_control import load_gmail_dashboard_run_status, trigger_dashboard_gmail_check
+from src.gmail_coverage import GmailCoverageService
 from src.founder_feedback import record_founder_feedback
 from src.attention_rules import (
     approve_attention_rule_proposal,
@@ -193,6 +194,7 @@ class GmailCompanionApp:
         proton_client_factory=None,
         proton_review_console: object | None = None,
         proton_run_runner=None,
+        gmail_coverage_service: object | None = None,
     ) -> None:
         self._storage_dir = storage_dir
         self._credentials_dir = credentials_dir
@@ -212,6 +214,12 @@ class GmailCompanionApp:
         self._proton_review_console_lock = threading.Lock()
         self._proton_run_runner = proton_run_runner
         self._proton_sync_lock = threading.Lock()
+        self._gmail_coverage_service = gmail_coverage_service or GmailCoverageService(
+            storage_dir,
+            gmail_client_factory=self._gmail_client_factory,
+            credentials_dir=self._credentials_dir,
+            client_secret_path=self._client_secret_path,
+        )
         self._analytics_distinct_ids = AnonymousDistinctIdStore(storage_dir)
         self._unsubscribe_store = UnsubscribeInventoryStore(storage_dir)
         self._handled_review_store = HandledReviewStore(storage_dir)
@@ -560,6 +568,16 @@ class GmailCompanionApp:
                 return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
             except Exception as exc:
                 return self._write_json(handler, HTTPStatus.INTERNAL_SERVER_ERROR, {"error": str(exc)})
+
+        if handler.command == "POST" and parsed.path == "/api/gmail-coverage-check":
+            try:
+                payload = self._read_request_payload(handler)
+                response = self.check_gmail_coverage(payload)
+                return self._write_json(handler, HTTPStatus.OK, response)
+            except (KeyError, ValueError, HTTPException, json.JSONDecodeError) as exc:
+                return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+            except Exception as exc:
+                return self._write_json(handler, HTTPStatus.SERVICE_UNAVAILABLE, {"error": str(exc)})
 
         if handler.command == "POST" and parsed.path == "/api/provider-sync-run":
             try:
@@ -1267,6 +1285,11 @@ class GmailCompanionApp:
         response = trigger_dashboard_gmail_check(self._storage_dir, payload, runner)
         self._runtime_state.invalidate()
         return response
+
+    def check_gmail_coverage(self, payload: dict) -> dict:
+        """Read current Gmail Inbox membership without running automation writes."""
+        account_id = str(payload.get("account_id") or infer_gmail_account_id(self._storage_dir))
+        return self._gmail_coverage_service.check(account_id)
 
     def trigger_provider_sync(
         self,
