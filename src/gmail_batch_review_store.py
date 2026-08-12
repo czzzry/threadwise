@@ -10,9 +10,9 @@ from src.trusted_sender_store import TrustedSenderStore
 
 
 class GmailBatchReviewStore(StoredBatchReviewStore):
-    def __init__(self, storage_dir: Path) -> None:
+    def __init__(self, storage_dir: Path, classifier: object | None = None) -> None:
         super().__init__(storage_dir)
-        self._classifier = FixtureBatchClassifier(
+        self._classifier = classifier or FixtureBatchClassifier(
             fixtures_dir=self._storage_dir,
             trusted_personal_senders=TrustedSenderStore(self._storage_dir).load_or_rebuild(),
         )

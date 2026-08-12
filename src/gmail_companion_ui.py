@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 import threading
 import time
 from http.client import HTTPException
@@ -11,6 +12,8 @@ from urllib.parse import parse_qs, urlparse
 
 from src.attention_feedback import record_attention_feedback
 from src.gmail_automation import run_daily_gmail_automation
+from src.fixture_classifier import FixtureBatchClassifier
+from src.gmail_initial_classifier import configure_initial_classifier
 from src.gmail_cli_support import default_gmail_client_factory
 from src.gmail_run_control import load_gmail_dashboard_run_status, trigger_dashboard_gmail_check
 from src.gmail_coverage import GmailCoverageService
@@ -32,6 +35,7 @@ from src.product_analytics import (
     bucket_count,
 )
 from src.unsubscribe_inventory_store import UnsubscribeInventoryStore
+from src.trusted_sender_store import TrustedSenderStore
 
 from src.gmail_companion_rendering import (
     escape_html,
@@ -114,6 +118,13 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Disable Gmail check execution for synthetic-only server configurations.",
     )
+    parser.add_argument(
+        "--classification-model",
+        help=(
+            "Explicit OpenAI model for review-only initial classification assistance. "
+            "No model is selected by default."
+        ),
+    )
     return parser
 
 
@@ -122,13 +133,13 @@ def main(argv: list[str] | None = None, stdout=None, server_factory=None) -> int
     args = parser.parse_args(argv)
     output = stdout or sys.stdout
     server_factory = server_factory or create_server
-    server = server_factory(
-        args.host,
-        args.port,
-        args.storage_dir,
-        gmail_write_through_enabled=not args.disable_gmail_write_through,
-        gmail_check_enabled=not args.disable_gmail_check,
-    )
+    server_kwargs = {
+        "gmail_write_through_enabled": not args.disable_gmail_write_through,
+        "gmail_check_enabled": not args.disable_gmail_check,
+    }
+    if args.classification_model is not None:
+        server_kwargs["classification_model"] = args.classification_model
+    server = server_factory(args.host, args.port, args.storage_dir, **server_kwargs)
     try:
         output.write(f"Serving Gmail companion sidebar at http://{args.host}:{server.server_port}\n")
         server.serve_forever()
@@ -147,12 +158,27 @@ def create_server(
     *,
     gmail_write_through_enabled: bool = True,
     gmail_check_enabled: bool = True,
+    classification_model: str | None = None,
 ) -> ThreadingHTTPServer:
+    selected_model = (
+        classification_model
+        if classification_model is not None
+        else os.environ.get("THREADWISE_CLASSIFICATION_MODEL")
+    )
+    initial_classifier, initial_classification_status = configure_initial_classifier(
+        selected_model,
+        deterministic_classifier=FixtureBatchClassifier(
+            fixtures_dir=Path("."),
+            trusted_personal_senders=TrustedSenderStore(storage_dir).load_or_rebuild(),
+        ),
+    )
     app = GmailCompanionApp(
         storage_dir=storage_dir,
         gmail_write_through_enabled=gmail_write_through_enabled,
         gmail_check_enabled=gmail_check_enabled,
         live_inbox_reconciliation_enabled=gmail_check_enabled,
+        initial_classifier=initial_classifier,
+        initial_classification_status=initial_classification_status,
     )
 
     class Handler(BaseHTTPRequestHandler):
@@ -192,6 +218,8 @@ class GmailCompanionApp:
         proton_review_console: object | None = None,
         proton_run_runner=None,
         gmail_coverage_service: object | None = None,
+        initial_classifier: object | None = None,
+        initial_classification_status: dict | None = None,
     ) -> None:
         self._storage_dir = storage_dir
         self._credentials_dir = credentials_dir
@@ -201,6 +229,10 @@ class GmailCompanionApp:
         self._gmail_check_enabled = gmail_check_enabled
         self._live_inbox_reconciliation_enabled = live_inbox_reconciliation_enabled
         self._gmail_run_runner = gmail_run_runner
+        self._initial_classifier = initial_classifier
+        self._initial_classification_status = dict(
+            initial_classification_status or {"state": "disabled", "model": ""}
+        )
         self._attention_model_client = attention_model_client
         self._analytics = analytics or ProductAnalytics.from_environment()
         self._proton_storage_dir = proton_storage_dir
@@ -757,16 +789,22 @@ class GmailCompanionApp:
         handler.end_headers()
 
     def health_status(self, handler: BaseHTTPRequestHandler | None = None) -> dict:
+        classification_status = dict(self._initial_classification_status)
         return {
             "schema_version": HEALTH_STATUS_SCHEMA_VERSION,
             "service_id": HEALTH_STATUS_SERVICE_ID,
             "service_name": HEALTH_STATUS_SERVICE_NAME,
-            "status": "ready",
+            "status": (
+                "not-ready"
+                if classification_status.get("state") == "not-ready"
+                else "ready"
+            ),
             "bound_origin": self._bound_origin(handler),
             "dashboard_path": "/daily-dashboard#run-gmail-check",
             "health_path": HEALTH_STATUS_PATH,
             "analytics_enabled": self._analytics.enabled,
             "analytics": self._analytics.delivery_status(),
+            "initial_classification": classification_status,
             "storage_summary": self._cached_storage_summary(),
             "capabilities": [
                 "sidebar-state",
@@ -1291,6 +1329,7 @@ class GmailCompanionApp:
             batch_size=payload.get("batch_size") or 50,
             storage_dir=self._storage_dir,
             gmail_client=gmail_client,
+            classifier=self._initial_classifier,
             attention_model_client=self._attention_model_client,
         )
 

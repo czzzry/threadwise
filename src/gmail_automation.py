@@ -187,20 +187,30 @@ def run_daily_gmail_automation(
     batch_size: int,
     storage_dir: Path,
     gmail_client,
+    classifier: object | None = None,
     attention_model_client: object | None = None,
     attention_max_evaluated_messages: int = DEFAULT_MAX_EVALUATED_MESSAGES,
     query: str = "",
 ) -> DailyGmailRunResult | None:
     fetcher = (
-        GmailSearchBatchFetcher(gmail_client=gmail_client, storage_dir=storage_dir, query=query)
+        GmailSearchBatchFetcher(
+            gmail_client=gmail_client,
+            storage_dir=storage_dir,
+            query=query,
+            classifier=classifier,
+        )
         if query.strip()
-        else GmailBatchFetcher(gmail_client=gmail_client, storage_dir=storage_dir)
+        else GmailBatchFetcher(
+            gmail_client=gmail_client,
+            storage_dir=storage_dir,
+            classifier=classifier,
+        )
     )
     review_queue = fetcher.fetch_gmail_batch(account_id, batch_size)
     if review_queue is None:
         return None
 
-    batch_store = GmailBatchReviewStore(storage_dir)
+    batch_store = GmailBatchReviewStore(storage_dir, classifier=classifier)
     stored_batch = batch_store.load_batch(review_queue["batch_id"])
     refreshed_queue = batch_store.to_review_queue(stored_batch)
     stored_batch["items"] = refreshed_queue["items"]
