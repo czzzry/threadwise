@@ -220,6 +220,24 @@ class LiveGmailClient:
             access_token=self._access_token,
         )
 
+    def get_threadwise_label_names(self, message_id: str, namespace_prefix: str = "EA/") -> list[str]:
+        labels_response = self._transport(
+            "GET",
+            "https://gmail.googleapis.com/gmail/v1/users/me/labels",
+            access_token=self._access_token,
+        )
+        id_to_name = {
+            label.get("id", ""): label.get("name", "")
+            for label in labels_response.get("labels", [])
+            if label.get("id")
+        }
+        current_ids = list(self.get_message(message_id).get("labelIds") or [])
+        return [
+            id_to_name[label_id]
+            for label_id in current_ids
+            if id_to_name.get(label_id, "").startswith(namespace_prefix)
+        ]
+
     def remove_inbox_label(self, message_id: str) -> None:
         self._transport(
             "POST",

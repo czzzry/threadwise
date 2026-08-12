@@ -24,6 +24,12 @@ from src.teaching_exclusions import (
     save_teaching_exclusion,
 )
 from src.teachable_rule_memory import TeachableRuleMemory
+from src.label_change import (
+    LabelChangeError,
+    legacy_only_change,
+    normalize_label_change,
+    require_current_baseline,
+)
 
 
 VALID_TEACHING_APPLY_MODES = {"current-only", "matching-existing", "save-future-rule", "future-only", "apply-included"}
@@ -47,7 +53,8 @@ class OpenAITeachingIntentClient:
     def interpret(self, payload: dict) -> dict:
         prompt = (
             "You interpret founder correction notes for an email labeling tool.\n"
-            "Return strict JSON with keys: target_label, semantic_pattern, cross_sender, confidence, rationale.\n"
+            "Return strict JSON with keys: target_label, operation, target_labels, source_labels, "
+            "resolution_status, clarifying_question, semantic_pattern, cross_sender, confidence, rationale.\n"
             "target_label must be one of: "
             + ", ".join(CANONICAL_LABEL_ORDER)
             + ".\n"
@@ -57,6 +64,8 @@ class OpenAITeachingIntentClient:
             "semantic_pattern should be a short plain-English description of what should match, honoring every inclusion, negation, and exclusion in the note.\n"
             "cross_sender must be true only if the founder intent clearly spans multiple senders.\n"
             "If uncertain, still pick the best label and set confidence to low."
+            " operation must be only, add, remove, or replace. target_labels and source_labels must be canonical label arrays."
+            " Use resolution_status=ambiguous or contradictory instead of guessing when the requested final label set is unclear."
         )
         response_payload = {
             "model": self._model,
@@ -92,7 +101,7 @@ class OpenAITeachingIntentClient:
             parsed = json.loads(content)
         except json.JSONDecodeError:
             return {}
-        return parsed if isinstance(parsed, dict) else {}
+        return {**parsed, "_model": self._model} if isinstance(parsed, dict) else {}
 
 
 def build_sidebar_teach_preview(
@@ -107,7 +116,20 @@ def build_sidebar_teach_preview(
     force_llm_review: bool = False,
 ) -> dict:
     current = load_selected_storage_item(storage_dir, selected_context)
-    intent_label = target_label if target_label_explicit or not note.strip() else ""
+    current_labels = list(current.get("final_labels") or current.get("applied_labels") or [])
+    deterministic_change = infer_label_change_from_note(note, current_labels)
+    inferred_change_label = ""
+    if deterministic_change:
+        inferred_targets = list(deterministic_change.get("target_labels") or [])
+        inferred_sources = set(deterministic_change.get("source_labels") or [])
+        if deterministic_change.get("operation") == "add":
+            inferred_change_label = next(iter(current_labels), next(iter(inferred_targets), ""))
+        else:
+            inferred_change_label = next(
+                iter(inferred_targets),
+                next((label for label in current_labels if label not in inferred_sources), ""),
+            )
+    intent_label = inferred_change_label or (target_label if target_label_explicit or not note.strip() else "")
     intent = interpret_teaching_intent(
         current=current,
         target_label=intent_label,
@@ -116,6 +138,12 @@ def build_sidebar_teach_preview(
         force_llm_review=force_llm_review,
     )
     target_label = intent["target_label"]
+    label_change = build_selected_label_change(
+        current_labels=current_labels,
+        target_label=target_label,
+        note=note,
+        intent=intent,
+    )
     semantic_rule = build_semantic_future_rule(
         current=current,
         target_label=target_label,
@@ -151,7 +179,7 @@ def build_sidebar_teach_preview(
     normalized_existing = [
         {
             **match,
-            "labels_after": [target_label],
+            "labels_after": list(label_change["labels_after"]),
         }
         for match in affected_existing
     ]
@@ -163,7 +191,6 @@ def build_sidebar_teach_preview(
         storage_items=storage_items,
     )
     target_label_name = gmail_label_name(target_label)
-    current_labels = list(current.get("final_labels") or current.get("applied_labels") or [])
     current_label_name = gmail_label_name(current_labels[0]) if current_labels else "Uncategorized"
     structured_rule = {
         "scope": semantic_rule["scope"],
@@ -196,7 +223,8 @@ def build_sidebar_teach_preview(
         "selected_subject": current.get("subject") or "",
         "selected_sender": current.get("sender") or "",
         "selected_label_before": current_labels,
-        "selected_label_after": [target_label],
+        "selected_label_after": list(label_change["labels_after"]),
+        "label_change": label_change,
         "current_label_name": current_label_name,
         "target_label_name": target_label_name,
         "plain_english_rule": semantic_rule["plain_english_rule"],
@@ -306,18 +334,33 @@ def apply_sidebar_teaching(
     scope: str,
     mode: str,
     included_message_ids: list[str] | None = None,
+    approved_label_change: dict | None = None,
 ) -> dict:
     if mode not in VALID_TEACHING_APPLY_MODES:
         raise ValueError("Unsupported apply mode.")
-    intent = interpret_teaching_intent(
-        current=load_selected_storage_item(storage_dir, selected_context),
-        target_label=target_label,
-        note=note,
-        scope=scope,
-    )
-    target_label = intent["target_label"]
-
     current = load_selected_storage_item(storage_dir, selected_context)
+    if approved_label_change is not None:
+        if mode != "current-only":
+            raise LabelChangeError("Label-set corrections are limited to this email in this release.")
+        label_change = normalize_label_change(approved_label_change)
+        require_current_baseline(
+            label_change,
+            list(current.get("final_labels") or current.get("applied_labels") or []),
+        )
+        target_label = label_change.primary_label
+        intent = {
+            "target_label": target_label,
+            "source": label_change.interpretation.get("source") or "manual",
+        }
+    else:
+        intent = interpret_teaching_intent(
+            current=current,
+            target_label=target_label,
+            note=note,
+            scope=scope,
+        )
+        target_label = intent["target_label"]
+        label_change = None
     semantic_rule = build_semantic_future_rule(current=current, target_label=target_label, note=note, scope=scope, intent=intent)
     if semantic_rule.get("future_rule_allowed") is False and mode != "current-only":
         raise ValueError(
@@ -361,6 +404,7 @@ def apply_sidebar_teaching(
             batch_id=current["batch_id"],
             message_id=current["message_id"],
             label=target_label,
+            labels=list(label_change.labels_after) if label_change else None,
             note=note,
             review_action="sidebar-current-only" if mode == "current-only" else f"sidebar-{mode}",
         )
@@ -443,6 +487,7 @@ def apply_sidebar_teaching(
         "current": current,
         "preview_matches": preview_matches,
         "semantic_rule": semantic_rule,
+        "label_change": label_change.to_dict() if label_change else None,
     }
 
 
@@ -1221,13 +1266,25 @@ def normalize_llm_teaching_intent(payload: dict) -> dict:
     target_label = str(payload.get("target_label") or "").strip()
     if target_label not in CANONICAL_LABEL_ORDER:
         return {}
-    return {
+    normalized = {
         "target_label": target_label,
         "semantic_pattern": str(payload.get("semantic_pattern") or "").strip(),
         "cross_sender": bool(payload.get("cross_sender")),
         "confidence": str(payload.get("confidence") or "low").lower(),
         "rationale": str(payload.get("rationale") or "").strip(),
+        "model": str(payload.get("_model") or "").strip(),
     }
+    operation = str(payload.get("operation") or "").strip().lower()
+    if operation:
+        normalized["label_change"] = {
+            "schema_version": 1,
+            "operation": operation,
+            "target_labels": list(payload.get("target_labels") or []),
+            "source_labels": list(payload.get("source_labels") or []),
+            "resolution_status": str(payload.get("resolution_status") or "resolved"),
+            "clarifying_question": str(payload.get("clarifying_question") or "").strip(),
+        }
+    return normalized
 
 
 def infer_target_label_from_note(note: str) -> str:
@@ -1300,12 +1357,91 @@ def infer_explicit_target_label_from_note(note: str) -> str:
     return unique_matches[0] if len(unique_matches) == 1 else ""
 
 
+def build_selected_label_change(*, current_labels: list[str], target_label: str, note: str, intent: dict) -> dict:
+    """Build the exact selected-email set operation; future-rule memory stays singular."""
+    llm_change = intent.get("label_change") if isinstance(intent, dict) else None
+    intent_source = str(intent.get("source") or "")
+    interpretation = {
+        "source": "llm" if intent_source == "llm" else "manual" if intent_source == "explicit-label" else "deterministic",
+        "status": "reviewed" if intent_source in {"llm", "explicit-label"} else "fallback",
+        "model": str(intent.get("model") or ""),
+        "rationale": str(intent.get("rationale") or ""),
+    }
+    if isinstance(llm_change, dict):
+        resolution = str(llm_change.get("resolution_status") or "resolved")
+        if resolution != "resolved":
+            question = str(llm_change.get("clarifying_question") or "Clarify which labels should remain.")
+            raise LabelChangeError(question)
+        return normalize_label_change({
+            **llm_change,
+            "labels_before": current_labels,
+            "interpretation": interpretation,
+        }).to_dict()
+
+    deterministic = infer_label_change_from_note(note, current_labels)
+    if deterministic:
+        return normalize_label_change({
+            **deterministic,
+            "labels_before": current_labels,
+            "interpretation": interpretation,
+        }).to_dict()
+    return legacy_only_change(
+        labels_before=current_labels,
+        target_label=target_label,
+        interpretation=interpretation,
+    )
+
+
+def infer_label_change_from_note(note: str, current_labels: list[str]) -> dict | None:
+    text = " ".join(str(note or "").lower().replace("_", " ").split())
+    aliases = {
+        "spam-low-value": ("low value", "low-value", "spam", "junk"),
+        "promotions": ("promotion", "promotions", "promo"),
+        "shopping-order": ("order", "orders", "shopping order"),
+        "receipt-billing": ("receipt", "receipts", "billing"),
+        "account-security": ("account", "account security", "security"),
+        "newsletter": ("newsletter", "newsletters"),
+        "job-related": ("job related", "job-related", "work"),
+        "reply-needed": ("reply needed", "reply-needed", "needs action"),
+        "travel": ("travel",), "personal": ("personal",),
+        "financial-account": ("finance", "financial"),
+        "calendar-event": ("calendar",),
+    }
+    mentioned = [label for label, names in aliases.items() if any(re.search(rf"\b{re.escape(name)}\b", text) for name in names)]
+    if not mentioned:
+        return None
+    requests_add = bool(re.search(r"\b(?:add|keep.+and add)\b", text))
+    requests_remove = bool(re.search(r"\b(?:remove|without|drop)\b", text))
+    if requests_add and requests_remove and not re.search(r"\b(?:replace|change)\b.+\b(?:with|to)\b", text):
+        raise LabelChangeError("This correction asks to add and remove labels at the same time. Clarify the final label set.")
+    if re.search(r"\b(?:replace|change)\b.+\b(?:with|to)\b", text):
+        sources = [label for label in mentioned if label in current_labels]
+        targets = [label for label in mentioned if label not in sources]
+        if not sources or not targets:
+            raise LabelChangeError("Clarify which existing label to replace and which new label to use.")
+        return {"operation": "replace", "source_labels": sources, "target_labels": targets}
+    if requests_remove:
+        sources = [label for label in mentioned if label in current_labels]
+        if not sources:
+            raise LabelChangeError("The label you asked to remove is not on this email.")
+        return {"operation": "remove", "source_labels": sources, "target_labels": []}
+    if requests_add:
+        targets = [label for label in mentioned if label not in current_labels]
+        if not targets:
+            raise LabelChangeError("This request would not change the selected email.")
+        return {"operation": "add", "source_labels": [], "target_labels": targets}
+    if len(mentioned) > 1 and re.search(r"\b(?:both|two labels?|multiple labels?)\b", text):
+        return {"operation": "only", "source_labels": [], "target_labels": mentioned}
+    return None
+
+
 def apply_label_to_message(
     storage_dir: Path,
     *,
     batch_id: str,
     message_id: str,
     label: str,
+    labels: list[str] | None = None,
     note: str,
     review_action: str,
 ) -> bool:
@@ -1317,8 +1453,11 @@ def apply_label_to_message(
             continue
         item["review_state"] = "reviewed"
         item["review_action"] = review_action
-        item["final_labels"] = [label]
-        item["applied_labels"] = [label]
+        final_labels = list(labels) if labels is not None else [label]
+        item["final_labels"] = final_labels
+        item["applied_labels"] = final_labels
+        if labels is not None:
+            item["require_exact_label_set_verification"] = True
         if note:
             item["interpretation"] = note
         changed = True

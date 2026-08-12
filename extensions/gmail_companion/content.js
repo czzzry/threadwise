@@ -4766,7 +4766,8 @@
     const inboxMatchScanCapped = Boolean(preview?.inbox_backfill?.is_capped);
     const targetLabelName = humanLabelNameFromId((preview?.selected_label_after || [])[0] || "");
     const structuredRule = preview?.structured_rule || {};
-    const futureRuleAllowed = preview?.future_rule_allowed !== false;
+    const labelSetChange = isSelectedEmailLabelSetChange(preview);
+    const futureRuleAllowed = preview?.future_rule_allowed !== false && !labelSetChange;
     const selectedStyle = "border:2px solid #241812;background:#dff8ed;";
     const idleStyle = "border:1px solid rgba(36,24,18,.24);background:#fffdf7;";
     const scopeCard = (mode, title, description, disabled = false) => `
@@ -4788,14 +4789,15 @@
       .join("");
     return `
       <div data-ea-compact-scope-chooser style="display:grid;gap:12px;">
+        ${renderSelectedEmailLabelChange(preview)}
         <div>
           <div style="font-size:1.05rem;font-weight:840;line-height:1.25;">Where should this change apply?</div>
           <div style="margin-top:4px;color:#6b6255;font-size:.84rem;">Current label → ${escapeHtml(targetLabelName)}</div>
         </div>
         <div role="group" aria-label="Choose how broadly to apply this change" style="display:grid;gap:8px;">
-          ${scopeCard("current-only", "Just this email", "Relabel this message only.")}
+          ${scopeCard("current-only", "Just this email", labelSetChange ? "This exact label-set change is limited to this message." : "Relabel this message only.")}
           ${futureRuleAllowed ? scopeCard("future-only", "This email + future emails", "Also remember the rule for new matching mail.") : ""}
-          ${scopeCard(
+          ${labelSetChange ? "" : scopeCard(
             "apply-included",
             `Also update ${matchingCount} reviewed inbox email${matchingCount === 1 ? "" : "s"}`,
             matchingCount
@@ -4826,7 +4828,7 @@
         </details>
         ${renderRuleAmendmentHtml(preview?.amendment_proposal)}
         ${affectedReviewOpen ? `${renderAffectedReviewHtml(preview)}<button type="button" data-ea-apply="apply-included" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#3d6df2;color:#fff;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Apply to included</button>` : ""}
-        ${futureRuleAllowed ? "" : '<div style="color:#6b6255;line-height:1.45;">This looks like a one-off or uncertain email. Threadwise will only change this email until you describe a recurring pattern.</div>'}
+        ${labelSetChange ? '<div style="color:#6b6255;line-height:1.45;">Multi-label and relative corrections are limited to this selected email in this release.</div>' : futureRuleAllowed ? "" : '<div style="color:#6b6255;line-height:1.45;">This looks like a one-off or uncertain email. Threadwise will only change this email until you describe a recurring pattern.</div>'}
       </div>
     `;
   }
@@ -4973,27 +4975,25 @@
     return `Your note sounds like ${decisionLabelName(mentioned.id)}, but ${decisionLabelName(selectedLabel)} is selected. Choose which one you mean.`;
   }
 
-  function explicitMultiLabelRequest() {
-    const note = String(teachDraft.note || "").trim().toLowerCase();
-    if (!note || !/\b(?:both|two labels?|multiple labels?)\b/.test(note)) {
-      return "";
-    }
-    const requested = allowedDecisionLabels().filter((item) => {
-      const aliases = [
-        normalizedLabelText(item.name),
-        normalizedLabelText(item.id),
-        normalizedLabelText(item.id).replaceAll("-", " "),
-      ].filter(Boolean);
-      return aliases.some((alias) => {
-        const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        return new RegExp(`\\b${escaped}\\b`, "i").test(note);
-      });
-    });
-    if (requested.length < 2) {
-      return "";
-    }
-    const names = requested.map((item) => decisionLabelName(item.id)).join(" and ");
-    return `Threadwise currently applies one EA label at a time. You asked for ${names}. Choose the single best label for this email, then describe any conditional future behavior separately.`;
+  function isSelectedEmailLabelSetChange(preview) {
+    const change = preview?.label_change || {};
+    return Boolean(change.operation && (change.operation !== "only" || (change.labels_after || []).length > 1));
+  }
+
+  function renderSelectedEmailLabelChange(preview) {
+    const change = preview?.label_change;
+    if (!change) return "";
+    const names = (labels) => (labels || []).map((label) => decisionLabelName(label)).join(" + ") || "None";
+    const provenance = change.interpretation || {};
+    const source = provenance.source === "llm"
+      ? `LLM reviewed${provenance.model ? ` · ${provenance.model}` : ""}`
+      : provenance.source === "manual" ? "Manual selection" : "Deterministic fallback";
+    return `<div data-ea-label-change-preview style="display:grid;gap:6px;border-radius:12px;background:#eef7f5;padding:10px 12px;line-height:1.4;">
+      <div><strong>Before:</strong> ${escapeHtml(names(change.labels_before))}</div>
+      <div><strong>After:</strong> ${escapeHtml(names(change.labels_after))}</div>
+      <div><strong>Primary:</strong> ${escapeHtml(decisionLabelName(change.primary_label))}</div>
+      <div style="color:#5d5342;font-size:.8rem;">${escapeHtml(change.operation)} · This email only · ${escapeHtml(source)}</div>
+    </div>`;
   }
 
   function noteExplicitlyAssignsLabel(note, alias) {
@@ -5902,11 +5902,6 @@
       event.preventDefault();
       syncTeachDraftFromDom();
       teachDraft.targetLabel = internalLabelId(teachDraft.targetLabel);
-      selectedDecisionConflict = explicitMultiLabelRequest();
-      if (selectedDecisionConflict) {
-        if (lastSidebarState) renderState(lastSidebarState);
-        return;
-      }
       if (!teachDraft.targetLabel && !String(teachDraft.note || "").trim()) {
         selectedDecisionConflict = "Choose a label or describe the correction in the note.";
         if (lastSidebarState) renderState(lastSidebarState);
@@ -6508,6 +6503,9 @@
         included_message_ids: mode === "apply-included"
           ? affectedReviewItemsFromPreview(teachPreview).map((item) => item.message_id).filter(Boolean)
           : [],
+        approved_label_change: isSelectedEmailLabelSetChange(teachPreview)
+          ? teachPreview.label_change
+          : null,
       },
     }, (response) => {
       if (requestToken && !progressionFlightIsCurrent(requestToken)) {

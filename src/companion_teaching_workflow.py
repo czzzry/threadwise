@@ -22,6 +22,7 @@ class TeachingWriteRequest:
     current_sender: str
     included_message_ids: frozenset[str]
     provider: str = "gmail"
+    label_change: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -126,6 +127,7 @@ class CompanionTeachingWorkflow:
             scope=payload.get("scope") or "sender",
             mode=payload["mode"],
             included_message_ids=included_message_ids,
+            approved_label_change=payload.get("approved_label_change"),
         )
         current = teaching_result["current"]
         write_request = TeachingWriteRequest(
@@ -144,6 +146,7 @@ class CompanionTeachingWorkflow:
             current_sender=current.get("sender") or "",
             included_message_ids=frozenset(included_message_ids),
             provider=str(current.get("provider") or selected_context.get("provider") or "gmail"),
+            label_change=teaching_result.get("label_change"),
         )
         write_summary = (
             _pending_write_summary()
@@ -158,6 +161,7 @@ class CompanionTeachingWorkflow:
             "provider_write": write_summary,
             "gmail_write_through": write_summary,
             "outcome": _apply_outcome(teaching_result, write_summary),
+            "label_change": teaching_result.get("label_change"),
         }
         return TeachingWorkflowResult(
             response=response,

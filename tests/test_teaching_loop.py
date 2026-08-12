@@ -95,6 +95,7 @@ class TeachingLoopTests(unittest.TestCase):
             result = OpenAITeachingIntentClient("test-key", "test-model").interpret({"note": "shipment"})
 
         self.assertEqual(result["target_label"], "shopping-order")
+        self.assertEqual(result["_model"], "test-model")
         self.assertEqual(urlopen.call_args.kwargs["timeout"], 8)
 
         with patch("src.teaching_loop.urllib.request.urlopen", side_effect=TimeoutError("slow model")):
