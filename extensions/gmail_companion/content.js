@@ -4145,6 +4145,7 @@
         matched_rule_count: details.matched_rule_count || 0,
         write_status: details.write_status || "",
         inbox_status: details.inbox_status || "",
+        decision_provenance: details.decision_provenance || {},
       },
     });
   }

@@ -873,6 +873,53 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertEqual(selected["details"]["inbox_status"], "")
         self.assertEqual(selected["details"]["matched_rule_ids"], ["rule-1", "rule-2"])
 
+    def test_selected_email_details_project_only_compact_initial_decision_provenance(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                [{
+                    "source": "gmail",
+                    "account_id": "founder-test",
+                    "message_id": "model-evidence-1",
+                    "sender": "Unknown <unknown@example.com>",
+                    "subject": "Please review",
+                    "interpretation": "A personal note that may need a reply.",
+                    "review_state": "pending",
+                    "final_labels": [],
+                    "applied_labels": [],
+                    "near_misses": ["personal"],
+                    "decision_provenance": {
+                        "decision_source": "model",
+                        "llm_used": True,
+                        "llm_model": "gpt-test",
+                        "llm_confidence": "medium",
+                        "llm_abstained": False,
+                        "llm_failed": False,
+                        "api_key": "must-not-project",
+                        "prompt": "must-not-project",
+                    },
+                }],
+            )
+
+            selected = build_selected_email_state(
+                storage_dir,
+                [],
+                {"provider": "gmail", "message_id": "model-evidence-1"},
+            )
+
+        self.assertEqual(selected["details"]["decision_provenance"], {
+            "decision_source": "model",
+            "llm_used": True,
+            "llm_model": "gpt-test",
+            "llm_confidence": "medium",
+            "llm_abstained": False,
+            "llm_failed": False,
+        })
+        self.assertNotIn("api_key", selected["details"]["decision_provenance"])
+        self.assertNotIn("prompt", selected["details"]["decision_provenance"])
+
     def test_selected_email_details_do_not_promote_invalid_confidence_or_near_miss_values(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
@@ -902,6 +949,19 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertEqual(selected["rationale"], "")
         self.assertEqual(selected["details"]["confidence_band"], "")
         self.assertEqual(selected["details"]["near_misses"], ["travel"])
+
+    def test_extension_passes_initial_decision_provenance_into_progressive_evidence(self) -> None:
+        content_js = Path("extensions/gmail_companion/content.js").read_text(encoding="utf-8")
+        explanation_js = Path(
+            "extensions/gmail_companion/selected_explanation.js"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("decision_provenance: details.decision_provenance || {}", content_js)
+        self.assertIn('key: "decision-source"', explanation_js)
+        self.assertIn('label: "Initial decision"', explanation_js)
+        self.assertIn("Model abstained", explanation_js)
+        self.assertIn("Model unavailable", explanation_js)
+        self.assertIn("data-ea-explanation-disclosure", content_js)
 
     def test_selected_email_understanding_state_progresses_from_reading_to_ready(self) -> None:
         context = {

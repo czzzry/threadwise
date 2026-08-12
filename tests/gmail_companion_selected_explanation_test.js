@@ -84,6 +84,59 @@ function run() {
   assert.equal(handled.queueReason, "Handled by Threadwise");
   assert.equal(handled.confidenceText, "Medium confidence");
 
+  const rules = explanation.derive({
+    workspaceMode: "review",
+    details: {
+      decision_provenance: { decision_source: "rules", llm_used: false },
+    },
+  });
+  assert.deepEqual(rules.evidenceRows, [
+    { key: "decision-source", label: "Initial decision", values: ["Rules"] },
+  ]);
+
+  const model = explanation.derive({
+    workspaceMode: "review",
+    details: {
+      decision_provenance: {
+        decision_source: "model",
+        llm_used: true,
+        llm_model: "gpt-test",
+        llm_confidence: "medium",
+        llm_abstained: false,
+        llm_failed: false,
+      },
+    },
+  });
+  assert.deepEqual(model.evidenceRows, [
+    { key: "decision-source", label: "Initial decision", values: ["Model · gpt-test"] },
+  ]);
+
+  const abstained = explanation.derive({
+    workspaceMode: "review",
+    details: {
+      decision_provenance: {
+        decision_source: "model",
+        llm_used: true,
+        llm_model: "gpt-test",
+        llm_abstained: true,
+      },
+    },
+  });
+  assert.equal(abstained.evidenceRows[0].values[0], "Model abstained · gpt-test");
+
+  const failed = explanation.derive({
+    workspaceMode: "review",
+    details: {
+      decision_provenance: {
+        decision_source: "model-failure",
+        llm_used: true,
+        llm_model: "gpt-test",
+        llm_failed: true,
+      },
+    },
+  });
+  assert.equal(failed.evidenceRows[0].values[0], "Model unavailable · gpt-test");
+
   assert.equal(explanation.derive({ workspaceMode: "home" }).visible, false);
   console.log("gmail companion selected explanation tests passed");
 }

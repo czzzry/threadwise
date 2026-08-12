@@ -288,6 +288,9 @@ def build_selected_email_details(
         normalized_label = str(label or "").strip().lower()
         if normalized_label in CANONICAL_LABEL_ORDER and normalized_label not in near_misses:
             near_misses.append(normalized_label)
+    decision_provenance = normalize_initial_decision_provenance(
+        item.get("decision_provenance")
+    )
     return {
         "review_action": item.get("review_action") or "",
         "write_status": write_status or "",
@@ -296,6 +299,26 @@ def build_selected_email_details(
         "near_misses": near_misses,
         "matched_rule_count": len(matched_rules),
         "matched_rule_ids": [rule.get("id") for rule in matched_rules if rule.get("id")],
+        "decision_provenance": decision_provenance,
+    }
+
+
+def normalize_initial_decision_provenance(value: object) -> dict:
+    if not isinstance(value, dict):
+        return {}
+    source = str(value.get("decision_source") or "").strip().lower()
+    if source not in {"rules", "model", "model-failure"}:
+        return {}
+    confidence = str(value.get("llm_confidence") or "").strip().lower()
+    if confidence not in {"low", "medium", "high"}:
+        confidence = ""
+    return {
+        "decision_source": source,
+        "llm_used": bool(value.get("llm_used")),
+        "llm_model": str(value.get("llm_model") or "").strip()[:120],
+        "llm_confidence": confidence,
+        "llm_abstained": bool(value.get("llm_abstained")),
+        "llm_failed": bool(value.get("llm_failed")),
     }
 
 

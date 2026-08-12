@@ -38,6 +38,14 @@ const selectedStates = {
       near_misses: ["travel", "promotions", "travel"],
       matched_rule_count: 2,
       matched_rule_ids: ["opaque-rule-1", "opaque-rule-2"],
+      decision_provenance: {
+        decision_source: "model",
+        llm_used: true,
+        llm_model: "gpt-test",
+        llm_confidence: "high",
+        llm_abstained: false,
+        llm_failed: false,
+      },
     },
     understanding_state: "ready",
     understanding_label: "Ready",
@@ -214,6 +222,7 @@ try {
   assert(await evaluate("document.activeElement?.hasAttribute('data-ea-explanation-disclosure')"), "evidence pointer open restores disclosure focus");
   assert(await evaluate("document.querySelector('[data-ea-explanation-evidence]').textContent.includes('Also considered')"), "evidence shows canonical near misses");
   assert(await evaluate("document.querySelector('[data-ea-explanation-evidence]').textContent.includes('Saved rules matched')"), "evidence shows matched-rule count");
+  assert(await evaluate("document.querySelector('[data-ea-explanation-evidence]').textContent.includes('Initial decision') && document.querySelector('[data-ea-explanation-evidence]').textContent.includes('Model · gpt-test')"), "evidence shows visible model provenance");
   assert(await evaluate("!document.querySelector('[data-ea-explanation-evidence]').textContent.includes('opaque-rule-1')"), "evidence does not expose raw rule IDs");
   results.focusTrace.push({ step: "evidence-pointer-open", active: await activeElementSnapshot() });
   results.scrollTrace.push({ step: "evidence-pointer-open", before: evidenceBeforeScroll, after: evidenceAfterScroll });

@@ -54,6 +54,26 @@
     }[status] || fallback;
   }
 
+  function initialDecisionText(value) {
+    const provenance = value && typeof value === "object" ? value : {};
+    const source = text(provenance.decision_source).toLowerCase();
+    const model = text(provenance.llm_model);
+    const modelSuffix = model ? ` · ${model}` : "";
+    if (provenance.llm_failed || source === "model-failure") {
+      return `Model unavailable${modelSuffix}`;
+    }
+    if (provenance.llm_abstained) {
+      return `Model abstained${modelSuffix}`;
+    }
+    if (provenance.llm_used || source === "model") {
+      return `Model${modelSuffix}`;
+    }
+    if (source === "rules") {
+      return "Rules";
+    }
+    return "";
+  }
+
   function derive(input = {}) {
     const workspaceMode = text(input.workspaceMode);
     const visible = VISIBLE_MODES.has(workspaceMode);
@@ -66,6 +86,15 @@
     const nearMisses = normalizeNearMisses(details.near_misses);
     const matchedRuleCount = Number(details.matched_rule_count);
     const evidenceRows = [];
+    const initialDecision = initialDecisionText(details.decision_provenance);
+
+    if (initialDecision) {
+      evidenceRows.push({
+        key: "decision-source",
+        label: "Initial decision",
+        values: [initialDecision],
+      });
+    }
 
     if (nearMisses.length) {
       evidenceRows.push({
@@ -126,6 +155,7 @@
     build: derive,
     normalizeConfidenceBand,
     normalizeNearMisses,
+    initialDecisionText,
   });
 
   globalThis.ThreadwiseSelectedExplanation = api;
