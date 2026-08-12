@@ -31,6 +31,7 @@ Start here for the product story and the current operating model:
 - [Current product direction](docs/v2-alignment.md)
 - [Current bounded PRD](docs/prd.md)
 - [Current operating checkpoint](docs/checkpoints/current-operating-model-2026-06-22.md)
+- [Fresh Mac setup](docs/fresh-mac-setup.md)
 
 ## What The Demos Show
 

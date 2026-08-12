@@ -72,11 +72,11 @@ The founder approved this milestone's LIVE checkpoint on 2026-08-11. Later work 
 
 ## LIVE authorization and environment
 
-- Founder authorization: use `baraniecki@gmail.com` and its messages for continuing Threadwise LIVE testing. Reversible label and triage actions are approved without repeated permission prompts.
+- Founder authorization: use the designated approved test mailbox and its messages for continuing Threadwise LIVE testing. Reversible label and triage actions are approved without repeated permission prompts.
 - Permanent prohibitions: never delete or trash email, and never send email. These prohibitions remain in force for all future testing.
-- Current exact test: apply the existing `EA/Receipts` label to the designated open Amazon refund message through the production overlay, verify provider-confirmed success, then remove only that test label and verify cleanup.
+- Current exact test: apply the existing `EA/Receipts` label to the designated reversible test message through the production overlay, verify provider-confirmed success, then remove only that test label and verify cleanup.
 - Safety configuration: the local helper will run with Gmail write-through and Gmail checks disabled for the read-only pass.
-- Authentication: complete in the designated Brave Gmail `/u/0` session; the visible tab is the signed-in inbox.
+- Authentication: complete in the designated authenticated Brave Gmail session; the visible tab is the signed-in inbox.
 - Helper: `http://127.0.0.1:8021/api/health` reports `ready`; the running process was verified with both `--disable-gmail-write-through` and `--disable-gmail-check`.
 - Extension: `Threadwise Companion 0.3.2` was already loaded and enabled in Brave; no browser setting change or installation action was required.
 - Credential boundary: no password, recovery code, 2FA code, cookie, or other credential was requested or handled by the agent.
@@ -85,14 +85,14 @@ The founder approved this milestone's LIVE checkpoint on 2026-08-11. Later work 
 ### Round 3 — LIVE read-only gate
 
 - Builder/driver: lead agent; complete within the founder-approved read-only boundary.
-- Real host: signed-in Brave Gmail `/u/0` with the unpacked production extension and local helper running with Gmail checks and provider write-through disabled.
+- Real host: authenticated Brave Gmail with the unpacked production extension and local helper running with Gmail checks and provider write-through disabled.
 - Visible states exercised: ready review, evidence disclosure, action-details disclosure, contextual actions, correction entry, safe cancellation, empty home, unsynced message, disabled-sync error, delayed reload/recovery, and selected-message persistence.
 - Gmail coexistence: real message navigation and Older navigation remained usable; Gmail message scrolling worked with the overlay open and the Threadwise review context remained stable.
 - Keyboard/accessibility: Enter activated the focused contextual correction action and Enter activated Cancel to return to review. Escape-to-minimize was not proven in the external browser session and appeared to lose focus.
 - Reload/recovery: Gmail reload initially showed Threadwise Offline; the extension recovered to Ready with the same selected review after about 23 seconds.
 - Provider boundary: `Accept Receipts` was not invoked and no Threadwise provider mutation was attempted. Provider-confirmed success/completion therefore remains untested.
-- Incidental Gmail effect: opening an unread message through the real Gmail UI changed the inbox unread count from 36 to 35. It was not restored because marking it unread would itself be another provider write outside the approved boundary.
-- Capture boundary: standard Windows Graphics Capture failed in this Brave environment; private fallback screenshots of ready, contextual-menu, and correction states were captured outside the repository. External Brave console/request capture was unavailable.
+- Incidental Gmail effect: opening an unread message through the real Gmail UI decreased the inbox unread count by one. It was not restored because marking it unread would itself be another provider write outside the approved boundary.
+- Capture boundary: standard screen capture was unavailable in the test environment; private fallback screenshots of ready, contextual-menu, and correction states were captured outside the repository. External Brave console/request capture was unavailable.
 - `AUTOMATED`: unchanged `PASS` from Round 2; 48 controlled-browser screenshots, zero unexpected requests, focused suites green, and the known broad-suite exceptions remain recorded separately.
 - `LIVE`: `PARTIAL PASS`. Real Gmail rendering, navigation, focusable contextual actions, correction/cancel, scrolling, reload, delayed recovery, empty, and truthful error behavior were observed. Provider-confirmed success/completion was not run because no exact Gmail label mutation is authorized.
 - Biggest material gap: the critical provider-confirmed accept/success path has not been exercised through the production extension in real Gmail.
@@ -128,14 +128,14 @@ The founder approved this milestone's LIVE checkpoint on 2026-08-11. Later work 
 - Biggest material gap: the production helper still lacks its own Google Desktop OAuth client secret/token, so the production-overlay -> helper -> Gmail -> provider-confirmed success path has not passed.
 - Recommendation: `BLOCKED`. Connector-only permission proof cannot substitute for the critical product end-to-end success flow.
 - Status: correction accepted; cleanup complete and Gmail has no test label. OAuth setup and final LIVE success remain pending.
-- OAuth discovery: the signed-in Google Cloud project `email-agent-local-test` contains an existing Desktop OAuth client, `Email Agent Local Desktop`, but Google exposes only its client ID and no downloadable/recoverable client secret.
+- OAuth discovery: the designated Google Cloud project contained an existing Desktop OAuth client, but Google exposed only its client ID and no downloadable/recoverable client secret.
 - OAuth attempt: a private gitignored local configuration using the existing public client ID reached the approved Gmail modification consent screen and completed the browser callback, but Google rejected the token exchange because the client secret was unavailable. No Gmail token was persisted.
 - Required setup: create one new Desktop OAuth client in the existing project, download its JSON into the gitignored `data/gmail_credentials` directory, complete local Gmail modification consent, and repeat the production-overlay success test. Creating the persistent OAuth credential requires action-time founder confirmation.
 
 ### Round 5 — OAuth completion and provider-confirmed LIVE success
 
 - Founder confirmation: explicit action-time approval was granted to create a new Desktop OAuth client. The standing Gmail boundary remained unchanged: reversible label testing is approved; sending and deleting email are prohibited.
-- OAuth setup: created `Threadwise Local Desktop 2026-08-11` in the existing `email-agent-local-test` Google Cloud project, downloaded its JSON, and moved it into the gitignored `data/gmail_credentials/client_secret.json` path. No client secret or token was printed or committed.
+- OAuth setup: created a dedicated Desktop OAuth client in the designated Google Cloud project, downloaded its JSON, and moved it into the gitignored `data/gmail_credentials/client_secret.json` path. No client secret or token was printed or committed.
 - Authorization: completed the Google testing-app consent flow for the designated Gmail account with `gmail.modify`; the private refresh token was persisted under the gitignored Gmail token directory. No password, recovery code, 2FA code, cookie, or inbox content was requested as a credential.
 - Provider baseline: authoritative Gmail read showed only `CATEGORY_UPDATES` and `INBOX`; the existing `EA/Receipts` label was absent from the designated message.
 - LIVE action: restarted the production helper with Gmail write-through enabled, restored the isolated local review seed to pending, reloaded real Gmail with the built production extension, opened the queued review, and invoked the approved `Accept Receipts` primary action.
@@ -161,7 +161,7 @@ The founder approved this milestone's LIVE checkpoint on 2026-08-11. Later work 
 - Visible delta: 420px cream editorial panel replaced by a 408px white Gmail-adjacent shell with 1px neutral borders, 12px radius, restrained soft shadow, 52px header, 28px existing logo, quiet Ready state, purple progress and primary action, compact context/judgment/facts hierarchy, and a 40px primary action. Loading, error, and completion inherit the same white shell and purple action system.
 - Red evidence: the new computed-style contract first found the header shrinking below 52px; a later short-height check found contextual-menu/primary-action collision. Both failures were corrected before green evidence.
 - `AUTOMATED`: `PASS` for the bounded visual delta. Three targeted Python contracts, five focused JavaScript suites, content syntax, and diff check pass. Contextual-actions CDP produced 30 contained screenshots with zero unexpected requests; selected-explanation CDP produced 18 with zero unexpected requests; review-progression CDP produced 42 screenshots. Equivalent baseline/reference/current plus short, narrow, blocked, and receipt captures are retained outside the repository.
-- `LIVE`: production extension reloaded in the authenticated real Gmail UI against the designated Amazon refund message with Gmail checks and provider writes disabled. The selected-message review loaded in the real Gmail DOM and visibly matches the compact white/purple Variant C direction. Contextual menu opened by mouse; Escape closed it; Gmail message scrolling remained intact while the overlay stayed fixed. No label, archive, delete, trash, send, reply, or forward action was invoked.
+- `LIVE`: production extension reloaded in the authenticated real Gmail UI against the designated reversible test message with Gmail checks and provider writes disabled. The selected-message review loaded in the real Gmail DOM and visibly matches the compact white/purple Variant C direction. Contextual menu opened by mouse; Escape closed it; Gmail message scrolling remained intact while the overlay stayed fixed. No label, archive, delete, trash, send, reply, or forward action was invoked.
 - Recovery note: the first live state read failed because the disposable local seed had no valid applied label while prior activity metadata was present. Adding the expected pending `receipt-billing` classification to the disposable seed restored `/api/harness-state` to 200. Gmail and repository files were not modified by this repair.
 - Keyboard finding: after the contextual menu closed, a further Escape did not minimize/retreat the overlay, including when the menu button had owned focus. This remains an observed LIVE acceptance gap rather than a passed behavior.
 - Visual finding: the main review shell now immediately resembles Variant C and is materially more native to Gmail. The contextual menu still retains the older cream card treatment and is visually less coherent than the new shell.
@@ -236,6 +236,6 @@ The founder approved this milestone's LIVE checkpoint on 2026-08-11. Later work 
 - Single biggest material remaining gap: none in the automated slice.
 - Recommendation: `SHIP` to founder checkpoint.
 - LIVE: pending. The production unpacked extension must be reloaded and exercised in real Gmail with the founder present before this slice is called complete or pushed/deployed.
-- Opening the selected unread Gmail message caused Gmail's native unread count to change from 36 to 35; it was intentionally not restored without explicit write approval.
+- Opening the selected unread Gmail message decreased Gmail's native unread count by one; it was intentionally not restored without explicit write approval.
 - Visual restructuring must not hide recovery, receipts, correction, or provider-scoped truth in less common states.
 - The prototype's simplified accept-and-advance behavior cannot replace the production async and live-anchor contracts.
