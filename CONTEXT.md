@@ -1,7 +1,7 @@
 # CONTEXT.md
 
 Status: Current repo context
-Current as of: 2026-08-11
+Current as of: 2026-08-12
 
 This file is the short "you are here" guide for the repo.
 
@@ -39,7 +39,11 @@ On 2026-08-11 the founder approved the real-Gmail Variant C production visual mi
 
 The Gauntlet is decomposed in `docs/threadwise-gauntlet-slice-map-2026-08-09.md`. Implementation still proceeds one triaged vertical slice at a time. The first-run companion slice in issue `#105` is implemented and won its second independent critic round at `97/100`; see `docs/handoff/2026-08-09-threadwise-gauntlet-onboarding.md`. Queue-local search and panel-scoped keyboard navigation in issue `#106` is also complete: its fourth fresh critic declared a WIN at `85/100` versus the documented `~70/100` baseline after real focus, nonzero-scroll, and explicit-exit corrections. See `docs/handoff/2026-08-09-threadwise-gauntlet-queue-navigation.md`. The contextual action panel in issue `#107` is complete: its third fresh critic declared a WIN at `94/100`, approximately `+24` over baseline, after closed-loop scroll/focus and collision-aware placement corrections. See `docs/handoff/2026-08-09-threadwise-gauntlet-contextual-actions.md`. Selected-email explanation and one-click correction in issue `#108` is also complete: its first fresh critic declared a WIN at `87/100`, `+17` over baseline, with five of six tasks and all safety gates clear. See `docs/handoff/2026-08-09-threadwise-gauntlet-selected-email-explanation.md`. High-throughput review completion in issue `#109` is now complete: its final fresh critic declared a WIN at `96/100` versus the documented `~70/100` baseline after every direct and chained late-response boundary was anchored to the live provider, message, thread, URL, and route. See `docs/handoff/2026-08-09-threadwise-gauntlet-review-progression.md`.
 
-The founder resumed the Gauntlet on 2026-08-11, approved the Variant C production visual milestone, then approved the Slice 7 coverage prototype and read-only refresh contract. Slice 7 is implemented locally on `codex/threadwise-coverage-implementation`: its fresh critic recommends SHIP after the bounded correction, with `809/809` repository tests and an `18/18` screenshot controlled-browser gate. LIVE Gmail remains a separate founder-present follow-up gate; the implementation is not pushed or deployed.
+The founder resumed the Gauntlet on 2026-08-11, approved the Variant C production visual milestone, then approved the Slice 7 coverage prototype and read-only refresh contract. Slice 7 is implemented on `codex/threadwise-coverage-implementation`: its fresh critic recommends SHIP after the bounded correction, with an `18/18` screenshot controlled-browser gate.
+
+On 2026-08-12 the founder removed unsubscribe and the destructive suspicious-sender action from the core product. List-Unsubscribe remains only as a classification signal and `suspicious` remains a review label. The selected-email corrector now supports truthful one-to-three-label `only`, `add`, `remove`, and `replace` changes for the current email, executes the approved preview without a second model interpretation, and checks Gmail's live Threadwise-label baseline before replacement. Initial model-assisted labeling is explicitly configurable and review-only; its compact provenance is visible under Evidence and it never auto-writes model suggestions. The full automated suite passes (`825/825`, 16 skipped).
+
+LIVE Gmail click-through remains blocked, not passed: this Windows host has no configured OpenAI API key/model, and desktop control stopped before interaction because it could not verify the active Brave URL. See `docs/handoff/2026-08-12-core-flow-redesign-and-model-labeling.md`.
 
 The universal Threadwise experience in `docs/prd-universal-threadwise-experience-2026-08-01.md` is implemented behind one minimized-by-default browser side panel for Gmail and ProtonMail. The two inboxes remain provider-scoped, while review, teaching, scope selection, optimistic advancement, background writes, retry, and activity use one implementation.
 
@@ -132,7 +136,7 @@ Use this order:
 
 - Gmail mutation must stay bounded and auditable
 - ProtonMail daily runs add suggested `EA/` labels only for medium/high-confidence classifications, verify each through Bridge, and preserve Inbox; low-confidence, unlabeled, and failed-verification items remain in the review console. No label replacement, move, archive, Trash, Spam, send, or provider rule changes are allowed.
-- unsubscribe execution must remain explicit and reviewable
+- unsubscribe execution is not part of the current core product
 - broad autonomous inbox actions remain out of scope by default
 - private email, credentials, OAuth, and live inbox data remain sensitive
 

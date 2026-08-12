@@ -194,6 +194,7 @@ class GmailInitialClassifierTests(unittest.TestCase):
             item = result.unlabeled_exceptions[0]
             self.assertEqual(item["near_misses"], ["personal"])
             self.assertEqual(item["decision_provenance"]["llm_model"], "test-model")
+            self.assertEqual(len(classifier._model_client.payloads), 1)
             self.assertEqual(
                 [call[0] for call in client.calls],
                 ["list_messages", "get_message"],

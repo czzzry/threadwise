@@ -51,6 +51,13 @@ class GmailTeachingAdapter:
                 "error": str(exc),
             }
 
+        baseline_error = self._verify_current_label_baseline(gmail_client, request)
+        if baseline_error:
+            return {
+                **_write_summary("gmail-write-failed"),
+                "error": baseline_error,
+            }
+
         writer = MockGmailLabelWriter(
             gmail_client=gmail_client,
             storage_dir=self._storage_dir,
@@ -111,6 +118,25 @@ class GmailTeachingAdapter:
             "remote_inbox_ineligible_count": remote["inbox_ineligible_count"],
             "mode": "applied",
         }
+
+    def _verify_current_label_baseline(self, gmail_client, request: TeachingWriteRequest) -> str:
+        change = request.label_change or {}
+        if request.mode != "current-only" or not change:
+            return ""
+        if not hasattr(gmail_client, "get_threadwise_label_names"):
+            return "Gmail label baseline could not be verified; no labels were changed."
+        expected = sorted(
+            gmail_label_name(label)
+            for label in (change.get("labels_before") or [])
+            if gmail_label_name(label)
+        )
+        try:
+            actual = sorted(gmail_client.get_threadwise_label_names(request.current_message_id, "EA/"))
+        except Exception:
+            return "Gmail label baseline could not be verified; no labels were changed."
+        if actual != expected:
+            return "Gmail labels changed after preview; refresh and review the correction again."
+        return ""
 
     def preview_backfill(self, preview: dict) -> dict:
         if not self._write_enabled:

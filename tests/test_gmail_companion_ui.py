@@ -1507,6 +1507,11 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("<strong>Before:</strong>", content_js)
         self.assertIn("<strong>After:</strong>", content_js)
         self.assertIn("approved_label_change", content_js)
+        self.assertIn(
+            'return Boolean(change.operation && Array.isArray(change.labels_after) && change.labels_after.length);',
+            content_js,
+        )
+        self.assertNotIn('change.operation !== "only"', content_js)
         self.assertIn("teachDraft.targetLabel = previewTargetLabel", content_js)
         self.assertIn("teachPreview?.target_label || teachPreview?.proposed_label", content_js)
         self.assertIn("manualPreviewOriginContext = lastLiveContext ? { ...lastLiveContext } : null", content_js)

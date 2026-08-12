@@ -6,6 +6,35 @@ from src.gmail_teaching_adapter import GmailTeachingAdapter
 
 
 class GmailTeachingAdapterTests(unittest.TestCase):
+    def test_current_label_set_change_stops_when_live_gmail_baseline_drifted(self) -> None:
+        class DriftedClient:
+            calls = []
+
+            def get_threadwise_label_names(self, message_id, namespace_prefix):
+                self.calls.append(("get_threadwise_label_names", message_id, namespace_prefix))
+                return ["EA/Finance"]
+
+            def replace_threadwise_labels(self, *args):
+                self.calls.append(("replace_threadwise_labels", *args))
+
+        client = DriftedClient()
+        adapter = GmailTeachingAdapter(
+            Path("/tmp/threadwise-test"),
+            credentials_dir=Path("/tmp/threadwise-credentials"),
+            client_secret_path=None,
+            gmail_client_factory=lambda *args: client,
+        )
+
+        result = adapter.apply(_request(label_change={
+            "operation": "only",
+            "labels_before": ["reply-needed"],
+            "labels_after": ["finance"],
+        }))
+
+        self.assertEqual(result["mode"], "gmail-write-failed")
+        self.assertIn("changed after preview", result["error"])
+        self.assertEqual(client.calls, [("get_threadwise_label_names", "message-1", "EA/")])
+
     def test_preview_backfill_exposes_semantic_query_without_opening_gmail(self) -> None:
         adapter = GmailTeachingAdapter(
             Path("/tmp/threadwise-test"),
@@ -63,7 +92,7 @@ class GmailTeachingAdapterTests(unittest.TestCase):
         self.assertEqual(result["error"], "offline")
 
 
-def _request(*, mode: str = "current-only") -> TeachingWriteRequest:
+def _request(*, mode: str = "current-only", label_change: dict | None = None) -> TeachingWriteRequest:
     return TeachingWriteRequest(
         account_id="founder-test",
         current_message_id="message-1",
@@ -73,6 +102,7 @@ def _request(*, mode: str = "current-only") -> TeachingWriteRequest:
         current_subject="Need a response",
         current_sender="boss@example.com",
         included_message_ids=frozenset(),
+        label_change=label_change,
     )
 
 

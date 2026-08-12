@@ -1,6 +1,6 @@
 # Issue 140 — Add truthful selected-email label-set correction
 
-Status: Ready for bounded implementation
+Status: Implemented; automated acceptance passed, LIVE Gmail pending
 Approved by: Founder, 2026-08-12
 Parent direction: `docs/prd-threadwise-gauntlet-2026-08-09.md`
 

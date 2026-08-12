@@ -17,7 +17,7 @@ class GmailBatchReviewStore(StoredBatchReviewStore):
             trusted_personal_senders=TrustedSenderStore(self._storage_dir).load_or_rebuild(),
         )
 
-    def to_review_queue(self, stored_batch: dict) -> dict:
+    def to_review_queue(self, stored_batch: dict, *, reclassify: bool = True) -> dict:
         items = stored_batch["items"]
         if stored_batch.get("raw_messages"):
             existing_items = {item["message_id"]: item for item in stored_batch["items"]}
@@ -29,7 +29,11 @@ class GmailBatchReviewStore(StoredBatchReviewStore):
                 )
                 for raw_message in stored_batch["raw_messages"]
             ]
-            reclassified_queue = self._classifier.classify_messages(stored_batch["batch_id"], normalized_messages)
+            reclassified_queue = (
+                self._classifier.classify_messages(stored_batch["batch_id"], normalized_messages)
+                if reclassify
+                else {"items": stored_batch["items"]}
+            )
             normalized_by_id = {message["message_id"]: message for message in normalized_messages}
             rules = self.load_rules()
             items = []

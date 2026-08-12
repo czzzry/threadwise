@@ -212,7 +212,10 @@ def run_daily_gmail_automation(
 
     batch_store = GmailBatchReviewStore(storage_dir, classifier=classifier)
     stored_batch = batch_store.load_batch(review_queue["batch_id"])
-    refreshed_queue = batch_store.to_review_queue(stored_batch)
+    # The fetcher has already classified this exact batch. Reuse that result so
+    # an optional paid model is called once and its approved provenance cannot
+    # drift before the review queue is persisted.
+    refreshed_queue = batch_store.to_review_queue(stored_batch, reclassify=False)
     stored_batch["items"] = refreshed_queue["items"]
     write_status_map = load_write_status_map(storage_dir, review_queue["batch_id"])
     auto_items = auto_approve_items(stored_batch["items"], write_status_map)

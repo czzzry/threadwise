@@ -4978,7 +4978,7 @@
 
   function isSelectedEmailLabelSetChange(preview) {
     const change = preview?.label_change || {};
-    return Boolean(change.operation && (change.operation !== "only" || (change.labels_after || []).length > 1));
+    return Boolean(change.operation && Array.isArray(change.labels_after) && change.labels_after.length);
   }
 
   function renderSelectedEmailLabelChange(preview) {
