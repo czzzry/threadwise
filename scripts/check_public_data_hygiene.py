@@ -127,12 +127,12 @@ def scan_text(path: Path, text: str) -> list[str]:
                     continue
                 line = text.count("\n", 0, match.start()) + 1
                 violations.append(f"{label}: {relative}:{line}")
-        for label, pattern in SECRET_CHECKS.items():
-            for match in pattern.finditer(text):
-                if is_documentation_placeholder(match.group(0)):
-                    continue
-                line = text.count("\n", 0, match.start()) + 1
-                violations.append(f"{label}: {relative}:{line}")
+    for label, pattern in SECRET_CHECKS.items():
+        for match in pattern.finditer(text):
+            if is_documentation_placeholder(match.group(0)):
+                continue
+            line = text.count("\n", 0, match.start()) + 1
+            violations.append(f"{label}: {relative}:{line}")
 
     if is_public_demo(path):
         for match in EMAIL_ADDRESS.finditer(text):

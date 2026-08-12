@@ -47,6 +47,14 @@ class PublicDataHygieneTests(unittest.TestCase):
 
         self.assertTrue(any("OpenAI API key" in item for item in violations))
 
+    def test_hygiene_test_file_does_not_exempt_secrets(self) -> None:
+        path = ROOT / "tests/test_public_data_hygiene.py"
+        secret = credential_fixture("AI", "za", "Sy", "A" * 33)
+
+        violations = scan_text(path, f'GOOGLE_API_KEY="{secret}"')
+
+        self.assertTrue(any("Google API key" in item for item in violations))
+
     def test_qa_documents_require_a_data_classification(self) -> None:
         path = ROOT / "docs/qa/example.md"
 
