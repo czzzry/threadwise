@@ -15,7 +15,6 @@ from src.gmail_run_control import load_gmail_dashboard_run_status
 from src.handled_review_store import HandledReviewStore
 from src.label_taxonomy import CANONICAL_LABEL_ORDER, gmail_label_name
 from src.provider_write_queue import ProviderWriteQueue
-from src.unsubscribe_inventory_store import UnsubscribeInventoryStore
 
 
 HARNESS_STATE_CACHE_SECONDS = 120.0
@@ -29,14 +28,14 @@ class CompanionRuntimeState:
         self,
         storage_dir: Path,
         *,
-        unsubscribe_store: UnsubscribeInventoryStore,
         handled_review_store: HandledReviewStore,
         analytics_status: Callable[[], dict],
         live_inbox_ids_loader: Callable[[], set[str] | None],
+        unsubscribe_store: object | None = None,
         background_runner: Callable[[Callable[[], None]], None] | None = None,
     ) -> None:
+        del unsubscribe_store  # Accepted only for callers migrating from the removed product flow.
         self._storage_dir = storage_dir
-        self._unsubscribe_store = unsubscribe_store
         self._handled_review_store = handled_review_store
         self._analytics_status = analytics_status
         self._live_inbox_ids_loader = live_inbox_ids_loader
@@ -46,7 +45,6 @@ class CompanionRuntimeState:
         self._runtime_payload_cache: tuple[float, dict] | None = None
         self._live_inbox_ids_cache: tuple[float, set[str] | None] | None = None
         self._daily_summary_cache: tuple[float, dict] | None = None
-        self._unsubscribe_candidates_cache: tuple[float, list[dict]] | None = None
         self._data_lock = threading.Lock()
         self._async_follow_up_state: dict | None = None
         self._async_lock = threading.Lock()
@@ -65,7 +63,6 @@ class CompanionRuntimeState:
             "selected_context": selected_context,
             "selected_email": build_selected_email_state(
                 self._storage_dir,
-                self.unsubscribe_candidates(),
                 selected_context,
             ),
             "daily_summary": self._daily_summary(),
@@ -102,23 +99,11 @@ class CompanionRuntimeState:
             self._runtime_payload_cache = (time.monotonic(), payload)
             return payload
 
-    def unsubscribe_candidates(self) -> list[dict]:
-        now = time.monotonic()
-        with self._data_lock:
-            if self._unsubscribe_candidates_cache is not None:
-                created_at, payload = self._unsubscribe_candidates_cache
-                if now - created_at <= COMPANION_DATA_CACHE_SECONDS:
-                    return payload
-            payload = self._unsubscribe_store.list_candidates()
-            self._unsubscribe_candidates_cache = (time.monotonic(), payload)
-            return payload
-
     def invalidate(self) -> None:
         with self._data_lock:
             self._runtime_payload_cache = None
             self._live_inbox_ids_cache = None
             self._daily_summary_cache = None
-            self._unsubscribe_candidates_cache = None
         with self._harness_lock:
             self._harness_cache.clear()
 

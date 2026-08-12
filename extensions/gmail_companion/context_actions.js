@@ -232,10 +232,6 @@
         if (input.canOpenEmail !== false) addAction(result, "open-email", input);
         if (input.canKeepDiscussing !== false) addAction(result, "keep-discussing", input);
         break;
-      case "safety-preview":
-      case "safety-error":
-        addAction(result, "back", input);
-        break;
       default:
         break;
     }

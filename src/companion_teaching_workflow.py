@@ -117,10 +117,6 @@ class CompanionTeachingWorkflow:
     def apply(self, payload: dict, *, defer_provider_write: bool = False) -> TeachingWorkflowResult:
         selected_context = dict(payload.get("selected_context") or {})
         target_label = payload["target_label"]
-        if target_label == "suspicious" and selected_context.get("provider", "gmail") == "gmail":
-            raise ValueError(
-                "Suspicious email requires the explicit Gmail safety preview and confirmation flow."
-            )
         included_message_ids = _included_message_ids(payload)
         teaching_result = apply_sidebar_teaching(
             self._storage_dir,

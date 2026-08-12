@@ -68,14 +68,8 @@ function run() {
     ids(contextActions.deriveActions({ workspaceMode: "teach-scope" })),
     ["open-email", "keep-discussing"],
   );
-  assert.deepEqual(
-    ids(contextActions.deriveActions({ workspaceMode: "safety-preview" })),
-    ["back"],
-  );
-  assert.deepEqual(
-    ids(contextActions.deriveActions({ workspaceMode: "safety-error" })),
-    ["back"],
-  );
+  assert.deepEqual(ids(contextActions.deriveActions({ workspaceMode: "safety-preview" })), []);
+  assert.deepEqual(ids(contextActions.deriveActions({ workspaceMode: "safety-error" })), []);
   assert.deepEqual(
     ids(contextActions.deriveActions({
       workspaceMode: "current-receipt",

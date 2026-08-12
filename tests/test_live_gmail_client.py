@@ -10,7 +10,6 @@ from unittest.mock import patch
 from src.live_gmail_client import (
     GMAIL_MODIFY_SCOPE,
     GMAIL_READONLY_SCOPE,
-    GMAIL_SAFETY_SCOPE,
     LiveGmailClient,
     LoopbackCodeReceiver,
     SetupError,
@@ -117,15 +116,6 @@ class FakeHTTPServer:
 
 
 class LiveGmailClientTests(unittest.TestCase):
-    def test_list_filters_returns_provider_filters(self) -> None:
-        client = LiveGmailClient(
-            "token",
-            transport=lambda method, url, params=None, access_token=None: {
-                "filter": [{"id": "filter-1", "criteria": {"from": "sender@example.com"}}]
-            },
-        )
-        self.assertEqual(client.list_filters()[0]["id"], "filter-1")
-
     def test_urlopen_json_accepts_empty_success_response(self) -> None:
         class EmptyResponse:
             def __enter__(self):
@@ -167,51 +157,12 @@ class LiveGmailClientTests(unittest.TestCase):
             calls,
         )
 
-    def test_create_trash_filter_uses_settings_api_and_returns_filter_id(self) -> None:
-        calls = []
+    def test_client_has_no_destructive_suspicious_sender_capabilities(self) -> None:
+        client = LiveGmailClient("token")
 
-        def transport(method, url, params=None, access_token=None):
-            calls.append((method, url, params, access_token))
-            return {"id": "filter-001"}
-
-        client = LiveGmailClient("token", transport=transport)
-
-        filter_id = client.create_trash_filter("alerts@example.com", "Label_suspicious")
-
-        self.assertEqual(filter_id, "filter-001")
-        self.assertEqual(
-            calls,
-            [
-                (
-                    "POST",
-                    "https://gmail.googleapis.com/gmail/v1/users/me/settings/filters",
-                    {
-                        "criteria": {"from": "alerts@example.com"},
-                        "action": {"addLabelIds": ["TRASH", "Label_suspicious"]},
-                    },
-                    "token",
-                )
-            ],
-        )
-
-    def test_trash_message_adds_trash_and_removes_inbox(self) -> None:
-        calls = []
-
-        def transport(method, url, params=None, access_token=None):
-            calls.append((method, url, params, access_token))
-            return {"id": "gmail-live-001"}
-
-        client = LiveGmailClient("token", transport=transport)
-        client.trash_message("gmail-live-001")
-
-        self.assertEqual(
-            calls[0][2],
-            {"addLabelIds": ["TRASH"], "removeLabelIds": ["INBOX"]},
-        )
-
-    def test_safety_scope_contains_modify_and_filter_settings_permissions(self) -> None:
-        self.assertIn(GMAIL_MODIFY_SCOPE, GMAIL_SAFETY_SCOPE.split())
-        self.assertIn("https://www.googleapis.com/auth/gmail.settings.basic", GMAIL_SAFETY_SCOPE.split())
+        self.assertFalse(hasattr(client, "create_trash_filter"))
+        self.assertFalse(hasattr(client, "trash_message"))
+        self.assertFalse(hasattr(client, "delete_filter"))
 
     def test_from_local_oauth_uses_existing_token_without_reauthorizing(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

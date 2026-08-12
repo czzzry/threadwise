@@ -55,8 +55,6 @@
     details: "Checking the local companion.",
   };
   let teachPreview = null;
-  let safetyPreview = null;
-  let safetyResult = null;
   let teachPreviewRequestId = 0;
   let forceLlmReviewRequested = false;
   let previousTeachPreview = null;
@@ -65,7 +63,6 @@
   let inboxApplyConfirmOpen = false;
   let teachOutcome = null;
   let teachWriteThrough = null;
-  let unsubscribeResult = "";
   let feedbackOpen = false;
   let founderFeedbackVisible = false;
   let feedbackDraft = "";
@@ -1498,7 +1495,6 @@
     inboxApplyConfirmOpen = false;
     teachOutcome = null;
     teachWriteThrough = null;
-    unsubscribeResult = "";
     affectedReviewOpen = false;
     if (options.clearDraft !== false) {
       teachDraft = { targetLabel: "", note: "" };
@@ -2023,7 +2019,7 @@
 
   function shouldHoldSelectedContext() {
     const selectedContext = (lastSidebarState && lastSidebarState.selected_context) || {};
-    const correctionInProgress = ["change", "teach-preview", "teach-scope", "safety-preview"].includes(selectedDecisionMode)
+    const correctionInProgress = ["change", "teach-preview", "teach-scope"].includes(selectedDecisionMode)
       || ["previewing", "applying", "scope-confirmation"].includes(teachFlowState);
     if ((!correctionInProgress && !affectedReviewOpen) || !isMeaningfulContext(selectedContext)) {
       return false;
@@ -2417,15 +2413,12 @@
     invalidateContextActions();
     teachPreviewRequestId += 1;
     teachPreview = null;
-    safetyPreview = null;
-    safetyResult = null;
     previousTeachPreview = null;
     teachResult = null;
     teachFlowState = "teaching";
     inboxApplyConfirmOpen = false;
     teachOutcome = null;
     teachWriteThrough = null;
-    unsubscribeResult = "";
     detailsExpanded = false;
     autoHandledChangeOpen = false;
     selectedDecisionMode = "review";
@@ -2561,12 +2554,6 @@
     }
     if (teachFlowState === "applying") {
       return "applying";
-    }
-    if (selectedDecisionMode === "safety-preview") {
-      if (teachFlowState === "safety-applying") return "safety-applying";
-      if (teachFlowState === "safety-result") return "safety-receipt";
-      if (teachFlowState === "safety-error") return "safety-error";
-      return "safety-preview";
     }
     if (selectedDecisionMode === "teach-preview" && (teachPreview || teachResult || teachFlowState === "previewing")) {
       return "teach-preview";
@@ -2912,7 +2899,6 @@
     scheduleUnderstandingRefresh(understandingActive);
     if (!(selected && selected.found)) {
       previousTeachPreview = null;
-      unsubscribeResult = "";
       detailsExpanded = false;
     }
 
@@ -3253,42 +3239,6 @@
       `);
       setHtml(selectedEmailSecondaryNode, "");
       setHtml(teachPanelNode, "");
-    } else if (workspaceMode === "safety-preview") {
-      const domainSelected = safetyPreview?.scope === "domain";
-      setHtml(selectedEmailNode, `
-        <div data-ea-selected-state="safety-preview" style="display:grid;gap:12px;margin-top:10px;">
-          <div>
-            <div style="color:#9a3412;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;font-weight:820;">Suspicious / phishing</div>
-            <div style="margin-top:6px;font-size:1.3rem;font-weight:840;line-height:1.15;">Protect me from this sender</div>
-            <div style="margin-top:6px;color:#6b6255;font-size:0.88rem;overflow-wrap:anywhere;">${escapeHtml(selected.subject || "(no subject)")}</div>
-          </div>
-          <div style="border-radius:14px;background:#fff4dd;padding:12px;color:#1f1a14;line-height:1.45;">
-            <div><strong>This email:</strong> ${escapeHtml(safetyPreview?.current_email || "Label EA/Suspicious and move to Gmail Trash")}</div>
-            <div style="margin-top:7px;"><strong>Future emails:</strong> ${escapeHtml(safetyPreview?.future_emails || "Filter matching mail to Trash")}</div>
-            <div style="margin-top:7px;"><strong>Match:</strong> ${escapeHtml(safetyPreview?.match || "")}</div>
-          </div>
-          <fieldset style="margin:0;padding:0;border:0;display:grid;gap:8px;">
-            <legend style="font-weight:800;margin-bottom:6px;">Which sender should be filtered?</legend>
-            <button type="button" data-ea-action="safety-sender-scope" aria-pressed="${domainSelected ? "false" : "true"}" style="text-align:left;min-height:44px;border:${domainSelected ? "1px solid rgba(36,24,18,.24)" : "2px solid #241812"};background:${domainSelected ? "#fffdf7" : "#dff8ed"};color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;"><strong>Exact sender (recommended)</strong><br><span style="font-size:.82rem;color:#6b6255;">Safest default; other addresses at the domain remain visible.</span></button>
-            <button type="button" data-ea-action="safety-domain-scope" aria-pressed="${domainSelected ? "true" : "false"}" style="text-align:left;min-height:44px;border:${domainSelected ? "2px solid #241812" : "1px solid rgba(36,24,18,.24)"};background:${domainSelected ? "#fff4dd" : "#fffdf7"};color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;"><strong>Entire domain</strong><br><span style="font-size:.82rem;color:#6b6255;">Broader: legitimate mail from this domain will also go to Trash.</span></button>
-          </fieldset>
-          <button type="button" data-ea-action="confirm-safety-action" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Label, trash, and protect future mail</button>
-        </div>
-      `);
-      setHtml(selectedEmailSecondaryNode, "");
-      setHtml(teachPanelNode, "");
-    } else if (workspaceMode === "safety-applying") {
-      setHtml(selectedEmailNode, `<div data-ea-selected-state="safety-applying" aria-live="polite" style="display:grid;gap:12px;margin-top:10px;"><div style="font-size:1.3rem;font-weight:840;">Applying protection…</div><div style="border-radius:14px;background:#fff4dd;padding:12px;line-height:1.45;">Creating the future Gmail filter, then labeling and moving this email to Trash.</div></div>`);
-      setHtml(selectedEmailSecondaryNode, "");
-      setHtml(teachPanelNode, "");
-    } else if (workspaceMode === "safety-receipt") {
-      setHtml(selectedEmailNode, `<div data-ea-selected-state="safety-receipt" style="display:grid;gap:12px;margin-top:10px;"><div style="font-size:1.3rem;font-weight:840;">Protected</div><div role="status" style="border-radius:14px;background:#dff8ed;padding:12px;line-height:1.45;">This email is labeled EA/Suspicious and is in Gmail Trash. Future mail matching <strong>${escapeHtml(safetyResult?.match || "this sender")}</strong> will go directly to Trash.</div><button type="button" data-ea-action="finish-safety-next" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Review next</button></div>`);
-      setHtml(selectedEmailSecondaryNode, "");
-      setHtml(teachPanelNode, "");
-    } else if (workspaceMode === "safety-error") {
-      setHtml(selectedEmailNode, `<div data-ea-selected-state="safety-error" style="display:grid;gap:12px;margin-top:10px;"><div style="font-size:1.3rem;font-weight:840;">Protection was not completed</div><div role="alert" style="border-radius:14px;background:#f7e2e2;padding:12px;color:#8a1f1f;line-height:1.45;">${escapeHtml(safetyResult?.error || "Threadwise could not complete the Gmail safety action. The new future filter was not left active after a partial failure.")}</div><button type="button" data-ea-action="confirm-safety-action" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Try again</button></div>`);
-      setHtml(selectedEmailSecondaryNode, "");
-      setHtml(teachPanelNode, "");
     } else if (workspaceMode === "teach-preview") {
       const label = decisionLabelName(teachPreview?.target_label || teachPreview?.proposed_label || (teachPreview?.selected_label_after || [])[0] || teachDraft.targetLabel || decisionSuggestedLabelId(selected) || selected.classification || "");
       const learningPreviewHtml = teachPreview
@@ -3391,9 +3341,6 @@
       const allLabelsList = allClassifications.length > 1
         ? `<div style="margin-top:6px;color:#6b6255;line-height:1.45;">All labels: ${escapeHtml(allClassifications.join(", "))}</div>`
         : "";
-      const unsubscribeReasonList = (details.unsubscribe_reasons || []).length
-        ? `<div style="margin-top:6px;color:#6b6255;line-height:1.45;">Unsubscribe qualified because: ${escapeHtml((details.unsubscribe_reasons || []).join(", "))}</div>`
-        : "";
       const detailsButtonLabel = detailsExpanded ? "Hide technical details" : "Show technical details";
       const detailsHtml = detailsExpanded
         ? `
@@ -3403,33 +3350,8 @@
           <div style="margin-top:6px;color:#6b6255;line-height:1.45;">Matched saved rules: ${escapeHtml(String(details.matched_rule_count || 0))}</div>
           ${matchedRuleList}
           ${allLabelsList}
-          ${unsubscribeReasonList}
         `
         : `<div style="margin-top:8px;color:#6b6255;line-height:1.45;">Open details to inspect decision source, Gmail write status, inbox handling, and matched rules.</div>`;
-      const unsubscribe = selected.unsubscribe || null;
-      const unsubscribePreview = (unsubscribe && unsubscribe.preview) || null;
-      const reviewLinkLabel = unsubscribe && unsubscribe.decision_state === "selected"
-        ? "Open queued review"
-        : "Review all subscriptions";
-      const canOpenUnsubscribeUrl = unsubscribePreview
-        && unsubscribePreview.url
-        && unsubscribePreview.status !== "ready"
-        && unsubscribePreview.url.startsWith("mailto:");
-      const unsubscribeLine = unsubscribe
-        ? `
-          <div data-ea-unsubscribe-card="true" style="margin-top:14px;border:2px solid #241812;border-radius:14px;background:#fffdf7;padding:12px;box-shadow:3px 3px 0 rgba(36,24,18,.22);">
-            <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">Unsubscribe</div>
-            <div style="margin-top:8px;color:#1f1a14;line-height:1.45;font-weight:700;">${escapeHtml(unsubscribe.display_name || selected.sender || "Subscription")}</div>
-            <div style="margin-top:6px;color:#6b6255;line-height:1.45;">${escapeHtml((unsubscribePreview && unsubscribePreview.notes) || "Unsubscribe available")}</div>
-            ${unsubscribeResult ? `<div style="margin-top:12px;border-radius:14px;background:#d8f3ef;padding:12px;color:#0f766e;line-height:1.45;">${escapeHtml(unsubscribeResult)}</div>` : ""}
-            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
-              ${unsubscribePreview && unsubscribePreview.status === "ready" && !unsubscribeResult ? '<button type="button" data-ea-action="select-unsubscribe" data-ea-unsubscribe-action="queue" style="border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Queue unsubscribe review</button>' : ""}
-              ${canOpenUnsubscribeUrl ? `<a href="${escapeHtml(unsubscribePreview.url)}" data-ea-unsubscribe-action="open-mail" style="border:0;background:transparent;color:#5d5342;border-radius:0;padding:7px 2px;display:inline-flex;align-items:center;text-decoration:underline;text-underline-offset:3px;font:inherit;font-weight:760;box-shadow:none;">Open mail unsubscribe</a>` : ""}
-              <a href="${escapeHtml(`${LOCAL_ORIGIN}${unsubscribe.handoff_path || "/unsubscribe-review"}`)}" target="_blank" rel="noreferrer" data-ea-unsubscribe-action="review" style="border:0;background:transparent;color:#5d5342;border-radius:0;padding:7px 2px;display:inline-flex;align-items:center;text-decoration:underline;text-underline-offset:3px;font:inherit;font-weight:760;box-shadow:none;">${reviewLinkLabel}</a>
-            </div>
-          </div>
-        `
-        : "";
       const previewModeBanner = showingQueuePreview
         ? `
           <div style="margin-top:14px;border-radius:14px;background:#fff8eb;padding:12px;color:#1f1a14;line-height:1.45;">
@@ -3484,7 +3406,6 @@
           </div>
           ${detailsHtml}
         </div>
-        ${unsubscribeLine}
       `);
       setHtml(teachPanelNode, `
         <div style="display:grid;gap:8px;">
@@ -3512,7 +3433,6 @@
     restorePendingExplanationFocus();
 
     const changedToday = summary.changed_today || {};
-    const selectedUnsubscribeExamples = changedToday.selected_unsubscribe_examples || [];
     const focus = summaryFocusCopy(activeSummaryFilter);
     const topLabels = (summary.top_labels || [])
       .map(
@@ -3571,7 +3491,6 @@
           ${renderQueueFinderHtml()}
           <div style="display:flex;flex-wrap:wrap;gap:12px;">
             <a href="${LOCAL_ORIGIN}/daily-dashboard" target="_blank" rel="noreferrer" style="border:0;background:transparent;color:#5d5342;border-radius:0;padding:7px 2px;display:inline-flex;align-items:center;text-decoration:underline;text-underline-offset:3px;font:inherit;font-weight:760;box-shadow:none;">Activity</a>
-            <a href="${LOCAL_ORIGIN}/unsubscribe-review" target="_blank" rel="noreferrer" style="border:0;background:transparent;color:#5d5342;border-radius:0;padding:7px 2px;display:inline-flex;align-items:center;text-decoration:underline;text-underline-offset:3px;font:inherit;font-weight:760;box-shadow:none;">Subscription cleanup</a>
           </div>
           <div data-ea-analytics-health="${escapeHtml(analyticsState)}" style="border-radius:12px;background:${analyticsBackground};padding:10px 12px;color:#155e59;line-height:1.4;">
             <div style="font-weight:820;">${escapeHtml(analyticsTitle)}</div>
@@ -3595,12 +3514,10 @@
         <button type="button" data-ea-summary-filter="kept_visible_items" style="${metricButtonStyle("kept_visible_items")}"><strong style="display:block;font-size:1.15rem;">${keptVisibleCount || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">kept visible</span></button>
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;">
-        <span style="border:2px solid #241812;border-radius:999px;padding:6px 10px;background:#f1eadf;color:#241812;font-size:0.8rem;font-weight:760;box-shadow:2px 2px 0 rgba(36,24,18,.28);">Unsubscribe candidates - ${summary.unsubscribe_candidate_count || 0}</span>
         ${summary.report_date ? `<span style="border:2px solid #241812;border-radius:999px;padding:6px 10px;background:#f1eadf;color:#241812;font-size:0.8rem;font-weight:760;box-shadow:2px 2px 0 rgba(36,24,18,.28);">Latest report - ${escapeHtml(summary.report_date)}</span>` : ""}
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;">
         <a href="${LOCAL_ORIGIN}/daily-dashboard" target="_blank" rel="noreferrer" style="border:0;background:transparent;color:#5d5342;border-radius:0;padding:7px 2px;display:inline-flex;align-items:center;text-decoration:underline;text-underline-offset:3px;font:inherit;font-weight:760;box-shadow:none;">Open daily dashboard</a>
-        <a href="${LOCAL_ORIGIN}/unsubscribe-review" target="_blank" rel="noreferrer" style="border:0;background:transparent;color:#5d5342;border-radius:0;padding:7px 2px;display:inline-flex;align-items:center;text-decoration:underline;text-underline-offset:3px;font:inherit;font-weight:760;box-shadow:none;">Review unsubscribe candidates</a>
       </div>
       <details style="margin-top:12px;border:2px solid #241812;border-radius:14px;background:#fffdf7;padding:10px 12px;">
         <summary style="cursor:pointer;font-weight:800;color:#241812;">Report details</summary>
@@ -3615,23 +3532,7 @@
             <div style="border:2px solid #241812;border-radius:11px;background:#fffdf7;padding:12px;box-shadow:2px 2px 0 rgba(36,24,18,.18);"><strong style="display:block;font-size:1.15rem;">${changedToday.label_writes_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">labels written</span></div>
             <div style="border:2px solid #241812;border-radius:11px;background:#fffdf7;padding:12px;box-shadow:2px 2px 0 rgba(36,24,18,.18);"><strong style="display:block;font-size:1.15rem;">${changedToday.inbox_removed_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">removed from inbox</span></div>
             <div style="border:2px solid #241812;border-radius:11px;background:#fffdf7;padding:12px;box-shadow:2px 2px 0 rgba(36,24,18,.18);"><strong style="display:block;font-size:1.15rem;">${changedToday.taught_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">teaching changes</span></div>
-            <div style="border:2px solid #241812;border-radius:11px;background:#fffdf7;padding:12px;box-shadow:2px 2px 0 rgba(36,24,18,.18);"><strong style="display:block;font-size:1.15rem;">${changedToday.selected_unsubscribe_count || 0}</strong><span style="color:#6b6255;font-size:0.82rem;">unsubscribe queued</span></div>
           </div>
-          ${
-            selectedUnsubscribeExamples.length
-              ? `<div style="margin-top:12px;border-radius:12px;background:#fffdfa;padding:12px;">
-                  <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#6b6255;">Queued subscriptions</div>
-                  <div style="display:grid;gap:8px;margin-top:10px;">
-                    ${selectedUnsubscribeExamples.map((item) => `
-                      <a href="${escapeHtml(`${LOCAL_ORIGIN}${item.handoff_path}`)}" target="_blank" rel="noreferrer" style="text-decoration:none;border:1px solid #d7cfbf;border-radius:14px;background:#fffdfa;padding:10px 12px;color:#1f1a14;">
-                        <div style="font-size:0.95rem;font-weight:700;line-height:1.25;">${escapeHtml(item.display_name || "(unknown list)")}</div>
-                        <div style="margin-top:4px;color:#6b6255;font-size:0.82rem;overflow-wrap:anywhere;">${escapeHtml(item.sender || "(unknown sender)")}</div>
-                      </a>
-                    `).join("")}
-                  </div>
-                </div>`
-              : ""
-          }
           <div style="margin-top:12px;display:grid;gap:10px;">${renderChangedTodayGroups(changedToday)}</div>
         </div>
         ${
@@ -4213,12 +4114,6 @@
       return {
         title: "What to do now",
         body: "This email still needs a decision. Either teach the right label below or leave it visible for later.",
-      };
-    }
-    if (selected.unsubscribe_available) {
-      return {
-        title: "What to do now",
-        body: "The agent already understands this email. If it is a recurring subscription, you can queue it for unsubscribe review here.",
       };
     }
     return {
@@ -6043,30 +5938,6 @@
       document.getElementById("ea-target-label")?.focus();
       return;
     }
-    const safetySenderScopeButton = event.target.closest("[data-ea-action='safety-sender-scope']");
-    if (safetySenderScopeButton) {
-      event.preventDefault();
-      return previewSafety("sender");
-    }
-    const safetyDomainScopeButton = event.target.closest("[data-ea-action='safety-domain-scope']");
-    if (safetyDomainScopeButton) {
-      event.preventDefault();
-      return previewSafety("domain");
-    }
-    const confirmSafetyButton = event.target.closest("[data-ea-action='confirm-safety-action']");
-    if (confirmSafetyButton) {
-      event.preventDefault();
-      return applySafety();
-    }
-    const finishSafetyNextButton = event.target.closest("[data-ea-action='finish-safety-next']");
-    if (finishSafetyNextButton) {
-      event.preventDefault();
-      resetPerEmailInteraction();
-      previousPayload = "";
-      refreshSelection(true);
-      window.setTimeout(() => openFirstSummaryItemIfHelpful("needs_attention_items"), 500);
-      return;
-    }
     const retryPreviewButton = event.target.closest("[data-ea-action='retry-preview-teach']");
     if (retryPreviewButton) {
       event.preventDefault();
@@ -6094,7 +5965,6 @@
       inboxApplyConfirmOpen = false;
       teachOutcome = null;
       teachWriteThrough = null;
-      unsubscribeResult = "";
       affectedReviewOpen = false;
       teachDraft = { targetLabel: "", note: "" };
       if (lastSidebarState) {
@@ -6222,11 +6092,6 @@
       }
       return;
     }
-    const unsubscribeButton = event.target.closest("[data-ea-action='select-unsubscribe']");
-    if (unsubscribeButton) {
-      event.preventDefault();
-      return selectUnsubscribeCurrent();
-    }
     const returnButton = event.target.closest("[data-ea-action='return-to-live']");
     if (returnButton) {
       event.preventDefault();
@@ -6241,7 +6106,6 @@
       teachPreview = null;
       previousTeachPreview = null;
       teachResult = null;
-      unsubscribeResult = "";
       affectedReviewOpen = false;
       previousPayload = "";
       if (lastHarnessState) {
@@ -6342,7 +6206,6 @@
     teachOutcome = null;
     teachWriteThrough = null;
     affectedReviewOpen = false;
-    unsubscribeResult = "";
     renderState(lastHarnessState || lastSidebarState);
     chrome.runtime.sendMessage({
       type: "email-agent:api",
@@ -6377,70 +6240,16 @@
         if (previewTargetLabel) {
           teachDraft.targetLabel = previewTargetLabel;
         }
-        if (previewTargetLabel === "suspicious" && ACTIVE_PROVIDER === "gmail") {
-          previewSafety("sender");
-          return;
-        }
         teachFlowState = "rule-proposed";
         inboxApplyConfirmOpen = false;
         teachOutcome = null;
         teachWriteThrough = null;
         affectedReviewOpen = false;
-        unsubscribeResult = "";
       }
       renderState(lastHarnessState || lastSidebarState);
       if (teachPreview && requestId === teachPreviewRequestId) {
         loadTeachPreviewImpact(teachPreview, requestId);
       }
-    });
-  }
-
-  function previewSafety(scope) {
-    selectedDecisionMode = "safety-preview";
-    teachFlowState = "previewing";
-    safetyResult = null;
-    renderState(lastHarnessState || lastSidebarState);
-    chrome.runtime.sendMessage({
-      type: "email-agent:api",
-      path: "/api/safety-preview",
-      method: "POST",
-      body: { selected_context: lastSidebarState?.selected_context || {}, scope },
-    }, (response) => {
-      if (chrome.runtime.lastError || !response?.ok) {
-        safetyResult = { error: response?.payload?.error || chrome.runtime.lastError?.message || "Could not preview the safety action." };
-        teachFlowState = "safety-error";
-      } else {
-        safetyPreview = response.payload;
-        teachFlowState = "rule-proposed";
-      }
-      renderState(lastHarnessState || lastSidebarState);
-    });
-  }
-
-  function applySafety() {
-    if (applyInFlight) return;
-    applyInFlight = true;
-    teachFlowState = "safety-applying";
-    renderState(lastHarnessState || lastSidebarState);
-    chrome.runtime.sendMessage({
-      type: "email-agent:api",
-      path: "/api/safety-apply",
-      method: "POST",
-      body: {
-        selected_context: lastSidebarState?.selected_context || {},
-        scope: safetyPreview?.scope || "sender",
-        confirmed: true,
-      },
-    }, (response) => {
-      applyInFlight = false;
-      if (chrome.runtime.lastError || !response?.ok) {
-        safetyResult = { error: response?.payload?.error || chrome.runtime.lastError?.message || "Could not complete the safety action." };
-        teachFlowState = "safety-error";
-      } else {
-        safetyResult = response.payload;
-        teachFlowState = "safety-result";
-      }
-      renderState(lastHarnessState || lastSidebarState);
     });
   }
 
@@ -6827,7 +6636,6 @@
       currentApplyError = "";
       inboxApplyConfirmOpen = false;
       affectedReviewOpen = false;
-      unsubscribeResult = "";
       const remainingQueueSize = Number((payload.sidebar_state?.daily_summary || {}).needs_attention_count || 0);
       if (previousQueueSize > 0 && remainingQueueSize === 0) {
         ANALYTICS?.completeReviewBatch(previousQueueSize);
@@ -7040,35 +6848,6 @@
         };
       }
       renderState((response && response.payload && response.payload.sidebar_state) || lastSidebarState);
-    });
-  }
-
-  async function selectUnsubscribeCurrent() {
-    if (!lastSidebarState || !lastSidebarState.selected_email || !lastSidebarState.selected_email.found) {
-      return;
-    }
-    chrome.runtime.sendMessage({
-      type: "email-agent:api",
-      path: "/api/unsubscribe-select-current",
-      method: "POST",
-      body: {
-        selected_context: lastSidebarState.selected_context || {},
-      },
-    }, (response) => {
-      if (chrome.runtime.lastError) {
-        unsubscribeResult = chrome.runtime.lastError.message || "Could not queue the unsubscribe candidate.";
-        renderState(lastSidebarState);
-        return;
-      }
-      if (!response || !response.ok) {
-        unsubscribeResult = (response && (response.payload?.error || response.error)) || "Could not queue the unsubscribe candidate.";
-        renderState(lastSidebarState);
-        return;
-      }
-      const payload = response.payload || {};
-      unsubscribeResult = payload.acknowledgment || "Queued for unsubscribe review.";
-      renderState(payload.sidebar_state || lastSidebarState);
-      refreshSelection(true);
     });
   }
 
@@ -7436,7 +7215,6 @@
         teachPreview = null;
         previousTeachPreview = null;
         teachResult = null;
-        unsubscribeResult = "";
         refreshSelection(true);
         return { ok: true };
       },

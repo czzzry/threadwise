@@ -155,17 +155,31 @@ class CompanionTeachingWorkflowTests(unittest.TestCase):
         self.assertTrue(result.response["outcome"]["current_email_written_to_gmail"])
         self.assertEqual(result.write_summary, write_summary)
 
-    def test_apply_rejects_suspicious_before_local_or_provider_mutation(self) -> None:
+    def test_apply_routes_suspicious_through_ordinary_label_only_write(self) -> None:
+        write_requests = []
         workflow = CompanionTeachingWorkflow(
             Path("/tmp/threadwise-test"),
-            write_through=lambda request: self.fail(f"unexpected write: {request}"),
+            write_through=lambda request: write_requests.append(request) or {
+                "mode": "applied",
+                "messages_written": 1,
+                "label_write_failed": 0,
+                "inbox_remove_failed": 0,
+            },
         )
+        teaching_result = {
+            "acknowledgment": "Updated this email.",
+            "current": {"account_id": "founder", "message_id": "message-1", "subject": "Alert", "sender": "a@example.test"},
+            "mode": "current-only",
+            "preview_matches": [],
+            "semantic_rule": {"target_label": "suspicious"},
+            "matched_existing_count": 0,
+            "proposal": None,
+            "current_changed": True,
+            "future_rule_saved": False,
+        }
 
-        with (
-            patch("src.companion_teaching_workflow.apply_sidebar_teaching") as apply_teaching,
-            self.assertRaisesRegex(ValueError, "safety"),
-        ):
-            workflow.apply(
+        with patch("src.companion_teaching_workflow.apply_sidebar_teaching", return_value=teaching_result):
+            result = workflow.apply(
                 {
                     "selected_context": {"provider": "gmail", "message_id": "message-1"},
                     "target_label": "suspicious",
@@ -173,7 +187,9 @@ class CompanionTeachingWorkflowTests(unittest.TestCase):
                 }
             )
 
-        apply_teaching.assert_not_called()
+        self.assertEqual(len(write_requests), 1)
+        self.assertEqual(write_requests[0].semantic_rule["target_label"], "suspicious")
+        self.assertEqual(result.write_summary["messages_written"], 1)
 
     def test_deferred_apply_returns_before_provider_write_and_can_complete_later(self) -> None:
         write_requests: list[TeachingWriteRequest] = []

@@ -46,7 +46,6 @@ def record_founder_feedback(storage_dir: Path, payload: dict) -> dict:
             "status": str(selected_email.get("status") or ""),
             "status_label": str(selected_email.get("status_label") or ""),
             "classification": str(selected_email.get("classification") or ""),
-            "unsubscribe_available": bool(selected_email.get("unsubscribe_available")),
         },
     }
 

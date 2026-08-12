@@ -453,7 +453,6 @@ let teachPreview = null;
 let previousTeachPreview = null;
 let teachResult = "";
 let teachError = "";
-let unsubscribeResult = "";
 let draftLabel = "";
 let draftNote = "";
 let affectedReviewOpen = false;
@@ -479,12 +478,6 @@ function nextStepCopy(selectedEmail) {
     return {
       title: "What to do now",
       body: "This email still needs a decision. Teach the right label below or leave it visible for later.",
-    };
-  }
-  if (selectedEmail.unsubscribe_available) {
-    return {
-      title: "What to do now",
-      body: "The agent already understands this email. If it is recurring, you can queue it for unsubscribe review here.",
     };
   }
   return {
@@ -638,9 +631,6 @@ function renderSelectedEmail(selectedEmail) {
   const allLabelsList = allClassifications.length > 1
     ? `<div class="empty">All labels: ${escapeHtml(allClassifications.join(", "))}</div>`
     : "";
-  const unsubscribeReasonList = (details.unsubscribe_reasons || []).length
-    ? `<div class="empty">Unsubscribe qualified because: ${escapeHtml((details.unsubscribe_reasons || []).join(', '))}</div>`
-    : "";
   const detailsButtonLabel = detailsExpanded ? "Hide details" : "Show details";
   const detailsHtml = detailsExpanded
     ? `
@@ -650,40 +640,8 @@ function renderSelectedEmail(selectedEmail) {
       <div class="empty">Matched saved rules: ${escapeHtml(String(details.matched_rule_count || 0))}</div>
       ${matchedRuleList}
       ${allLabelsList}
-      ${unsubscribeReasonList}
     `
     : '<div class="empty">Open details to inspect decision source, Gmail write status, inbox handling, and matched rules.</div>';
-  const unsubscribeLine = selectedEmail.unsubscribe_available
-    ? (() => {
-  const unsubscribe = selectedEmail.unsubscribe || null;
-  const preview = (unsubscribe && unsubscribe.preview) || null;
-  const reviewLinkLabel = unsubscribe && unsubscribe.decision_state === "selected"
-    ? "Open queued review"
-    : "Review all subscriptions";
-  const canOpenUnsubscribeUrl = preview
-    && preview.url
-    && preview.status !== "ready"
-    && preview.url.startsWith("mailto:");
-  const actions = preview
-          ? `
-            <div class="button-row" style="margin-top:10px;">
-              ${preview.status === "ready" && !unsubscribeResult ? '<button type="button" class="action-button info" data-action="select-unsubscribe">Queue unsubscribe</button>' : ''}
-              ${canOpenUnsubscribeUrl ? `<a class="action-button quiet" style="display:inline-flex;align-items:center;" href="${escapeHtml(preview.url)}">Open mail unsubscribe</a>` : ''}
-              ${unsubscribe ? `<a class="action-button quiet" style="display:inline-flex;align-items:center;" href="${escapeHtml(unsubscribe.handoff_path || '/unsubscribe-review')}" target="_blank" rel="noreferrer">${escapeHtml(reviewLinkLabel)}</a>` : ''}
-            </div>
-          `
-          : "";
-        return `
-          <div class="reason-wrap">
-            <div class="reason-label">Unsubscribe</div>
-            <div class="reason">${escapeHtml((unsubscribe && unsubscribe.display_name) || selectedEmail.sender || "Subscription")}</div>
-            <div class="empty">${escapeHtml((preview && preview.notes) || "Unsubscribe available")}</div>
-            ${unsubscribeResult ? `<div class="success-card">${escapeHtml(unsubscribeResult)}</div>` : ""}
-            ${actions}
-          </div>
-        `;
-      })()
-    : "";
   const errorHtml = teachError ? renderTeachError(teachError) : "";
   const resultHtml = teachResult ? `<div class="success-card">${escapeHtml(teachResult)}</div>` : "";
   const feedbackHtml = teachPreview
@@ -728,7 +686,6 @@ function renderSelectedEmail(selectedEmail) {
       </div>
       ${detailsHtml}
     </div>
-    ${unsubscribeLine}
   `;
   teachPanelNode.innerHTML = `
     <div class="field-stack">
@@ -924,7 +881,6 @@ function renderTeachError(message) {
 function renderDailySummary(summary) {
   const changedToday = summary.changed_today || {};
   const runStatus = (((harnessState || {}).sidebar_state || {}).run_status) || {};
-  const selectedUnsubscribeExamples = changedToday.selected_unsubscribe_examples || [];
   const bucketLabel = {
     needs_attention_items: "Needs attention",
     recent_items: "Recent",
@@ -943,19 +899,6 @@ function renderDailySummary(summary) {
         </button>
       `).join("")
     : '<div class="empty">No tracked agent changes in this stored batch yet.</div>';
-  const queuedSubscriptionsHtml = selectedUnsubscribeExamples.length
-    ? `
-      <div class="reason-wrap" style="margin-top:12px;background:#fffdfa;">
-        <div class="reason-label">Queued subscriptions</div>
-        <div class="detail-list">${selectedUnsubscribeExamples.map((item) => `
-          <a class="list-item" style="text-decoration:none;" href="${escapeHtml(item.handoff_path || "/unsubscribe-review")}" target="_blank" rel="noreferrer">
-            <div class="list-item-subject">${escapeHtml(item.display_name || "(unknown list)")}</div>
-            <div class="list-item-meta">${escapeHtml(item.sender || "(unknown sender)")}</div>
-          </a>
-        `).join("")}</div>
-      </div>
-    `
-    : "";
   dailySummaryNode.innerHTML = `
     <div class="empty">${summary.run_count > 1 ? `Rolling view across the last ${summary.run_count} Gmail runs` : "Latest run snapshot"}</div>
     <div class="summary-grid">
@@ -965,13 +908,11 @@ function renderDailySummary(summary) {
       <button class="metric-button" data-harness-filter="kept_visible_items"><strong>${(harnessState && harnessState.kept_visible_items ? harnessState.kept_visible_items.length : summary.unlabeled_count)}</strong><span>kept visible</span></button>
     </div>
     <div class="label-row">
-      <span class="label-chip">Unsubscribe candidates · ${summary.unsubscribe_candidate_count || 0}</span>
       <span class="label-chip">Run status · ${escapeHtml(runStatus.status || "idle")}</span>
       ${summary.report_date ? `<span class="label-chip">Latest report · ${escapeHtml(summary.report_date)}</span>` : ""}
     </div>
     <div class="button-row" style="margin-top:12px;">
       <a class="action-button quiet" style="display:inline-flex;align-items:center;" href="${escapeHtml(runStatus.dashboard_path || "/daily-dashboard#run-gmail-check")}" target="_blank" rel="noreferrer">Open daily dashboard</a>
-      <a class="action-button quiet" style="display:inline-flex;align-items:center;" href="/unsubscribe-review" target="_blank" rel="noreferrer">Review unsubscribe candidates</a>
     </div>
     <details class="reason-wrap" style="margin-top:12px;">
       <summary style="cursor:pointer;font-weight:800;color:#241812;">Report details</summary>
@@ -986,9 +927,7 @@ function renderDailySummary(summary) {
           <div class="metric-button"><strong>${changedToday.label_writes_count || 0}</strong><span>labels written</span></div>
           <div class="metric-button"><strong>${changedToday.inbox_removed_count || 0}</strong><span>removed from inbox</span></div>
           <div class="metric-button"><strong>${changedToday.taught_count || 0}</strong><span>teaching changes</span></div>
-          <div class="metric-button"><strong>${changedToday.selected_unsubscribe_count || 0}</strong><span>unsubscribe queued</span></div>
         </div>
-        ${queuedSubscriptionsHtml}
         <div class="detail-list">${changedItemsHtml}</div>
       </div>
       ${(summary.top_labels || []).length ? `<div class="label-row">${topLabels}</div>` : '<p class="empty">No stored label mix yet.</p>'}
@@ -1114,7 +1053,6 @@ async function refreshState() {
   }
   if (!(state.selected_email && state.selected_email.found)) {
     previousTeachPreview = null;
-    unsubscribeResult = "";
     detailsExpanded = false;
   }
   renderSelectedEmail(state.selected_email);
@@ -1127,7 +1065,6 @@ function resetTeachState(clearDraft) {
   previousTeachPreview = null;
   teachResult = "";
   teachError = "";
-  unsubscribeResult = "";
   affectedReviewOpen = false;
   syncAffectedReviewLayout();
   if (clearDraft) {
@@ -1173,7 +1110,6 @@ async function previewTeach() {
       teachResult = "";
       teachPreview = payload;
       affectedReviewOpen = false;
-      unsubscribeResult = "";
     }
   } catch (_error) {
     teachError = "Could not preview the lesson.";
@@ -1211,7 +1147,6 @@ async function applyTeach(mode) {
     syncAffectedReviewLayout();
     teachError = "";
     teachResult = payload.acknowledgment || "Lesson applied.";
-    unsubscribeResult = "";
     draftLabel = "";
     draftNote = "";
     harnessState.sidebar_state = payload.sidebar_state || harnessState.sidebar_state;
@@ -1374,12 +1309,6 @@ document.addEventListener("click", (event) => {
     applyTeach(applyButton.getAttribute("data-apply-mode"));
     return;
   }
-  const unsubscribeButton = event.target.closest("[data-action='select-unsubscribe']");
-  if (unsubscribeButton) {
-    event.preventDefault();
-    unsubscribeSelectCurrent();
-    return;
-  }
   const detailsButton = event.target.closest("[data-action='toggle-details']");
   if (detailsButton) {
     event.preventDefault();
@@ -1422,26 +1351,6 @@ document.addEventListener("click", (event) => {
 
 refreshState();
 
-async function unsubscribeSelectCurrent() {
-  if (!selectedEmailFound()) {
-    return;
-  }
-  try {
-    const payload = await postApi("/api/unsubscribe-select-current", {
-      selected_context: currentContext,
-    });
-    if (payload.error) {
-      unsubscribeResult = payload.error;
-    } else {
-      unsubscribeResult = payload.acknowledgment || "Queued for unsubscribe review.";
-    }
-    await refreshState();
-    renderSelectedEmail(harnessState.sidebar_state.selected_email);
-  } catch (_error) {
-    unsubscribeResult = "Could not queue the unsubscribe candidate.";
-    renderSelectedEmail(harnessState.sidebar_state.selected_email);
-  }
-}
   </script>
 </body>
 </html>"""
@@ -1661,7 +1570,6 @@ let teachFlowState = "teaching";
 let inboxApplyConfirmOpen = false;
 let teachOutcome = null;
 let teachWriteThrough = null;
-let unsubscribeResult = "";
 let detailsExpanded = false;
 let autoHandledChangeOpen = false;
 let lastSelectedMessageId = "";
@@ -1865,12 +1773,6 @@ function nextStepCopy(selected) {
       body: "This email still needs a decision. Teach the right label below or leave it visible for later.",
     };
   }
-  if (selected.unsubscribe_available) {
-    return {
-      title: "What to do now",
-      body: "The agent already understands this email. If it is recurring, you can queue it for unsubscribe review here.",
-    };
-  }
   return {
     title: "What to do now",
     body: "The agent has already classified this email. You only need to step in if the label or handling looks wrong.",
@@ -1953,7 +1855,6 @@ function renderReadingPane() {
     <div class="label-row">
       <span class="pill">${escapeHtml(selected.classification || "Uncategorized")}</span>
       <span class="pill">${escapeHtml(selected.status_label || "")}</span>
-      ${selected.unsubscribe_available ? '<span class="pill">Unsubscribe available</span>' : ""}
     </div>
     <div class="message-body">${escapeHtml(selected.reason || "No stored explanation available yet.")}</div>
     <div class="note">This middle pane simulates what the user is reading while the companion stays anchored to the selected email on the right.</div>
@@ -2516,12 +2417,6 @@ function renderSelectedPanel() {
     return;
   }
 
-  const unsubscribe = selected.unsubscribe || null;
-  const unsubscribePreview = (unsubscribe && unsubscribe.preview) || null;
-  const canOpenUnsubscribeUrl = unsubscribePreview
-    && unsubscribePreview.url
-    && unsubscribePreview.status !== "ready"
-    && unsubscribePreview.url.startsWith("mailto:");
   const details = selected.details || {};
   const matchedRuleList = (details.matched_rule_ids || []).length
     ? `<div class="empty">Matched rules: ${escapeHtml((details.matched_rule_ids || []).join(', '))}</div>`
@@ -2529,29 +2424,6 @@ function renderSelectedPanel() {
   const allClassifications = Array.isArray(selected.all_classifications) ? selected.all_classifications : [];
   const allLabelsList = allClassifications.length > 1
     ? `<div class="empty">All labels: ${escapeHtml(allClassifications.join(", "))}</div>`
-    : "";
-  const unsubscribeReasonList = (details.unsubscribe_reasons || []).length
-    ? `<div class="empty">Unsubscribe qualified because: ${escapeHtml((details.unsubscribe_reasons || []).join(', '))}</div>`
-    : "";
-  const unsubscribeActions = unsubscribePreview
-    ? `
-      <div class="button-row" style="margin-top:10px;">
-        ${unsubscribePreview.status === "ready" && !unsubscribeResult ? '<button type="button" class="action-button info" data-action="select-unsubscribe">Queue unsubscribe</button>' : ''}
-        ${canOpenUnsubscribeUrl ? `<a class="action-button quiet" style="display:inline-flex;align-items:center;" href="${escapeHtml(unsubscribePreview.url)}">Open mail unsubscribe</a>` : ''}
-        ${unsubscribe ? `<a class="action-button quiet" style="display:inline-flex;align-items:center;" href="${escapeHtml(unsubscribe.handoff_path || '/unsubscribe-review')}" target="_blank" rel="noreferrer">Review all subscriptions</a>` : ''}
-      </div>
-    `
-    : "";
-  const unsubscribeLine = unsubscribe
-    ? `
-      <div class="reason-wrap">
-        <div class="reason-label">Unsubscribe</div>
-        <div class="reason">${escapeHtml(unsubscribe.display_name || selected.sender || "Subscription")}</div>
-        <div class="empty">${escapeHtml((unsubscribePreview && unsubscribePreview.notes) || "Unsubscribe available")}</div>
-        ${unsubscribeResult ? `<div class="success-card">${escapeHtml(unsubscribeResult)}</div>` : ""}
-        ${unsubscribeActions}
-      </div>
-    `
     : "";
   const errorHtml = teachError ? renderTeachError(teachError) : "";
   let flowHtml = renderTeachComposer(labelOptions);
@@ -2572,7 +2444,6 @@ function renderSelectedPanel() {
       <span class="pill ${selected.status === "needs-attention" ? "warn-pill" : "status-pill"}">${escapeHtml(selected.status_label || "")}</span>
     </div>
     ${allLabelsList}
-    ${unsubscribeLine}
   `;
   teachPanelNode.innerHTML = feedbackHtml;
   const labelNode = document.getElementById("sim-target-label");
@@ -2630,7 +2501,6 @@ function renderSummary() {
       ${needsReviewCount ? '<button type="button" class="action-button primary" data-action="open-needs-attention" data-tw-primary-action>Review next</button>' : ""}
       <div class="button-row">
         <a class="action-button quiet" href="/daily-dashboard" target="_blank" rel="noreferrer">Activity</a>
-        <a class="action-button quiet" href="/unsubscribe-review" target="_blank" rel="noreferrer">Subscription cleanup</a>
       </div>
     </div>
   `;
@@ -2661,7 +2531,6 @@ async function refreshState() {
   }
   if (!(selected && selected.found)) {
     previousTeachPreview = null;
-    unsubscribeResult = "";
   }
   renderFilterPills();
   renderInboxList();
@@ -2680,7 +2549,6 @@ function resetTeachState(clearDraft) {
   inboxApplyConfirmOpen = false;
   teachOutcome = null;
   teachWriteThrough = null;
-  unsubscribeResult = "";
   affectedReviewOpen = false;
   selectedDecisionMode = "review";
   selectedDecisionConflict = "";
@@ -2716,7 +2584,6 @@ async function previewTeach() {
     teachResult = null;
     teachPreview = payload;
     teachFlowState = "rule-proposed";
-    unsubscribeResult = "";
   }
   renderSelectedPanel();
 }
@@ -2760,7 +2627,6 @@ async function applyTeach(mode) {
       teachWriteThrough = payload.gmail_write_through || null;
     }
     teachFlowState = "result";
-    unsubscribeResult = "";
     affectedReviewOpen = false;
     await refreshState();
     if (advanceAfterApply) {
@@ -3097,10 +2963,6 @@ document.addEventListener("click", (event) => {
     applyTeach(mode);
     return;
   }
-  const unsubscribeButton = event.target.closest("[data-action='select-unsubscribe']");
-  if (unsubscribeButton) {
-    unsubscribeSelectCurrent();
-  }
 });
 
 refreshButton.addEventListener("click", () => {
@@ -3127,7 +2989,6 @@ unsyncedButton.addEventListener("click", () => {
     .then((response) => response.json())
     .then((payload) => {
       harnessState = payload;
-      unsubscribeResult = "";
       renderFilterPills();
       renderInboxList();
       renderReadingPane();
@@ -3135,22 +2996,6 @@ unsyncedButton.addEventListener("click", () => {
       renderSummary();
     });
 });
-
-async function unsubscribeSelectCurrent() {
-  if (!selectedFound()) {
-    return;
-  }
-  const payload = await postApi("/api/unsubscribe-select-current", {
-    selected_context: currentContext,
-  });
-  if (payload.error) {
-    unsubscribeResult = payload.error;
-  } else {
-    unsubscribeResult = payload.acknowledgment || "Queued for unsubscribe review.";
-  }
-  await refreshState();
-  renderSelectedPanel();
-}
 
 refreshState();
   </script>
@@ -3169,7 +3014,6 @@ def render_daily_dashboard_page(
     summary = payload.get("daily_summary", {})
     run_status_label = run_status.get("status", "idle")
     changed_today = summary.get("changed_today", {})
-    selected_unsubscribe_examples = changed_today.get("selected_unsubscribe_examples", [])
     candidate_examples = changed_today.get("candidate_examples", [])
     seen_review_items: set[str] = set()
 
@@ -3217,7 +3061,6 @@ def render_daily_dashboard_page(
         for item in summary.get("top_labels", [])
     )
     changed_items_html = render_dashboard_changed_cards(changed_today.get("items", []))
-    unsubscribe_html = render_dashboard_unsubscribe_cards(selected_unsubscribe_examples)
     candidate_review_html = render_dashboard_candidate_cards(candidate_examples)
     diagnostic_sections_html = "".join(
         render_dashboard_section(title, description, cards)
@@ -3470,13 +3313,6 @@ details[data-dashboard-diagnostics] > summary {{ cursor:pointer; font-weight:850
   <div class="stack" style="margin-top:12px;">{changed_items_html}</div>
   <div class="stack" style="margin-top:12px;">{candidate_review_html}</div>
 </section>
-<section class="card" data-dashboard-section="subscriptions">
-  <div class="eyebrow">Subscriptions</div>
-  <h2>Queued unsubscribe review</h2>
-  <p>The inbox sidebar can queue subscriptions for later review. This page shows the currently queued families.</p>
-  <div class="stack">{unsubscribe_html}</div>
-  <a class="action action--primary" data-dashboard-primary-action href="/unsubscribe-review" target="_blank" rel="noreferrer">Open unsubscribe review</a>
-</section>
 <section class="card" data-dashboard-section="proton-review">
   <div class="eyebrow">Proton Mail</div>
   <h2>Review uncertain Proton labels</h2>
@@ -3489,7 +3325,6 @@ details[data-dashboard-diagnostics] > summary {{ cursor:pointer; font-weight:850
     <div class="pill-row">
       <span class="pill">Source: {escape_html(summary.get("source_label", "stored Gmail snapshot"))}</span>
       {f'<span class="pill">Latest report: {escape_html(summary.get("report_date", ""))}</span>' if summary.get("report_date") else ""}
-      <span class="pill">Unsubscribe candidates: {summary.get("unsubscribe_candidate_count", 0)}</span>
       {top_labels_html}
     </div>
     {diagnostic_sections_html}

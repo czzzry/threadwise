@@ -12,6 +12,23 @@ from src.local_browser_review_ui import LocalBrowserReviewApp, main
 
 
 class LocalBrowserReviewUiTests(unittest.TestCase):
+    def test_unsubscribe_routes_and_workbench_surface_are_removed(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app = LocalBrowserReviewApp(Path(temp_dir), None)
+
+            page = app.render_page()
+            self.assertNotIn("Unsubscribe inventory", page)
+            self.assertNotIn('id="execute-unsubscribes"', page)
+            for method, path in (
+                ("GET", "/api/unsubscribe-candidates"),
+                ("POST", "/api/unsubscribe-candidates/selections"),
+                ("POST", "/api/unsubscribe-executions/preview"),
+                ("POST", "/api/unsubscribe-executions"),
+            ):
+                status, payload = app.handle_api_request(method, path, {})
+                self.assertEqual(status, 404)
+                self.assertEqual(payload, {"error": "Not found"})
+
     def test_browser_review_script_runs_from_repo_root_without_pythonpath(self) -> None:
         repo_root = Path(__file__).resolve().parent.parent
         result = subprocess.run(
@@ -457,6 +474,7 @@ class LocalBrowserReviewUiTests(unittest.TestCase):
             self.assertEqual(payload["overall_status"], "PASS")
             self.assertTrue((output_dir / "operational_readiness_reports").exists())
 
+    @unittest.skip("Removed unsubscribe product flow; covered by route-absence regression.")
     def test_workbench_lists_grouped_unsubscribe_candidates_and_excludes_transactional_mail(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
@@ -570,6 +588,7 @@ class LocalBrowserReviewUiTests(unittest.TestCase):
             self.assertIn("Qualified because:", page)
             self.assertNotIn("Microsoft <account@example.com>", page)
 
+    @unittest.skip("Removed unsubscribe product flow; covered by route-absence regression.")
     def test_unsubscribe_selection_post_persists_provider_aware_artifact(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
@@ -641,6 +660,7 @@ class LocalBrowserReviewUiTests(unittest.TestCase):
             self.assertEqual(saved["candidates"][candidate_key]["list_unsubscribe"], "<https://example.com/unsub>")
             self.assertIn("Selected for later unsubscribe", page)
 
+    @unittest.skip("Removed unsubscribe product flow; covered by route-absence regression.")
     def test_unsubscribe_execution_post_requires_confirmation(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
@@ -674,6 +694,7 @@ class LocalBrowserReviewUiTests(unittest.TestCase):
             self.assertEqual(status_code, 409)
             self.assertIn("UNSUBSCRIBE", response["error"])
 
+    @unittest.skip("Removed unsubscribe product flow; covered by route-absence regression.")
     def test_workbench_shows_latest_unsubscribe_execution_status(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
@@ -731,6 +752,7 @@ class LocalBrowserReviewUiTests(unittest.TestCase):
             self.assertIn("Latest unsubscribe:</strong> executed via one-click-post", page)
             self.assertIn("Ready for one-click HTTPS unsubscribe.", page)
 
+    @unittest.skip("Removed unsubscribe product flow; covered by route-absence regression.")
     def test_workbench_shows_manual_mailto_unsubscribe_action(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
@@ -764,6 +786,7 @@ class LocalBrowserReviewUiTests(unittest.TestCase):
             self.assertIn('href="mailto:unsubscribe@example.com"', page)
             self.assertIn("Manual mail unsubscribe", page)
 
+    @unittest.skip("Removed unsubscribe product flow; covered by route-absence regression.")
     def test_workbench_shows_manual_http_unsubscribe_action_for_non_one_click_candidate(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
@@ -830,6 +853,7 @@ class LocalBrowserReviewUiTests(unittest.TestCase):
             self.assertNotIn("Open unsubscribe link manually", page)
             self.assertNotIn("Manual mail unsubscribe", page)
 
+    @unittest.skip("Removed unsubscribe product flow; covered by route-absence regression.")
     def test_workbench_shows_unsubscribe_execution_summary_counts(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)

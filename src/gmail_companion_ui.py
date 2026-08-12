@@ -20,9 +20,8 @@ from src.attention_rules import (
     build_attention_rule_proposal,
     reject_attention_rule_proposal,
 )
-from src.gmail_safety_action import GmailSafetyAction
 from src.handled_review_store import HandledReviewStore
-from src.live_gmail_client import GMAIL_MODIFY_SCOPE, GMAIL_SAFETY_SCOPE
+from src.live_gmail_client import GMAIL_MODIFY_SCOPE
 from src.live_protonmail_client import LiveProtonMailClient, SetupError as ProtonSetupError
 from src.live_protonmail_daily_run_cli import run_live_protonmail_daily_batch
 from src.proton_review_console import ProtonReviewConsole, render_proton_review_page
@@ -33,7 +32,6 @@ from src.product_analytics import (
     bucket_count,
 )
 from src.unsubscribe_inventory_store import UnsubscribeInventoryStore
-from src.unsubscribe_execution import UnsubscribeExecutor
 
 from src.gmail_companion_rendering import (
     escape_html,
@@ -47,7 +45,6 @@ from src.gmail_companion_rendering import (
 )
 from src.gmail_companion_state import (
     build_daily_attention_summary,
-    build_selected_email_state,
     build_unsubscribe_detail,
     find_matching_item,
     find_unsubscribe_candidate,
@@ -227,7 +224,6 @@ class GmailCompanionApp:
         self._health_storage_lock = threading.Lock()
         self._runtime_state = CompanionRuntimeState(
             storage_dir,
-            unsubscribe_store=self._unsubscribe_store,
             handled_review_store=self._handled_review_store,
             analytics_status=self._analytics.delivery_status,
             live_inbox_ids_loader=self._load_live_inbox_message_ids,
@@ -272,17 +268,7 @@ class GmailCompanionApp:
             return
 
         if handler.command == "GET" and parsed.path == "/":
-            encoded = self.render_panel().encode("utf-8")
-            handler.send_response(HTTPStatus.OK)
-            handler.send_header("Content-Type", "text/html; charset=utf-8")
-            handler.send_header("Content-Length", str(len(encoded)))
-            self._write_cors_headers(handler)
-            handler.end_headers()
-            handler.wfile.write(encoded)
-            return
-
-        if handler.command == "GET" and parsed.path == "/simulator":
-            encoded = self.render_simulator().encode("utf-8")
+            encoded = self.render_daily_dashboard_page().encode("utf-8")
             handler.send_response(HTTPStatus.OK)
             handler.send_header("Content-Type", "text/html; charset=utf-8")
             handler.send_header("Content-Length", str(len(encoded)))
@@ -293,21 +279,6 @@ class GmailCompanionApp:
 
         if handler.command == "GET" and parsed.path == "/install":
             encoded = self.render_install_page(handler.headers.get("Host", "")).encode("utf-8")
-            handler.send_response(HTTPStatus.OK)
-            handler.send_header("Content-Type", "text/html; charset=utf-8")
-            handler.send_header("Content-Length", str(len(encoded)))
-            self._write_cors_headers(handler)
-            handler.end_headers()
-            handler.wfile.write(encoded)
-            return
-
-        if handler.command == "GET" and parsed.path == "/unsubscribe-review":
-            self._capture_workflow_event(
-                handler,
-                "unsubscribe review opened",
-                {"surface": "gmail_companion"},
-            )
-            encoded = self.render_unsubscribe_review_page(parse_qs(parsed.query)).encode("utf-8")
             handler.send_response(HTTPStatus.OK)
             handler.send_header("Content-Type", "text/html; charset=utf-8")
             handler.send_header("Content-Length", str(len(encoded)))
@@ -476,18 +447,6 @@ class GmailCompanionApp:
             except (KeyError, ValueError, HTTPException) as exc:
                 return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
 
-        if handler.command == "POST" and parsed.path == "/api/safety-preview":
-            try:
-                return self._write_json(handler, HTTPStatus.OK, self.safety_preview(self._read_json_body(handler)))
-            except (KeyError, ValueError, HTTPException) as exc:
-                return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
-
-        if handler.command == "POST" and parsed.path == "/api/safety-apply":
-            try:
-                return self._write_json(handler, HTTPStatus.OK, self.safety_apply(self._read_json_body(handler)))
-            except (KeyError, ValueError, HTTPException, RuntimeError) as exc:
-                return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
-
         if handler.command == "POST" and parsed.path == "/api/analytics/capture":
             try:
                 payload = self._read_json_body(handler)
@@ -520,25 +479,6 @@ class GmailCompanionApp:
             try:
                 payload = self._read_json_body(handler)
                 response = self.teach_amendment(payload)
-                return self._write_json(handler, HTTPStatus.OK, response)
-            except (KeyError, ValueError, HTTPException) as exc:
-                return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
-
-        if handler.command == "POST" and parsed.path == "/api/unsubscribe-select-current":
-            try:
-                payload = self._read_json_body(handler)
-                response = self.unsubscribe_select_current(payload)
-                return self._write_json(handler, HTTPStatus.OK, response)
-            except (KeyError, ValueError, HTTPException) as exc:
-                return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
-
-        if handler.command == "POST" and parsed.path == "/api/unsubscribe-candidates/selections":
-            try:
-                payload = self._read_json_body(handler)
-                response = self.save_unsubscribe_selections(
-                    payload,
-                    analytics_distinct_id=self._analytics_distinct_id_from_request(handler),
-                )
                 return self._write_json(handler, HTTPStatus.OK, response)
             except (KeyError, ValueError, HTTPException) as exc:
                 return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
@@ -834,7 +774,6 @@ class GmailCompanionApp:
                 "gmail-check",
                 "provider-sync",
                 "attention-feedback",
-                "unsubscribe-review",
                 "proton-review",
             ],
         }
@@ -1075,54 +1014,6 @@ class GmailCompanionApp:
     def _provider_runtime_for_payload(self, payload: dict) -> ProviderCompanionRuntime:
         return self._provider_runtimes.for_payload(payload)
 
-    def safety_preview(self, payload: dict) -> dict:
-        selected = self._selected_gmail_message_for_safety(payload)
-        return GmailSafetyAction(None, self._storage_dir).preview(
-            message_id=selected["message_id"],
-            sender=selected["sender"],
-            scope=payload.get("scope") or "sender",
-        )
-
-    def safety_apply(self, payload: dict) -> dict:
-        if not self._gmail_write_through_enabled:
-            raise ValueError("Gmail safety actions are disabled for this server.")
-        selected = self._selected_gmail_message_for_safety(payload)
-        gmail_client = self._gmail_client_factory(
-            selected["account_id"],
-            self._credentials_dir,
-            self._client_secret_path,
-            GMAIL_SAFETY_SCOPE,
-        )
-        result = GmailSafetyAction(gmail_client, self._storage_dir).apply(
-            account_id=selected["account_id"],
-            message_id=selected["message_id"],
-            sender=selected["sender"],
-            scope=payload.get("scope") or "sender",
-            confirmed=payload.get("confirmed") is True,
-        )
-        self._runtime_state.invalidate()
-        return result
-
-    def _selected_gmail_message_for_safety(self, payload: dict) -> dict:
-        selected_context = payload.get("selected_context") or {}
-        if selected_context.get("provider") != "gmail" or not selected_context.get("message_id"):
-            raise ValueError("Select a Gmail message before applying a suspicious-email action.")
-        selected = build_selected_email_state(
-            self._storage_dir,
-            self._runtime_state.unsubscribe_candidates(),
-            selected_context,
-        )
-        if not selected or selected.get("message_id") != selected_context["message_id"]:
-            raise ValueError("The selected Gmail message is no longer available.")
-        sender = selected.get("sender") or ""
-        if not sender:
-            raise ValueError("The selected Gmail message has no usable sender.")
-        return {
-            "account_id": selected.get("account_id") or infer_gmail_account_id(self._storage_dir),
-            "message_id": selected["message_id"],
-            "sender": sender,
-        }
-
     def _capture_label_write_outcomes(
         self,
         distinct_id: str,
@@ -1179,6 +1070,8 @@ class GmailCompanionApp:
             "sidebar_state": self.sidebar_state(selected_context),
         }
 
+    # Legacy artifact helpers remain callable for historical inspection, but
+    # no HTTP route or product surface exposes them.
     def unsubscribe_select_current(self, payload: dict) -> dict:
         selected_context = payload.get("selected_context") or {}
         matched = find_matching_item(self._storage_dir, selected_context)
@@ -1191,26 +1084,14 @@ class GmailCompanionApp:
         )
         if candidate is None:
             raise ValueError("No unsubscribe candidate is available for this email.")
-        self._unsubscribe_store.save_selection_states(
-            [candidate["list_key"]],
-            [candidate["list_key"]],
-        )
-        refreshed = self.sidebar_state(selected_context)
+        self._unsubscribe_store.save_selection_states([candidate["list_key"]], [candidate["list_key"]])
         return {
-            "acknowledgment": (
-                f"Queued {candidate.get('display_name') or 'this sender'} for unsubscribe review. "
-                "Nothing has been unsubscribed yet."
-            ),
+            "acknowledgment": "Saved the historical selection locally. No unsubscribe was executed.",
             "candidate": build_unsubscribe_detail(candidate, self._storage_dir),
-            "sidebar_state": refreshed,
+            "sidebar_state": self.sidebar_state(selected_context),
         }
 
-    def save_unsubscribe_selections(
-        self,
-        payload: dict,
-        *,
-        analytics_distinct_id: str | None = None,
-    ) -> dict:
+    def save_unsubscribe_selections(self, payload: dict, *, analytics_distinct_id: str | None = None) -> dict:
         candidate_keys = payload.get("candidate_keys")
         selected_candidate_keys = payload.get("selected_candidate_keys")
         if not isinstance(candidate_keys, list) or not isinstance(selected_candidate_keys, list):
@@ -1223,33 +1104,13 @@ class GmailCompanionApp:
         selected_candidate_keys = list(dict.fromkeys(key.strip() for key in selected_candidate_keys))
         if not set(selected_candidate_keys).issubset(candidate_keys):
             raise ValueError("selected_candidate_keys must be a subset of candidate_keys.")
-        known_keys = {
-            candidate.get("list_key")
-            for candidate in self._unsubscribe_store.list_candidates()
-            if candidate.get("list_key")
-        }
-        unknown_keys = set(candidate_keys).difference(known_keys)
-        if unknown_keys:
+        known_keys = {candidate.get("list_key") for candidate in self._unsubscribe_store.list_candidates() if candidate.get("list_key")}
+        if set(candidate_keys).difference(known_keys):
             raise ValueError("candidate_keys contains an unknown unsubscribe candidate.")
-
         saved = self._unsubscribe_store.save_selection_states(candidate_keys, selected_candidate_keys)
-        self._runtime_state.invalidate()
         selected_count = sum(1 for candidate in saved if candidate.get("decision_state") == "selected")
-        self._capture_workflow_event(
-            None,
-            "unsubscribe review completed",
-            {
-                "surface": "gmail_companion",
-                "reviewed_count_bucket": bucket_count(len(candidate_keys)),
-                "review_outcome": "saved" if selected_count else "cleared",
-            },
-            distinct_id=analytics_distinct_id,
-        )
         return {
-            "acknowledgment": (
-                f"Saved {selected_count} queued selection{'s' if selected_count != 1 else ''}. "
-                "Nothing was unsubscribed."
-            ),
+            "acknowledgment": f"Saved {selected_count} historical selection{'s' if selected_count != 1 else ''}. Nothing was unsubscribed.",
             "candidate_count": len(saved),
             "selected_count": selected_count,
             "selected_candidate_keys": selected_candidate_keys,
@@ -1463,14 +1324,13 @@ class GmailCompanionApp:
 
     def render_unsubscribe_review_page(self, query: dict[str, list[str]] | None = None) -> str:
         query = query or {}
-        focus_list_key = first_query_value(query, "list_key")
         details = [
             build_unsubscribe_detail(candidate, self._storage_dir)
             for candidate in self._unsubscribe_store.list_candidates()
         ]
         return render_unsubscribe_review_page_html(
             details,
-            focus_list_key=focus_list_key,
+            focus_list_key=first_query_value(query, "list_key"),
         )
 
     def render_daily_dashboard_page(self) -> str:
