@@ -20,6 +20,14 @@ from src.teachable_rule_memory import TeachableRule, TeachableRuleMemory, matchi
 
 
 class TeachingLoopTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._private_model_environment = patch.dict(
+            "os.environ",
+            {"EMAIL_AGENT_OPENAI_API_KEY": "", "OPENAI_API_KEY": ""},
+        )
+        self._private_model_environment.start()
+        self.addCleanup(self._private_model_environment.stop)
+
     def test_teaching_llm_status_reports_configuration_without_exposing_a_key(self) -> None:
         with patch.dict("os.environ", {}, clear=True):
             status = teaching_llm_status()

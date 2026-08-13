@@ -44,6 +44,14 @@ from src.unsubscribe_execution import UnsubscribeExecutor
 
 
 class GmailCompanionUiTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._private_model_environment = patch.dict(
+            "os.environ",
+            {"EMAIL_AGENT_OPENAI_API_KEY": "", "OPENAI_API_KEY": ""},
+        )
+        self._private_model_environment.start()
+        self.addCleanup(self._private_model_environment.stop)
+
     def test_removed_unsubscribe_and_safety_routes_return_not_found(self) -> None:
         app = GmailCompanionApp(Path("/tmp/example"))
 

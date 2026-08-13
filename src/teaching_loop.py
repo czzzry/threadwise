@@ -1436,8 +1436,21 @@ def build_selected_label_change(*, current_labels: list[str], target_label: str,
         if resolution != "resolved":
             question = str(llm_change.get("clarifying_question") or "Clarify which labels should remain.")
             raise LabelChangeError(question)
+        operation = str(llm_change.get("operation") or "").strip().lower()
+        target_labels = list(dict.fromkeys(llm_change.get("target_labels") or []))
+        source_labels = list(dict.fromkeys(llm_change.get("source_labels") or []))
+        if operation in {"add", "only"}:
+            source_labels = []
+        elif operation == "remove":
+            target_labels = []
+        elif operation == "replace" and not source_labels:
+            replace_candidates = [label for label in current_labels if label not in target_labels]
+            if len(replace_candidates) == 1:
+                source_labels = replace_candidates
         return normalize_label_change({
             **llm_change,
+            "target_labels": target_labels,
+            "source_labels": source_labels,
             "labels_before": current_labels,
             "interpretation": interpretation,
         }).to_dict()

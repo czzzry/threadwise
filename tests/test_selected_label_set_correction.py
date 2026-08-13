@@ -11,6 +11,14 @@ from src.teaching_loop import apply_sidebar_teaching, build_sidebar_teach_previe
 
 
 class SelectedLabelSetCorrectionTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._private_model_environment = patch.dict(
+            "os.environ",
+            {"EMAIL_AGENT_OPENAI_API_KEY": "", "OPENAI_API_KEY": ""},
+        )
+        self._private_model_environment.start()
+        self.addCleanup(self._private_model_environment.stop)
+
     def write_batch(self, storage_dir: Path, labels: list[str]) -> None:
         batches = storage_dir / "batches"
         batches.mkdir(parents=True)
@@ -43,6 +51,54 @@ class SelectedLabelSetCorrectionTests(unittest.TestCase):
             self.assertEqual(result["label_change"]["labels_after"], ["shopping-order", "receipt-billing"])
             stored = json.loads((storage / "batches" / "batch.json").read_text())
             self.assertEqual(stored["items"][0]["final_labels"], ["shopping-order", "receipt-billing"])
+
+    def test_llm_label_change_repairs_safe_structural_inconsistencies(self):
+        scenarios = [
+            {
+                "before": ["shopping-order"],
+                "note": "keep Orders and add Receipts",
+                "response": {
+                    "target_label": "receipt-billing",
+                    "operation": "add",
+                    "target_labels": ["receipt-billing"],
+                    "source_labels": ["shopping-order"],
+                    "resolution_status": "resolved",
+                },
+                "operation": "add",
+                "sources": [],
+            },
+            {
+                "before": ["shopping-order"],
+                "note": "replace Orders with Receipts",
+                "response": {
+                    "target_label": "receipt-billing",
+                    "operation": "replace",
+                    "target_labels": ["receipt-billing"],
+                    "source_labels": [],
+                    "resolution_status": "resolved",
+                },
+                "operation": "replace",
+                "sources": ["shopping-order"],
+            },
+        ]
+        for scenario in scenarios:
+            with self.subTest(operation=scenario["operation"]), tempfile.TemporaryDirectory() as temp:
+                storage = Path(temp)
+                self.write_batch(storage, scenario["before"])
+                client = Mock()
+                client.interpret.return_value = scenario["response"]
+                with patch("src.teaching_loop.OpenAITeachingIntentClient.from_env", return_value=client):
+                    preview = build_sidebar_teach_preview(
+                        storage,
+                        selected_context={"provider": "gmail", "message_id": "message-1"},
+                        target_label="shopping-order",
+                        note=scenario["note"],
+                        scope="sender",
+                    )
+
+                self.assertEqual(preview["label_change"]["operation"], scenario["operation"])
+                self.assertEqual(preview["label_change"]["source_labels"], scenario["sources"])
+                self.assertEqual(preview["selected_label_after"], ["receipt-billing"] if scenario["operation"] == "replace" else ["shopping-order", "receipt-billing"])
 
     def test_natural_only_remove_replace_and_contradiction_are_bounded(self):
         scenarios = [
