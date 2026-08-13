@@ -80,6 +80,19 @@ class SelectedLabelSetCorrectionTests(unittest.TestCase):
                 "operation": "replace",
                 "sources": ["shopping-order"],
             },
+            {
+                "before": ["job-related", "newsletter"],
+                "note": "Newsletter is correct, but this is not Work.",
+                "response": {
+                    "target_label": "newsletter",
+                    "operation": "replace",
+                    "target_labels": ["newsletter"],
+                    "source_labels": ["job-related", "newsletter"],
+                    "resolution_status": "resolved",
+                },
+                "operation": "replace",
+                "sources": ["job-related"],
+            },
         ]
         for scenario in scenarios:
             with self.subTest(operation=scenario["operation"]), tempfile.TemporaryDirectory() as temp:
@@ -98,7 +111,14 @@ class SelectedLabelSetCorrectionTests(unittest.TestCase):
 
                 self.assertEqual(preview["label_change"]["operation"], scenario["operation"])
                 self.assertEqual(preview["label_change"]["source_labels"], scenario["sources"])
-                self.assertEqual(preview["selected_label_after"], ["receipt-billing"] if scenario["operation"] == "replace" else ["shopping-order", "receipt-billing"])
+                expected_after = (
+                    ["newsletter"]
+                    if scenario["before"] == ["job-related", "newsletter"]
+                    else ["receipt-billing"]
+                    if scenario["operation"] == "replace"
+                    else ["shopping-order", "receipt-billing"]
+                )
+                self.assertEqual(preview["selected_label_after"], expected_after)
 
     def test_natural_only_remove_replace_and_contradiction_are_bounded(self):
         scenarios = [

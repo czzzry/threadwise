@@ -1439,6 +1439,7 @@ def build_selected_label_change(*, current_labels: list[str], target_label: str,
         operation = str(llm_change.get("operation") or "").strip().lower()
         target_labels = list(dict.fromkeys(llm_change.get("target_labels") or []))
         source_labels = list(dict.fromkeys(llm_change.get("source_labels") or []))
+        source_labels = [label for label in source_labels if label not in target_labels]
         if operation in {"add", "only"}:
             source_labels = []
         elif operation == "remove":
