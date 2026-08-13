@@ -112,6 +112,36 @@ class GmailCoverageTests(unittest.TestCase):
             self.assertEqual(result["needs_review_count"], 1)
             self.assertEqual(second_client.calls, [("search_message_ids", "in:inbox", 101)])
 
+    def test_unseen_metadata_reads_are_bounded_and_parallel(self):
+        class ParallelClient(FakeReadonlyGmailClient):
+            def __init__(self, message_ids):
+                super().__init__(message_ids)
+                self.lock = threading.Lock()
+                self.active = 0
+                self.max_active = 0
+
+            def get_message_metadata(self, message_id):
+                with self.lock:
+                    self.active += 1
+                    self.max_active = max(self.max_active, self.active)
+                time.sleep(0.02)
+                try:
+                    return super().get_message(message_id)
+                finally:
+                    with self.lock:
+                        self.active -= 1
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            message_ids = [f"new-{index}" for index in range(12)]
+            client = ParallelClient(message_ids)
+            service, _ = self.service(Path(temp_dir), client)
+
+            result = service.check("founder-test")
+
+            self.assertEqual(result["needs_review_count"], len(message_ids))
+            self.assertGreater(client.max_active, 1)
+            self.assertLessEqual(client.max_active, 8)
+
     def test_concurrent_checks_share_one_provider_read(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             gate = threading.Event()

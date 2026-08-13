@@ -221,6 +221,7 @@ class GmailCompanionApp:
         gmail_coverage_service: object | None = None,
         initial_classifier: object | None = None,
         initial_classification_status: dict | None = None,
+        background_runner=None,
     ) -> None:
         self._storage_dir = storage_dir
         self._credentials_dir = credentials_dir
@@ -260,6 +261,7 @@ class GmailCompanionApp:
             handled_review_store=self._handled_review_store,
             analytics_status=self._analytics.delivery_status,
             live_inbox_ids_loader=self._load_live_inbox_message_ids,
+            background_runner=background_runner,
         )
         gmail_teaching_adapter = GmailTeachingAdapter(
             storage_dir,

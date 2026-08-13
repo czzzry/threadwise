@@ -44,6 +44,8 @@ class CompanionRuntimeState:
         self._harness_lock = threading.Lock()
         self._runtime_payload_cache: tuple[float, dict] | None = None
         self._live_inbox_ids_cache: tuple[float, set[str] | None] | None = None
+        self._live_inbox_ids_refreshing = False
+        self._live_inbox_ids_generation = 0
         self._daily_summary_cache: tuple[float, dict] | None = None
         self._data_lock = threading.Lock()
         self._async_follow_up_state: dict | None = None
@@ -91,18 +93,22 @@ class CompanionRuntimeState:
                 created_at, payload = self._runtime_payload_cache
                 if now - created_at <= COMPANION_DATA_CACHE_SECONDS:
                     return payload
-            payload = build_companion_runtime_payload(
-                self._storage_dir,
-                provider="gmail",
-                allowed_review_message_ids=self._live_inbox_ids(),
-            )
-            self._runtime_payload_cache = (time.monotonic(), payload)
-            return payload
+        live_inbox_ids, live_inbox_generation = self._live_inbox_ids_snapshot()
+        payload = build_companion_runtime_payload(
+            self._storage_dir,
+            provider="gmail",
+            allowed_review_message_ids=live_inbox_ids,
+        )
+        with self._data_lock:
+            if live_inbox_generation == self._live_inbox_ids_generation:
+                self._runtime_payload_cache = (time.monotonic(), payload)
+        return payload
 
     def invalidate(self) -> None:
         with self._data_lock:
             self._runtime_payload_cache = None
             self._live_inbox_ids_cache = None
+            self._live_inbox_ids_generation += 1
             self._daily_summary_cache = None
         with self._harness_lock:
             self._harness_cache.clear()
@@ -167,15 +173,43 @@ class CompanionRuntimeState:
             self._daily_summary_cache = (time.monotonic(), payload)
             return payload
 
-    def _live_inbox_ids(self) -> set[str] | None:
+    def _live_inbox_ids_snapshot(self) -> tuple[set[str] | None, int]:
         now = time.monotonic()
-        if self._live_inbox_ids_cache is not None:
-            created_at, message_ids = self._live_inbox_ids_cache
-            if now - created_at <= COMPANION_DATA_CACHE_SECONDS:
-                return message_ids
-        message_ids = self._live_inbox_ids_loader()
-        self._live_inbox_ids_cache = (time.monotonic(), message_ids)
-        return message_ids
+        should_refresh = False
+        with self._data_lock:
+            generation = self._live_inbox_ids_generation
+            if self._live_inbox_ids_cache is not None:
+                created_at, message_ids = self._live_inbox_ids_cache
+                if now - created_at <= COMPANION_DATA_CACHE_SECONDS:
+                    return message_ids, generation
+            stale_message_ids = (
+                self._live_inbox_ids_cache[1]
+                if self._live_inbox_ids_cache is not None
+                else None
+            )
+            if not self._live_inbox_ids_refreshing:
+                self._live_inbox_ids_refreshing = True
+                should_refresh = True
+        if should_refresh:
+            try:
+                self._background_runner(self._refresh_live_inbox_ids)
+            except Exception:
+                with self._data_lock:
+                    self._live_inbox_ids_refreshing = False
+        return stale_message_ids, generation
+
+    def _refresh_live_inbox_ids(self) -> None:
+        try:
+            message_ids = self._live_inbox_ids_loader()
+        except Exception:
+            message_ids = None
+        with self._data_lock:
+            self._live_inbox_ids_cache = (time.monotonic(), message_ids)
+            self._runtime_payload_cache = None
+            self._live_inbox_ids_refreshing = False
+            self._live_inbox_ids_generation += 1
+        with self._harness_lock:
+            self._harness_cache.clear()
 
     def _async_follow_up(self) -> dict | None:
         with self._async_lock:

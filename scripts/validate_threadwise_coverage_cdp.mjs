@@ -7,6 +7,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 const extensionRoot = path.join(repoRoot, "extensions", "gmail_companion");
 const artifactRoot = path.join(repoRoot, "docs", "gauntlet-evidence", "coverage-2026-08-11");
 const tracePath = path.join(artifactRoot, "coverage-trace.json");
+const portableArtifactPath = (targetPath) => path.relative(repoRoot, targetPath).split(path.sep).join("/");
 const appUrl = "http://127.0.0.1:8891/#inbox/FMcoverage-a";
 const viewports = [
   { name: "normal", width: 1280, height: 800 },
@@ -18,7 +19,7 @@ const reviewItems = [
   { provider: "gmail", message_id: "coverage-c", thread_id: "thread-coverage", subject: "Vendor follow-up", sender: "vendor@example.test", suggested_label: "receipt-billing", classification: "EA/Receipts", status: "needs-attention", status_label: "Needs review", reason: "A decision is required." },
 ];
 
-const results = { ok: false, tracePath, screenshots: [], states: [], requests: [], forbiddenRequests: [], containment: [] };
+const results = { ok: false, tracePath: portableArtifactPath(tracePath), screenshots: [], states: [], requests: [], forbiddenRequests: [], containment: [] };
 let activeStep = "create-target";
 let failure = null;
 const target = await createTarget(appUrl);
@@ -155,7 +156,7 @@ async function captureState(name) {
     const output = path.join(artifactRoot, `${name}-${viewport.name}.png`);
     const shot = await send("Page.captureScreenshot", { format: "png", fromSurface: true });
     await fs.writeFile(output, Buffer.from(shot.data, "base64"));
-    results.screenshots.push(output);
+    results.screenshots.push(portableArtifactPath(output));
   }
 }
 

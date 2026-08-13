@@ -149,6 +149,14 @@ class LiveGmailClient:
             access_token=self._access_token,
         )
 
+    def get_message_metadata(self, message_id: str) -> dict:
+        return self._transport(
+            "GET",
+            f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{message_id}",
+            params={"format": "metadata", "metadataHeaders": ["Subject", "From"]},
+            access_token=self._access_token,
+        )
+
     def get_or_create_label(self, label_name: str) -> str:
         response = self._transport(
             "GET",
@@ -511,7 +519,10 @@ def _token_has_scope(token: dict, required_scope: str) -> bool:
     stored_scope = token.get("scope")
     if not stored_scope:
         return required_scope == GMAIL_READONLY_SCOPE
-    return required_scope in stored_scope.split()
+    granted_scopes = set(stored_scope.split())
+    if required_scope in granted_scopes:
+        return True
+    return required_scope == GMAIL_READONLY_SCOPE and GMAIL_MODIFY_SCOPE in granted_scopes
 
 
 def _normalize_token(token_response: dict, existing_refresh_token: str | None = None) -> dict:

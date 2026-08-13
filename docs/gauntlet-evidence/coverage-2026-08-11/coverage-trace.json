@@ -1,25 +1,25 @@
 {
   "ok": true,
-  "tracePath": "C:\\Users\\czboc\\OneDrive\\Documents\\ChatGPT\\threadwise\\docs\\gauntlet-evidence\\coverage-2026-08-11\\coverage-trace.json",
+  "tracePath": "docs/gauntlet-evidence/coverage-2026-08-11/coverage-trace.json",
   "screenshots": [
-    "C:\\Users\\czboc\\OneDrive\\Documents\\ChatGPT\\threadwise\\docs\\gauntlet-evidence\\coverage-2026-08-11\\handled-unknown-normal.png",
-    "C:\\Users\\czboc\\OneDrive\\Documents\\ChatGPT\\threadwise\\docs\\gauntlet-evidence\\coverage-2026-08-11\\handled-unknown-short.png",
-    "C:\\Users\\czboc\\OneDrive\\Documents\\ChatGPT\\threadwise\\docs\\gauntlet-evidence\\coverage-2026-08-11\\checking-normal.png",
-    "C:\\Users\\czboc\\OneDrive\\Documents\\ChatGPT\\threadwise\\docs\\gauntlet-evidence\\coverage-2026-08-11\\checking-short.png",
-    "C:\\Users\\czboc\\OneDrive\\Documents\\ChatGPT\\threadwise\\docs\\gauntlet-evidence\\coverage-2026-08-11\\queue-ready-normal.png",
-    "C:\\Users\\czboc\\OneDrive\\Documents\\ChatGPT\\threadwise\\docs\\gauntlet-evidence\\coverage-2026-08-11\\queue-ready-short.png",
-    "C:\\Users\\czboc\\OneDrive\\Documents\\ChatGPT\\threadwise\\docs\\gauntlet-evidence\\coverage-2026-08-11\\review-first-normal.png",
-    "C:\\Users\\czboc\\OneDrive\\Documents\\ChatGPT\\threadwise\\docs\\gauntlet-evidence\\coverage-2026-08-11\\review-first-short.png",
-    "C:\\Users\\czboc\\OneDrive\\Documents\\ChatGPT\\threadwise\\docs\\gauntlet-evidence\\coverage-2026-08-11\\verified-clear-normal.png",
-    "C:\\Users\\czboc\\OneDrive\\Documents\\ChatGPT\\threadwise\\docs\\gauntlet-evidence\\coverage-2026-08-11\\verified-clear-short.png",
-    "C:\\Users\\czboc\\OneDrive\\Documents\\ChatGPT\\threadwise\\docs\\gauntlet-evidence\\coverage-2026-08-11\\partial-normal.png",
-    "C:\\Users\\czboc\\OneDrive\\Documents\\ChatGPT\\threadwise\\docs\\gauntlet-evidence\\coverage-2026-08-11\\partial-short.png",
-    "C:\\Users\\czboc\\OneDrive\\Documents\\ChatGPT\\threadwise\\docs\\gauntlet-evidence\\coverage-2026-08-11\\stale-normal.png",
-    "C:\\Users\\czboc\\OneDrive\\Documents\\ChatGPT\\threadwise\\docs\\gauntlet-evidence\\coverage-2026-08-11\\stale-short.png",
-    "C:\\Users\\czboc\\OneDrive\\Documents\\ChatGPT\\threadwise\\docs\\gauntlet-evidence\\coverage-2026-08-11\\failed-normal.png",
-    "C:\\Users\\czboc\\OneDrive\\Documents\\ChatGPT\\threadwise\\docs\\gauntlet-evidence\\coverage-2026-08-11\\failed-short.png",
-    "C:\\Users\\czboc\\OneDrive\\Documents\\ChatGPT\\threadwise\\docs\\gauntlet-evidence\\coverage-2026-08-11\\offline-normal.png",
-    "C:\\Users\\czboc\\OneDrive\\Documents\\ChatGPT\\threadwise\\docs\\gauntlet-evidence\\coverage-2026-08-11\\offline-short.png"
+    "docs/gauntlet-evidence/coverage-2026-08-11/handled-unknown-normal.png",
+    "docs/gauntlet-evidence/coverage-2026-08-11/handled-unknown-short.png",
+    "docs/gauntlet-evidence/coverage-2026-08-11/checking-normal.png",
+    "docs/gauntlet-evidence/coverage-2026-08-11/checking-short.png",
+    "docs/gauntlet-evidence/coverage-2026-08-11/queue-ready-normal.png",
+    "docs/gauntlet-evidence/coverage-2026-08-11/queue-ready-short.png",
+    "docs/gauntlet-evidence/coverage-2026-08-11/review-first-normal.png",
+    "docs/gauntlet-evidence/coverage-2026-08-11/review-first-short.png",
+    "docs/gauntlet-evidence/coverage-2026-08-11/verified-clear-normal.png",
+    "docs/gauntlet-evidence/coverage-2026-08-11/verified-clear-short.png",
+    "docs/gauntlet-evidence/coverage-2026-08-11/partial-normal.png",
+    "docs/gauntlet-evidence/coverage-2026-08-11/partial-short.png",
+    "docs/gauntlet-evidence/coverage-2026-08-11/stale-normal.png",
+    "docs/gauntlet-evidence/coverage-2026-08-11/stale-short.png",
+    "docs/gauntlet-evidence/coverage-2026-08-11/failed-normal.png",
+    "docs/gauntlet-evidence/coverage-2026-08-11/failed-short.png",
+    "docs/gauntlet-evidence/coverage-2026-08-11/offline-normal.png",
+    "docs/gauntlet-evidence/coverage-2026-08-11/offline-short.png"
   ],
   "states": [
     {
@@ -103,7 +103,7 @@
       "name": "queue-ready",
       "state": {
         "status": "queue-ready",
-        "checked_at": "2026-08-11T15:45:11.057Z",
+        "checked_at": "2026-08-13T19:44:13.713Z",
         "checked_count": 42,
         "candidate_count": 42,
         "needs_review_count": 3,
@@ -178,7 +178,7 @@
       "name": "review-first",
       "state": {
         "status": "queue-ready",
-        "checked_at": "2026-08-11T15:45:11.057Z",
+        "checked_at": "2026-08-13T19:44:13.713Z",
         "checked_count": 42,
         "candidate_count": 42,
         "needs_review_count": 3,
@@ -249,7 +249,7 @@
       "name": "verified-clear",
       "state": {
         "status": "verified-clear",
-        "checked_at": "2026-08-11T15:45:11.474Z",
+        "checked_at": "2026-08-13T19:44:13.995Z",
         "checked_count": 42,
         "candidate_count": 42,
         "needs_review_count": 0,
@@ -287,7 +287,7 @@
       "name": "partial",
       "state": {
         "status": "partial",
-        "checked_at": "2026-08-11T15:45:11.669Z",
+        "checked_at": "2026-08-13T19:44:14.146Z",
         "checked_count": 31,
         "candidate_count": 42,
         "needs_review_count": 2,
@@ -350,7 +350,7 @@
       "name": "stale",
       "state": {
         "status": "stale",
-        "checked_at": "2026-08-11T13:45:11.850Z",
+        "checked_at": "2026-08-13T17:44:14.279Z",
         "checked_count": 42,
         "candidate_count": 42,
         "needs_review_count": 0,
@@ -493,14 +493,14 @@
       "method": ""
     },
     {
-      "type": "email-agent:api",
-      "path": "/api/gmail-coverage-check",
-      "method": "POST"
-    },
-    {
       "type": "email-agent:get-state",
       "path": "",
       "method": ""
+    },
+    {
+      "type": "email-agent:api",
+      "path": "/api/gmail-coverage-check",
+      "method": "POST"
     },
     {
       "type": "email-agent:api",
@@ -518,9 +518,9 @@
         "left": 843,
         "top": 14,
         "right": 1251,
-        "bottom": 462.390625,
+        "bottom": 505.390625,
         "width": 408,
-        "height": 448.390625
+        "height": 491.390625
       }
     },
     {
@@ -531,9 +531,9 @@
         "left": 319,
         "top": 14,
         "right": 727,
-        "bottom": 454.390625,
+        "bottom": 469,
         "width": 408,
-        "height": 440.390625
+        "height": 455
       }
     },
     {
@@ -544,9 +544,9 @@
         "left": 843,
         "top": 14,
         "right": 1251,
-        "bottom": 475.390625,
+        "bottom": 518.390625,
         "width": 408,
-        "height": 461.390625
+        "height": 504.390625
       }
     },
     {
@@ -557,9 +557,9 @@
         "left": 319,
         "top": 14,
         "right": 727,
-        "bottom": 467.390625,
+        "bottom": 469,
         "width": 408,
-        "height": 453.390625
+        "height": 455
       }
     },
     {
@@ -570,9 +570,9 @@
         "left": 843,
         "top": 14,
         "right": 1251,
-        "bottom": 573.390625,
+        "bottom": 610.390625,
         "width": 408,
-        "height": 559.390625
+        "height": 596.390625
       }
     },
     {
@@ -596,9 +596,9 @@
         "left": 843,
         "top": 14,
         "right": 1251,
-        "bottom": 462.59375,
+        "bottom": 458.59375,
         "width": 408,
-        "height": 448.59375
+        "height": 444.59375
       }
     },
     {
@@ -609,9 +609,9 @@
         "left": 319,
         "top": 14,
         "right": 727,
-        "bottom": 464.59375,
+        "bottom": 460.59375,
         "width": 408,
-        "height": 450.59375
+        "height": 446.59375
       }
     },
     {
@@ -622,9 +622,9 @@
         "left": 843,
         "top": 14,
         "right": 1251,
-        "bottom": 436.390625,
+        "bottom": 471.390625,
         "width": 408,
-        "height": 422.390625
+        "height": 457.390625
       }
     },
     {
@@ -635,9 +635,9 @@
         "left": 319,
         "top": 14,
         "right": 727,
-        "bottom": 428.390625,
+        "bottom": 463.390625,
         "width": 408,
-        "height": 414.390625
+        "height": 449.390625
       }
     },
     {
@@ -648,9 +648,9 @@
         "left": 843,
         "top": 14,
         "right": 1251,
-        "bottom": 449.390625,
+        "bottom": 484.390625,
         "width": 408,
-        "height": 435.390625
+        "height": 470.390625
       }
     },
     {
@@ -661,9 +661,9 @@
         "left": 319,
         "top": 14,
         "right": 727,
-        "bottom": 441.390625,
+        "bottom": 469,
         "width": 408,
-        "height": 427.390625
+        "height": 455
       }
     },
     {
@@ -674,9 +674,9 @@
         "left": 843,
         "top": 14,
         "right": 1251,
-        "bottom": 401.390625,
+        "bottom": 437.390625,
         "width": 408,
-        "height": 387.390625
+        "height": 423.390625
       }
     },
     {
@@ -687,9 +687,9 @@
         "left": 319,
         "top": 14,
         "right": 727,
-        "bottom": 393.390625,
+        "bottom": 429.390625,
         "width": 408,
-        "height": 379.390625
+        "height": 415.390625
       }
     },
     {
@@ -700,9 +700,9 @@
         "left": 843,
         "top": 14,
         "right": 1251,
-        "bottom": 383.671875,
+        "bottom": 419.671875,
         "width": 408,
-        "height": 369.671875
+        "height": 405.671875
       }
     },
     {
@@ -713,9 +713,9 @@
         "left": 319,
         "top": 14,
         "right": 727,
-        "bottom": 375.671875,
+        "bottom": 411.671875,
         "width": 408,
-        "height": 361.671875
+        "height": 397.671875
       }
     },
     {
@@ -726,9 +726,9 @@
         "left": 843,
         "top": 14,
         "right": 1251,
-        "bottom": 436.390625,
+        "bottom": 471.390625,
         "width": 408,
-        "height": 422.390625
+        "height": 457.390625
       }
     },
     {
@@ -739,9 +739,9 @@
         "left": 319,
         "top": 14,
         "right": 727,
-        "bottom": 428.390625,
+        "bottom": 463.390625,
         "width": 408,
-        "height": 414.390625
+        "height": 449.390625
       }
     }
   ]

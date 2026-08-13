@@ -88,6 +88,54 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertNotIn(removed_path, content_js)
             self.assertNotIn(removed_path, background_js)
 
+    def test_minimized_threadwise_control_has_an_accessible_name(self) -> None:
+        content_js = Path("extensions/gmail_companion/content.js").read_text(encoding="utf-8")
+
+        self.assertIn('aria-label="Open Threadwise Home"', content_js)
+        self.assertIn(
+            'brandButton.setAttribute("aria-label", minimized ? "Open Threadwise Home" : "Threadwise Home")',
+            content_js,
+        )
+
+    def test_onboarding_browser_validator_loads_the_complete_extension_module_set(self) -> None:
+        validator = Path("scripts/validate_threadwise_onboarding_cdp.mjs").read_text(
+            encoding="utf-8"
+        )
+
+        for script_name in (
+            "provider_adapter.js",
+            "analytics.js",
+            "onboarding.js",
+            "queue_navigation.js",
+            "context_actions.js",
+            "selected_explanation.js",
+            "review_progression.js",
+            "coverage.js",
+            "content.js",
+        ):
+            self.assertIn(f'"{script_name}"', validator)
+
+    def test_coverage_receipts_keep_their_state_valid_context_actions(self) -> None:
+        content_js = Path("extensions/gmail_companion/content.js").read_text(encoding="utf-8")
+        renderer = content_js.split("function renderContextActions(workspaceMode)", 1)[1].split(
+            "function contextActionsWorkspaceMode", 1
+        )[0]
+
+        self.assertNotIn('root.querySelector("[data-ea-coverage-state]")', renderer)
+        self.assertIn("CONTEXT_ACTIONS.deriveActions(policyInput)", renderer)
+
+    def test_coverage_home_keeps_the_loaded_review_queue_reachable(self) -> None:
+        content_js = Path("extensions/gmail_companion/content.js").read_text(encoding="utf-8")
+        home_renderer = content_js.split("const keptVisibleCount", 1)[1].split(
+            "renderMinimized();", 1
+        )[0]
+
+        self.assertIn("renderCoverageHtml()", home_renderer)
+        self.assertIn("renderQueueFinderHtml()", home_renderer)
+        self.assertIn("renderGmailCheckResultHtml(gmailCheckResult)", home_renderer)
+        self.assertIn("Review queue status unverified", content_js)
+        self.assertIn("activityHtml", home_renderer)
+
     def test_review_queue_refreshes_five_amazon_variants_without_turning_security_into_orders(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
@@ -228,7 +276,12 @@ class GmailCompanionUiTests(unittest.TestCase):
                 gmail_client_factory=lambda *args, **kwargs: gmail_client,
                 live_inbox_reconciliation_enabled=True,
             )
+            queued: list = []
+            app._runtime_state._background_runner = queued.append
 
+            state = app.harness_state({})
+            self.assertEqual(len(queued), 1)
+            queued[0]()
             state = app.harness_state({})
 
             self.assertEqual(
@@ -744,6 +797,7 @@ class GmailCompanionUiTests(unittest.TestCase):
                 result = GmailCompanionApp(
                     storage_dir,
                     gmail_client_factory=lambda account_id, credentials_dir, client_secret_path, required_scope: gmail_client,
+                    background_runner=lambda work: work(),
                 ).teach_apply(
                     {
                         "selected_context": {"provider": "gmail", "message_id": "amazon-shipment"},
@@ -1303,6 +1357,9 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("window.setInterval(pollConnectionHealth, REFRESH_INTERVAL_MS)", content_js)
         self.assertNotIn("window.setInterval(refreshSelection, REFRESH_INTERVAL_MS)", content_js)
         self.assertIn("refreshInFlight || connectionPollInFlight || progressionCheck", content_js)
+        self.assertIn("|| applyInFlight", content_js)
+        self.assertIn("|| optimisticDecision?.flightActive", content_js)
+        self.assertIn("if (applyInFlight || optimisticDecision?.flightActive)", content_js)
         self.assertIn("pendingRefreshAfterConnectionPoll", content_js)
         self.assertIn("function releaseConnectionPoll()", content_js)
         self.assertIn('type: "email-agent:probe-health"', content_js)
@@ -1391,6 +1448,13 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("data-ea-brand-img", content_js)
         self.assertIn('id="ea-editorial-utility-styles"', content_js)
         self.assertIn("#ea-panel [data-tw-primary-action]", content_js)
+        self.assertIn('event.target?.closest?.("[data-ea-queue-finder]")', content_js)
+        self.assertIn('queueFinder?.querySelector?.("[data-ea-queue-item]")', content_js)
+        self.assertIn("rememberCommittedIdentity(optimisticDecision.identity)", content_js)
+        return_home = content_js.split("function returnQueuePreviewToHome()", 1)[1].split(
+            "function leaveQueueFlow()", 1
+        )[0]
+        self.assertIn("resetPerEmailInteraction({ preserveProgressionStatus: true })", return_home)
         self.assertIn(":focus-visible", content_js)
         self.assertIn('id="ea-header-tagline"', content_js)
         self.assertIn("founderFeedbackVisible = false", content_js)
@@ -2321,8 +2385,13 @@ class GmailCompanionUiTests(unittest.TestCase):
                 ],
             )
             app = GmailCompanionApp(storage_dir, live_inbox_reconciliation_enabled=True)
+            queued: list = []
+            app._runtime_state._background_runner = queued.append
 
             with patch.object(app._runtime_state, "_live_inbox_ids_loader", return_value={"still-in-inbox"}):
+                app.render_daily_dashboard_page()
+                self.assertEqual(len(queued), 1)
+                queued[0]()
                 page = app.render_daily_dashboard_page()
 
             needs_review = page.split('data-dashboard-section="needs-review"', 1)[1].split(

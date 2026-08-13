@@ -762,7 +762,7 @@
       <div id="ea-panel" style="background:#fff;border:1px solid #cdd2d8;border-radius:12px;box-shadow:0 4px 8px rgba(31,35,40,.12);overflow:hidden;font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#1f2328;display:flex;flex-direction:column;max-height:calc(100vh - 28px);">
         <div id="ea-header" style="height:52px;display:grid;grid-template-columns:28px minmax(0,1fr) 30px;align-items:center;gap:10px;padding:0 14px;border-bottom:1px solid #e2e5e9;background:#fff;">
           <div style="display:flex;align-items:center;gap:10px;min-width:0;">
-            <button id="ea-brand-toggle" type="button" title="Open Threadwise" style="position:relative;width:28px;height:28px;border-radius:7px;border:0;flex:0 0 auto;background:transparent;padding:0;cursor:pointer;overflow:hidden;">
+            <button id="ea-brand-toggle" type="button" aria-label="Open Threadwise Home" title="Open Threadwise" style="position:relative;width:28px;height:28px;border-radius:7px;border:0;flex:0 0 auto;background:transparent;padding:0;cursor:pointer;overflow:hidden;">
               <img src="${BRAND_ICON_URL}" alt="" aria-hidden="true" data-ea-brand-img="true" style="width:100%;height:100%;display:block;object-fit:cover;background:#fff;">
             </button>
           </div>
@@ -844,6 +844,7 @@
       headerCopy.style.display = minimized ? "none" : "flex";
     }
     brandButton.title = minimized ? `${statusCopy.label} - open Threadwise Home` : "Threadwise Home";
+    brandButton.setAttribute("aria-label", minimized ? "Open Threadwise Home" : "Threadwise Home");
     button.textContent = "−";
     button.title = "Minimize Threadwise";
     button.setAttribute("aria-label", "Minimize Threadwise");
@@ -1509,7 +1510,11 @@
   }
 
   function pollConnectionHealth() {
-    if (!companionLifecycleActive || refreshInFlight || connectionPollInFlight || progressionCheck) {
+    if (
+      !companionLifecycleActive || refreshInFlight || connectionPollInFlight || progressionCheck
+      || applyInFlight
+      || optimisticDecision?.flightActive
+    ) {
       return latestStateReadGeneration;
     }
     if (lastConnectionState.kind !== "ready") {
@@ -1522,6 +1527,9 @@
         return;
       }
       if (!companionLifecycleActive) {
+        return;
+      }
+      if (applyInFlight || optimisticDecision?.flightActive) {
         return;
       }
       if (runtimeError) {
@@ -1760,8 +1768,8 @@
     progressionCheck.status = "retry";
     gmailCheckResult = {
       kind: "review-progression-retry",
-      title: "Review queue check needs a retry",
-      message: message || "Threadwise could not verify the provider-scoped review queue.",
+      title: "Review queue status unverified",
+      message: `This check needs a retry. ${message || "Threadwise could not verify the provider-scoped review queue."}`,
     };
     renderCurrentStatePreservingFocus(lastHarnessState || lastSidebarState);
   }
@@ -1777,8 +1785,8 @@
     latestStateReadGeneration = ++stateReadGeneration;
     gmailCheckResult = {
       kind: "review-progression-retry",
-      title: "Review queue check needs a retry",
-      message: message || "The last decision was not confirmed. Threadwise kept this email eligible and needs a fresh queue check.",
+      title: "Review queue status unverified",
+      message: `This check needs a retry. ${message || "The last decision was not confirmed. Threadwise kept this email eligible and needs a fresh queue check."}`,
     };
     renderCurrentStatePreservingFocus(lastHarnessState || lastSidebarState);
   }
@@ -3450,7 +3458,10 @@
       `border:2px solid #241812;border-radius:11px;background:${activeSummaryFilter === key ? "#dff8ed" : "#fffdf7"};box-shadow:2px 2px 0 rgba(36,24,18,.18);padding:12px;text-align:left;cursor:pointer;font:inherit;color:#241812;`;
     const keptVisibleCount = summary.kept_visible_count ?? countForFilter("kept_visible_items");
     if (workspaceMode === "home") {
-      setHtml(dailySummaryNode, `<div data-ea-selected-state="home" style="margin-top:8px;">${renderCoverageHtml()}</div>`);
+      setHtml(
+        dailySummaryNode,
+        `<div data-ea-selected-state="home" style="display:grid;gap:14px;margin-top:8px;">${renderCoverageHtml()}${gmailCheckResult ? renderGmailCheckResultHtml(gmailCheckResult) : ""}${renderQueueFinderHtml()}${activityHtml}</div>`,
+      );
       renderMinimized();
       restorePendingQueueNavigationFocus();
       restoreContextScroll(preservedScroll);
@@ -3794,7 +3805,7 @@
     forcedHome = true;
     forcedHomeLiveContext = lastLiveContext ? { ...lastLiveContext } : null;
     minimized = false;
-    resetPerEmailInteraction();
+    resetPerEmailInteraction({ preserveProgressionStatus: true });
     previousPayload = "";
     if (lastHarnessState) {
       renderState(lastHarnessState);
@@ -4001,8 +4012,8 @@
     latestStateReadGeneration = ++stateReadGeneration;
     gmailCheckResult = {
       kind: "review-progression-retry",
-      title: "Review queue check needs a retry",
-      message: message || "The final decision was not confirmed. Threadwise needs a fresh queue check before completion can be trusted.",
+      title: "Review queue status unverified",
+      message: `This check needs a retry. ${message || "The final decision was not confirmed. Threadwise needs a fresh queue check before completion can be trusted."}`,
     };
     renderCurrentStatePreservingFocus(lastHarnessState || lastSidebarState);
     return true;
@@ -5273,11 +5284,6 @@
     const root = document.getElementById(ROOT_ID);
     const secondary = root?.querySelector("#ea-selected-email-secondary");
     if (!secondary) return;
-    if (root.querySelector("[data-ea-coverage-state]")) {
-      root.querySelector("#ea-context-actions")?.remove();
-      root.querySelector("#ea-context-menu")?.remove();
-      return;
-    }
     const policyInput = contextActionPolicyInput(workspaceMode);
     const actions = CONTEXT_ACTIONS.deriveActions(policyInput);
     let host = root.querySelector("#ea-context-actions");
@@ -5510,6 +5516,13 @@
       return;
     }
     if (command === "primary-action") {
+      const queueFinder = event.target?.closest?.("[data-ea-queue-finder]");
+      const firstQueueResult = queueFinder?.querySelector?.("[data-ea-queue-item]");
+      if (firstQueueResult) {
+        event.preventDefault();
+        firstQueueResult.click();
+        return;
+      }
       const actions = visibleEnabledPrimaryActions(root);
       if (actions.length !== 1) {
         return;
@@ -5682,6 +5695,7 @@
         body: { selected_context: lastSidebarState?.selected_context || { provider: ACTIVE_PROVIDER } },
       }, (response) => {
         if (optimisticDecision?.retryStateLocked && !chrome.runtime.lastError && response?.ok) {
+          rememberCommittedIdentity(optimisticDecision.identity);
           optimisticDecision.retryStateLocked = false;
           optimisticDecision.providerWriteState = "working";
         }

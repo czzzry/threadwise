@@ -1,7 +1,7 @@
 # Variant C Production Gauntlet Ledger
 
 Status: LIVE read-only validation complete; founder checkpoint approved
-Current as of: 2026-08-11
+Current as of: 2026-08-13
 Parent direction: `docs/prd-threadwise-gauntlet-2026-08-09.md`
 Implementation brief: GitHub issue `#110`
 Approved reference: `prototypes/threadwise_ray_linear_ui_prototype.html?variant=C`
@@ -235,7 +235,7 @@ The founder approved this milestone's LIVE checkpoint on 2026-08-11. Later work 
 - Fresh re-critique: PASS. Scores — Gmail nativeness `4/5`; visual clarity `5/5`; action efficiency `4/5`; information density `5/5`; keyboard/accessibility `4/5`; automated reliability `4/5`.
 - Single biggest material remaining gap: none in the automated slice.
 - Recommendation: `SHIP` to founder checkpoint.
-- LIVE: pending. The production unpacked extension must be reloaded and exercised in real Gmail with the founder present before this slice is called complete or pushed/deployed.
+- LIVE: `PASS`. The production unpacked extension ran in authenticated real Gmail with the local companion and existing OAuth grant. The user-triggered read-only coverage action completed in about 11 seconds, checked 72 current Inbox candidates, and built a 64-item review queue without provider mutation. The queue-ready state and minimized `Open Threadwise Home` control were verified through the real sidebar.
 - Opening the selected unread Gmail message decreased Gmail's native unread count by one; it was intentionally not restored without explicit write approval.
 - Visual restructuring must not hide recovery, receipts, correction, or provider-scoped truth in less common states.
 - The prototype's simplified accept-and-advance behavior cannot replace the production async and live-anchor contracts.

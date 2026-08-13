@@ -312,7 +312,17 @@ async function installBridge(state) {
 }
 
 async function injectContentScript() {
-  const scripts = ["provider_adapter.js", "analytics.js", "onboarding.js", "content.js"];
+  const scripts = [
+    "provider_adapter.js",
+    "analytics.js",
+    "onboarding.js",
+    "queue_navigation.js",
+    "context_actions.js",
+    "selected_explanation.js",
+    "review_progression.js",
+    "coverage.js",
+    "content.js",
+  ];
   for (const scriptName of scripts) {
     const script = await fs.readFile(path.join(extensionRoot, scriptName), "utf8");
     await evaluate(script);

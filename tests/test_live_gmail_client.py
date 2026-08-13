@@ -201,6 +201,44 @@ class LiveGmailClientTests(unittest.TestCase):
             self.assertEqual(oauth_session.refresh_calls, 0)
             self.assertEqual(transport.calls[0][3], "cached-token")
 
+    def test_from_local_oauth_accepts_modify_token_for_readonly_operation(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            credentials_dir = Path(temp_dir)
+            self._write_client_secret(credentials_dir)
+            token_path = credentials_dir / "gmail_tokens" / "founder-test.json"
+            token_path.parent.mkdir(parents=True, exist_ok=True)
+            token_path.write_text(
+                json.dumps(
+                    {
+                        "access_token": "cached-modify-token",
+                        "refresh_token": "cached-refresh",
+                        "expires_at": "2999-01-01T00:00:00Z",
+                        "scope": GMAIL_MODIFY_SCOPE,
+                    }
+                )
+            )
+            oauth_session = FakeOAuthSession(
+                {
+                    "access_token": "unexpected-token",
+                    "refresh_token": "unexpected-refresh",
+                    "expires_at": "2999-01-01T00:00:00Z",
+                }
+            )
+            transport = RecordingTransport()
+
+            client = LiveGmailClient.from_local_oauth(
+                "founder-test",
+                credentials_dir,
+                oauth_session_factory=lambda config, client_secret_path, account_id, scope: oauth_session,
+                transport=transport,
+                scope=GMAIL_READONLY_SCOPE,
+            )
+            client.list_messages(("INBOX",), 1)
+
+            self.assertEqual(oauth_session.authorize_calls, 0)
+            self.assertEqual(oauth_session.refresh_calls, 0)
+            self.assertEqual(transport.calls[0][3], "cached-modify-token")
+
     def test_from_local_oauth_authorizes_and_persists_token_on_first_run(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             credentials_dir = Path(temp_dir)
@@ -229,6 +267,17 @@ class LiveGmailClientTests(unittest.TestCase):
             self.assertEqual(oauth_session.authorize_calls, 1)
             self.assertEqual(stored_token["access_token"], "new-token")
             self.assertEqual(stored_token["refresh_token"], "new-refresh")
+
+    def test_get_message_metadata_requests_only_required_headers(self) -> None:
+        transport = RecordingTransport()
+        client = LiveGmailClient("test-token", transport=transport)
+
+        client.get_message_metadata("gmail-live-001")
+
+        self.assertEqual(
+            transport.calls[-1][2],
+            {"format": "metadata", "metadataHeaders": ["Subject", "From"]},
+        )
 
     def test_from_local_oauth_surfaces_reconnect_message_when_google_refresh_returns_400(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

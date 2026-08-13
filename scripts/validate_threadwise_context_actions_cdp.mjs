@@ -957,6 +957,7 @@ async function captureViewportSet(stateName) {
       assert(placement.controlsVisible, `review-open keeps Accept and contextual Change label readable at ${viewport.name}`);
       assert(!placement.directChangeVisible, `review-open does not restore a second visible Change label action at ${viewport.name}`);
       assert(placement.hitTargetIsChange, `review-open contextual Change label remains hit-testable at ${viewport.name}`);
+      await waitFor(() => evaluate("!globalThis.__eaTestHooks.getSnapshot().refreshInFlight && !globalThis.__eaTestHooks.getSnapshot().connectionPollInFlight"));
       const requestCountBeforeChange = await evaluate(`JSON.parse(localStorage.getItem(${JSON.stringify(requestLogStorageKey)}) || '[]').filter((request) => request.type !== 'email-agent:probe-health').length`);
       assert(await evaluate("document.activeElement?.getAttribute('data-ea-context-item') === 'change-label'"), `review-open focuses Change label for keyboard discovery at ${viewport.name}`);
       await pressKey("Enter");

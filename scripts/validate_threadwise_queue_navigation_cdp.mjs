@@ -577,18 +577,26 @@ function assertScrollUnchanged(before, after, step) {
 }
 
 async function pressKey(key) {
-  const code = /^[a-z]$/i.test(key) ? `Key${key.toUpperCase()}` : key;
+  await send("Page.bringToFront");
+  const isLetter = /^[a-z]$/i.test(key);
+  const code = isLetter ? `Key${key.toUpperCase()}` : key;
+  const virtualKeyCode = isLetter ? key.toUpperCase().charCodeAt(0) : 0;
   await send("Input.dispatchKeyEvent", {
-    type: "rawKeyDown",
+    type: isLetter ? "keyDown" : "rawKeyDown",
     key,
     code,
-    windowsVirtualKeyCode: /^[a-z]$/i.test(key) ? key.toUpperCase().charCodeAt(0) : 0,
+    text: isLetter ? key : "",
+    unmodifiedText: isLetter ? key : "",
+    keyIdentifier: isLetter ? `U+${virtualKeyCode.toString(16).padStart(4, "0")}` : "",
+    windowsVirtualKeyCode: virtualKeyCode,
+    nativeVirtualKeyCode: virtualKeyCode,
   });
   await send("Input.dispatchKeyEvent", {
     type: "keyUp",
     key,
     code,
-    windowsVirtualKeyCode: /^[a-z]$/i.test(key) ? key.toUpperCase().charCodeAt(0) : 0,
+    windowsVirtualKeyCode: virtualKeyCode,
+    nativeVirtualKeyCode: virtualKeyCode,
   });
 }
 

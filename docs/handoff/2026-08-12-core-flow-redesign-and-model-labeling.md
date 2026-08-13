@@ -1,8 +1,8 @@
 # Core Flow Redesign and Model Labeling Handoff
 
-Status: Automated implementation complete; LIVE Gmail gate blocked
-Current as of: 2026-08-12
-Branch: `codex/threadwise-coverage-implementation`
+Status: Complete; release candidate validated for `main`
+Current as of: 2026-08-13
+Branch: `codex/threadwise-main-landing`
 
 ## Founder decisions
 
@@ -31,28 +31,19 @@ Branch: `codex/threadwise-coverage-implementation`
 
 AUTOMATED:
 
-- Repository suite: 825 tests passed, 16 skipped.
-- Focused correction, teaching, initial-classifier, and companion UI suites passed.
-- Relevant JavaScript suites and syntax checks passed.
-- Public-data hygiene checks passed before the final integration correction and remain part of the final publish gate.
+- Repository suite: 842 tests passed, 16 skipped, both with the private model configuration present and with API keys deliberately absent.
+- All companion JavaScript suites, the eight-case public demo, and public-data hygiene passed.
+- Onboarding, contextual actions, selected explanation, coverage, queue navigation, and review progression controlled-browser gauntlets passed; review progression covered 42 contained responsive states with no forbidden provider requests.
+- The Gmail coverage client uses bounded concurrent metadata reads and recognizes that an existing Gmail modify grant satisfies read-only coverage. A read-only grant still cannot authorize label writes.
 
 LIVE:
 
-- Not passed and not substituted with synthetic evidence.
-- Gmail OAuth artifacts exist locally, but `.env`, the OpenAI API key, and model configuration are absent.
-- Windows desktop control stopped before Gmail interaction because it could not verify the active Brave URL safely.
-- No Gmail/provider mutation was attempted in this checkpoint.
-
-## Required LIVE follow-up
-
-On a founder-present machine with the unpacked extension loaded, a configured teaching and classification model, and a designated non-sensitive Gmail test set:
-
-1. Record each message's Threadwise labels, Inbox state, unread state, star, and importance.
-2. Exercise current-email `only`, exact two-label, add, remove, and replace corrections; confirm preview equals provider result and the model is not called again on Apply.
-3. Exercise ambiguous, contradictory, and unknown-label notes; confirm zero provider effect.
-4. Run initial classification on representative messages and confirm visible real model name/provenance, pending review, and zero automatic writes.
-5. Restore every test message to the recorded state and verify restoration by rereading Gmail.
-6. Capture equivalent screenshots and interaction evidence. Do not claim LIVE until this completes.
+- Passed on the founder's Mac using the production unpacked extension in authenticated real Gmail.
+- A real model request passed using the machine-local OpenAI configuration; the key remains ignored, mode-restricted, and absent from Git.
+- A reversible exact-label correction completed through Gmail and the original provider label set was verified after restoration.
+- The explicit read-only coverage action completed in about 11 seconds, checked 72 current Inbox candidates, and produced a 64-item review queue. It performed no provider writes.
+- The real minimized state collapses to one `Open Threadwise Home` control and preserves the 64-item queue count.
+- Live Proton UI validation remains blocked because the disposable browser session is signed out of Proton Mail; no Proton provider write was attempted during this checkpoint.
 
 ## Deferred
 

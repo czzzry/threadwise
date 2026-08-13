@@ -1,5 +1,6 @@
 import json
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -8,6 +9,7 @@ from src.live_gmail_client import GMAIL_READONLY_SCOPE
 
 
 DEFAULT_COVERAGE_LIMIT = 100
+DEFAULT_METADATA_WORKERS = 8
 COVERAGE_SNAPSHOT_NAME = "gmail_coverage_snapshot.json"
 
 
@@ -96,6 +98,30 @@ class GmailCoverageService:
         known = self._known_message_states()
         previous = self._load_snapshot()
         cached_metadata = dict(previous.get("metadata") or {})
+        metadata_getter = getattr(client, "get_message_metadata", client.get_message)
+        metadata_ids = [
+            message_id
+            for message_id in message_ids
+            if message_id not in known and message_id not in cached_metadata
+        ]
+        fetched_metadata: dict[str, dict | None] = {}
+
+        def fetch_metadata(message_id: str) -> dict | None:
+            try:
+                message = metadata_getter(message_id)
+                return {
+                    "message_id": message_id,
+                    "thread_id": str(message.get("threadId") or ""),
+                    "subject": _header(message, "Subject") or "(no subject)",
+                    "sender": _header(message, "From") or "(unknown sender)",
+                }
+            except Exception:
+                return None
+
+        if metadata_ids:
+            worker_count = min(DEFAULT_METADATA_WORKERS, len(metadata_ids))
+            with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="gmail-coverage") as executor:
+                fetched_metadata = dict(zip(metadata_ids, executor.map(fetch_metadata, metadata_ids), strict=True))
         metadata: dict[str, dict] = {}
         review_items: list[dict] = []
         read_failures = 0
@@ -117,16 +143,9 @@ class GmailCoverageService:
                 item_metadata = dict(cached_metadata[message_id])
                 reused_count += 1
             else:
-                try:
-                    provider_get_count += 1
-                    message = client.get_message(message_id)
-                    item_metadata = {
-                        "message_id": message_id,
-                        "thread_id": str(message.get("threadId") or ""),
-                        "subject": _header(message, "Subject") or "(no subject)",
-                        "sender": _header(message, "From") or "(unknown sender)",
-                    }
-                except Exception:
+                provider_get_count += 1
+                item_metadata = fetched_metadata.get(message_id)
+                if item_metadata is None:
                     read_failures += 1
                     continue
             metadata[message_id] = item_metadata

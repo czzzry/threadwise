@@ -1330,11 +1330,13 @@ async function waitFor(check, timeoutMs = 15000) {
 }
 
 async function pressKey(key) {
+  await send("Page.bringToFront");
   const windowsVirtualKeyCode = key === "Enter" ? 13 : key === "Escape" ? 27 : key.length === 1 ? key.toUpperCase().charCodeAt(0) : 0;
   const code = key.length === 1 ? `Key${key.toUpperCase()}` : key;
-  const text = key === "Enter" ? "\r" : "";
-  await send("Input.dispatchKeyEvent", { type: text ? "keyDown" : "rawKeyDown", key, code, windowsVirtualKeyCode, text, unmodifiedText: text });
-  await send("Input.dispatchKeyEvent", { type: "keyUp", key, code, windowsVirtualKeyCode });
+  const text = key === "Enter" ? "\r" : key.length === 1 ? key : "";
+  const keyIdentifier = key.length === 1 ? `U+${windowsVirtualKeyCode.toString(16).padStart(4, "0")}` : "";
+  await send("Input.dispatchKeyEvent", { type: text ? "keyDown" : "rawKeyDown", key, code, windowsVirtualKeyCode, nativeVirtualKeyCode: windowsVirtualKeyCode, keyIdentifier, text, unmodifiedText: text });
+  await send("Input.dispatchKeyEvent", { type: "keyUp", key, code, windowsVirtualKeyCode, nativeVirtualKeyCode: windowsVirtualKeyCode });
 }
 
 function assert(condition, message) {
