@@ -23,7 +23,7 @@ from src.teaching_exclusions import (
     filter_excluded_preview_matches,
     save_teaching_exclusion,
 )
-from src.teachable_rule_memory import TeachableRuleMemory
+from src.teachable_rule_memory import TeachableRuleMemory, matching_rules_for_message
 from src.label_change import (
     LabelChangeError,
     legacy_only_change,
@@ -35,6 +35,24 @@ from src.label_change import (
 VALID_TEACHING_APPLY_MODES = {"current-only", "matching-existing", "save-future-rule", "future-only", "apply-included"}
 DEFAULT_TEACHING_INTENT_MODEL = "gpt-4.1-mini"
 DEFAULT_TEACHING_INTENT_TIMEOUT_SECONDS = 8
+
+
+def teaching_llm_status() -> dict:
+    """Expose configuration state without exposing the credential itself."""
+    key_source = "EMAIL_AGENT_OPENAI_API_KEY" if os.getenv("EMAIL_AGENT_OPENAI_API_KEY") else (
+        "OPENAI_API_KEY" if os.getenv("OPENAI_API_KEY") else ""
+    )
+    return {
+        "configured": bool(key_source),
+        "status": "configured" if key_source else "unavailable",
+        "model": os.getenv("THREADWISE_TEACHING_MODEL") or DEFAULT_TEACHING_INTENT_MODEL,
+        "key_source": key_source,
+        "message": (
+            "LLM teaching review is configured for this companion."
+            if key_source
+            else "LLM teaching review is unavailable because this companion has no OpenAI key configured."
+        ),
+    }
 
 
 class OpenAITeachingIntentClient:
@@ -59,8 +77,9 @@ class OpenAITeachingIntentClient:
             + ", ".join(CANONICAL_LABEL_ORDER)
             + ".\n"
             "Choose the label the founder wants after reading the current email context and complaint.\n"
-            "When explicit_target_label is present, it is authoritative: keep that target label and use the note to infer only the semantic boundary.\n"
-            "If the founder is rejecting existing wrong labels, do not echo them back as the desired target.\n"
+            "explicit_target_label is the resolved desired label after checking the founder's note. Keep it unless the note clearly rejects it.\n"
+            "If selected_target_label_rejected is true, never echo the selected label back as the desired target.\n"
+            "Use remembered_instructions as prior founder guidance, but treat the latest correction note as authoritative when it clearly changes or rejects that guidance.\n"
             "semantic_pattern should be a short plain-English description of what should match, honoring every inclusion, negation, and exclusion in the note.\n"
             "cross_sender must be true only if the founder intent clearly spans multiple senders.\n"
             "If uncertain, still pick the best label and set confidence to low."
@@ -130,12 +149,14 @@ def build_sidebar_teach_preview(
                 next((label for label in current_labels if label not in inferred_sources), ""),
             )
     intent_label = inferred_change_label or (target_label if target_label_explicit or not note.strip() else "")
+    remembered_instructions = remembered_teaching_instructions(storage_dir, current)
     intent = interpret_teaching_intent(
         current=current,
         target_label=intent_label,
         note=note,
         scope=scope,
         force_llm_review=force_llm_review,
+        remembered_instructions=remembered_instructions,
     )
     target_label = intent["target_label"]
     label_change = build_selected_label_change(
@@ -208,6 +229,7 @@ def build_sidebar_teach_preview(
         target_label=target_label,
         semantic_rule=semantic_rule,
         intent_source=intent.get("source") or "deterministic-fallback",
+        selected_label_conflict=intent.get("selected_label_conflict"),
     )
     return {
         "acknowledgment": build_teach_acknowledgment(
@@ -238,6 +260,7 @@ def build_sidebar_teach_preview(
         "semantic_rule": semantic_rule,
         "future_rule_allowed": future_rule_allowed,
         "intent_source": "llm" if intent.get("source") == "llm" else "deterministic-fallback",
+        "selected_label_conflict": intent.get("selected_label_conflict"),
         "proposal": proposal.to_dict(),
         "impact": {
             "current_message_will_change": True,
@@ -758,7 +781,14 @@ def build_semantic_future_rule(*, current: dict, target_label: str, note: str, s
     }
 
 
-def build_human_teaching_explanation(*, current: dict, target_label: str, semantic_rule: dict, intent_source: str) -> str:
+def build_human_teaching_explanation(
+    *,
+    current: dict,
+    target_label: str,
+    semantic_rule: dict,
+    intent_source: str,
+    selected_label_conflict: dict | None = None,
+) -> str:
     label_name = gmail_label_name(target_label)
     sender = _display_sender(current.get("sender") or "") or normalized_sender_email(current.get("sender") or "") or "this sender"
     if semantic_rule.get("future_rule_allowed") is False:
@@ -772,9 +802,11 @@ def build_human_teaching_explanation(*, current: dict, target_label: str, semant
         explanation = f"I read this as: {pattern} should be {label_name}."
         if sender and semantic_rule.get("rule_type") == "sender-semantic":
             explanation = f"I read this as: {pattern} from {sender} should be {label_name}."
+    if selected_label_conflict:
+        explanation = f"{selected_label_conflict['message']} {explanation}"
     if intent_source == "llm":
         return f"{explanation} LLM reviewed your note with this email's context."
-    return f"{explanation} This used Threadwise's fallback interpretation because LLM review was unavailable."
+    return f"{explanation} Threadwise used the note and email context directly because LLM review was unavailable."
 
 
 def _note_is_one_off_or_uncertain(note: str) -> bool:
@@ -1207,16 +1239,40 @@ def interpret_teaching_intent(
     note: str,
     scope: str,
     force_llm_review: bool = False,
+    remembered_instructions: list[dict] | None = None,
 ) -> dict:
     explicit_label = (target_label or "").strip()
-    note_label = infer_explicit_target_label_from_note(note) if not explicit_label else ""
-    deterministic_label = infer_target_label_from_note(note) if not explicit_label and not note_label else ""
-    authoritative_label = explicit_label or note_label or deterministic_label
+    note_label = infer_explicit_target_label_from_note(note)
+    deterministic_label = infer_target_label_from_note(note) if not note_label else ""
+    explicit_label_rejected = bool(explicit_label and _note_explicitly_rejects_label(note, explicit_label))
+    if explicit_label_rejected:
+        authoritative_label = note_label or deterministic_label
+    else:
+        authoritative_label = explicit_label or note_label or deterministic_label
     if not authoritative_label:
+        if explicit_label_rejected:
+            raise ValueError(
+                f"Your note rejects {gmail_label_name(explicit_label)}. Choose the replacement label or describe it more clearly."
+            )
         raise ValueError("Choose a label or describe the correction more clearly, for example 'this is spam' or 'this needs a reply'.")
+    selected_label_conflict = None
+    if explicit_label_rejected and authoritative_label != explicit_label:
+        selected_label_conflict = {
+            "selected_label": explicit_label,
+            "selected_label_name": gmail_label_name(explicit_label),
+            "resolved_label": authoritative_label,
+            "resolved_label_name": gmail_label_name(authoritative_label),
+            "message": (
+                f"Your note rejects {gmail_label_name(explicit_label)}, so Threadwise used "
+                f"{gmail_label_name(authoritative_label)} instead."
+            ),
+        }
     llm_client = OpenAITeachingIntentClient.from_env()
     if force_llm_review and llm_client is None:
-        raise ValueError("LLM review is not configured for this Threadwise companion.")
+        raise ValueError(
+            "LLM review is not configured for this Threadwise companion. "
+            "Configure EMAIL_AGENT_OPENAI_API_KEY in the companion's private environment and restart Threadwise."
+        )
     if llm_client is not None and (note or not authoritative_label):
         llm_intent = normalize_llm_teaching_intent(
             llm_client.interpret(
@@ -1224,6 +1280,9 @@ def interpret_teaching_intent(
                     "note": note,
                     "scope": scope,
                     "explicit_target_label": authoritative_label,
+                    "selected_target_label": explicit_label,
+                    "selected_target_label_rejected": explicit_label_rejected,
+                    "remembered_instructions": list(remembered_instructions or []),
                     "current_subject": current.get("subject") or "",
                     "current_sender": current.get("sender") or "",
                     "current_snippet": current.get("snippet") or "",
@@ -1236,7 +1295,11 @@ def interpret_teaching_intent(
         if llm_intent:
             if authoritative_label:
                 llm_intent["target_label"] = authoritative_label
-            return {**llm_intent, "source": "llm"}
+            return {
+                **llm_intent,
+                "source": "llm",
+                "selected_label_conflict": selected_label_conflict,
+            }
         if force_llm_review:
             raise ValueError("LLM review was unavailable. Nothing was changed; try again in a moment.")
 
@@ -1247,6 +1310,7 @@ def interpret_teaching_intent(
             "cross_sender": False,
             "confidence": "high" if note_label else "low",
             "source": "explicit-note-label" if note_label else "explicit-label",
+            "selected_label_conflict": selected_label_conflict,
         }
 
     if deterministic_label:
@@ -1340,7 +1404,7 @@ def infer_explicit_target_label_from_note(note: str) -> str:
         ("receipt-billing", r"\b(?:receipts?|billing)\b"),
         ("account-security", r"\b(?:account security|security alert)\b"),
         ("newsletter", r"\bnewsletters?\b"),
-        ("job-related", r"\b(?:job[- ]related|work email)\b"),
+        ("job-related", r"\b(?:job[- ]related|work(?: email)?|job)\b"),
         ("reply-needed", r"\b(?:reply[- ]needed|needs? (?:a )?reply)\b"),
         ("travel", r"\btravel\b"),
         ("personal", r"\bpersonal\b"),
@@ -1433,6 +1497,55 @@ def infer_label_change_from_note(note: str, current_labels: list[str]) -> dict |
     if len(mentioned) > 1 and re.search(r"\b(?:both|two labels?|multiple labels?)\b", text):
         return {"operation": "only", "source_labels": [], "target_labels": mentioned}
     return None
+
+
+def remembered_teaching_instructions(storage_dir: Path, current: dict, limit: int = 8) -> list[dict]:
+    """Return only saved founder rules that match the current message."""
+    memory = TeachableRuleMemory(teachable_rules_path(storage_dir))
+    try:
+        matched_rules = matching_rules_for_message(current, memory.list_rules())
+    except (OSError, KeyError, TypeError, ValueError):
+        return []
+    return [
+        {
+            "id": rule.id,
+            "label": rule.label,
+            "instruction": rule.instruction,
+            "scope": rule.scope,
+        }
+        for rule in matched_rules[:limit]
+    ]
+
+
+def _label_note_aliases(label: str) -> tuple[str, ...]:
+    normalized = str(label or "").strip().lower().replace("_", " ").replace("-", " ")
+    aliases = {normalized}
+    if label == "job-related":
+        aliases.update({"work", "work email", "job related", "job"})
+    return tuple(alias for alias in aliases if alias)
+
+
+def _note_explicitly_rejects_label(note: str, label: str) -> bool:
+    text = " ".join(str(note or "").lower().split())
+    if not text or not label:
+        return False
+    for alias in _label_note_aliases(label):
+        escaped = re.escape(alias)
+        if re.search(
+            rf"\b(?:not|never|isn't|is not|aren't|are not|doesn't|does not|don't|do not)"
+            rf"(?:\s+(?:be|an?|the|any))?\s+{escaped}\b",
+            text,
+        ):
+            return True
+        if re.search(
+            rf"\b(?:exclude|without|never include|do not include|does not include)"
+            rf"(?:\s+(?:an?|the|any))?\s+{escaped}\b",
+            text,
+        ):
+            return True
+        if re.search(rf"\b{escaped}\b\s+(?:is|are|was|were)?\s*(?:wrong|incorrect|not applicable|not wanted)\b", text):
+            return True
+    return False
 
 
 def apply_label_to_message(

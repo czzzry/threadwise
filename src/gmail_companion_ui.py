@@ -60,6 +60,7 @@ from src.gmail_companion_state import (
 )
 from src.companion_teaching_workflow import CompanionTeachingWorkflow
 from src.companion_runtime_state import CompanionRuntimeState
+from src.teaching_loop import teaching_llm_status
 from src.gmail_teaching_adapter import GmailTeachingAdapter, INBOX_BACKFILL_ESTIMATE_CAP
 from src.proton_teaching_adapter import ProtonTeachingAdapter
 from src.provider_companion_runtime import (
@@ -805,6 +806,7 @@ class GmailCompanionApp:
             "analytics_enabled": self._analytics.enabled,
             "analytics": self._analytics.delivery_status(),
             "initial_classification": classification_status,
+            "llm_review": teaching_llm_status(),
             "storage_summary": self._cached_storage_summary(),
             "capabilities": [
                 "sidebar-state",

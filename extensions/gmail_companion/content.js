@@ -2291,6 +2291,12 @@
 
   function friendlyErrorMessage(message) {
     const normalized = String(message || "").toLowerCase();
+    if (normalized.includes("llm review is not configured")) {
+      return "LLM review is unavailable because the Threadwise companion has no OpenAI key configured.";
+    }
+    if (normalized.includes("llm review was unavailable")) {
+      return "LLM review could not complete. Nothing was changed; you can retry without losing your note.";
+    }
     if (normalized.includes("aborterror") || normalized.includes("signal is aborted")) {
       return `The last connection attempt was interrupted. This usually clears after checking again or reopening ${activeProviderName()}.`;
     }
@@ -4397,9 +4403,13 @@
 
   function teachErrorResult(operation, rawMessage) {
     const operationLabel = operation === "preview" ? "preview" : "apply";
-    const retryCopy = operation === "preview"
-      ? "Nothing was changed. Check the local companion connection and try Preview again."
-      : "Nothing was stored or changed. The preview is still here so you can check the connection and retry without rewriting your note.";
+    const normalized = String(rawMessage || "").toLowerCase();
+    const llmNotConfigured = normalized.includes("llm review is not configured");
+    const retryCopy = llmNotConfigured
+      ? "Nothing was changed. Configure the companion's private OpenAI key, restart Threadwise, then try Ask LLM again."
+      : operation === "preview"
+        ? "Nothing was changed. Check the local companion connection and try Preview again."
+        : "Nothing was stored or changed. The preview is still here so you can check the connection and retry without rewriting your note.";
     return {
       kind: `${operation}-error`,
       state_label: "Retry available",
@@ -4769,6 +4779,11 @@
     const structuredRule = preview?.structured_rule || {};
     const labelSetChange = isSelectedEmailLabelSetChange(preview);
     const futureRuleAllowed = preview?.future_rule_allowed !== false && !labelSetChange;
+    const intentStatus = preview?.intent_source === "llm"
+      ? "LLM reviewed"
+      : preview?.selected_label_conflict
+        ? "Note override applied"
+        : "Deterministic interpretation";
     const selectedStyle = "border:2px solid #241812;background:#dff8ed;";
     const idleStyle = "border:1px solid rgba(36,24,18,.24);background:#fffdf7;";
     const scopeCard = (mode, title, description, disabled = false) => `
@@ -4817,7 +4832,8 @@
         <details style="border-top:1px solid rgba(36,24,18,.2);padding-top:10px;color:#6b6255;">
           <summary style="cursor:pointer;font-weight:800;color:#241812;">How Threadwise understood this</summary>
           <div style="margin-top:8px;font-weight:700;color:#241812;">${escapeHtml(preview?.human_explanation || preview?.plain_english_rule || "No future rule proposal was generated.")}</div>
-         <div style="margin-top:6px;">${escapeHtml(preview?.rule_type_label || "Future rule")} · ${escapeHtml(preview?.rule_confidence_label || "Confidence unavailable")} · ${preview?.intent_source === "llm" ? "LLM reviewed" : "Deterministic fallback"}</div>
+          ${preview?.selected_label_conflict?.message ? `<div style="margin-top:8px;color:#8a4b00;font-weight:700;">${escapeHtml(preview.selected_label_conflict.message)}</div>` : ""}
+          <div style="margin-top:6px;">${escapeHtml(preview?.rule_type_label || "Future rule")} · ${escapeHtml(preview?.rule_confidence_label || "Confidence unavailable")} · ${escapeHtml(intentStatus)}</div>
           <button type="button" data-ea-action="force-llm-review" style="margin-top:10px;border:1px solid #241812;background:#fffdf7;color:#241812;border-radius:9px;padding:7px 10px;cursor:pointer;font:inherit;font-weight:800;">Ask LLM to review this</button>
           ${preview?.clarifying_question ? `<div style="margin-top:8px;color:#8a4b00;">${escapeHtml(preview.clarifying_question)}</div>` : ""}
           <div style="display:grid;gap:4px;margin-top:8px;font-size:.82rem;">${structuredRuleRows}</div>
@@ -4959,6 +4975,33 @@
       return "";
     }
     const allowedLabels = allowedDecisionLabels();
+    const selectedItem = allowedLabels.find((item) => item.id === selectedLabel);
+    const selectedAliases = selectedItem
+      ? [
+          normalizedLabelText(selectedItem.name),
+          normalizedLabelText(selectedItem.id),
+          normalizedLabelText(selectedItem.id).replaceAll("-", " "),
+        ].filter(Boolean)
+      : [];
+    if (noteExplicitlyRejectsLabel(note, selectedAliases)) {
+      if (!teachDraft.targetLabelExplicit) {
+        return "";
+      }
+      const positiveAlternative = allowedLabels.find((item) => {
+        if (item.id === selectedLabel) {
+          return false;
+        }
+        const aliases = [
+          normalizedLabelText(item.name),
+          normalizedLabelText(item.id),
+          normalizedLabelText(item.id).replaceAll("-", " "),
+        ].filter(Boolean);
+        return aliases.some((alias) => noteExplicitlyAssignsLabel(note, alias));
+      });
+      return positiveAlternative
+        ? `Your note says this is not ${decisionLabelName(selectedLabel)}, but ${decisionLabelName(selectedLabel)} is selected. Choose ${decisionLabelName(positiveAlternative.id)} or choose "Use my instruction".`
+        : `Your note says this is not ${decisionLabelName(selectedLabel)}, but ${decisionLabelName(selectedLabel)} is selected. Choose "Use my instruction" or a replacement label.`;
+    }
     const mentioned = allowedLabels.find((item) => {
       const aliases = [
         normalizedLabelText(item.name),
@@ -5014,6 +5057,17 @@
         `\\b(?:should be|belongs? (?:in|to)|label(?:ed)? (?:as|with)|categor(?:y|ize|ized) (?:as|with)|use)\\s+(?:an?\\s+)?${escaped}\\b`,
         `\\b${escaped}\\s+(?:is|should be)\\s+(?:the )?(?:label|category)\\b`,
       ].some((pattern) => new RegExp(pattern, "i").test(clause));
+    });
+  }
+
+  function noteExplicitlyRejectsLabel(note, aliases) {
+    return (aliases || []).some((alias) => {
+      const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return [
+        `\\b(?:not|isn't|is not|aren't|are not|doesn't|does not|don't|do not|never)(?:\\s+(?:be|an?|the|any))?\\s+${escaped}\\b`,
+        `\\b(?:exclude|without|never include|do not include|does not include)(?:\\s+(?:an?|the|any))?\\s+${escaped}\\b`,
+        `\\b${escaped}\\b\\s+(?:is|are|was|were)?\\s*(?:wrong|incorrect|not applicable|not wanted)\\b`,
+      ].some((pattern) => new RegExp(pattern, "i").test(note));
     });
   }
 

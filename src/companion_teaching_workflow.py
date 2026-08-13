@@ -55,7 +55,14 @@ class CompanionTeachingWorkflow:
             self._storage_dir,
             selected_context=payload.get("selected_context") or {},
             target_label=payload["target_label"],
-            target_label_explicit=bool(payload.get("target_label_explicit", True)),
+            # A prefilled label is only authoritative when the UI explicitly says
+            # the user chose it. Notes must remain able to correct stale guesses.
+            target_label_explicit=bool(
+                payload.get(
+                    "target_label_explicit",
+                    not bool((payload.get("note") or "").strip()),
+                )
+            ),
             note=(payload.get("note") or "").strip(),
             scope=payload.get("scope") or "sender",
             include_existing_impact=include_existing_impact,

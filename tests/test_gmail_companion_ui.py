@@ -257,6 +257,14 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("No SDK delivery errors detected", content_js)
         self.assertIn("PostHog arrival is checked separately", content_js)
 
+    def test_teaching_ui_handles_a_note_that_rejects_the_prefilled_label(self) -> None:
+        content_js = Path("extensions/gmail_companion/content.js").read_text()
+
+        self.assertIn("function noteExplicitlyRejectsLabel", content_js)
+        self.assertIn("selected_target_label_rejected", Path("src/teaching_loop.py").read_text())
+        self.assertIn("Note override applied", content_js)
+        self.assertIn("Your note says this is not", content_js)
+
     def test_extension_analytics_failure_cannot_block_product_actions(self) -> None:
         analytics_js = Path("extensions/gmail_companion/analytics.js").read_text()
 
@@ -4830,6 +4838,9 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertEqual(payload["dashboard_path"], "/daily-dashboard#run-gmail-check")
             self.assertEqual(payload["health_path"], "/api/health")
             self.assertFalse(payload["analytics_enabled"])
+            self.assertIn("llm_review", payload)
+            self.assertIn(payload["llm_review"]["status"], {"configured", "unavailable"})
+            self.assertNotIn("sk-", json.dumps(payload["llm_review"]))
             self.assertEqual(payload["storage_summary"]["storage_dir_name"], storage_dir.name)
             self.assertEqual(payload["storage_summary"]["batch_count"], 1)
             self.assertEqual(payload["storage_summary"]["report_count"], 0)

@@ -9,6 +9,26 @@ from src.companion_teaching_workflow import (
 
 
 class CompanionTeachingWorkflowTests(unittest.TestCase):
+    def test_nonempty_note_does_not_make_an_unspecified_prefill_authoritative(self) -> None:
+        workflow = CompanionTeachingWorkflow(
+            Path("/tmp/threadwise-test"),
+            write_through=lambda request: self.fail(f"unexpected write: {request}"),
+        )
+        with patch(
+            "src.companion_teaching_workflow.build_sidebar_teach_preview",
+            return_value={"selected_message_id": "message-1"},
+        ) as build_preview:
+            workflow.build_preview(
+                {
+                    "selected_context": {"provider": "protonmail", "message_id": "message-1"},
+                    "target_label": "job-related",
+                    "note": "Newsletter is correct, but this is not Work.",
+                },
+                include_existing_impact=False,
+            )
+
+        self.assertFalse(build_preview.call_args.kwargs["target_label_explicit"])
+
     def test_build_and_finish_preview_keep_local_teaching_contract_together(self) -> None:
         workflow = CompanionTeachingWorkflow(
             Path("/tmp/threadwise-test"),
