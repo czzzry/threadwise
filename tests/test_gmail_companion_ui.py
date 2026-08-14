@@ -273,16 +273,17 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("return itemThreadId === current.threadId;", content_js)
 
     def test_handled_receipt_offers_a_direct_looks_right_next_action(self) -> None:
-        content_js = Path("extensions/gmail_companion/content.js").read_text(encoding="utf-8")
+        repo_root = Path(__file__).resolve().parent.parent
 
-        self.assertIn('data-ea-action="confirm-handled-and-next"', content_js)
-        self.assertIn("Looks right · Next", content_js)
-        self.assertIn("confirmHandledAndOpenNext", content_js)
-        self.assertIn('confirmHandledButton.textContent = "Opening next…"', content_js)
-        self.assertIn("currentBelongsToActiveQueue ? activeSummaryFilter", content_js)
-        self.assertIn("Product actions must continue even when optional analytics is unavailable.", content_js)
-        self.assertIn('path: "/api/handled-review-acknowledge"', content_js)
-        self.assertIn("Threadwise will not offer this email again", content_js)
+        result = subprocess.run(
+            ["node", "tests/gmail_companion_review_progression_test.js"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_opening_a_queue_email_in_gmail_keeps_the_review_context_pinned(self) -> None:
         content_js = Path("extensions/gmail_companion/content.js").read_text()

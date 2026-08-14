@@ -134,6 +134,42 @@ class CompanionRuntimeStateTests(unittest.TestCase):
                 build_runtime.call_args.kwargs["allowed_review_message_ids"]
             )
 
+    def test_unchanged_unknown_reconciliation_preserves_cached_harness(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            queued: list = []
+            runtime = _runtime(
+                Path(temp_dir),
+                background_runner=queued.append,
+                live_inbox_ids_loader=Mock(return_value=None),
+            )
+            selected = {"provider": "gmail", "message_id": "message-1"}
+
+            with (
+                patch(
+                    "src.companion_runtime_state.build_companion_runtime_payload",
+                    return_value={"items": []},
+                ) as build_runtime,
+                patch(
+                    "src.companion_runtime_state.build_selected_email_state",
+                    return_value={"found": False},
+                ),
+                patch(
+                    "src.companion_runtime_state.build_daily_summary",
+                    return_value={},
+                ),
+            ):
+                first = runtime.harness(selected)
+                queued.pop(0)()
+                second = runtime.harness(selected)
+
+            self.assertEqual(first["recent_items"], [])
+            self.assertEqual(second["recent_items"], [])
+            build_runtime.assert_called_once_with(
+                Path(temp_dir),
+                provider="gmail",
+                allowed_review_message_ids=None,
+            )
+
     def test_reconciliation_finishing_during_first_build_cannot_cache_stale_queue(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             queued: list = []

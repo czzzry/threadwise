@@ -204,12 +204,20 @@ class CompanionRuntimeState:
         except Exception:
             message_ids = None
         with self._data_lock:
+            previous_message_ids = (
+                self._live_inbox_ids_cache[1]
+                if self._live_inbox_ids_cache is not None
+                else None
+            )
             self._live_inbox_ids_cache = (time.monotonic(), message_ids)
-            self._runtime_payload_cache = None
             self._live_inbox_ids_refreshing = False
-            self._live_inbox_ids_generation += 1
-        with self._harness_lock:
-            self._harness_cache.clear()
+            inbox_ids_changed = previous_message_ids != message_ids
+            if inbox_ids_changed:
+                self._runtime_payload_cache = None
+                self._live_inbox_ids_generation += 1
+        if inbox_ids_changed:
+            with self._harness_lock:
+                self._harness_cache.clear()
 
     def _async_follow_up(self) -> dict | None:
         with self._async_lock:
