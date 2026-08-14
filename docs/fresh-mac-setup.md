@@ -65,7 +65,9 @@ Leaving `THREADWISE_CLASSIFICATION_MODEL` blank keeps initial classification det
 
 The `.env` file is ignored by Git. Never paste its values into an issue, pull request, screenshot, chat, test fixture, or committed file.
 
-## 4. Connect Gmail Privately
+## 4. Connect Providers Privately
+
+### Gmail
 
 GitHub does not carry Gmail access. On the Mac, place the Google OAuth desktop-app download at:
 
@@ -91,6 +93,33 @@ This opens Google's local authorization flow and reads at most one message into 
 
 If Python reports a certificate-verification problem, run the `Install Certificates.command` supplied with your Python installation, then retry.
 
+### Proton Mail (optional)
+
+Sign in to Proton Mail Bridge locally and copy the Bridge-provided IMAP connection values into this ignored file:
+
+```text
+data/protonmail_credentials/protonmail_bridge/founder-proton.json
+```
+
+The existing companion and installed daily schedule use the local account ID `founder-proton`. The file shape is:
+
+```json
+{
+  "host": "<Bridge IMAP host>",
+  "port": "<Bridge IMAP port>",
+  "username": "<Bridge IMAP username>",
+  "password": "<Bridge IMAP password>"
+}
+```
+
+Use the exact host, port, username, and password shown by Bridge; the Bridge password is not the Proton account password. If Bridge specifies STARTTLS, also add `"ssl": false` and `"security": "STARTTLS"`; otherwise `ssl` defaults to `true`. This file is ignored by Git and must never be committed or pasted into a shared channel.
+
+With Bridge running, a bounded read-only check is:
+
+```bash
+python3 scripts/live_protonmail_fetch.py --account-id founder-proton --batch-size 1
+```
+
 ## 5. Start the Companion Manually
 
 From the repo root:
@@ -101,7 +130,7 @@ python3 scripts/run_gmail_companion.py
 
 The companion runs locally at [http://127.0.0.1:8021](http://127.0.0.1:8021). Keep that Terminal window open while testing; stop it with `Control-C`.
 
-The production companion can expose provider write actions. During a setup check, use only the agreed read-only Gmail check and review surfaces. Do not click label, archive, delete, Trash, Spam, unsubscribe, or send actions unless that exact live action has been separately approved.
+The production companion can expose bounded label actions. During a setup check, use only the agreed read-only Gmail check and review surfaces; do not approve a label correction or any other provider write unless that exact live action has been separately approved. Threadwise does not expose archive, delete, Trash, Spam, unsubscribe, or send actions.
 
 ## 6. Load the Brave Extension
 
@@ -109,9 +138,9 @@ The production companion can expose provider write actions. During a setup check
 2. Turn on **Developer mode**.
 3. Click **Load unpacked**.
 4. Select `extensions/gmail_companion` inside this clone.
-5. Open or refresh Gmail. Threadwise should connect to the local companion on port `8021`.
+5. Open or refresh Gmail or Proton Mail. Threadwise should connect to the local companion on port `8021`.
 
-After pulling extension changes, return to `brave://extensions`, click **Reload** on Threadwise, and refresh Gmail. If the clone moves to another folder, remove the old unpacked extension entry and load it again from the new path.
+After pulling extension changes, return to `brave://extensions`, click **Reload** on Threadwise, and refresh the provider tab. If the clone moves to another folder, remove the old unpacked extension entry and load it again from the new path.
 
 ## 7. Install Startup and Menu-Bar Control
 

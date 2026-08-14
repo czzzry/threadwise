@@ -3,11 +3,11 @@
 Status: Current checkpoint
 Current as of: 2026-08-12
 Builds on: `docs/v2-alignment.md`
-Current bounded PRD: `docs/prd.md` for the MVP+1 portfolio demo release
+Current planning authority: `CONTEXT.md` and the PRD or triaged issue it names
 Historical predecessors: `docs/archive/alignment-v1-gmail-mvp.md`, `docs/archive/prd-v1-gmail-mvp.md`, and `docs/archive/mvp-checkpoint-v1-issues-001-027.md`
 Amended by: `docs/issues/139-remove-unsubscribe-and-destructive-suspicious-sender-flows.md`
 
-This checkpoint is the short read for what Threadwise currently proves. The older MVP checkpoint stops at issues `001` through `027`; the repo now includes later slices through `039`.
+This checkpoint is the short read for Threadwise's operating model. `CONTEXT.md` owns the current stage and points to later completed slices and their evidence.
 
 ## Current operating model
 

@@ -1,5 +1,6 @@
-Status: Current contract note
-Current as of: 2026-06-29
+Status: Historical slice-063 contract note
+Historical context as of: 2026-06-29
+Superseded by: `CONTEXT.md` and the current task-specific PRD or triaged issue it names
 Builds on: `docs/prd.md`, `docs/issues/063-gmail-companion-sidebar-spine.md`
 
 # Purpose

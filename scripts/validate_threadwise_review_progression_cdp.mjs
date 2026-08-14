@@ -12,6 +12,7 @@ const onboardingStorageKey = "threadwise_onboarding_state";
 const onboardingVersion = "2026-08-09-v1";
 const requestLogStorageKey = "__tw_review_progression_request_log";
 const pendingAcceptanceOnly = process.env.THREADWISE_REVIEW_PROGRESSION_SCENARIO === "pending-acceptance";
+const recoveryOnly = process.env.THREADWISE_REVIEW_PROGRESSION_SCENARIO === "recovery";
 const seededPageScrollY = 180;
 const seededContentScrollTop = 72;
 const viewports = [
@@ -223,9 +224,30 @@ try {
   await evaluate("window.__reviewProgressionRespondApply('review-b', false)");
   await waitFor(() => evaluate("globalThis.__eaTestHooks.getSnapshot().manualPreviewContext?.message_id === 'review-b' && !globalThis.__eaTestHooks.getSnapshot().optimisticDecision"));
   assert(!(await evaluate("globalThis.__eaTestHooks.getSnapshot().committedReviewIdentities.some((identity) => identity.messageId === 'review-b')")), "a rejected response keeps B eligible");
+  const failureFocus = await activeFocusSnapshot();
+  const failureScrollAfterRollback = await scrollSnapshot();
+  assert(failureFocus.action === "retry-current-apply", "a rejected local response focuses the visible retry action");
+  assertScrollUnchanged(failureScrollBefore, failureScrollAfterRollback, "rejected local response");
+  if (recoveryOnly) {
+    const outputPath = path.join(artifactRoot, "current-apply-retry-756x469.png");
+    await captureScreenshot(outputPath);
+    results.screenshots.push({ state: "current-apply-retry", viewport: "756x469", path: outputPath, containment: await containmentSnapshot() });
+    await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+    await waitFor(() => evaluate("Boolean(document.getElementById('email-agent-companion-root')?.getBoundingClientRect().width)"));
+    const expandedContainment = await containmentSnapshot();
+    assert(expandedContainment.contained, "current apply retry stays contained at 1280x800");
+    const expandedOutputPath = path.join(artifactRoot, "current-apply-retry-1280x800.png");
+    await captureScreenshot(expandedOutputPath);
+    results.screenshots.push({ state: "current-apply-retry", viewport: "1280x800", path: expandedOutputPath, containment: expandedContainment });
+    results.viewportChecks.push({ state: "current-apply-retry", viewport: "1280x800", ...expandedContainment });
+    await send("Emulation.setDeviceMetricsOverride", { width: 756, height: 469, deviceScaleFactor: 1, mobile: false });
+    await seedScroll();
+    await evaluate("document.querySelector('[data-ea-action=retry-current-apply]')?.focus({ preventScroll: true })");
+    results.scrollTrace.push({ step: "rejected-local-response", before: failureScrollBefore, after: failureScrollAfterRollback });
+    results.focusTrace.push({ step: "rejected-local-response", after: failureFocus });
+  }
 
   activeStep = "accepted-retry-opens-next-with-provider-retry-status";
-  await evaluate("document.querySelector('[data-ea-queue-navigation]')?.focus({ preventScroll: true })");
   await pressKey("Enter");
   assert(await evaluate("globalThis.__eaTestHooks.getSnapshot().manualPreviewContext?.message_id === 'review-b'"), "B remains current until the retry is accepted");
   await evaluate("window.__reviewProgressionRespondApply('review-b', true)");
@@ -261,6 +283,7 @@ try {
   await evaluate("window.__reviewProgressionSetAsyncFollowUp(false)");
   await captureViewportSet("provider-failure");
 
+  if (!recoveryOnly) {
   await returnToQueueHomePreservingFilter();
   const providerRetrySurface = await evaluate("({ body: document.body.innerText.slice(-1800), activities: Array.from(document.querySelectorAll('[data-ea-activity-item]')).map((node) => node.textContent), retry: Boolean(document.querySelector('[data-ea-action=retry-provider-write]')) })");
   assert(providerRetrySurface.retry, `provider retry surface is present: ${JSON.stringify(providerRetrySurface)}`);
@@ -604,6 +627,7 @@ try {
     results.responseBoundaryTrace.push(await proveStaleActionResponseIsInert(scenario));
   }
   results.responseBoundaryTrace.push(await proveStaleReconciliationResponseIsInert());
+  }
   }
 
   const requests = await requestTrace();

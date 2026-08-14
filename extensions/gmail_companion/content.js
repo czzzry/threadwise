@@ -1365,10 +1365,12 @@
       return;
     }
     const aggregateState = String(state || providerActivityState(sidebarState) || "").toLowerCase();
+    if (["retry", "error", "failed"].includes(aggregateState)) {
+      optimisticDecision.providerWriteState = aggregateState;
+      optimisticDecision.retryStateLocked = true;
+      return;
+    }
     if (optimisticDecision.retryStateLocked) {
-      if (["retry", "error", "failed"].includes(aggregateState)) {
-        optimisticDecision.providerWriteState = aggregateState;
-      }
       return;
     }
     if (aggregateState) {
@@ -2558,7 +2560,7 @@
       return "future-learning";
     }
     if (currentApplyError) {
-      return "current-apply-error";
+      return queuePreviewActive && manualPreviewContext ? "review" : "current-apply-error";
     }
     if (isCurrentEmailResult()) {
       return currentEmailResultIsPartial() ? "partial-receipt" : "current-receipt";
@@ -3216,6 +3218,7 @@
           </section>
           ${renderPreviousDecisionStatusHtml()}
           ${showingQueuePreview ? renderQueuePreviewNavigationHtml() : ""}
+          ${currentApplyError ? `<div data-ea-current-apply-error role="alert" style="margin-top:12px;border-radius:14px;background:#fde8e6;padding:12px;color:#7f1d1d;line-height:1.45;">${escapeHtml(currentApplyError)}</div>` : ""}
           ${renderSelectedExplanationHtml(selected, workspaceMode, { showEvidence: detailsExpanded })}
           <div data-ea-review-facts aria-label="Review action details">
             <div data-ea-review-fact><span style="color:#6b6255;">Action</span><strong style="text-align:right;">${escapeHtml(facts.action)}</strong></div>
@@ -3223,8 +3226,11 @@
             <div data-ea-review-fact><span style="color:#6b6255;">Scope</span><strong style="text-align:right;">${escapeHtml(facts.scope)}</strong></div>
           </div>
           <div data-ea-review-dock>
-            ${label ? `<button type="button" data-ea-action="accept-suggestion" data-tw-primary-action ${localDecisionPending ? "disabled" : ""} style="height:40px;border:0;background:${localDecisionPending ? "#a9a5ff" : "#635bff"};color:#fff;border-radius:8px;padding:0 12px;cursor:${localDecisionPending ? "wait" : "pointer"};font:inherit;font-weight:680;">${localDecisionPending ? "Saving previous decision…" : finishingProviderUpdate ? `Apply ${escapeHtml(label)}` : `Accept ${escapeHtml(label)}`} <span aria-hidden="true" style="float:right;opacity:.72;">↵</span></button>` : ""}
-            ${label ? "" : '<button type="button" data-ea-action="change-suggestion" data-tw-primary-action style="height:40px;border:0;background:#635bff;color:#fff;border-radius:8px;padding:0 12px;cursor:pointer;font:inherit;font-weight:680;">Choose label <span aria-hidden="true" style="float:right;opacity:.72;">↵</span></button>'}
+            ${currentApplyError
+              ? '<button type="button" data-ea-action="retry-current-apply" data-tw-primary-action style="height:40px;border:0;background:#ffc64a;color:#241812;border-radius:8px;padding:0 12px;cursor:pointer;font:inherit;font-weight:760;">Retry <span aria-hidden="true" style="float:right;opacity:.72;">↵</span></button>'
+              : label
+                ? `<button type="button" data-ea-action="accept-suggestion" data-tw-primary-action ${localDecisionPending ? "disabled" : ""} style="height:40px;border:0;background:${localDecisionPending ? "#a9a5ff" : "#635bff"};color:#fff;border-radius:8px;padding:0 12px;cursor:${localDecisionPending ? "wait" : "pointer"};font:inherit;font-weight:680;">${localDecisionPending ? "Saving previous decision…" : finishingProviderUpdate ? `Apply ${escapeHtml(label)}` : `Accept ${escapeHtml(label)}`} <span aria-hidden="true" style="float:right;opacity:.72;">↵</span></button>`
+                : '<button type="button" data-ea-action="change-suggestion" data-tw-primary-action style="height:40px;border:0;background:#635bff;color:#fff;border-radius:8px;padding:0 12px;cursor:pointer;font:inherit;font-weight:680;">Choose label <span aria-hidden="true" style="float:right;opacity:.72;">↵</span></button>'}
           </div>
         </div>
       `);
@@ -3994,6 +4000,7 @@
     if (!optimisticDecision || optimisticDecision.token?.token !== token?.token) {
       return;
     }
+    const scroll = captureContextScroll();
     forgetCommittedIdentity(token.identity);
     clearOptimisticDecisionStatus();
     applyInFlight = false;
@@ -4001,6 +4008,9 @@
     teachFlowState = "teaching";
     selectedDecisionMode = "review";
     renderState(lastHarnessState || lastSidebarState);
+    restoreContextScroll(scroll);
+    document.querySelector("[data-ea-action='retry-current-apply']")?.focus({ preventScroll: true });
+    restoreContextScroll(scroll);
   }
 
   function markOptimisticDecisionRetry(token) {
@@ -5970,7 +5980,8 @@
     if (retryCurrentApplyButton) {
       event.preventDefault();
       currentApplyError = "";
-      selectedDecisionMode = "preview";
+      selectedDecisionMode = "review";
+      document.querySelector("[data-ea-queue-navigation]")?.focus({ preventScroll: true });
       return startTeachApply("current-only");
     }
     const editCurrentApplyButton = event.target.closest("[data-ea-action='edit-current-apply']");

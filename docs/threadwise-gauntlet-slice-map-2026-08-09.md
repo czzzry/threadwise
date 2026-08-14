@@ -1,7 +1,7 @@
 # Threadwise Gauntlet Slice Map
 
 Status: Current decomposition; only an individually triaged issue is approved for implementation
-Current as of: 2026-08-09
+Current as of: 2026-08-14
 Parent PRD: `docs/prd-threadwise-gauntlet-2026-08-09.md`
 
 Each slice is a thin, demoable path. The Sol helm selects and triages one slice at a time. Each important slice receives a fresh-context Luna builder and a separate fresh-context Luna critic. The critic inspects the real output, names the single largest remaining gap, and either sends that gap into a bounded correction round or declares the slice a win against the applicable bar.
@@ -51,7 +51,7 @@ Each slice is a thin, demoable path. The Sol helm selects and triages one slice 
 7. **Truthful zero and freshness states**
    - Type: AFK
    - Blocked by: Slice 5
-   - Status: Implemented locally on 2026-08-11; fresh critic PASS/SHIP after one bounded truth-projection correction, automated browser evidence complete, LIVE Gmail deferred to a founder-present follow-up
+   - Status: Complete; fresh critic PASS/SHIP, automated browser evidence complete, and LIVE Gmail passed
    - Outcome: Distinguish verified provider Inbox zero, no Threadwise-reviewable items, stale sync, unavailable sync, unsynced mail, and unresolved items remaining.
 
 8. **Compact Home and activity hierarchy**
@@ -64,10 +64,10 @@ Each slice is a thin, demoable path. The Sol helm selects and triages one slice 
    - Blocked by: Slices 2 and 8
    - Outcome: Configure Threadwise density, explanation visibility, onboarding replay, and keyboard help without duplicating Gmail settings or creating a dashboard-first product.
 
-10. **Contextual unsubscribe triage**
-    - Type: AFK
-    - Blocked by: Slices 3 and 4
-    - Outcome: Relevant messages expose a quiet unsubscribe entry point, exact supported/manual route, explicit confirmation, and truthful receipt while preserving the current execution boundary.
+10. **Remove unsubscribe and destructive suspicious-sender actions**
+    - Current issue: `#139`
+    - Status: Complete; this supersedes the original contextual-unsubscribe candidate
+    - Outcome: `List-Unsubscribe` remains classification evidence and `suspicious` remains a non-destructive review label, but no unsubscribe or destructive suspicious-sender action is exposed.
 
 11. **Containment, accessibility, and performance hardening**
     - Type: AFK

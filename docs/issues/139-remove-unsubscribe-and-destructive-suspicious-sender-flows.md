@@ -1,13 +1,13 @@
 # Remove Unsubscribe and Destructive Suspicious-Sender Flows
 
-Status: Triaged and approved for bounded implementation
-Current as of: 2026-08-12
+Status: Complete; automated acceptance passed
+Current as of: 2026-08-13
 Founder approval: Explicitly approved in the active Codex task
 Builds on: `CONTEXT.md`, `docs/v2-alignment.md`, and `docs/prd-threadwise-gauntlet-2026-08-09.md`
 
 ## Problem
 
-Threadwise still exposes unsubscribe as a core product workflow in the Gmail companion and legacy local workbench. It also diverts a Gmail correction to `suspicious` into a destructive provider action that creates a Gmail filter and moves the current message to Trash. These flows are no longer part of the approved product direction.
+At approval time, Threadwise still exposed unsubscribe as a core product workflow in the Gmail companion and legacy local workbench. It also diverted a Gmail correction to `suspicious` into a destructive provider action that created a Gmail filter and moved the current message to Trash. These flows are no longer part of the approved product direction.
 
 ## Bounded outcome
 
@@ -37,8 +37,6 @@ Threadwise still exposes unsubscribe as a core product workflow in the Gmail com
 - Deleting historical unsubscribe artifacts from disk.
 - New provider actions, dependencies, frameworks, or architecture rewrites.
 
-## Validation
+## Completion evidence
 
-- Add highest-seam regression coverage for absent routes and rendered controls.
-- Add a correction regression proving `suspicious` follows the ordinary label-only path.
-- Run the affected Python and JavaScript suites, then `python -m unittest discover -s tests`.
+See `docs/handoff/2026-08-12-core-flow-redesign-and-model-labeling.md` for the validation record shared with issues `#140` and `#141`.

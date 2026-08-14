@@ -110,6 +110,4 @@ The first production slice is a provider-aware, Gmail-first onboarding experienc
 
 ## Further Notes
 
-The August 9 baseline rubric scores the real companion approximately 70/100 and the detached onboarding prototype 17/100. The real companion is strongest in contextual provider state, safe scope, receipts, retries, and recovery. Its largest functional UX gap after onboarding is the absence of a queue-local search and Raycast-style keyboard/contextual action surface.
-
-The first slice therefore closes context-bound activation. The next planned slice combines provider-scoped queue filtering with safe panel-scoped keyboard navigation. Later slices remain decomposed candidates until the preceding critic round establishes their exact biggest gap.
+The August 9 baseline rubric scored the real companion approximately 70/100 and the detached onboarding prototype 17/100. Current slice status and completion evidence are owned by `CONTEXT.md` and `docs/threadwise-gauntlet-slice-map-2026-08-09.md`.
