@@ -1482,10 +1482,31 @@ def infer_label_change_from_note(note: str, current_labels: list[str]) -> dict |
         "job-related": ("job related", "job-related", "work"),
         "reply-needed": ("reply needed", "reply-needed", "needs action"),
         "travel": ("travel",), "personal": ("personal",),
-        "financial-account": ("finance", "financial"),
+        "financial-account": ("financial account", "finance", "financial"),
         "calendar-event": ("calendar",),
     }
-    mentioned = [label for label, names in aliases.items() if any(re.search(rf"\b{re.escape(name)}\b", text) for name in names)]
+    alias_matches: list[tuple[int, int, str]] = []
+    for label, names in aliases.items():
+        for name in names:
+            alias_matches.extend(
+                (match.start(), match.end(), label)
+                for match in re.finditer(rf"\b{re.escape(name)}\b", text)
+            )
+    accepted_matches: list[tuple[int, int, str]] = []
+    ordered_matches = sorted(
+        alias_matches,
+        key=lambda match: (-(match[1] - match[0]), match[0], match[2]),
+    )
+    for start, end, label in ordered_matches:
+        overlaps = any(
+            start < accepted_end and end > accepted_start
+            for accepted_start, accepted_end, _ in accepted_matches
+        )
+        if overlaps:
+            continue
+        accepted_matches.append((start, end, label))
+    accepted_labels = {label for _, _, label in accepted_matches}
+    mentioned = [label for label in aliases if label in accepted_labels]
     if not mentioned:
         return None
     requests_add = bool(re.search(r"\b(?:add|keep.+and add)\b", text))

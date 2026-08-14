@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch
 from src.gmail_writer import MockGmailLabelClient, MockGmailLabelWriter
 from src.proton_teaching_adapter import ProtonTeachingAdapter
 from src.companion_teaching_workflow import TeachingWriteRequest
-from src.teaching_loop import apply_sidebar_teaching, build_sidebar_teach_preview
+from src.teaching_loop import apply_sidebar_teaching, build_sidebar_teach_preview, infer_label_change_from_note
 
 
 class SelectedLabelSetCorrectionTests(unittest.TestCase):
@@ -145,6 +145,24 @@ class SelectedLabelSetCorrectionTests(unittest.TestCase):
                     storage, selected_context={"provider": "gmail", "message_id": "message-1"},
                     target_label="shopping-order", note="add Receipts but remove Receipts", scope="sender",
                 )
+
+    def test_deterministic_note_parser_prefers_complete_label_names(self):
+        self.assertEqual(
+            infer_label_change_from_note("add Financial Account", ["shopping-order"]),
+            {
+                "operation": "add",
+                "source_labels": [],
+                "target_labels": ["financial-account"],
+            },
+        )
+        self.assertEqual(
+            infer_label_change_from_note("add Finance and Account", ["shopping-order"]),
+            {
+                "operation": "add",
+                "source_labels": [],
+                "target_labels": ["account-security", "financial-account"],
+            },
+        )
 
     def test_gmail_writer_requires_exact_readback_and_preserves_unrelated_label(self):
         with tempfile.TemporaryDirectory() as temp:
