@@ -1,12 +1,13 @@
 # Current Operating Model Checkpoint
 
 Status: Current checkpoint
-Current as of: 2026-07-16
+Current as of: 2026-08-12
 Builds on: `docs/v2-alignment.md`
-Current bounded PRD: `docs/prd.md` for the MVP+1 portfolio demo release
+Current planning authority: `CONTEXT.md` and the PRD or triaged issue it names
 Historical predecessors: `docs/archive/alignment-v1-gmail-mvp.md`, `docs/archive/prd-v1-gmail-mvp.md`, and `docs/archive/mvp-checkpoint-v1-issues-001-027.md`
+Amended by: `docs/issues/139-remove-unsubscribe-and-destructive-suspicious-sender-flows.md`
 
-This checkpoint is the short read for what Threadwise currently proves. The older MVP checkpoint stops at issues `001` through `027`; the repo now includes later slices through `039`.
+This checkpoint is the short read for Threadwise's operating model. `CONTEXT.md` owns the current stage and points to later completed slices and their evidence.
 
 ## Current operating model
 
@@ -25,8 +26,8 @@ from Gmail is authoritative even when an older local write receipt is missing.
 4. remove `INBOX` only for `promotions` and `spam-low-value`
 5. write a daily report artifact
 6. leave only unlabeled exceptions for manual follow-up
-7. show the current email, compact daily summary, queue-preview path, teaching preview, and unsubscribe context in the Gmail companion sidebar during real inbox browsing
-8. open a fuller daily dashboard and focused unsubscribe review when the sidebar needs to hand off into a broader operational view
+7. show the current email, compact daily summary, provider-scoped queue preview, teaching preview, and read-only coverage in the Gmail companion sidebar during real inbox browsing
+8. open a fuller daily dashboard when the sidebar needs to hand off into a broader operational view
 
 Manual browser review, explicit review/apply flows, retries, and local inspection commands remain available as fallback and verification paths.
 
@@ -59,8 +60,10 @@ The repo also supports:
 
 - daily per-run operational reports
 - weekly per-inbox analytical reports built from stored daily artifacts
-- local browser workbench flows for exception review and unsubscribe work
+- local browser workbench flows for exception review
 - shadow-label evaluation against reviewed local data
+
+Historical unsubscribe artifacts from the completed `035` through `037` slices remain on disk for audit continuity, but issue `#139` removed their user-reachable UI and execution routes.
 
 ## Proven slice map beyond the original MVP checkpoint
 
@@ -87,15 +90,14 @@ Accepted bounded automation:
 
 - auto-apply current suggested `EA/` labels
 - remove `INBOX` only for Gmail messages labeled `promotions` or `spam-low-value`
-- inventory unsubscribe candidates locally
-- execute only supported unsubscribe actions that the user explicitly selected
+- retain `List-Unsubscribe` only as classification evidence
 
 Still out of scope by default:
 
 - deleting mail
 - trashing mail
 - broad archiving
-- unsubscribing without explicit user choice
+- any unsubscribe execution or user-facing unsubscribe management
 - ProtonMail mutation beyond the bounded, verified, additive label-only review-console operation
 - background scheduling or always-on syncing
 
@@ -105,12 +107,12 @@ Still out of scope by default:
 - Gmail companion sidebar as the primary supervised release surface
 - live selected-email fallback into queue preview from unsynced Gmail messages
 - live `Correct / Teach` preview path with broader-impact confirmation
-- compact in-sidebar daily summary and unsubscribe surfacing
-- fuller daily dashboard route for what changed today, queue buckets, and queued unsubscribe review
+- compact in-sidebar daily summary and provider-scoped coverage
+- fuller daily dashboard route for what changed today and queue buckets
 - daily and weekly report generation
 - provider/account-aware local artifact handling
 - ProtonMail read-only import and live Bridge paths
-- unsubscribe inventory, supported execution, and manual follow-up
+- preserved historical unsubscribe artifacts without reachable product actions
 - browser review / inspection fallback tools
 - shadow-label evaluation tooling
 - maintenance work to split browser-review concerns and tighten local artifact contracts
@@ -126,5 +128,5 @@ Still out of scope by default:
 ## Next documentation needs
 
 - explicit decision notes for provider-specific write boundaries
-- clearer documented rules for unsubscribe safety and manual follow-up
+- continued documentation alignment around the removed unsubscribe boundary
 - incremental-fetch and longer-lived operational decision notes if the founder wants to move from supervised runs toward a more persistent loop

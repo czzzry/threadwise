@@ -41,6 +41,35 @@ CHECKS = {
     ),
 }
 
+SECRET_CHECKS = {
+    "OpenAI API key": re.compile(
+        r"(?<![A-Za-z0-9_-])sk-(?:(?:proj|svcacct|admin)-[A-Za-z0-9_-]{20,}|"
+        r"[A-Za-z0-9]{20,})(?![A-Za-z0-9_-])"
+    ),
+    "Google API key": re.compile(
+        r"(?<![A-Za-z0-9_-])AIza[A-Za-z0-9_-]{35}(?![A-Za-z0-9_-])"
+    ),
+    "Google OAuth client ID": re.compile(
+        r"(?<![A-Za-z0-9_-])\d{12,}-[A-Za-z0-9_-]{20,}"
+        r"\.apps\.googleusercontent\.com\b"
+    ),
+    "Google OAuth client secret": re.compile(
+        r"(?<![A-Za-z0-9_-])GOCSPX-[A-Za-z0-9_-]{20,}(?![A-Za-z0-9_-])"
+    ),
+    "Google OAuth access token": re.compile(
+        r"(?<![A-Za-z0-9_-])ya29\.[A-Za-z0-9_-]{20,}(?![A-Za-z0-9_-])"
+    ),
+    "Google OAuth refresh token": re.compile(
+        r"(?<![A-Za-z0-9_/])1//[A-Za-z0-9_-]{20,}(?![A-Za-z0-9_-])"
+    ),
+}
+
+PLACEHOLDER_MARKER = re.compile(
+    r"(?:\.{3}|x{8,}|abcdefghijklmnopqrstuvwxyz|0123456789|"
+    r"(?:^|[-_.])(?:your|placeholder|redacted|dummy|replace[-_ ]?me)(?:$|[-_.]))",
+    re.IGNORECASE,
+)
+
 EMAIL_ADDRESS = re.compile(
     r"(?P<local>[A-Z0-9._%+-]+)@(?P<domain>[A-Z0-9.-]+\.[A-Z]{2,})",
     re.IGNORECASE,
@@ -54,6 +83,10 @@ RESERVED_SUFFIXES = (".example", ".invalid", ".test")
 CHECK_EXEMPT_PATHS = {
     Path("scripts/check_public_data_hygiene.py"),
     Path("tests/test_public_data_hygiene.py"),
+}
+MACHINE_HOME_CHECK_EXEMPT_PATHS = {
+    Path("tests/test_threadwise_control_installer.py"),
+    Path("tests/test_threadwise_startup.py"),
 }
 
 
@@ -77,14 +110,29 @@ def is_reserved_domain(domain: str) -> bool:
     return normalized in RESERVED_DOMAINS or normalized.endswith(RESERVED_SUFFIXES)
 
 
+def is_documentation_placeholder(candidate: str) -> bool:
+    return bool(PLACEHOLDER_MARKER.search(candidate))
+
+
 def scan_text(path: Path, text: str) -> list[str]:
     violations: list[str] = []
     relative = path.relative_to(ROOT)
     if relative not in CHECK_EXEMPT_PATHS:
         for label, pattern in CHECKS.items():
             for match in pattern.finditer(text):
+                if (
+                    label == "machine-specific home path"
+                    and relative in MACHINE_HOME_CHECK_EXEMPT_PATHS
+                ):
+                    continue
                 line = text.count("\n", 0, match.start()) + 1
                 violations.append(f"{label}: {relative}:{line}")
+    for label, pattern in SECRET_CHECKS.items():
+        for match in pattern.finditer(text):
+            if is_documentation_placeholder(match.group(0)):
+                continue
+            line = text.count("\n", 0, match.start()) + 1
+            violations.append(f"{label}: {relative}:{line}")
 
     if is_public_demo(path):
         for match in EMAIL_ADDRESS.finditer(text):
@@ -105,7 +153,7 @@ def main() -> int:
         if path.name == ".DS_Store":
             violations.append(f"tracked OS metadata: {path.relative_to(ROOT)}")
             continue
-        if path.suffix.lower() not in TEXT_EXTENSIONS:
+        if path.name != ".env.example" and path.suffix.lower() not in TEXT_EXTENSIONS:
             continue
         text = path.read_text(encoding="utf-8", errors="ignore")
         violations.extend(scan_text(path, text))

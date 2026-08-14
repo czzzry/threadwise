@@ -1,0 +1,627 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Threadwise — Raycast × Linear UI prototype</title>
+  <!-- PROTOTYPE ONLY: Which Raycast/Linear hierarchy makes Threadwise feel native, fast, and quiet? Three Gmail-overlay variants switch with ?variant=A|B|C. Run with `make prototype-ui`. -->
+  <style>
+    :root {
+      color-scheme: light;
+      --gmail-bg: #f6f8fc;
+      --gmail-surface: #fff;
+      --gmail-ink: #202124;
+      --gmail-muted: #5f6368;
+      --gmail-line: #e0e3e7;
+      --tw-ink: #1f2328;
+      --tw-muted: #60666f;
+      --tw-faint: #8a9099;
+      --tw-surface: #fff;
+      --tw-subtle: #f6f7f9;
+      --tw-hover: #f0f2f5;
+      --tw-line: #e2e5e9;
+      --tw-line-strong: #cdd2d8;
+      --tw-accent: #635bff;
+      --tw-accent-hover: #554df0;
+      --tw-accent-soft: #efeeff;
+      --tw-success: #16815d;
+      --tw-success-soft: #eaf7f1;
+      --tw-warning: #946200;
+      --tw-warning-soft: #fff5d9;
+      --tw-danger: #b42318;
+      --tw-focus: #1a73e8;
+      --tw-panel: 408px;
+      --switcher-height: 52px;
+      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { min-height: 100%; }
+    body {
+      margin: 0;
+      overflow-x: hidden;
+      background: var(--gmail-bg);
+      color: var(--gmail-ink);
+      font-size: 14px;
+      line-height: 1.4;
+    }
+    button, input { font: inherit; }
+    button { color: inherit; }
+    button:focus-visible, [tabindex]:focus-visible {
+      outline: 2px solid var(--tw-focus);
+      outline-offset: 2px;
+    }
+    .prototype-note {
+      position: fixed;
+      top: 8px;
+      left: 50%;
+      z-index: 30;
+      transform: translateX(-50%);
+      padding: 5px 9px;
+      border-radius: 6px;
+      background: #1f2328;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 650;
+      letter-spacing: .01em;
+    }
+
+    /* A populated Gmail-like host keeps each direction honest about available space. */
+    .gmail {
+      min-height: 100vh;
+      padding-right: calc(var(--tw-panel) + 24px);
+      background: var(--gmail-bg);
+    }
+    .gmail-topbar {
+      height: 64px;
+      display: grid;
+      grid-template-columns: 220px minmax(260px, 680px) 1fr;
+      align-items: center;
+      gap: 20px;
+      padding: 8px 20px;
+    }
+    .gmail-brand { display: flex; align-items: center; gap: 14px; font-size: 21px; color: var(--gmail-muted); }
+    .gmail-menu { width: 20px; display: grid; gap: 4px; }
+    .gmail-menu span { height: 2px; border-radius: 2px; background: #5f6368; }
+    .gmail-mark { font-weight: 700; color: #4285f4; letter-spacing: -.04em; }
+    .gmail-search {
+      height: 46px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 16px;
+      border-radius: 24px;
+      background: #eaf1fb;
+      color: var(--gmail-muted);
+    }
+    .gmail-search span:first-child { font-size: 18px; }
+    .gmail-account { justify-self: end; width: 32px; height: 32px; display: grid; place-items: center; border-radius: 50%; background: #6d4c41; color: #fff; font-weight: 700; }
+    .gmail-body { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 14px; padding: 0 18px 80px 0; }
+    .gmail-nav { padding: 8px 14px 0 8px; }
+    .compose {
+      width: 142px;
+      height: 56px;
+      border: 0;
+      border-radius: 16px;
+      background: #c2e7ff;
+      text-align: left;
+      padding: 0 20px;
+      font-weight: 650;
+    }
+    .gmail-nav-list { display: grid; gap: 2px; margin-top: 16px; }
+    .gmail-nav-item { display: flex; justify-content: space-between; padding: 7px 14px 7px 24px; border-radius: 0 18px 18px 0; color: #3c4043; }
+    .gmail-nav-item.active { background: #d3e3fd; font-weight: 700; }
+    .gmail-main { overflow: hidden; border-radius: 16px; background: var(--gmail-surface); }
+    .gmail-toolbar { height: 48px; display: flex; align-items: center; gap: 22px; padding: 0 18px; border-bottom: 1px solid var(--gmail-line); color: var(--gmail-muted); }
+    .gmail-thread { min-height: 700px; padding: 26px 30px 70px; }
+    .gmail-subject { margin: 0 0 26px; font-size: 22px; font-weight: 500; letter-spacing: -.015em; }
+    .gmail-message-head { display: flex; align-items: center; gap: 12px; }
+    .avatar { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 50%; background: #dfe3e7; color: #4a5058; font-weight: 700; }
+    .sender { font-weight: 650; }
+    .recipient { color: var(--gmail-muted); font-size: 12px; }
+    .timestamp { margin-left: auto; color: var(--gmail-muted); font-size: 12px; }
+    .gmail-copy { max-width: 720px; margin: 30px 0 0 48px; color: #303134; font-size: 15px; line-height: 1.65; }
+    .gmail-copy p { margin: 0 0 16px; }
+    .gmail-document { width: min(460px, 100%); margin-top: 24px; padding: 16px; border: 1px solid var(--gmail-line); border-radius: 8px; color: var(--gmail-muted); }
+
+    .companion {
+      position: fixed;
+      top: 14px;
+      right: 14px;
+      bottom: 78px;
+      z-index: 10;
+      width: var(--tw-panel);
+      overflow: hidden;
+      border: 1px solid var(--tw-line-strong);
+      border-radius: 12px;
+      background: var(--tw-surface);
+      color: var(--tw-ink);
+      box-shadow: 0 4px 8px rgba(31, 35, 40, .12);
+    }
+    .companion button { cursor: pointer; }
+    .tw-header {
+      height: 52px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 14px;
+      border-bottom: 1px solid var(--tw-line);
+      background: rgba(255, 255, 255, .98);
+    }
+    .tw-logo { width: 28px; height: 28px; border-radius: 7px; object-fit: cover; }
+    .tw-brand { font-weight: 720; letter-spacing: -.02em; }
+    .tw-count { color: var(--tw-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+    .tw-header-spacer { flex: 1; }
+    .icon-button {
+      width: 30px;
+      height: 30px;
+      display: grid;
+      place-items: center;
+      border: 0;
+      border-radius: 7px;
+      background: transparent;
+      color: var(--tw-muted);
+    }
+    .icon-button:hover { background: var(--tw-hover); color: var(--tw-ink); }
+    .key {
+      min-width: 20px;
+      height: 20px;
+      display: inline-grid;
+      place-items: center;
+      padding: 0 5px;
+      border: 1px solid #d9dde2;
+      border-bottom-color: #c7ccd2;
+      border-radius: 5px;
+      background: #fff;
+      color: #6e747c;
+      font-size: 10px;
+      font-weight: 650;
+      line-height: 1;
+      box-shadow: 0 1px 0 #e5e7eb;
+    }
+    .primary-button {
+      min-height: 40px;
+      border: 0;
+      border-radius: 8px;
+      background: var(--tw-accent);
+      color: #fff;
+      font-weight: 680;
+      transition: background 160ms ease-out, transform 160ms ease-out;
+    }
+    .primary-button:hover { background: var(--tw-accent-hover); }
+    .primary-button:active { transform: translateY(1px); }
+    .secondary-button {
+      min-height: 36px;
+      border: 1px solid var(--tw-line-strong);
+      border-radius: 8px;
+      background: #fff;
+      font-weight: 620;
+    }
+    .secondary-button:hover { background: var(--tw-hover); }
+    .quiet-button { border: 0; background: transparent; color: var(--tw-muted); font-weight: 600; }
+    .quiet-button:hover { color: var(--tw-ink); }
+    .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--tw-success); }
+    .status-line { display: flex; align-items: center; gap: 7px; color: var(--tw-muted); font-size: 12px; }
+    .saved-line { color: var(--tw-success); }
+
+    /* Variant A — Raycast Focus: one object, one action, everything else in commands. */
+    .focus-layout { height: calc(100% - 52px); display: flex; flex-direction: column; }
+    .focus-progress { height: 2px; background: var(--tw-subtle); }
+    .focus-progress span { display: block; width: 29%; height: 100%; background: var(--tw-accent); transition: width 220ms ease-out; }
+    .focus-main { flex: 1; display: flex; flex-direction: column; padding: 20px; overflow: auto; }
+    .focus-sender { color: var(--tw-muted); font-size: 12px; }
+    .focus-subject { margin: 4px 0 0; font-size: 17px; font-weight: 680; letter-spacing: -.02em; }
+    .focus-read { margin-top: 30px; }
+    .focus-label { display: flex; align-items: center; gap: 8px; }
+    .focus-label strong { font-size: 26px; line-height: 1.15; letter-spacing: -.035em; }
+    .confidence { padding: 3px 7px; border-radius: 999px; background: var(--tw-success-soft); color: var(--tw-success); font-size: 11px; font-weight: 650; }
+    .focus-reason { max-width: 34ch; margin: 9px 0 0; color: var(--tw-muted); font-size: 13px; line-height: 1.5; }
+    .focus-actions { display: grid; gap: 9px; margin-top: auto; padding-top: 26px; }
+    .primary-content { display: flex; align-items: center; justify-content: center; gap: 9px; }
+    .primary-button .key { border-color: rgba(255,255,255,.28); background: rgba(255,255,255,.14); color: #fff; box-shadow: none; }
+    .focus-secondary { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+    .focus-footer { display: flex; align-items: center; justify-content: space-between; padding: 10px 20px; border-top: 1px solid var(--tw-line); color: var(--tw-faint); font-size: 11px; }
+    .key-hint { display: flex; align-items: center; gap: 6px; }
+
+    /* Variant B — Linear Ledger: queue context first, selected-row inspector second. */
+    .ledger-layout { height: calc(100% - 52px); display: flex; flex-direction: column; }
+    .ledger-tabs { display: flex; align-items: center; gap: 18px; height: 43px; padding: 0 14px; border-bottom: 1px solid var(--tw-line); }
+    .ledger-tab { height: 43px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--tw-muted); font-size: 12px; font-weight: 620; }
+    .ledger-tab.active { border-bottom-color: var(--tw-ink); color: var(--tw-ink); }
+    .ledger-list { flex: 1; min-height: 0; overflow: auto; }
+    .mail-item {
+      width: 100%;
+      display: grid;
+      grid-template-columns: 20px minmax(0, 1fr) auto;
+      gap: 9px;
+      align-items: start;
+      padding: 11px 14px;
+      border: 0;
+      border-bottom: 1px solid var(--tw-line);
+      background: #fff;
+      text-align: left;
+    }
+    .mail-item:hover { background: var(--tw-subtle); }
+    .mail-item.selected { background: var(--tw-accent-soft); }
+    .mail-index { color: var(--tw-faint); font-size: 11px; font-variant-numeric: tabular-nums; }
+    .mail-item-subject { display: block; overflow: hidden; font-size: 13px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+    .mail-item-sender { display: block; margin-top: 2px; overflow: hidden; color: var(--tw-muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+    .label-dot { width: 8px; height: 8px; margin-top: 4px; border-radius: 50%; background: #7c72ff; }
+    .label-dot.travel { background: #3b82f6; }
+    .label-dot.receipt { background: #d97706; }
+    .ledger-inspector { padding: 14px; border-top: 1px solid var(--tw-line-strong); background: #fbfbfc; }
+    .ledger-inspector-head { display: flex; align-items: start; gap: 10px; }
+    .ledger-classification { font-weight: 700; }
+    .ledger-reason { margin: 4px 0 0; color: var(--tw-muted); font-size: 12px; }
+    .ledger-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+    .ledger-actions .primary-button { min-height: 36px; }
+
+    /* Variant C — Quiet Hybrid: Gmail-native hierarchy with Raycast actions and Linear density. */
+    .hybrid-layout { height: calc(100% - 52px); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
+    .hybrid-context { padding: 15px 16px 13px; border-bottom: 1px solid var(--tw-line); }
+    .hybrid-context-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .hybrid-context strong { display: block; max-width: 270px; overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+    .hybrid-context small { display: block; margin-top: 2px; color: var(--tw-muted); }
+    .hybrid-progress { display: flex; gap: 3px; margin-top: 12px; }
+    .hybrid-progress span { height: 3px; flex: 1; border-radius: 2px; background: var(--tw-line); }
+    .hybrid-progress span.done { background: var(--tw-accent); }
+    .hybrid-main { display: flex; flex-direction: column; padding: 18px 16px; overflow: auto; }
+    .hybrid-judgment { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: start; }
+    .hybrid-label { font-size: 19px; font-weight: 700; letter-spacing: -.025em; }
+    .hybrid-confidence { color: var(--tw-success); font-size: 11px; font-weight: 650; }
+    .hybrid-sentence { max-width: 38ch; margin: 8px 0 0; color: var(--tw-muted); line-height: 1.5; }
+    .hybrid-details { margin-top: 18px; border-top: 1px solid var(--tw-line); }
+    .detail-row { display: flex; justify-content: space-between; gap: 20px; padding: 10px 0; border-bottom: 1px solid var(--tw-line); font-size: 12px; }
+    .detail-row span:first-child { color: var(--tw-muted); }
+    .detail-row strong { text-align: right; font-weight: 620; }
+    .hybrid-status { margin-top: auto; padding-top: 20px; }
+    .hybrid-dock { display: grid; grid-template-columns: minmax(0, 1fr) 38px; gap: 8px; padding: 12px 14px; border-top: 1px solid var(--tw-line); background: #fff; }
+    .hybrid-more { min-height: 40px; border: 1px solid var(--tw-line-strong); border-radius: 8px; background: #fff; font-size: 18px; }
+    .hybrid-more:hover { background: var(--tw-hover); }
+
+    .command-backdrop {
+      position: absolute;
+      inset: 0;
+      z-index: 20;
+      display: grid;
+      align-items: start;
+      padding: 70px 18px 18px;
+      background: rgba(31, 35, 40, .28);
+    }
+    .command-menu {
+      overflow: hidden;
+      border-radius: 10px;
+      background: #fff;
+      box-shadow: 0 8px 24px rgba(31, 35, 40, .2);
+    }
+    .command-search { padding: 12px 14px; border-bottom: 1px solid var(--tw-line); color: var(--tw-muted); }
+    .command-title { padding: 10px 14px 5px; color: var(--tw-faint); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+    .command-item { width: 100%; display: flex; align-items: center; gap: 9px; padding: 9px 14px; border: 0; background: #fff; text-align: left; }
+    .command-item:hover, .command-item.active { background: var(--tw-accent); color: #fff; }
+    .command-item .key { margin-left: auto; }
+    .command-item:hover .key, .command-item.active .key { border-color: rgba(255,255,255,.3); background: rgba(255,255,255,.16); color: #fff; box-shadow: none; }
+    .command-footer { display: flex; align-items: center; justify-content: space-between; padding: 9px 14px; border-top: 1px solid var(--tw-line); color: var(--tw-faint); font-size: 10px; }
+
+    .prototype-switcher {
+      position: fixed;
+      left: 50%;
+      bottom: 14px;
+      z-index: 40;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      min-height: var(--switcher-height);
+      padding: 7px;
+      border-radius: 12px;
+      background: #1f2328;
+      color: #fff;
+      box-shadow: 0 4px 8px rgba(31, 35, 40, .28);
+      transform: translateX(-50%);
+    }
+    .switcher-button { width: 36px; height: 36px; border: 0; border-radius: 7px; background: #343941; color: #fff; font-size: 18px; }
+    .switcher-button:hover { background: #484f59; }
+    .switcher-copy { min-width: 248px; text-align: center; }
+    .switcher-name { display: block; font-size: 12px; font-weight: 680; }
+    .switcher-state { display: block; margin-top: 1px; color: #b7bec7; font-size: 10px; }
+
+    @media (max-width: 900px) {
+      :root { --tw-panel: min(408px, calc(100vw - 18px)); }
+      .gmail { padding-right: 0; }
+      .gmail-topbar, .gmail-body { opacity: .3; pointer-events: none; }
+      .companion { top: 9px; right: 9px; bottom: 76px; }
+      .prototype-note { display: none; }
+    }
+    @media (max-width: 440px) {
+      .companion { left: 0; top: 0; right: 0; bottom: 68px; width: 100%; border: 0; border-radius: 0; box-shadow: none; }
+      .prototype-switcher { bottom: 7px; width: calc(100% - 14px); justify-content: space-between; }
+      .switcher-copy { min-width: 0; flex: 1; }
+      .gmail { display: none; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="prototype-note">Throwaway prototype · no inbox access or provider writes</div>
+  <div id="gmail-host" class="gmail" aria-hidden="true"></div>
+  <aside id="prototype" class="companion" aria-label="Threadwise prototype"></aside>
+  <nav class="prototype-switcher" aria-label="Prototype variants">
+    <button class="switcher-button" type="button" data-switch="previous" aria-label="Previous variant">←</button>
+    <div class="switcher-copy" aria-live="polite">
+      <span id="switcher-name" class="switcher-name"></span>
+      <span id="switcher-state" class="switcher-state"></span>
+    </div>
+    <button class="switcher-button" type="button" data-switch="next" aria-label="Next variant">→</button>
+  </nav>
+
+  <script>
+    const variants = [
+      { key: "A", name: "Raycast Focus" },
+      { key: "B", name: "Linear Ledger" },
+      { key: "C", name: "Quiet Hybrid · recommended" },
+    ];
+    const emails = [
+      { sender: "Maya Chen", address: "maya@northstar.test", subject: "Contract approval for Q3", label: "Work", confidence: "High", reason: "Ongoing project thread with a requested approval.", dot: "" },
+      { sender: "KLM", address: "updates@klm.test", subject: "Your Berlin flight changed", label: "Travel", confidence: "High", reason: "Itinerary update with a departure-time change.", dot: "travel" },
+      { sender: "Stripe", address: "receipts@stripe.test", subject: "Receipt for Threadwise hosting", label: "Receipts", confidence: "High", reason: "Payment receipt tied to a known subscription.", dot: "receipt" },
+      { sender: "Jon Bell", address: "jon@studio.test", subject: "Re: Design review notes", label: "Work", confidence: "Medium", reason: "Active collaborator thread with unanswered feedback.", dot: "" },
+      { sender: "GitHub", address: "noreply@github.test", subject: "Security alert resolved", label: "Updates", confidence: "High", reason: "Repository notification with no reply needed.", dot: "travel" },
+      { sender: "Lena Ortiz", address: "lena@friend.test", subject: "Dinner next week?", label: "Personal", confidence: "Medium", reason: "Direct personal conversation that needs a reply.", dot: "receipt" },
+      { sender: "Acme Billing", address: "billing@acme.test", subject: "Invoice needs attention", label: "Finance", confidence: "High", reason: "Invoice with an upcoming due date.", dot: "" },
+    ];
+
+    const state = {
+      variant: readVariant(),
+      index: 0,
+      phase: "idle",
+      commandOpen: false,
+    };
+
+    function readVariant() {
+      const wanted = new URLSearchParams(location.search).get("variant")?.toUpperCase();
+      return variants.some((item) => item.key === wanted) ? wanted : "C";
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function currentEmail() { return emails[state.index]; }
+    function progressPercent() { return Math.round(((state.index + 1) / emails.length) * 100); }
+    function currentVariant() { return variants.find((variant) => variant.key === state.variant); }
+
+    function gmailMarkup() {
+      const email = currentEmail();
+      return `
+        <header class="gmail-topbar">
+          <div class="gmail-brand"><span class="gmail-menu"><span></span><span></span><span></span></span><span class="gmail-mark">Gmail</span></div>
+          <div class="gmail-search"><span>⌕</span><span>Search mail</span></div>
+          <div class="gmail-account">C</div>
+        </header>
+        <div class="gmail-body">
+          <nav class="gmail-nav">
+            <button class="compose" type="button">＋&nbsp;&nbsp;Compose</button>
+            <div class="gmail-nav-list">
+              <div class="gmail-nav-item active"><span>Inbox</span><strong>18</strong></div>
+              <div class="gmail-nav-item"><span>Starred</span></div>
+              <div class="gmail-nav-item"><span>Snoozed</span></div>
+              <div class="gmail-nav-item"><span>Sent</span></div>
+              <div class="gmail-nav-item"><span>Drafts</span><strong>3</strong></div>
+            </div>
+          </nav>
+          <main class="gmail-main">
+            <div class="gmail-toolbar"><span>←</span><span>▱</span><span>!</span><span>⌫</span><span>⋮</span></div>
+            <article class="gmail-thread">
+              <h1 class="gmail-subject">${escapeHtml(email.subject)}</h1>
+              <div class="gmail-message-head">
+                <div class="avatar">${escapeHtml(email.sender.charAt(0))}</div>
+                <div><div class="sender">${escapeHtml(email.sender)} <span class="recipient">&lt;${escapeHtml(email.address)}&gt;</span></div><div class="recipient">to me⌄</div></div>
+                <div class="timestamp">10:42 AM</div>
+              </div>
+              <div class="gmail-copy">
+                <p>Hi Cezary,</p>
+                <p>Here is the latest update. Could you take a look when you have a moment?</p>
+                <p>Thanks,<br>${escapeHtml(email.sender.split(" ")[0])}</p>
+                <div class="gmail-document">Attachment · Project update.pdf · 184 KB</div>
+              </div>
+            </article>
+          </main>
+        </div>`;
+    }
+
+    function headerMarkup() {
+      return `
+        <header class="tw-header">
+          <img class="tw-logo" src="../extensions/gmail_companion/assets/brand/threadwise-app-icon.png" alt="Threadwise logo">
+          <span class="tw-brand">Threadwise</span>
+          <span class="tw-count">${state.index + 1} / ${emails.length}</span>
+          <span class="tw-header-spacer"></span>
+          <button class="icon-button" type="button" data-action="commands" aria-label="Open actions">⌘</button>
+          <button class="icon-button" type="button" aria-label="Minimize prototype">−</button>
+        </header>`;
+    }
+
+    function statusMarkup(className = "") {
+      if (state.phase === "saved") {
+        return `<div class="status-line saved-line ${className}" role="status"><span class="status-dot"></span><span>Saved · updating Gmail</span></div>`;
+      }
+      return `<div class="status-line ${className}"><span class="status-dot"></span><span>Ready for review</span></div>`;
+    }
+
+    function focusVariant() {
+      const email = currentEmail();
+      return `${headerMarkup()}
+        <div class="focus-layout">
+          <div class="focus-progress"><span style="width:${progressPercent()}%"></span></div>
+          <main class="focus-main">
+            <div class="focus-sender">${escapeHtml(email.sender)} · ${escapeHtml(email.address)}</div>
+            <h2 class="focus-subject">${escapeHtml(email.subject)}</h2>
+            <section class="focus-read" aria-label="Threadwise read">
+              <div class="focus-label"><strong>${escapeHtml(email.label)}</strong><span class="confidence">${escapeHtml(email.confidence)}</span></div>
+              <p class="focus-reason">${escapeHtml(email.reason)}</p>
+            </section>
+            <div class="focus-actions">
+              ${statusMarkup()}
+              <button class="primary-button" type="button" data-action="accept"><span class="primary-content">Accept ${escapeHtml(email.label)} <span class="key">↵</span></span></button>
+              <div class="focus-secondary">
+                <button class="secondary-button" type="button" data-action="commands">Change label&nbsp;&nbsp;<span class="key">⌘K</span></button>
+                <button class="icon-button" type="button" data-action="commands" aria-label="More actions">•••</button>
+              </div>
+            </div>
+          </main>
+          <footer class="focus-footer"><span class="key-hint"><span class="key">J</span><span class="key">K</span> Navigate</span><span>Review queue</span></footer>
+        </div>`;
+    }
+
+    function ledgerVariant() {
+      const email = currentEmail();
+      const visible = emails.slice(Math.max(0, state.index - 1), Math.min(emails.length, state.index + 4));
+      return `${headerMarkup()}
+        <div class="ledger-layout">
+          <div class="ledger-tabs">
+            <button class="ledger-tab active" type="button">Review&nbsp; ${emails.length - state.index}</button>
+            <button class="ledger-tab" type="button">Activity</button>
+            <span class="tw-header-spacer"></span>
+            <span class="key-hint"><span class="key">J</span><span class="key">K</span></span>
+          </div>
+          <div class="ledger-list" aria-label="Review queue">
+            ${visible.map((item) => {
+              const itemIndex = emails.indexOf(item);
+              return `<button class="mail-item ${itemIndex === state.index ? "selected" : ""}" type="button" data-index="${itemIndex}">
+                <span class="mail-index">${String(itemIndex + 1).padStart(2, "0")}</span>
+                <span><span class="mail-item-subject">${escapeHtml(item.subject)}</span><span class="mail-item-sender">${escapeHtml(item.sender)} · ${escapeHtml(item.label)}</span></span>
+                <span class="label-dot ${escapeHtml(item.dot)}"></span>
+              </button>`;
+            }).join("")}
+          </div>
+          <section class="ledger-inspector" aria-label="Selected email decision">
+            <div class="ledger-inspector-head">
+              <div><div class="ledger-classification">${escapeHtml(email.label)} <span class="confidence">${escapeHtml(email.confidence)}</span></div><p class="ledger-reason">${escapeHtml(email.reason)}</p></div>
+              <button class="icon-button" type="button" data-action="commands" aria-label="More actions">•••</button>
+            </div>
+            <div class="ledger-actions">
+              <button class="primary-button" type="button" data-action="accept">Accept · Next</button>
+              <button class="secondary-button" type="button" data-action="commands">Change</button>
+            </div>
+          </section>
+        </div>`;
+    }
+
+    function hybridVariant() {
+      const email = currentEmail();
+      return `${headerMarkup()}
+        <div class="hybrid-layout">
+          <section class="hybrid-context">
+            <div class="hybrid-context-top"><div><strong>${escapeHtml(email.subject)}</strong><small>${escapeHtml(email.sender)}</small></div><span class="tw-count">${state.index + 1} of ${emails.length}</span></div>
+            <div class="hybrid-progress" aria-label="Review progress">${emails.map((_, index) => `<span class="${index <= state.index ? "done" : ""}"></span>`).join("")}</div>
+          </section>
+          <main class="hybrid-main">
+            <section class="hybrid-judgment">
+              <div><div class="hybrid-label">${escapeHtml(email.label)}</div><p class="hybrid-sentence">${escapeHtml(email.reason)}</p></div>
+              <span class="hybrid-confidence">${escapeHtml(email.confidence)}</span>
+            </section>
+            <div class="hybrid-details">
+              <div class="detail-row"><span>Action</span><strong>Label only</strong></div>
+              <div class="detail-row"><span>Inbox</span><strong>Keep visible</strong></div>
+              <div class="detail-row"><span>Scope</span><strong>This email</strong></div>
+            </div>
+            ${statusMarkup("hybrid-status")}
+          </main>
+          <div class="hybrid-dock">
+            <button class="primary-button" type="button" data-action="accept"><span class="primary-content">Accept ${escapeHtml(email.label)} <span class="key">↵</span></span></button>
+            <button class="hybrid-more" type="button" data-action="commands" aria-label="Open contextual actions">⋯</button>
+          </div>
+        </div>`;
+    }
+
+    function commandMenuMarkup() {
+      if (!state.commandOpen) return "";
+      const email = currentEmail();
+      return `<div class="command-backdrop" data-action="close-commands">
+        <section class="command-menu" role="dialog" aria-modal="true" aria-label="Contextual actions" data-command-menu>
+          <div class="command-search">Actions for “${escapeHtml(email.subject)}”</div>
+          <div class="command-title">Change label</div>
+          ${["Work", "Personal", "Travel", "Receipts"].map((label, index) => `<button class="command-item ${index === 0 ? "active" : ""}" type="button" data-action="choose-label" data-label="${label}"><span>${label}</span>${index === 0 ? '<span class="key">↵</span>' : ""}</button>`).join("")}
+          <div class="command-title">More</div>
+          <button class="command-item" type="button" data-action="noop"><span>Explain this decision</span><span class="key">E</span></button>
+          <button class="command-item" type="button" data-action="noop"><span>Teach future emails</span><span class="key">T</span></button>
+          <footer class="command-footer"><span>↑↓ Navigate</span><span>Esc Close</span></footer>
+        </section>
+      </div>`;
+    }
+
+    function render() {
+      document.getElementById("gmail-host").innerHTML = gmailMarkup();
+      const markup = state.variant === "A" ? focusVariant() : state.variant === "B" ? ledgerVariant() : hybridVariant();
+      document.getElementById("prototype").innerHTML = markup + commandMenuMarkup();
+      document.getElementById("switcher-name").textContent = `${state.variant} — ${currentVariant().name}`;
+      document.getElementById("switcher-state").textContent = `Email ${state.index + 1}/${emails.length} · ${currentEmail().label} · ${state.phase}${state.commandOpen ? " · actions open" : ""}`;
+    }
+
+    function setVariant(next) {
+      state.variant = next;
+      state.commandOpen = false;
+      const url = new URL(location.href);
+      url.searchParams.set("variant", next);
+      history.replaceState({}, "", url);
+      render();
+    }
+
+    function cycleVariant(direction) {
+      const current = variants.findIndex((variant) => variant.key === state.variant);
+      const next = (current + direction + variants.length) % variants.length;
+      setVariant(variants[next].key);
+    }
+
+    function moveEmail(direction) {
+      state.index = (state.index + direction + emails.length) % emails.length;
+      state.phase = "idle";
+      state.commandOpen = false;
+      render();
+    }
+
+    function acceptAndAdvance() {
+      state.phase = "saved";
+      render();
+      window.setTimeout(() => {
+        state.index = (state.index + 1) % emails.length;
+        state.phase = "idle";
+        render();
+      }, 520);
+    }
+
+    document.addEventListener("click", (event) => {
+      const switchButton = event.target.closest("[data-switch]");
+      if (switchButton) return cycleVariant(switchButton.dataset.switch === "next" ? 1 : -1);
+      const indexed = event.target.closest("[data-index]");
+      if (indexed) { state.index = Number(indexed.dataset.index); state.phase = "idle"; return render(); }
+      const action = event.target.closest("[data-action]")?.dataset.action;
+      if (!action) return;
+      if (action === "accept") return acceptAndAdvance();
+      if (action === "commands") { state.commandOpen = true; return render(); }
+      if (action === "close-commands" && !event.target.closest("[data-command-menu]")) { state.commandOpen = false; return render(); }
+      if (action === "choose-label") { state.commandOpen = false; state.phase = "saved"; return render(); }
+    });
+
+    window.addEventListener("keydown", (event) => {
+      const editing = event.target.matches("input, textarea, [contenteditable=true]");
+      if (!editing && event.key === "ArrowLeft") { event.preventDefault(); return cycleVariant(-1); }
+      if (!editing && event.key === "ArrowRight") { event.preventDefault(); return cycleVariant(1); }
+      if (!editing && event.key.toLowerCase() === "j") { event.preventDefault(); return moveEmail(1); }
+      if (!editing && event.key.toLowerCase() === "k" && !(event.metaKey || event.ctrlKey)) { event.preventDefault(); return moveEmail(-1); }
+      if (!editing && event.key.toLowerCase() === "k" && (event.metaKey || event.ctrlKey)) { event.preventDefault(); state.commandOpen = true; return render(); }
+      if (!editing && event.key === "Enter" && !state.commandOpen) { event.preventDefault(); return acceptAndAdvance(); }
+      if (event.key === "Escape" && state.commandOpen) { state.commandOpen = false; return render(); }
+    });
+
+    window.addEventListener("popstate", () => { state.variant = readVariant(); state.commandOpen = false; render(); });
+    render();
+  </script>
+</body>
+</html>

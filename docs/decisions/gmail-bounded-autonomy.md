@@ -1,8 +1,8 @@
 # Gmail Bounded Autonomy
 
 Status: Current decision
-Current as of: 2026-06-23
-Related PRD: `docs/prd.md`
+Current as of: 2026-08-14
+Current planning authority: `CONTEXT.md` and the PRD or triaged issue it names
 
 ## Purpose
 
@@ -46,8 +46,8 @@ These stay outside the automatic boundary:
 - unlabeled exceptions
 - unsupported or uncertain cases
 - failed Gmail writes or failed inbox-removal attempts
-- unsupported unsubscribe flows
-- any ProtonMail provider-side action
+- all unsubscribe execution; `List-Unsubscribe` is classification evidence only
+- ProtonMail provider-side action beyond the separately approved, verified, additive label-only review-console boundary
 - delete, trash, or broad archive behavior
 
 ## Required Recorded Evidence

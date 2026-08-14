@@ -8,6 +8,9 @@
     "suggestion decision made": ["decision_type", "duration_ms"],
     "rule confirmed": ["rule_scope", "affected_count_bucket", "dry_run"],
     "review batch completed": ["reviewed_count_bucket", "duration_ms"],
+    "onboarding shown": ["surface", "onboarding_version", "onboarding_destination"],
+    "onboarding completed": ["surface", "onboarding_version", "onboarding_destination"],
+    "onboarding dismissed": ["surface", "onboarding_version", "onboarding_destination"],
   });
   const SENSITIVE_VALUE = /[^\s@]+@[^\s@]+\.[^\s@]+|\bbearer\s+|\bya29\./i;
   let reviewStartedAt = null;
@@ -100,6 +103,26 @@
     });
   }
 
+  function onboardingEvent(event, onboardingVersion, onboardingDestination) {
+    return capture(event, {
+      surface: "gmail_companion",
+      onboarding_version: onboardingVersion,
+      onboarding_destination: onboardingDestination,
+    });
+  }
+
+  function showOnboarding(onboardingVersion, onboardingDestination) {
+    return onboardingEvent("onboarding shown", onboardingVersion, onboardingDestination);
+  }
+
+  function completeOnboarding(onboardingVersion, onboardingDestination) {
+    return onboardingEvent("onboarding completed", onboardingVersion, onboardingDestination);
+  }
+
+  function dismissOnboarding(onboardingVersion, onboardingDestination) {
+    return onboardingEvent("onboarding dismissed", onboardingVersion, onboardingDestination);
+  }
+
   globalThis.ThreadwiseAnalytics = Object.freeze({
     bucketCount,
     openExtension,
@@ -108,5 +131,8 @@
     decideSuggestion,
     confirmRule,
     completeReviewBatch,
+    showOnboarding,
+    completeOnboarding,
+    dismissOnboarding,
   });
 })();

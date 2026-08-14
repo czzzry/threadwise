@@ -1,23 +1,21 @@
 # Threadwise Product Overview
 
 Status: Public product overview
-Current as of: 2026-07-21
+Current as of: 2026-08-14
 
 ## One-Line Summary
 
-Threadwise is a local-first AI inbox triage prototype that combines rules, model-assisted classification, inbox-native correction, and explicit human approval before broader provider-side action.
+Threadwise is a local-first AI inbox triage prototype that combines rules, optional model-assisted classification, inbox-native correction, and explicit human approval before broader provider-side action.
 
-## Product Walkthrough
+## Product Demo
 
-![Threadwise product walkthrough](assets/threadwise-recruiter-story.gif)
+The [hosted synthetic demo](https://czzzry.github.io/threadwise/) shows the current core product loop without setup or provider access. The [README](../README.md) owns the current demo entry point.
 
-The recorded walkthrough above uses synthetic Gmail-style data and shows the core product loop without requiring setup. The [README](../README.md) owns the current recorded and interactive demo entry points.
-
-- Threadwise classifies and explains a selected Gmail message.
+- Threadwise classifies and explains a selected Gmail-style message.
 - The user teaches a correction in plain English.
 - The agent previews broader impact before changing matching emails.
-- Unsubscribe cleanup waits for explicit confirmation.
-- The final roadmap frame shows inbox-agnostic direction as future work, not shipped scope.
+- The demo makes explicit current-message, future-only, matching-message, and cancel outcomes.
+- Synthetic receipts never claim real provider access or mutation.
 
 ## Problem
 
@@ -34,7 +32,7 @@ Threadwise focuses on the middle ground: useful automation with visible boundari
 ## What It Does Today
 
 - Runs a Gmail-first triage workflow for one person’s inbox
-- Classifies messages using deterministic rules plus model-assisted logic
+- Classifies messages using deterministic rules plus explicitly configured, review-only model assistance
 - Writes bounded Gmail labels back to the provider
 - Removes Gmail `INBOX` only for already-approved low-value categories
 - Shows a browser-based inbox companion beside Gmail
@@ -42,9 +40,11 @@ Threadwise focuses on the middle ground: useful automation with visible boundari
 - Lets the user correct the agent in context
 - Previews when a correction would affect other existing emails
 - Requires confirmation before wider existing-message changes
+- Advances review quickly while background writes retain truthful receipt, retry, and reconciliation state
+- Checks Gmail coverage read-only and keeps review queues provider-scoped
+- Supports exact one-to-three-label selected-email `only`, `add`, `remove`, and `replace` corrections
 - Produces daily and weekly local reports
 - Supports ProtonMail read-only import/live-fetch plus a bounded label-only Bridge review console
-- Builds unsubscribe inventory and supports explicit, auditable follow-up
 
 ## Workflow
 
@@ -68,10 +68,10 @@ flowchart TD
 Threadwise is organized around trust boundaries:
 
 - **Fetch and normalize:** provider-specific fetchers pull mail into local stored batches. Gmail is the primary write-capable release target; the [current operating checkpoint](checkpoints/current-operating-model-2026-06-22.md) owns the exact provider write boundaries.
-- **Classify with layers:** deterministic rules and accepted teaching memory run first. Optional OpenAI Chat Completions paths exist for evaluation/runtime escalation when a model is explicitly configured.
-- **Store evidence locally:** batches, review decisions, reports, write status, unsubscribe candidates, and teaching memory are local artifacts so runs can be inspected and replayed.
+- **Classify with layers:** deterministic rules and accepted teaching memory run first. Explicit configuration can add review-only initial model suggestions or optional evaluation/runtime escalation.
+- **Store evidence locally:** batches, review decisions, reports, write status, and teaching memory are local artifacts so runs can be inspected and replayed. Historical unsubscribe artifacts remain preserved but are not exposed as current product actions.
 - **Show decisions in context:** the Gmail companion sidebar explains the selected email and exposes correction where the user sees the mistake.
-- **Gate provider actions:** label writes, limited `INBOX` removal, broader rewrites, and unsubscribe execution are bounded by explicit rules and approvals.
+- **Gate provider actions:** label writes and limited `INBOX` removal are bounded by explicit rules and approvals. Broader rewrites require preview and approval; unsubscribe execution and destructive suspicious-sender actions are unavailable.
 
 This is intentionally not a generic autonomous agent platform. The architecture prioritizes user control, auditability, and a credible single-user inbox workflow.
 
@@ -85,7 +85,7 @@ Current boundaries:
 - Broader changes to existing email require confirmation first.
 - Gmail actions are bounded to label write-back and limited `INBOX` removal for approved low-value categories.
 - ProtonMail writes are limited to the bounded, verified label-only review-console operation.
-- Unsubscribe actions are explicit and auditable.
+- `List-Unsubscribe` is classification evidence only; no unsubscribe action is exposed.
 - Delete, trash, broad archive, send, and reply automation are out of scope.
 - This repo does not claim phishing detection or security-grade classification.
 
@@ -95,7 +95,7 @@ The work represented here includes:
 
 - product direction for a human-in-the-loop inbox agent rather than a dashboard-only workflow
 - workflow design for correction, preview, confirmation, and bounded learning
-- practical automation across Gmail, reporting, unsubscribe inventory, and ProtonMail read and bounded label-only review flows
+- practical automation across Gmail, reporting, and ProtonMail read and bounded label-only review flows
 - local browser companion and acceptance harness work
 - classification feedback loops that combine deterministic logic with model-assisted judgment
 - documentation, checkpoints, and decision-making around trust boundaries
@@ -105,7 +105,6 @@ The work represented here includes:
 - The product remains a local-first prototype; only the synthetic demo is hosted
 - Single-user focus, not team/shared inboxes
 - Gmail is the main release target; ProtonMail expansion beyond the approved review-console boundary is not implemented
-- Static screenshot packaging remains a follow-up
 - Historical planning and handoff material remains available for traceability, while the README and current product docs provide the shortest path through the project
 - Some operational tooling is intentionally rough because it exists to prove workflows, not to present a finished commercial product
 
@@ -117,15 +116,15 @@ The work represented here includes:
 - not a shipping-ready multi-tenant architecture
 - not proof of enterprise deployment or large-scale ML operations
 
-## Recorded Walkthrough Assets
+## Historical Recorded Walkthrough Assets
 
-- Primary README GIF: `docs/assets/threadwise-recruiter-story.gif`
+These June 2026 capture assets predate the removal of unsubscribe actions and are retained only as historical design evidence. They are not current product demos.
+
+- Former primary README GIF: `docs/assets/threadwise-recruiter-story.gif`
 - Selected slower/prominent variant: `docs/assets/threadwise-recruiter-story-v2-slower-prominent.gif`
 - Saved baseline variant: `docs/assets/threadwise-recruiter-story-v1-liked-baseline.gif`
 - Capture stage: `docs/assets/demo-stage/threadwise-recruiter-story-stage.html`
 - Capture script: `scripts/capture_threadwise_recruiter_story_asset.mjs`
-
-Static screenshots can still be added after the GIF direction is fully accepted in README context.
 
 ## Recommended Reading Order
 

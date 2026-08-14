@@ -128,10 +128,10 @@ async function probeHealth() {
 }
 
 function apiTimeoutMs(path) {
-  if (path === "/api/gmail-check-run" || path === "/api/provider-sync-run") {
+  if (path === "/api/gmail-coverage-check" || path === "/api/gmail-check-run" || path === "/api/provider-sync-run") {
     return PROVIDER_SYNC_TIMEOUT_MS;
   }
-  if (path === "/api/teach-apply" || path === "/api/safety-apply") {
+  if (path === "/api/teach-apply") {
     return GMAIL_MUTATION_TIMEOUT_MS;
   }
   return HARNESS_STATE_TIMEOUT_MS;
@@ -140,6 +140,30 @@ function apiTimeoutMs(path) {
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (!message) {
     return false;
+  }
+
+  if (message.type === "email-agent:probe-health") {
+    probeHealth()
+      .then((connectionState) => {
+        sendResponse({
+          ok: connectionState.kind === "ready",
+          error: connectionState.kind === "ready" ? "" : "Threadwise is unavailable.",
+          connection_state: connectionState,
+        });
+      })
+      .catch((error) => {
+        sendResponse({
+          ok: false,
+          error: String(error),
+          connection_state: {
+            kind: "helper-unreachable",
+            label: "Helper unreachable",
+            details: String(error),
+            health_path: HEALTH_PATH,
+          },
+        });
+      });
+    return true;
   }
 
   if (message.type === "email-agent:get-state") {

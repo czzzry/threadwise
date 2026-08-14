@@ -44,78 +44,36 @@ from src.unsubscribe_execution import UnsubscribeExecutor
 
 
 class GmailCompanionUiTests(unittest.TestCase):
-    def test_suspicious_cannot_use_ordinary_teach_apply_path(self) -> None:
-        with self.assertRaisesRegex(ValueError, "safety"):
-            GmailCompanionApp(Path("/tmp/example")).teach_apply({
-                "selected_context": {"provider": "gmail", "message_id": "phish-1"},
-                "target_label": "suspicious",
-                "note": "phishing",
-                "mode": "current-only",
-            })
+    def setUp(self) -> None:
+        self._private_model_environment = patch.dict(
+            "os.environ",
+            {"EMAIL_AGENT_OPENAI_API_KEY": "", "OPENAI_API_KEY": ""},
+        )
+        self._private_model_environment.start()
+        self.addCleanup(self._private_model_environment.stop)
 
-    def test_suspicious_preview_uses_authoritative_selected_sender_and_exact_sender_default(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            storage_dir = Path(temp_dir)
-            self._write_batch(
-                storage_dir,
-                "founder-test-batch-1",
-                [{
-                    "source": "gmail",
-                    "account_id": "founder-test",
-                    "message_id": "phish-1",
-                    "sender": "Fake delivery <bait@bad.example>",
-                    "subject": "Delivery suspended",
-                    "review_state": "pending",
-                    "final_labels": [],
-                    "applied_labels": [],
-                }],
-            )
+    def test_removed_unsubscribe_and_safety_routes_return_not_found(self) -> None:
+        app = GmailCompanionApp(Path("/tmp/example"))
 
-            preview = GmailCompanionApp(storage_dir).safety_preview({
-                "selected_context": {"provider": "gmail", "message_id": "phish-1"},
-                "scope": "sender",
-                "sender": "attacker-controlled@different.example",
-            })
+        for method, path in (
+            ("GET", "/unsubscribe-review"),
+            ("GET", "/simulator"),
+            ("POST", "/api/unsubscribe-select-current"),
+            ("POST", "/api/unsubscribe-candidates/selections"),
+            ("POST", "/api/safety-preview"),
+            ("POST", "/api/safety-apply"),
+        ):
+            handler = _FakeRequestHandler(path, method=method, json_body={})
+            app.handle_request(handler)
+            self.assertEqual(handler.code, 404, path)
+            self.assertEqual(json.loads(handler.wfile.value), {"error": "Not found"})
 
-            self.assertEqual(preview["match"], "bait@bad.example")
-            self.assertTrue(preview["requires_confirmation"])
+        self.assertNotIn("unsubscribe-review", app.health_status()["capabilities"])
 
-    def test_suspicious_apply_requests_safety_scope_and_applies_confirmed_action(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            storage_dir = Path(temp_dir)
-            self._write_batch(
-                storage_dir,
-                "founder-test-batch-1",
-                [{
-                    "source": "gmail",
-                    "account_id": "founder-test",
-                    "message_id": "phish-1",
-                    "sender": "Fake delivery <bait@bad.example>",
-                    "subject": "Delivery suspended",
-                    "review_state": "pending",
-                    "final_labels": [],
-                    "applied_labels": [],
-                }],
-            )
-            gmail_client = MockGmailLabelClient()
-            gmail_client.create_trash_filter = lambda match, label_id: "filter-1"
-            gmail_client.trash_message = lambda message_id: gmail_client.calls.append(("trash_message", message_id))
-            gmail_client.delete_filter = lambda filter_id: gmail_client.calls.append(("delete_filter", filter_id))
-            requested_scopes = []
-
-            def factory(account_id, credentials_dir, client_secret_path, required_scope):
-                requested_scopes.append(required_scope)
-                return gmail_client
-
-            result = GmailCompanionApp(storage_dir, gmail_client_factory=factory).safety_apply({
-                "selected_context": {"provider": "gmail", "message_id": "phish-1"},
-                "scope": "sender",
-                "confirmed": True,
-            })
-
-            self.assertEqual(result["status"], "applied")
-            self.assertIn("gmail.settings.basic", requested_scopes[0])
-            self.assertIn(("trash_message", "phish-1"), gmail_client.calls)
+        root = _FakeRequestHandler("/", method="GET")
+        app.handle_request(root)
+        self.assertEqual(root.code, 200)
+        self.assertNotIn("unsubscribe", root.wfile.value.decode("utf-8").lower())
 
     def test_review_queue_refreshes_five_amazon_variants_without_turning_security_into_orders(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -257,7 +215,12 @@ class GmailCompanionUiTests(unittest.TestCase):
                 gmail_client_factory=lambda *args, **kwargs: gmail_client,
                 live_inbox_reconciliation_enabled=True,
             )
+            queued: list = []
+            app._runtime_state._background_runner = queued.append
 
+            state = app.harness_state({})
+            self.assertEqual(len(queued), 1)
+            queued[0]()
             state = app.harness_state({})
 
             self.assertEqual(
@@ -310,25 +273,17 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("return itemThreadId === current.threadId;", content_js)
 
     def test_handled_receipt_offers_a_direct_looks_right_next_action(self) -> None:
-        content_js = Path("extensions/gmail_companion/content.js").read_text()
+        repo_root = Path(__file__).resolve().parent.parent
 
-        self.assertIn('data-ea-action="confirm-handled-and-next"', content_js)
-        self.assertIn("Looks right · Next", content_js)
-        self.assertIn("confirmHandledAndOpenNext", content_js)
-        self.assertIn('confirmHandledButton.textContent = "Opening next…"', content_js)
-        self.assertIn("currentBelongsToActiveQueue ? activeSummaryFilter", content_js)
-        self.assertIn("Product actions must continue even when optional analytics is unavailable.", content_js)
-        self.assertIn('path: "/api/handled-review-acknowledge"', content_js)
-        self.assertIn("Threadwise will not offer this email again", content_js)
+        result = subprocess.run(
+            ["node", "tests/gmail_companion_review_progression_test.js"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
 
-    def test_current_email_apply_reconciles_an_uncertain_transport_result(self) -> None:
-        content_js = Path("extensions/gmail_companion/content.js").read_text()
-
-        self.assertIn("reconcileCurrentApplyAfterTransportFailure", content_js)
-        self.assertIn('type: "email-agent:get-state"', content_js)
-        self.assertIn('selected.details?.write_status === "applied"', content_js)
-        self.assertIn("sameMessage && appliedLabel === targetLabel && writeApplied", content_js)
-        self.assertIn("Threadwise confirmed the completed Gmail change after reconnecting.", content_js)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_opening_a_queue_email_in_gmail_keeps_the_review_context_pinned(self) -> None:
         content_js = Path("extensions/gmail_companion/content.js").read_text()
@@ -373,7 +328,6 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("remainingNeedsAttentionItems().length > 0", receipt_body)
         self.assertIn('data-ea-action="open-needs-attention"', receipt_body)
         self.assertIn("Next email", receipt_body)
-        self.assertIn("Review queue complete.", receipt_body)
 
     def test_completed_receipt_does_not_pin_the_previous_gmail_message(self) -> None:
         content_js = Path("extensions/gmail_companion/content.js").read_text()
@@ -401,7 +355,7 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn('title: filter === "needs_attention_items" ? "Review queue complete"', content_js)
 
     def test_new_gmail_selection_leaves_home_for_a_reading_transition_immediately(self) -> None:
-        content_js = Path("extensions/gmail_companion/content.js").read_text()
+        content_js = Path("extensions/gmail_companion/content.js").read_text(encoding="utf-8")
 
         self.assertIn("renderSelectedEmailTransition(context)", content_js)
         self.assertIn("Reading this email…", content_js)
@@ -611,7 +565,7 @@ class GmailCompanionUiTests(unittest.TestCase):
             })
 
     def test_extension_renders_rule_before_requesting_deferred_inbox_impact(self) -> None:
-        content_js = Path("extensions/gmail_companion/content.js").read_text()
+        content_js = Path("extensions/gmail_companion/content.js").read_text(encoding="utf-8")
 
         self.assertIn('path: "/api/teach-preview-impact"', content_js)
         self.assertIn("Checking matching inbox emails…", content_js)
@@ -730,7 +684,7 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertTrue(preview["inbox_backfill"]["requires_confirmation"])
 
     def test_apply_included_writes_only_explicitly_reviewed_message_ids(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=sys.platform == "win32") as temp_dir:
             storage_dir = Path(temp_dir)
             gmail_client = MockGmailLabelClient(
                 search_results_by_query={
@@ -764,6 +718,7 @@ class GmailCompanionUiTests(unittest.TestCase):
                 result = GmailCompanionApp(
                     storage_dir,
                     gmail_client_factory=lambda account_id, credentials_dir, client_secret_path, required_scope: gmail_client,
+                    background_runner=lambda work: work(),
                 ).teach_apply(
                     {
                         "selected_context": {"provider": "gmail", "message_id": "amazon-shipment"},
@@ -796,6 +751,7 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("\\u0026", encoded)
         self.assertEqual(json.loads(encoded), [hostile_key])
 
+    @unittest.skip("Removed unsubscribe product flow; covered by route-absence regression.")
     def test_unsubscribe_page_embeds_candidate_keys_in_script_safe_json(self) -> None:
         hostile_key = "gmail:test:</script><script>window.pwned=1</script>&@example.com"
         app = GmailCompanionApp(Path("/tmp/example"))
@@ -871,6 +827,119 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertFalse(selected["found"])
         self.assertEqual(selected["status"], "not-in-snapshot")
         self.assertEqual(selected["status_label"], "Not in local snapshot")
+
+    def test_selected_email_details_normalize_only_stored_explanation_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                [{
+                    "source": "gmail",
+                    "account_id": "founder-test",
+                    "message_id": "evidence-1",
+                    "sender": "Manager <manager@example.com>",
+                    "subject": "Approval needed",
+                    "interpretation": "A manager asks for a same-day approval.",
+                    "review_state": "pending",
+                    "final_labels": ["job-related"],
+                    "applied_labels": [],
+                    "confidence_band": "HIGH",
+                    "near_misses": ["promotions", "promotions", "not-a-label", "travel"],
+                    "matched_teachable_rules": [{"id": "rule-1"}, {"id": "rule-2"}],
+                }],
+            )
+
+            selected = build_selected_email_state(
+                storage_dir,
+                [],
+                {"provider": "gmail", "message_id": "evidence-1"},
+            )
+
+        self.assertEqual(selected["rationale"], "A manager asks for a same-day approval.")
+        self.assertEqual(selected["details"]["confidence_band"], "high")
+        self.assertEqual(selected["details"]["near_misses"], ["promotions", "travel"])
+        self.assertEqual(selected["details"]["matched_rule_count"], 2)
+        self.assertEqual(selected["details"]["write_status"], "")
+        self.assertEqual(selected["details"]["inbox_status"], "")
+        self.assertEqual(selected["details"]["matched_rule_ids"], ["rule-1", "rule-2"])
+
+    def test_selected_email_details_project_only_compact_initial_decision_provenance(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                [{
+                    "source": "gmail",
+                    "account_id": "founder-test",
+                    "message_id": "model-evidence-1",
+                    "sender": "Unknown <unknown@example.com>",
+                    "subject": "Please review",
+                    "interpretation": "A personal note that may need a reply.",
+                    "review_state": "pending",
+                    "final_labels": [],
+                    "applied_labels": [],
+                    "near_misses": ["personal"],
+                    "decision_provenance": {
+                        "decision_source": "model",
+                        "llm_used": True,
+                        "llm_model": "gpt-test",
+                        "llm_confidence": "medium",
+                        "llm_abstained": False,
+                        "llm_failed": False,
+                        "api_key": "must-not-project",
+                        "prompt": "must-not-project",
+                    },
+                }],
+            )
+
+            selected = build_selected_email_state(
+                storage_dir,
+                [],
+                {"provider": "gmail", "message_id": "model-evidence-1"},
+            )
+
+        self.assertEqual(selected["details"]["decision_provenance"], {
+            "decision_source": "model",
+            "llm_used": True,
+            "llm_model": "gpt-test",
+            "llm_confidence": "medium",
+            "llm_abstained": False,
+            "llm_failed": False,
+        })
+        self.assertNotIn("api_key", selected["details"]["decision_provenance"])
+        self.assertNotIn("prompt", selected["details"]["decision_provenance"])
+
+    def test_selected_email_details_do_not_promote_invalid_confidence_or_near_miss_values(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                [{
+                    "source": "gmail",
+                    "account_id": "founder-test",
+                    "message_id": "evidence-2",
+                    "sender": "Unknown <unknown@example.com>",
+                    "subject": "Unresolved message",
+                    "review_state": "pending",
+                    "final_labels": [],
+                    "applied_labels": [],
+                    "confidence_band": "certain",
+                    "near_misses": ["", "bogus", "travel", "travel"],
+                }],
+            )
+
+            selected = build_selected_email_state(
+                storage_dir,
+                [],
+                {"provider": "gmail", "message_id": "evidence-2"},
+            )
+
+        self.assertEqual(selected["rationale"], "")
+        self.assertEqual(selected["details"]["confidence_band"], "")
+        self.assertEqual(selected["details"]["near_misses"], ["travel"])
 
     def test_selected_email_understanding_state_progresses_from_reading_to_ready(self) -> None:
         context = {
@@ -1071,11 +1140,9 @@ class GmailCompanionUiTests(unittest.TestCase):
         content_js = (
             Path(__file__).parent.parent / "extensions" / "gmail_companion" / "content.js"
         ).read_text()
-
         self.assertIn('selected.status === "write-unconfirmed"', content_js)
         self.assertIn('data-ea-action="accept-suggestion"', content_js)
         self.assertIn("Apply ${escapeHtml(label)}", content_js)
-        self.assertIn("Finish ${escapeHtml(activeProviderName())} update", content_js)
         self.assertIn('["needs-attention", "write-unconfirmed"].includes(selected?.status)', content_js)
 
     def test_extension_keeps_refreshing_until_selected_email_is_ready(self) -> None:
@@ -1089,12 +1156,12 @@ class GmailCompanionUiTests(unittest.TestCase):
 
     def test_extension_uses_harness_state_and_clickable_summary_filters(self) -> None:
         repo_root = Path(__file__).resolve().parent.parent
-        background_js = (repo_root / "extensions" / "gmail_companion" / "background.js").read_text()
-        content_js = (repo_root / "extensions" / "gmail_companion" / "content.js").read_text()
+        background_js = (repo_root / "extensions" / "gmail_companion" / "background.js").read_text(encoding="utf-8")
+        content_js = (repo_root / "extensions" / "gmail_companion" / "content.js").read_text(encoding="utf-8")
         provider_adapter_js = (
             repo_root / "extensions" / "gmail_companion" / "provider_adapter.js"
-        ).read_text()
-        manifest = json.loads((repo_root / "extensions" / "gmail_companion" / "manifest.json").read_text())
+        ).read_text(encoding="utf-8")
+        manifest = json.loads((repo_root / "extensions" / "gmail_companion" / "manifest.json").read_text(encoding="utf-8"))
 
         self.assertIn("/api/harness-state", background_js)
         self.assertIn("/api/health", background_js)
@@ -1162,10 +1229,6 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("#ea-panel [data-tw-primary-action]", content_js)
         self.assertIn(":focus-visible", content_js)
         self.assertIn('id="ea-header-tagline"', content_js)
-        self.assertIn("founderFeedbackVisible = false", content_js)
-        self.assertIn("setFounderFeedbackVisible", content_js)
-        self.assertIn("!minimized && founderFeedbackVisible", content_js)
-        self.assertIn("grid-template-columns: 36px minmax(0, 1fr) auto", content_js)
         self.assertIn('chrome.runtime.getURL("assets/brand/threadwise-app-icon.png")', content_js)
         self.assertIn("open Threadwise", content_js)
         self.assertIn("Check again", content_js)
@@ -1187,7 +1250,6 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("Needs attention", content_js)
         self.assertIn("Health check failed", content_js)
         self.assertIn("Wrong service on port", content_js)
-        self.assertIn("Reconnect Threadwise before teaching corrections.", content_js)
         self.assertIn("Threadwise has not synced this email yet.", content_js)
         refresh_selection = content_js.split("function refreshSelection", 1)[1].split(
             "function asyncFollowUpIsWorking", 1
@@ -1196,13 +1258,10 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("Threadwise can explain emails it has already synced.", content_js)
         self.assertIn("`Run ${activeProviderName()} sync now`", content_js)
         self.assertIn("/api/provider-sync-run", content_js)
-        self.assertIn("Connection details", content_js)
         self.assertNotIn("This email is not in the current local sync.", content_js)
         self.assertIn("Current Queue", content_js)
         self.assertIn("Previous interpretation", content_js)
         self.assertIn("data-ea-previous-preview", content_js)
-        self.assertIn("Review unsubscribe candidates", content_js)
-        self.assertIn("select-unsubscribe", content_js)
         self.assertIn("Report details", content_js)
         self.assertIn("What Changed Today", content_js)
         self.assertIn("Decision source", content_js)
@@ -1287,8 +1346,6 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertNotIn('data-ea-apply="save-future-rule"', content_js)
         self.assertIn("Keep discussing", content_js)
         self.assertIn("Choose a label or describe the correction", content_js)
-        self.assertIn("Threadwise currently applies one EA label at a time", content_js)
-        self.assertIn("explicitMultiLabelRequest", content_js)
         self.assertIn("teachDraft.targetLabel = previewTargetLabel", content_js)
         self.assertIn("teachPreview?.target_label || teachPreview?.proposed_label", content_js)
         self.assertIn("manualPreviewOriginContext = lastLiveContext ? { ...lastLiveContext } : null", content_js)
@@ -1299,18 +1356,10 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn('title: filter === "needs_attention_items" ? "Review queue complete"', content_js)
         self.assertNotIn('selectedDecisionConflict = "Choose a label before previewing the change."', content_js)
         self.assertIn("Fix this email only updates the message you are reviewing.", content_js)
-        self.assertIn("Queue unsubscribe review", content_js)
         self.assertIn("Clear draft", content_js)
         self.assertIn("box-shadow:none", content_js)
-        self.assertIn("Open queued review", content_js)
-        self.assertIn('data-ea-unsubscribe-card="true"', content_js)
-        self.assertIn('data-ea-unsubscribe-action="queue"', content_js)
-        self.assertIn('data-ea-unsubscribe-action="review"', content_js)
-        self.assertIn("const canOpenUnsubscribeUrl = unsubscribePreview", content_js)
-        self.assertIn('unsubscribePreview.status !== "ready"', content_js)
-        self.assertIn('unsubscribePreview.url.startsWith("mailto:")', content_js)
+        self.assertNotIn("Open queued review", content_js)
         self.assertIn("data-ea-changed-item", content_js)
-        self.assertIn("Queued subscriptions", content_js)
         self.assertIn("Preview closest synced match", content_js)
         self.assertIn("data-ea-related-item", content_js)
         self.assertIn("open-needs-attention", content_js)
@@ -1379,19 +1428,6 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn('"https://mail.google.com/*", "https://mail.proton.me/*"', background_js)
         self.assertIn("chrome.tabs.reload(tab.id)", background_js)
         self.assertIn("await chrome.storage.local.set", background_js)
-
-    def test_suspicious_preview_routes_to_the_dedicated_destructive_confirmation(self) -> None:
-        content_js = (Path(__file__).parent.parent / "extensions" / "gmail_companion" / "content.js").read_text()
-        preview_success = content_js.split("function previewTeach()", 1)[1].split(
-            "function previewSafety", 1
-        )[0]
-
-        self.assertIn('previewTargetLabel === "suspicious"', preview_success)
-        self.assertIn('previewSafety("sender")', preview_success)
-        self.assertIn('data-ea-action="confirm-safety-action"', content_js)
-        self.assertIn("Label, trash, and protect future mail", content_js)
-        self.assertIn('path: "/api/safety-apply"', content_js)
-        self.assertIn("confirmed: true", content_js)
 
     def test_companion_script_runs_from_repo_root_without_pythonpath(self) -> None:
         repo_root = Path(__file__).resolve().parent.parent
@@ -1491,12 +1527,12 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("Possible rule amendment", page)
         self.assertIn("Previous interpretation", page)
         self.assertIn("data-previous-preview", page)
-        self.assertIn("Review unsubscribe candidates", page)
+        self.assertNotIn("Review unsubscribe candidates", page)
         self.assertIn("Report details", page)
         self.assertIn("What Changed Today", page)
         self.assertIn("Correct / Teach", page)
         self.assertIn("Local harness mode is backed by real synced inbox artifacts", page)
-        self.assertIn("Queued subscriptions", page)
+        self.assertNotIn("Queued subscriptions", page)
         self.assertIn("Preview closest synced match", page)
         self.assertIn("Show details", page)
         self.assertIn("Open daily dashboard", page)
@@ -1532,7 +1568,9 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("Fix + inbox", page)
         self.assertIn("Apply to inbox?", page)
         self.assertIn("What changed", page)
-        self.assertIn("Subscription cleanup", page)
+        self.assertNotIn("Subscription cleanup", page)
+        self.assertNotIn("/api/unsubscribe-select-current", page)
+        self.assertNotIn("select-unsubscribe", page)
         self.assertNotIn("Report details", page)
         self.assertNotIn("What Changed Today", page)
         self.assertNotIn("Correct / Teach", page)
@@ -1576,6 +1614,7 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn('"Gmail label applied. Removed from Inbox."', page)
         self.assertNotIn('<div class="eyebrow">Agent View</div>', page)
 
+    @unittest.skip("Removed unsubscribe product flow; covered by route-absence regression.")
     def test_unsubscribe_review_page_lists_candidates(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
@@ -1646,6 +1685,7 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertNotIn("Open unsubscribe link", page)
             self.assertIn("All candidates: 2", page)
 
+    @unittest.skip("Removed unsubscribe product flow; covered by route-absence regression.")
     def test_unsubscribe_review_page_does_not_open_one_click_https_directly(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
@@ -1693,6 +1733,7 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertNotIn("Open unsubscribe link", page)
             self.assertIn("data-unsubscribe-batch-bar hidden", page)
 
+    @unittest.skip("Removed unsubscribe product flow; covered by route-absence regression.")
     def test_unsubscribe_review_groups_each_candidate_once_in_ready_queued_manual_order(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
@@ -1797,6 +1838,7 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertIn("Queued Store", queued_group)
             self.assertNotIn("Ready Store", queued_group)
 
+    @unittest.skip("Removed unsubscribe product flow; covered by route-absence regression.")
     def test_unsubscribe_selection_endpoint_persists_only_selection_and_invalidates_cache(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
@@ -1864,6 +1906,7 @@ class GmailCompanionUiTests(unittest.TestCase):
             invalidate.assert_called_once_with()
             execute.assert_not_called()
 
+    @unittest.skip("Removed unsubscribe product flow; covered by route-absence regression.")
     def test_unsubscribe_batch_bar_is_selection_only_and_mobile_ready(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
@@ -1927,6 +1970,7 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertNotIn("Execute selected", page)
             self.assertNotIn("Unsubscribe now", page)
 
+    @unittest.skip("Removed unsubscribe product flow; covered by route-absence regression.")
     def test_unsubscribe_selection_endpoint_rejects_non_list_and_non_subset_payloads(self) -> None:
         app = GmailCompanionApp(Path("/tmp/example"))
         invalid_lists = _FakeRequestHandler(
@@ -2032,10 +2076,9 @@ class GmailCompanionUiTests(unittest.TestCase):
             section_markers = [
                 'data-dashboard-section="needs-review"',
                 'data-dashboard-section="activity"',
-                'data-dashboard-section="subscriptions"',
                 'data-dashboard-section="proton-review"',
             ]
-            self.assertEqual([page.count(marker) for marker in section_markers], [1, 1, 1, 1])
+            self.assertEqual([page.count(marker) for marker in section_markers], [1, 1, 1])
             self.assertEqual(
                 sorted(page.index(marker) for marker in section_markers),
                 [page.index(marker) for marker in section_markers],
@@ -2044,10 +2087,10 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertNotIn('data-dashboard-section="auto-handled"', page)
             self.assertNotIn('data-dashboard-section="recent-queue"', page)
             self.assertEqual(page.count("<details data-dashboard-diagnostics"), 1)
-            self.assertIn("Open unsubscribe review", page)
+            self.assertNotIn("Open unsubscribe review", page)
             self.assertIn("Open Proton review", page)
             self.assertIn("<main data-dashboard-shell>", page)
-            self.assertEqual(page.count("data-dashboard-primary-action"), 3)
+            self.assertEqual(page.count("data-dashboard-primary-action"), 2)
             self.assertIn(".action--primary", page)
             self.assertIn(":focus-visible", page)
             self.assertIn("padding:clamp(8px,3vw,28px)", page)
@@ -2083,8 +2126,13 @@ class GmailCompanionUiTests(unittest.TestCase):
                 ],
             )
             app = GmailCompanionApp(storage_dir, live_inbox_reconciliation_enabled=True)
+            queued: list = []
+            app._runtime_state._background_runner = queued.append
 
             with patch.object(app._runtime_state, "_live_inbox_ids_loader", return_value={"still-in-inbox"}):
+                app.render_daily_dashboard_page()
+                self.assertEqual(len(queued), 1)
+                queued[0]()
                 page = app.render_daily_dashboard_page()
 
             needs_review = page.split('data-dashboard-section="needs-review"', 1)[1].split(
@@ -2555,6 +2603,38 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertEqual(handler.code, 200)
             self.assertEqual(payload["status"], "succeeded")
 
+    def test_gmail_coverage_endpoint_is_separate_and_read_only(self) -> None:
+        class CoverageService:
+            def __init__(self):
+                self.calls = []
+
+            def check(self, account_id):
+                self.calls.append(account_id)
+                return {
+                    "status": "verified-clear",
+                    "checked_count": 42,
+                    "needs_review_count": 0,
+                    "scope": "Current Gmail Inbox messages",
+                    "gmail_mutation": "none",
+                }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = CoverageService()
+            app = GmailCompanionApp(Path(temp_dir), gmail_coverage_service=service)
+            handler = _FakeRequestHandler(
+                "/api/gmail-coverage-check",
+                method="POST",
+                json_body={"account_id": "founder-test"},
+            )
+
+            app.handle_request(handler)
+            payload = json.loads(handler.wfile.value.decode("utf-8"))
+
+            self.assertEqual(handler.code, 200)
+            self.assertEqual(service.calls, ["founder-test"])
+            self.assertEqual(payload["status"], "verified-clear")
+            self.assertEqual(payload["gmail_mutation"], "none")
+
     def test_attention_rule_proposal_endpoints_preview_and_approve_without_gmail_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
@@ -2838,6 +2918,7 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertEqual(saved[0]["selected_email"]["status"], "needs-attention")
             self.assertNotIn("body", saved[0]["selected_email"])
 
+    @unittest.skip("Removed unsubscribe product flow; covered by route-absence regression.")
     def test_unsubscribe_review_page_can_focus_candidate_opened_from_inbox(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
@@ -2961,9 +3042,8 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertEqual(state["selected_email"]["status"], "auto-handled")
             self.assertEqual(state["selected_email"]["status_label"], "Auto-handled")
             self.assertEqual(state["selected_email"]["reason"], "Promotional mail from a recurring sender.")
-            self.assertTrue(state["selected_email"]["unsubscribe_available"])
-            self.assertEqual(state["selected_email"]["unsubscribe"]["display_name"], "Store")
-            self.assertIn("list_key=gmail%3Afounder-test%3Anews%40example.com", state["selected_email"]["unsubscribe"]["handoff_path"])
+            self.assertNotIn("unsubscribe_available", state["selected_email"])
+            self.assertNotIn("unsubscribe", state["selected_email"])
             self.assertEqual(state["selected_email"]["details"]["write_status"], "applied")
             self.assertEqual(state["selected_email"]["details"]["inbox_status"], "applied")
             self.assertIn(state["selected_email"]["understanding_state"], {"reading", "understanding"})
@@ -3577,6 +3657,7 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertEqual(preview["semantic_rule"]["semantic_pattern"], "")
             self.assertEqual(preview["plain_english_rule"], "Treat future messages from mary@example.com as EA/Personal.")
 
+    @unittest.skip("Removed unsubscribe product flow; covered by route-absence regression.")
     def test_unsubscribe_select_current_queues_candidate(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
@@ -3712,7 +3793,7 @@ class GmailCompanionUiTests(unittest.TestCase):
 
             self.assertEqual(summary["label_writes_count"], 1)
             self.assertEqual(summary["inbox_removed_count"], 1)
-            self.assertEqual(summary["selected_unsubscribe_count"], 1)
+            self.assertNotIn("selected_unsubscribe_count", summary)
             self.assertEqual(summary["candidate_pending_count"], 1)
             self.assertEqual(summary["candidate_promoted_count"], 1)
             self.assertEqual(len(summary["items"]), 2)
@@ -3720,9 +3801,8 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertEqual(summary["items"][1]["change_group"], "Removed from inbox")
             self.assertEqual(summary["groups"][0]["label"], "Labels written")
             self.assertEqual(summary["groups"][1]["label"], "Removed from inbox")
-            self.assertEqual(summary["selected_unsubscribe_examples"][0]["display_name"], "Store")
+            self.assertNotIn("selected_unsubscribe_examples", summary)
             self.assertEqual(summary["candidate_examples"][0]["title"], "Teach another sender family")
-            self.assertIn("list_key=gmail%3Afounder-test%3Anews%40example.com", summary["selected_unsubscribe_examples"][0]["handoff_path"])
 
     def test_teach_apply_matching_existing_relabels_current_without_saving_rule(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -4113,7 +4193,7 @@ class GmailCompanionUiTests(unittest.TestCase):
             )
 
     def test_teach_apply_apply_included_backfills_matching_inbox_messages(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=sys.platform == "win32") as temp_dir:
             storage_dir = Path(temp_dir)
             gmail_client = MockGmailLabelClient(
                 search_results_by_query={
@@ -4290,10 +4370,12 @@ class GmailCompanionUiTests(unittest.TestCase):
                 ],
             )
 
-            result = GmailCompanionApp(
+            app = GmailCompanionApp(
                 storage_dir,
                 gmail_client_factory=lambda account_id, credentials_dir, client_secret_path, required_scope: gmail_client,
-            ).teach_apply(
+            )
+            app._runtime_state._background_runner = lambda work: work()
+            result = app.teach_apply(
                 {
                     "selected_context": {
                         "provider": "gmail",
@@ -4385,10 +4467,12 @@ class GmailCompanionUiTests(unittest.TestCase):
                 ],
             )
 
-            result = GmailCompanionApp(
+            app = GmailCompanionApp(
                 storage_dir,
                 gmail_client_factory=lambda account_id, credentials_dir, client_secret_path, required_scope: gmail_client,
-            ).teach_apply(
+            )
+            app._runtime_state._background_runner = lambda work: work()
+            result = app.teach_apply(
                 {
                     "selected_context": {
                         "provider": "gmail",
@@ -4553,6 +4637,9 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertEqual(payload["dashboard_path"], "/daily-dashboard#run-gmail-check")
             self.assertEqual(payload["health_path"], "/api/health")
             self.assertFalse(payload["analytics_enabled"])
+            self.assertIn("llm_review", payload)
+            self.assertIn(payload["llm_review"]["status"], {"configured", "unavailable"})
+            self.assertNotIn("sk-", json.dumps(payload["llm_review"]))
             self.assertEqual(payload["storage_summary"]["storage_dir_name"], storage_dir.name)
             self.assertEqual(payload["storage_summary"]["batch_count"], 1)
             self.assertEqual(payload["storage_summary"]["report_count"], 0)

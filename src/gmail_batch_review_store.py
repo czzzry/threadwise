@@ -10,14 +10,14 @@ from src.trusted_sender_store import TrustedSenderStore
 
 
 class GmailBatchReviewStore(StoredBatchReviewStore):
-    def __init__(self, storage_dir: Path) -> None:
+    def __init__(self, storage_dir: Path, classifier: object | None = None) -> None:
         super().__init__(storage_dir)
-        self._classifier = FixtureBatchClassifier(
+        self._classifier = classifier or FixtureBatchClassifier(
             fixtures_dir=self._storage_dir,
             trusted_personal_senders=TrustedSenderStore(self._storage_dir).load_or_rebuild(),
         )
 
-    def to_review_queue(self, stored_batch: dict) -> dict:
+    def to_review_queue(self, stored_batch: dict, *, reclassify: bool = True) -> dict:
         items = stored_batch["items"]
         if stored_batch.get("raw_messages"):
             existing_items = {item["message_id"]: item for item in stored_batch["items"]}
@@ -29,7 +29,11 @@ class GmailBatchReviewStore(StoredBatchReviewStore):
                 )
                 for raw_message in stored_batch["raw_messages"]
             ]
-            reclassified_queue = self._classifier.classify_messages(stored_batch["batch_id"], normalized_messages)
+            reclassified_queue = (
+                self._classifier.classify_messages(stored_batch["batch_id"], normalized_messages)
+                if reclassify
+                else {"items": stored_batch["items"]}
+            )
             normalized_by_id = {message["message_id"]: message for message in normalized_messages}
             rules = self.load_rules()
             items = []
@@ -93,4 +97,10 @@ class GmailBatchReviewStore(StoredBatchReviewStore):
         for field in ("review_state", "review_action", "final_labels", "actionability"):
             if field in existing_item:
                 merged_item[field] = existing_item[field]
+        existing_provenance = existing_item.get("decision_provenance") or {}
+        refreshed_labels = refreshed_item.get("final_labels") or refreshed_item.get("applied_labels") or []
+        if not refreshed_labels and existing_provenance.get("decision_source") in {"model", "model-failure"}:
+            for field in ("near_misses", "decision_provenance", "interpretation", "confidence_band"):
+                if field in existing_item:
+                    merged_item[field] = existing_item[field]
         return merged_item

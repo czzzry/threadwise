@@ -88,7 +88,7 @@ class ThreadwiseStartupTests(unittest.TestCase):
             payload["ProgramArguments"],
             [
                 "/opt/python/bin/python3",
-                str(repo_root / "scripts" / "daily_live_protonmail_run.py"),
+                str((repo_root / "scripts" / "daily_live_protonmail_run.py").resolve()),
                 "--account-id",
                 "founder-proton",
                 "--batch-size",

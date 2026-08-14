@@ -1,5 +1,6 @@
-Status: Current coordination note
-Current as of: 2026-06-29
+Status: Historical coordination note for slices 057–066
+Historical context as of: 2026-06-29
+Superseded by: `AGENTS.md`, `CONTEXT.md`, and the current task-specific PRD or triaged issue
 Owner slice: `docs/issues/062-define-multi-agent-boundaries-for-llm-assisted-inbox-work.md`
 Builds on: `docs/prd.md`, `docs/issues/057-freeze-multi-inbox-eval-contract-and-contamination-rules.md`
 Scope: Coordination only. This note does not define evaluation semantics or runtime behavior.

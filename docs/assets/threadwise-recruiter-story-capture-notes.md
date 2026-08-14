@@ -1,7 +1,8 @@
 # Threadwise Recruiter Story Capture Notes
 
-Status: Selected public README asset
-Current as of: 2026-06-30
+Status: Historical capture notes; asset removed from the current README
+Historical context as of: 2026-06-30
+Superseded by: the hosted synthetic demo linked from `README.md`
 
 Generated assets:
 
@@ -15,7 +16,7 @@ Capture method:
 - 10 fps source capture, 9.6s source timeline retimed to roughly 14.4s, output GIF scaled to 960px wide
 - one calm story covering selected email, teach correction, approval, unsubscribe confirmation, and roadmap
 
-Founder decision:
+Historical founder decision:
 
 - The slower, more prominent narration treatment is the selected README/promotional GIF direction.
 

@@ -32,8 +32,6 @@ from src.operational_readiness import write_operational_readiness_report
 from src.safety_disposition_store import SafetyDispositionStore, build_safety_disposition
 from src.teachable_rule_memory import TeachableRuleMemory, parse_teaching_instruction, preview_teachable_rule
 from src.unified_review_queue import UnifiedReviewQueue
-from src.unsubscribe_execution import UnsubscribeExecutor
-from src.unsubscribe_inventory_store import UnsubscribeInventoryStore
 
 
 DEFAULT_STORAGE_DIR = Path("data/gmail_fetch")
@@ -172,8 +170,6 @@ class LocalBrowserReviewApp(LocalBrowserReviewRenderingMixin):
         self._batch_id = batch_id
         self._store = GmailBatchReviewStore(storage_dir)
         self._candidate_store = CandidateChangeStore(candidate_changes_path(storage_dir))
-        self._unsubscribe_store = UnsubscribeInventoryStore(storage_dir)
-        self._unsubscribe_executor = UnsubscribeExecutor(storage_dir)
         self._fetch_batch_fn = fetch_batch_fn
         self._account_id = account_id
         self._run_shadow_eval_fn = run_shadow_eval_fn
@@ -404,32 +400,6 @@ class LocalBrowserReviewApp(LocalBrowserReviewRenderingMixin):
                 return HTTPStatus.OK, self._disable_teachable_rule(requested_rule_id, body or {})
             except KeyError:
                 return HTTPStatus.NOT_FOUND, {"error": "Unknown teachable rule id"}
-
-        if parsed.path == "/api/unsubscribe-candidates" and method == "GET":
-            return HTTPStatus.OK, {"candidates": self._unsubscribe_store.list_candidates()}
-
-        if parsed.path == "/api/unsubscribe-candidates/selections" and method == "POST":
-            try:
-                saved_candidates = self._unsubscribe_store.save_selection_states(
-                    body.get("candidate_keys", []),
-                    body.get("selected_candidate_keys", []),
-                )
-            except Exception as exc:
-                return HTTPStatus.INTERNAL_SERVER_ERROR, {"error": f"Could not save unsubscribe selections: {exc}"}
-            return HTTPStatus.OK, {"saved_count": len(saved_candidates), "candidates": saved_candidates}
-
-        if parsed.path == "/api/unsubscribe-executions/preview" and method == "POST":
-            return HTTPStatus.OK, self._unsubscribe_executor.preview_selected_candidates()
-
-        if parsed.path == "/api/unsubscribe-executions" and method == "POST":
-            if (body or {}).get("confirmation") != "UNSUBSCRIBE":
-                return HTTPStatus.CONFLICT, {
-                    "error": "Execution requires explicit confirmation. Type UNSUBSCRIBE to continue."
-                }
-            try:
-                return HTTPStatus.OK, self._unsubscribe_executor.execute_selected_candidates()
-            except Exception as exc:
-                return HTTPStatus.INTERNAL_SERVER_ERROR, {"error": f"Could not execute unsubscribes: {exc}"}
 
         requested_evaluation_id = _requested_evaluation_id(parsed.path)
         if requested_evaluation_id is not None and method == "GET":

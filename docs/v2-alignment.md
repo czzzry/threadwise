@@ -1,17 +1,28 @@
 # V2 Alignment
 
 Status: Current product-direction alignment
-Current as of: 2026-08-01
+Current as of: 2026-08-12
 Builds on: `docs/archive/alignment-v1-gmail-mvp.md` and `docs/archive/prd-v1-gmail-mvp.md` as historical Gmail V1 artifacts
 Completed bounded milestone: `docs/archive/prd-memory-runtime-milestone-completed-2026-06-29.md`
-Current bounded PRD: `docs/prd.md` for MVP+2 Gmail daily usefulness
+Current product-direction PRD: `docs/prd-threadwise-gauntlet-2026-08-09.md`
 Implementation checkpoint: `docs/checkpoints/current-operating-model-2026-06-22.md`
+Amended by: `docs/issues/139-remove-unsubscribe-and-destructive-suspicious-sender-flows.md`
 
 Threadwise is the public-facing project name for this repo.
 
+## August 9 world-class triage Gauntlet decision
+
+The founder has approved a continuing Gauntlet Loop to make Threadwise a world-class email-triage product. The existing Threadwise logo and the Gmail-overlay architecture are fixed. Threadwise must not become a separate inbox application, and AI auto-response, email writing, reply, forward, compose, and send behavior are excluded.
+
+Mail-0/Zero is the functionality bar, adapted to a Gmail overlay rather than copied as an inbox client. Grammarly is the contextual-intelligence bar, Refined GitHub the host-native extension bar, Raycast the contextual-action and keyboard bar, and Linear only the compact configuration reference.
+
+The detailed product contract and judgeable test seams are in `docs/prd-threadwise-gauntlet-2026-08-09.md`. The smallest-slice decomposition is in `docs/threadwise-gauntlet-slice-map-2026-08-09.md`. Each important slice uses a fresh builder and separate fresh critic; only individually triaged slices are approved for implementation.
+
+`CONTEXT.md` and the Gauntlet slice map own current slice status and completion evidence.
+
 ## August 2026 provider-parity decision
 
-The founder has approved a universal Threadwise side panel with one shared in-panel review experience as the next product direction.
+The founder has approved a universal Threadwise side panel with one shared in-panel review experience as the provider-parity direction.
 
 Threadwise must present one user experience across Gmail and ProtonMail. It should automatically appear in a minimized state on both providers and expand only when the founder opens it. The existing Gmail interaction model is the initial parity baseline, while shared improvements may change both providers together.
 
@@ -23,11 +34,11 @@ The bounded product contract is recorded in `docs/prd-universal-threadwise-exper
 
 ## Mature product direction
 
-V2 should turn the current Gmail-only autonomous labeling workflow into a browser-based, teachable inbox agent for one person's inboxes.
+V2 evolves the Gmail-first labeling workflow into a browser-based, teachable inbox agent for one person's provider-scoped inboxes.
 
 The goal is not to jump straight to full automation everywhere. The goal is to pair a daily automation backbone with an inbox-native teaching loop, so the user can correct the agent in context and the agent can safely learn from that feedback.
 
-Unsubscribe management is part of the mature product. It is not a side utility.
+Unsubscribe management is no longer part of the product. `List-Unsubscribe` remains classification evidence only; historical local artifacts are preserved, but no unsubscribe UI or execution route is available.
 
 ## Current product state
 
@@ -38,17 +49,17 @@ The repo already proves more than the original Gmail MVP:
 - weekly per-inbox analytical reports
 - provider/account-aware local run artifacts
 - ProtonMail import, live fetch, daily run paths, and a first bounded label-only review console through Bridge
-- unsubscribe inventory, supported execution, and manual follow-up paths
+- preserved historical unsubscribe artifacts with their former UI and execution paths removed
 - local browser review and inspection tools for exceptions and spot checks
 
-This means V2 is no longer "build daily reports, then weekly reports, then ProtonMail." Those slices already exist in the repo. The Gmail release product surface and recruiter-ready portfolio package now exist. The current MVP+2 job is to make the Gmail daily loop more useful before ProtonMail expansion resumes.
+This means V2 is no longer "build daily reports, then weekly reports, then ProtonMail." Those slices already exist in the repo. The Gmail release product surface and recruiter-ready portfolio package now exist. `CONTEXT.md` owns the current execution stage and next approved slice.
 
 ## Target User
 
 - one user
 - managing their own inboxes
 - first release target: one Gmail inbox
-- later product expansion target after the Gmail daily-use loop is stronger: add that same person's ProtonMail inbox
+- second supported provider: that same person's ProtonMail inbox under its narrower label-only write boundary
 - not a team product
 - not a shared-inbox workflow
 
@@ -86,7 +97,7 @@ The first serious release surface should be:
 - a browser-based inbox companion sidebar attached to Gmail
 - minimizable when not needed
 - showing the currently selected email's classification, status, and a short plain-English reason
-- exposing `Correct / Teach` and unsubscribe actions when relevant
+- exposing `Correct / Teach` with explicit current-email and broader-impact scope
 - supporting short conversational acknowledgments and clarifying follow-up only when needed
 
 The sidebar should be robust and inbox-adjacent now, while preserving an architecture that could evolve toward a more magical thread-native feel later.
@@ -104,7 +115,7 @@ V2 should not force a merged unified inbox model first.
 
 The product should be able to tell the user what happened in Gmail and what happened in ProtonMail separately, even if both runs happen on the same day.
 
-The first launch target should still be Gmail-first. ProtonMail belongs after the recruiter-ready portfolio demo, not as a blocker to the first serious Gmail release or its public packaging.
+Gmail remains the first acceptance surface. ProtonMail follows the same shared interaction contract while retaining its narrower label-only write boundary.
 
 ## Reporting model
 
@@ -129,7 +140,7 @@ In the mature product, the daily dashboard should emphasize:
 - how the agent categorized it
 - what it auto-handled
 - what still needs attention
-- what unsubscribe opportunities it found
+- what provider-scoped coverage was verified and how fresh it is
 
 Learning progress can appear as a small secondary section, but should not dominate the daily view.
 
@@ -152,7 +163,6 @@ Current accepted autonomy:
 
 - auto-apply all current suggested `EA/` labels
 - remove `INBOX` only for `spam-low-value` and `promotions` in Gmail
-- build unsubscribe inventory locally and execute only supported unsubscribe actions that the user explicitly selected
 - leave unlabeled or unsupported exceptions for manual handling
 
 Still out of scope for default autonomy:
@@ -160,7 +170,7 @@ Still out of scope for default autonomy:
 - deleting mail
 - trashing mail
 - archiving mail broadly
-- unsubscribing from lists without explicit user selection or confirmation
+- any unsubscribe execution or user-facing unsubscribe management
 - ProtonMail label replacement, moving, archiving, Trash, Spam, sending, or provider-side filter/rule management. Daily Proton runs may add and read back suggested `EA/` labels only for medium/high-confidence classifications while preserving Inbox; low-confidence, unlabeled, and failed-verification items require review.
 
 ## Teaching Loop Rules
@@ -187,17 +197,9 @@ Prompting should stay bounded:
 
 Above that, the agent should batch and summarize instead of continuing to interrupt.
 
-## Remaining roadmap
+## Directional roadmap
 
-Near-term product work now looks more like:
-
-1. ship the Gmail inbox companion sidebar as the primary product surface
-2. make in-inbox `Correct / Teach` conversational and immediate
-3. keep the daily dashboard and unsubscribe flows aligned with that inbox-native surface
-4. use the current workbench/review infrastructure as supporting product plumbing, not the destination UX
-5. package the Gmail release as a recruiter-ready portfolio demo
-6. make the Gmail daily loop genuinely useful with a teachable Needs attention lane and product-triggered Gmail check flow
-7. add the same user's second-provider inbox after the Gmail daily-use loop and public demo story are solid
+Keep hardening the Gmail daily-use loop, provider-scoped review, and public story, then close the remaining live Proton acceptance and parity work. `CONTEXT.md` and the Gauntlet slice map own implementation sequence and current completion status.
 
 ## Non-goals for now
 
@@ -208,6 +210,7 @@ Do not assume immediate priority for:
 - merged cross-provider inbox UX
 - generic provider framework work beyond what the workflow actually needs
 - deleting or archiving mail automatically
+- unsubscribe execution or user-facing unsubscribe management
 
 Do not let the product drift into:
 

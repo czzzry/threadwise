@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 import threading
 import time
 from http.client import HTTPException
@@ -11,17 +12,19 @@ from urllib.parse import parse_qs, urlparse
 
 from src.attention_feedback import record_attention_feedback
 from src.gmail_automation import run_daily_gmail_automation
+from src.fixture_classifier import FixtureBatchClassifier
+from src.gmail_initial_classifier import configure_initial_classifier
 from src.gmail_cli_support import default_gmail_client_factory
 from src.gmail_run_control import load_gmail_dashboard_run_status, trigger_dashboard_gmail_check
+from src.gmail_coverage import GmailCoverageService
 from src.founder_feedback import record_founder_feedback
 from src.attention_rules import (
     approve_attention_rule_proposal,
     build_attention_rule_proposal,
     reject_attention_rule_proposal,
 )
-from src.gmail_safety_action import GmailSafetyAction
 from src.handled_review_store import HandledReviewStore
-from src.live_gmail_client import GMAIL_MODIFY_SCOPE, GMAIL_SAFETY_SCOPE
+from src.live_gmail_client import GMAIL_MODIFY_SCOPE
 from src.live_protonmail_client import LiveProtonMailClient, SetupError as ProtonSetupError
 from src.live_protonmail_daily_run_cli import run_live_protonmail_daily_batch
 from src.proton_review_console import ProtonReviewConsole, render_proton_review_page
@@ -32,7 +35,7 @@ from src.product_analytics import (
     bucket_count,
 )
 from src.unsubscribe_inventory_store import UnsubscribeInventoryStore
-from src.unsubscribe_execution import UnsubscribeExecutor
+from src.trusted_sender_store import TrustedSenderStore
 
 from src.gmail_companion_rendering import (
     escape_html,
@@ -46,7 +49,6 @@ from src.gmail_companion_rendering import (
 )
 from src.gmail_companion_state import (
     build_daily_attention_summary,
-    build_selected_email_state,
     build_unsubscribe_detail,
     find_matching_item,
     find_unsubscribe_candidate,
@@ -58,6 +60,7 @@ from src.gmail_companion_state import (
 )
 from src.companion_teaching_workflow import CompanionTeachingWorkflow
 from src.companion_runtime_state import CompanionRuntimeState
+from src.teaching_loop import teaching_llm_status
 from src.gmail_teaching_adapter import GmailTeachingAdapter, INBOX_BACKFILL_ESTIMATE_CAP
 from src.proton_teaching_adapter import ProtonTeachingAdapter
 from src.provider_companion_runtime import (
@@ -116,6 +119,13 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Disable Gmail check execution for synthetic-only server configurations.",
     )
+    parser.add_argument(
+        "--classification-model",
+        help=(
+            "Explicit OpenAI model for review-only initial classification assistance. "
+            "No model is selected by default."
+        ),
+    )
     return parser
 
 
@@ -124,13 +134,13 @@ def main(argv: list[str] | None = None, stdout=None, server_factory=None) -> int
     args = parser.parse_args(argv)
     output = stdout or sys.stdout
     server_factory = server_factory or create_server
-    server = server_factory(
-        args.host,
-        args.port,
-        args.storage_dir,
-        gmail_write_through_enabled=not args.disable_gmail_write_through,
-        gmail_check_enabled=not args.disable_gmail_check,
-    )
+    server_kwargs = {
+        "gmail_write_through_enabled": not args.disable_gmail_write_through,
+        "gmail_check_enabled": not args.disable_gmail_check,
+    }
+    if args.classification_model is not None:
+        server_kwargs["classification_model"] = args.classification_model
+    server = server_factory(args.host, args.port, args.storage_dir, **server_kwargs)
     try:
         output.write(f"Serving Gmail companion sidebar at http://{args.host}:{server.server_port}\n")
         server.serve_forever()
@@ -149,12 +159,27 @@ def create_server(
     *,
     gmail_write_through_enabled: bool = True,
     gmail_check_enabled: bool = True,
+    classification_model: str | None = None,
 ) -> ThreadingHTTPServer:
+    selected_model = (
+        classification_model
+        if classification_model is not None
+        else os.environ.get("THREADWISE_CLASSIFICATION_MODEL")
+    )
+    initial_classifier, initial_classification_status = configure_initial_classifier(
+        selected_model,
+        deterministic_classifier=FixtureBatchClassifier(
+            fixtures_dir=Path("."),
+            trusted_personal_senders=TrustedSenderStore(storage_dir).load_or_rebuild(),
+        ),
+    )
     app = GmailCompanionApp(
         storage_dir=storage_dir,
         gmail_write_through_enabled=gmail_write_through_enabled,
         gmail_check_enabled=gmail_check_enabled,
         live_inbox_reconciliation_enabled=gmail_check_enabled,
+        initial_classifier=initial_classifier,
+        initial_classification_status=initial_classification_status,
     )
 
     class Handler(BaseHTTPRequestHandler):
@@ -193,6 +218,10 @@ class GmailCompanionApp:
         proton_client_factory=None,
         proton_review_console: object | None = None,
         proton_run_runner=None,
+        gmail_coverage_service: object | None = None,
+        initial_classifier: object | None = None,
+        initial_classification_status: dict | None = None,
+        background_runner=None,
     ) -> None:
         self._storage_dir = storage_dir
         self._credentials_dir = credentials_dir
@@ -202,6 +231,10 @@ class GmailCompanionApp:
         self._gmail_check_enabled = gmail_check_enabled
         self._live_inbox_reconciliation_enabled = live_inbox_reconciliation_enabled
         self._gmail_run_runner = gmail_run_runner
+        self._initial_classifier = initial_classifier
+        self._initial_classification_status = dict(
+            initial_classification_status or {"state": "disabled", "model": ""}
+        )
         self._attention_model_client = attention_model_client
         self._analytics = analytics or ProductAnalytics.from_environment()
         self._proton_storage_dir = proton_storage_dir
@@ -212,6 +245,12 @@ class GmailCompanionApp:
         self._proton_review_console_lock = threading.Lock()
         self._proton_run_runner = proton_run_runner
         self._proton_sync_lock = threading.Lock()
+        self._gmail_coverage_service = gmail_coverage_service or GmailCoverageService(
+            storage_dir,
+            gmail_client_factory=self._gmail_client_factory,
+            credentials_dir=self._credentials_dir,
+            client_secret_path=self._client_secret_path,
+        )
         self._analytics_distinct_ids = AnonymousDistinctIdStore(storage_dir)
         self._unsubscribe_store = UnsubscribeInventoryStore(storage_dir)
         self._handled_review_store = HandledReviewStore(storage_dir)
@@ -219,10 +258,10 @@ class GmailCompanionApp:
         self._health_storage_lock = threading.Lock()
         self._runtime_state = CompanionRuntimeState(
             storage_dir,
-            unsubscribe_store=self._unsubscribe_store,
             handled_review_store=self._handled_review_store,
             analytics_status=self._analytics.delivery_status,
             live_inbox_ids_loader=self._load_live_inbox_message_ids,
+            background_runner=background_runner,
         )
         gmail_teaching_adapter = GmailTeachingAdapter(
             storage_dir,
@@ -234,11 +273,13 @@ class GmailCompanionApp:
         gmail_teaching_workflow = CompanionTeachingWorkflow(
             storage_dir,
             write_through=gmail_teaching_adapter.apply,
+            preflight=gmail_teaching_adapter.preflight,
         )
         proton_teaching_adapter = ProtonTeachingAdapter(self._proton_console)
         proton_teaching_workflow = CompanionTeachingWorkflow(
             proton_storage_dir,
             write_through=proton_teaching_adapter.apply,
+            preflight=proton_teaching_adapter.preflight,
         )
         self._provider_runtimes = CompanionProviderRuntimes(
             [
@@ -264,17 +305,7 @@ class GmailCompanionApp:
             return
 
         if handler.command == "GET" and parsed.path == "/":
-            encoded = self.render_panel().encode("utf-8")
-            handler.send_response(HTTPStatus.OK)
-            handler.send_header("Content-Type", "text/html; charset=utf-8")
-            handler.send_header("Content-Length", str(len(encoded)))
-            self._write_cors_headers(handler)
-            handler.end_headers()
-            handler.wfile.write(encoded)
-            return
-
-        if handler.command == "GET" and parsed.path == "/simulator":
-            encoded = self.render_simulator().encode("utf-8")
+            encoded = self.render_daily_dashboard_page().encode("utf-8")
             handler.send_response(HTTPStatus.OK)
             handler.send_header("Content-Type", "text/html; charset=utf-8")
             handler.send_header("Content-Length", str(len(encoded)))
@@ -285,21 +316,6 @@ class GmailCompanionApp:
 
         if handler.command == "GET" and parsed.path == "/install":
             encoded = self.render_install_page(handler.headers.get("Host", "")).encode("utf-8")
-            handler.send_response(HTTPStatus.OK)
-            handler.send_header("Content-Type", "text/html; charset=utf-8")
-            handler.send_header("Content-Length", str(len(encoded)))
-            self._write_cors_headers(handler)
-            handler.end_headers()
-            handler.wfile.write(encoded)
-            return
-
-        if handler.command == "GET" and parsed.path == "/unsubscribe-review":
-            self._capture_workflow_event(
-                handler,
-                "unsubscribe review opened",
-                {"surface": "gmail_companion"},
-            )
-            encoded = self.render_unsubscribe_review_page(parse_qs(parsed.query)).encode("utf-8")
             handler.send_response(HTTPStatus.OK)
             handler.send_header("Content-Type", "text/html; charset=utf-8")
             handler.send_header("Content-Length", str(len(encoded)))
@@ -468,18 +484,6 @@ class GmailCompanionApp:
             except (KeyError, ValueError, HTTPException) as exc:
                 return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
 
-        if handler.command == "POST" and parsed.path == "/api/safety-preview":
-            try:
-                return self._write_json(handler, HTTPStatus.OK, self.safety_preview(self._read_json_body(handler)))
-            except (KeyError, ValueError, HTTPException) as exc:
-                return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
-
-        if handler.command == "POST" and parsed.path == "/api/safety-apply":
-            try:
-                return self._write_json(handler, HTTPStatus.OK, self.safety_apply(self._read_json_body(handler)))
-            except (KeyError, ValueError, HTTPException, RuntimeError) as exc:
-                return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
-
         if handler.command == "POST" and parsed.path == "/api/analytics/capture":
             try:
                 payload = self._read_json_body(handler)
@@ -516,25 +520,6 @@ class GmailCompanionApp:
             except (KeyError, ValueError, HTTPException) as exc:
                 return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
 
-        if handler.command == "POST" and parsed.path == "/api/unsubscribe-select-current":
-            try:
-                payload = self._read_json_body(handler)
-                response = self.unsubscribe_select_current(payload)
-                return self._write_json(handler, HTTPStatus.OK, response)
-            except (KeyError, ValueError, HTTPException) as exc:
-                return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
-
-        if handler.command == "POST" and parsed.path == "/api/unsubscribe-candidates/selections":
-            try:
-                payload = self._read_json_body(handler)
-                response = self.save_unsubscribe_selections(
-                    payload,
-                    analytics_distinct_id=self._analytics_distinct_id_from_request(handler),
-                )
-                return self._write_json(handler, HTTPStatus.OK, response)
-            except (KeyError, ValueError, HTTPException) as exc:
-                return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
-
         if handler.command == "POST" and parsed.path == "/api/attention-feedback":
             try:
                 payload = self._read_request_payload(handler)
@@ -560,6 +545,16 @@ class GmailCompanionApp:
                 return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
             except Exception as exc:
                 return self._write_json(handler, HTTPStatus.INTERNAL_SERVER_ERROR, {"error": str(exc)})
+
+        if handler.command == "POST" and parsed.path == "/api/gmail-coverage-check":
+            try:
+                payload = self._read_request_payload(handler)
+                response = self.check_gmail_coverage(payload)
+                return self._write_json(handler, HTTPStatus.OK, response)
+            except (KeyError, ValueError, HTTPException, json.JSONDecodeError) as exc:
+                return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+            except Exception as exc:
+                return self._write_json(handler, HTTPStatus.SERVICE_UNAVAILABLE, {"error": str(exc)})
 
         if handler.command == "POST" and parsed.path == "/api/provider-sync-run":
             try:
@@ -799,16 +794,23 @@ class GmailCompanionApp:
         handler.end_headers()
 
     def health_status(self, handler: BaseHTTPRequestHandler | None = None) -> dict:
+        classification_status = dict(self._initial_classification_status)
         return {
             "schema_version": HEALTH_STATUS_SCHEMA_VERSION,
             "service_id": HEALTH_STATUS_SERVICE_ID,
             "service_name": HEALTH_STATUS_SERVICE_NAME,
-            "status": "ready",
+            "status": (
+                "not-ready"
+                if classification_status.get("state") == "not-ready"
+                else "ready"
+            ),
             "bound_origin": self._bound_origin(handler),
             "dashboard_path": "/daily-dashboard#run-gmail-check",
             "health_path": HEALTH_STATUS_PATH,
             "analytics_enabled": self._analytics.enabled,
             "analytics": self._analytics.delivery_status(),
+            "initial_classification": classification_status,
+            "llm_review": teaching_llm_status(),
             "storage_summary": self._cached_storage_summary(),
             "capabilities": [
                 "sidebar-state",
@@ -816,7 +818,6 @@ class GmailCompanionApp:
                 "gmail-check",
                 "provider-sync",
                 "attention-feedback",
-                "unsubscribe-review",
                 "proton-review",
             ],
         }
@@ -1057,54 +1058,6 @@ class GmailCompanionApp:
     def _provider_runtime_for_payload(self, payload: dict) -> ProviderCompanionRuntime:
         return self._provider_runtimes.for_payload(payload)
 
-    def safety_preview(self, payload: dict) -> dict:
-        selected = self._selected_gmail_message_for_safety(payload)
-        return GmailSafetyAction(None, self._storage_dir).preview(
-            message_id=selected["message_id"],
-            sender=selected["sender"],
-            scope=payload.get("scope") or "sender",
-        )
-
-    def safety_apply(self, payload: dict) -> dict:
-        if not self._gmail_write_through_enabled:
-            raise ValueError("Gmail safety actions are disabled for this server.")
-        selected = self._selected_gmail_message_for_safety(payload)
-        gmail_client = self._gmail_client_factory(
-            selected["account_id"],
-            self._credentials_dir,
-            self._client_secret_path,
-            GMAIL_SAFETY_SCOPE,
-        )
-        result = GmailSafetyAction(gmail_client, self._storage_dir).apply(
-            account_id=selected["account_id"],
-            message_id=selected["message_id"],
-            sender=selected["sender"],
-            scope=payload.get("scope") or "sender",
-            confirmed=payload.get("confirmed") is True,
-        )
-        self._runtime_state.invalidate()
-        return result
-
-    def _selected_gmail_message_for_safety(self, payload: dict) -> dict:
-        selected_context = payload.get("selected_context") or {}
-        if selected_context.get("provider") != "gmail" or not selected_context.get("message_id"):
-            raise ValueError("Select a Gmail message before applying a suspicious-email action.")
-        selected = build_selected_email_state(
-            self._storage_dir,
-            self._runtime_state.unsubscribe_candidates(),
-            selected_context,
-        )
-        if not selected or selected.get("message_id") != selected_context["message_id"]:
-            raise ValueError("The selected Gmail message is no longer available.")
-        sender = selected.get("sender") or ""
-        if not sender:
-            raise ValueError("The selected Gmail message has no usable sender.")
-        return {
-            "account_id": selected.get("account_id") or infer_gmail_account_id(self._storage_dir),
-            "message_id": selected["message_id"],
-            "sender": sender,
-        }
-
     def _capture_label_write_outcomes(
         self,
         distinct_id: str,
@@ -1161,6 +1114,8 @@ class GmailCompanionApp:
             "sidebar_state": self.sidebar_state(selected_context),
         }
 
+    # Legacy artifact helpers remain callable for historical inspection, but
+    # no HTTP route or product surface exposes them.
     def unsubscribe_select_current(self, payload: dict) -> dict:
         selected_context = payload.get("selected_context") or {}
         matched = find_matching_item(self._storage_dir, selected_context)
@@ -1173,26 +1128,14 @@ class GmailCompanionApp:
         )
         if candidate is None:
             raise ValueError("No unsubscribe candidate is available for this email.")
-        self._unsubscribe_store.save_selection_states(
-            [candidate["list_key"]],
-            [candidate["list_key"]],
-        )
-        refreshed = self.sidebar_state(selected_context)
+        self._unsubscribe_store.save_selection_states([candidate["list_key"]], [candidate["list_key"]])
         return {
-            "acknowledgment": (
-                f"Queued {candidate.get('display_name') or 'this sender'} for unsubscribe review. "
-                "Nothing has been unsubscribed yet."
-            ),
+            "acknowledgment": "Saved the historical selection locally. No unsubscribe was executed.",
             "candidate": build_unsubscribe_detail(candidate, self._storage_dir),
-            "sidebar_state": refreshed,
+            "sidebar_state": self.sidebar_state(selected_context),
         }
 
-    def save_unsubscribe_selections(
-        self,
-        payload: dict,
-        *,
-        analytics_distinct_id: str | None = None,
-    ) -> dict:
+    def save_unsubscribe_selections(self, payload: dict, *, analytics_distinct_id: str | None = None) -> dict:
         candidate_keys = payload.get("candidate_keys")
         selected_candidate_keys = payload.get("selected_candidate_keys")
         if not isinstance(candidate_keys, list) or not isinstance(selected_candidate_keys, list):
@@ -1205,33 +1148,13 @@ class GmailCompanionApp:
         selected_candidate_keys = list(dict.fromkeys(key.strip() for key in selected_candidate_keys))
         if not set(selected_candidate_keys).issubset(candidate_keys):
             raise ValueError("selected_candidate_keys must be a subset of candidate_keys.")
-        known_keys = {
-            candidate.get("list_key")
-            for candidate in self._unsubscribe_store.list_candidates()
-            if candidate.get("list_key")
-        }
-        unknown_keys = set(candidate_keys).difference(known_keys)
-        if unknown_keys:
+        known_keys = {candidate.get("list_key") for candidate in self._unsubscribe_store.list_candidates() if candidate.get("list_key")}
+        if set(candidate_keys).difference(known_keys):
             raise ValueError("candidate_keys contains an unknown unsubscribe candidate.")
-
         saved = self._unsubscribe_store.save_selection_states(candidate_keys, selected_candidate_keys)
-        self._runtime_state.invalidate()
         selected_count = sum(1 for candidate in saved if candidate.get("decision_state") == "selected")
-        self._capture_workflow_event(
-            None,
-            "unsubscribe review completed",
-            {
-                "surface": "gmail_companion",
-                "reviewed_count_bucket": bucket_count(len(candidate_keys)),
-                "review_outcome": "saved" if selected_count else "cleared",
-            },
-            distinct_id=analytics_distinct_id,
-        )
         return {
-            "acknowledgment": (
-                f"Saved {selected_count} queued selection{'s' if selected_count != 1 else ''}. "
-                "Nothing was unsubscribed."
-            ),
+            "acknowledgment": f"Saved {selected_count} historical selection{'s' if selected_count != 1 else ''}. Nothing was unsubscribed.",
             "candidate_count": len(saved),
             "selected_count": selected_count,
             "selected_candidate_keys": selected_candidate_keys,
@@ -1267,6 +1190,11 @@ class GmailCompanionApp:
         response = trigger_dashboard_gmail_check(self._storage_dir, payload, runner)
         self._runtime_state.invalidate()
         return response
+
+    def check_gmail_coverage(self, payload: dict) -> dict:
+        """Read current Gmail Inbox membership without running automation writes."""
+        account_id = str(payload.get("account_id") or infer_gmail_account_id(self._storage_dir))
+        return self._gmail_coverage_service.check(account_id)
 
     def trigger_provider_sync(
         self,
@@ -1407,6 +1335,7 @@ class GmailCompanionApp:
             batch_size=payload.get("batch_size") or 50,
             storage_dir=self._storage_dir,
             gmail_client=gmail_client,
+            classifier=self._initial_classifier,
             attention_model_client=self._attention_model_client,
         )
 
@@ -1440,14 +1369,13 @@ class GmailCompanionApp:
 
     def render_unsubscribe_review_page(self, query: dict[str, list[str]] | None = None) -> str:
         query = query or {}
-        focus_list_key = first_query_value(query, "list_key")
         details = [
             build_unsubscribe_detail(candidate, self._storage_dir)
             for candidate in self._unsubscribe_store.list_candidates()
         ]
         return render_unsubscribe_review_page_html(
             details,
-            focus_list_key=focus_list_key,
+            focus_list_key=first_query_value(query, "list_key"),
         )
 
     def render_daily_dashboard_page(self) -> str:

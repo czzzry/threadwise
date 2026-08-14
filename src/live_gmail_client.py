@@ -18,8 +18,6 @@ from pathlib import Path
 
 GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
 GMAIL_MODIFY_SCOPE = "https://www.googleapis.com/auth/gmail.modify"
-GMAIL_SETTINGS_BASIC_SCOPE = "https://www.googleapis.com/auth/gmail.settings.basic"
-GMAIL_SAFETY_SCOPE = f"{GMAIL_MODIFY_SCOPE} {GMAIL_SETTINGS_BASIC_SCOPE}"
 DEFAULT_HTTP_TIMEOUT_SECONDS = 15
 DEFAULT_HTTP_MAX_ATTEMPTS = 3
 TRANSIENT_HTTP_STATUS_CODES = {408, 429, 500, 502, 503, 504}
@@ -151,6 +149,14 @@ class LiveGmailClient:
             access_token=self._access_token,
         )
 
+    def get_message_metadata(self, message_id: str) -> dict:
+        return self._transport(
+            "GET",
+            f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{message_id}",
+            params={"format": "metadata", "metadataHeaders": ["Subject", "From"]},
+            access_token=self._access_token,
+        )
+
     def get_or_create_label(self, label_name: str) -> str:
         response = self._transport(
             "GET",
@@ -222,46 +228,29 @@ class LiveGmailClient:
             access_token=self._access_token,
         )
 
+    def get_threadwise_label_names(self, message_id: str, namespace_prefix: str = "EA/") -> list[str]:
+        labels_response = self._transport(
+            "GET",
+            "https://gmail.googleapis.com/gmail/v1/users/me/labels",
+            access_token=self._access_token,
+        )
+        id_to_name = {
+            label.get("id", ""): label.get("name", "")
+            for label in labels_response.get("labels", [])
+            if label.get("id")
+        }
+        current_ids = list(self.get_message(message_id).get("labelIds") or [])
+        return [
+            id_to_name[label_id]
+            for label_id in current_ids
+            if id_to_name.get(label_id, "").startswith(namespace_prefix)
+        ]
+
     def remove_inbox_label(self, message_id: str) -> None:
         self._transport(
             "POST",
             f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{message_id}/modify",
             params={"removeLabelIds": ["INBOX"]},
-            access_token=self._access_token,
-        )
-
-    def create_trash_filter(self, sender_query: str, suspicious_label_id: str) -> str:
-        response = self._transport(
-            "POST",
-            "https://gmail.googleapis.com/gmail/v1/users/me/settings/filters",
-            params={
-                "criteria": {"from": sender_query},
-                "action": {"addLabelIds": ["TRASH", suspicious_label_id]},
-            },
-            access_token=self._access_token,
-        )
-        return response["id"]
-
-    def list_filters(self) -> list[dict]:
-        response = self._transport(
-            "GET",
-            "https://gmail.googleapis.com/gmail/v1/users/me/settings/filters",
-            access_token=self._access_token,
-        )
-        return list(response.get("filter") or [])
-
-    def trash_message(self, message_id: str) -> None:
-        self._transport(
-            "POST",
-            f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{message_id}/modify",
-            params={"addLabelIds": ["TRASH"], "removeLabelIds": ["INBOX"]},
-            access_token=self._access_token,
-        )
-
-    def delete_filter(self, filter_id: str) -> None:
-        self._transport(
-            "DELETE",
-            f"https://gmail.googleapis.com/gmail/v1/users/me/settings/filters/{filter_id}",
             access_token=self._access_token,
         )
 
@@ -530,7 +519,10 @@ def _token_has_scope(token: dict, required_scope: str) -> bool:
     stored_scope = token.get("scope")
     if not stored_scope:
         return required_scope == GMAIL_READONLY_SCOPE
-    return required_scope in stored_scope.split()
+    granted_scopes = set(stored_scope.split())
+    if required_scope in granted_scopes:
+        return True
+    return required_scope == GMAIL_READONLY_SCOPE and GMAIL_MODIFY_SCOPE in granted_scopes
 
 
 def _normalize_token(token_response: dict, existing_refresh_token: str | None = None) -> dict:

@@ -90,6 +90,30 @@ class ProductAnalyticsTests(unittest.TestCase):
                     "error_category": "provider_write_error",
                 },
             ),
+            (
+                "onboarding shown",
+                {
+                    "surface": "gmail_companion",
+                    "onboarding_version": "2026-08-09-v1",
+                    "onboarding_destination": "selected-email",
+                },
+            ),
+            (
+                "onboarding completed",
+                {
+                    "surface": "gmail_companion",
+                    "onboarding_version": "2026-08-09-v1",
+                    "onboarding_destination": "needs-attention",
+                },
+            ),
+            (
+                "onboarding dismissed",
+                {
+                    "surface": "gmail_companion",
+                    "onboarding_version": "2026-08-09-v1",
+                    "onboarding_destination": "not-ready",
+                },
+            ),
         ]
 
         for event, properties in events:

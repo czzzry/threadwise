@@ -60,6 +60,14 @@ class MockGmailLabelClient:
         ]
         self._message_labels_by_id[message_id] = preserved + [label_id for label_id in label_ids if label_id not in preserved]
 
+    def get_threadwise_label_names(self, message_id: str, namespace_prefix: str = "EA/") -> list[str]:
+        id_to_name = {label_id: label_name for label_name, label_id in self.labels.items()}
+        return [
+            id_to_name[label_id]
+            for label_id in self._message_labels_by_id.get(message_id, [])
+            if id_to_name.get(label_id, "").startswith(namespace_prefix)
+        ]
+
     def remove_inbox_label(self, message_id: str) -> None:
         self.calls.append(("remove_inbox_label", message_id))
         if message_id in self._failing_message_ids:
@@ -112,19 +120,29 @@ class MockGmailLabelWriter:
             for label_name in self.map_reviewed_labels(final_labels):
                 label_ids.append(self._gmail_client.get_or_create_label(label_name))
             try:
+                exact_verification = bool(item.get("require_exact_label_set_verification"))
                 if hasattr(self._gmail_client, "replace_threadwise_labels"):
                     self._gmail_client.replace_threadwise_labels(item["message_id"], label_ids, "EA/")
+                elif exact_verification:
+                    raise RuntimeError("This Gmail client cannot replace the exact Threadwise label set.")
                 else:
                     self._gmail_client.apply_labels(item["message_id"], label_ids)
+                if exact_verification:
+                    if not hasattr(self._gmail_client, "get_threadwise_label_names"):
+                        raise RuntimeError("This Gmail client cannot verify the Threadwise label set.")
+                    expected_names = self.map_reviewed_labels(final_labels)
+                    confirmed_names = self._gmail_client.get_threadwise_label_names(item["message_id"], "EA/")
+                    if set(confirmed_names) != set(expected_names):
+                        raise RuntimeError("Gmail did not confirm the exact Threadwise label set.")
                 status_map[item["message_id"]] = "applied"
                 attempts.setdefault(item["message_id"], []).append(
-                    {"status": "applied", "final_labels": list(final_labels)}
+                    _write_attempt("applied", item, final_labels)
                 )
                 applied_count += 1
             except RuntimeError:
                 status_map[item["message_id"]] = "failed"
                 attempts.setdefault(item["message_id"], []).append(
-                    {"status": "failed", "final_labels": list(final_labels)}
+                    _write_attempt("failed", item, final_labels)
                 )
                 failed_count += 1
         self._write_status_map(batch_id, status_map)
@@ -270,3 +288,11 @@ class MockGmailLabelWriter:
 
     def _is_inbox_removal_label_eligible(self, final_labels: list[str]) -> bool:
         return "promotions" in final_labels or "spam-low-value" in final_labels
+
+
+def _write_attempt(status: str, item: dict, final_labels: list[str]) -> dict:
+    attempt = {"status": status, "final_labels": list(final_labels)}
+    request_id = str(item.get("provider_write_request_id") or "").strip()
+    if request_id:
+        attempt["request_id"] = request_id
+    return attempt

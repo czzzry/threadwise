@@ -13,12 +13,85 @@ from src.teaching_loop import (
     build_sidebar_teach_preview,
     exclude_sidebar_teaching_match,
     load_items_for_gmail_write_through,
+    teaching_llm_status,
 )
 from src.teaching_exclusions import is_rule_message_excluded
 from src.teachable_rule_memory import TeachableRule, TeachableRuleMemory, matching_rules_for_message
 
 
 class TeachingLoopTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._private_model_environment = patch.dict(
+            "os.environ",
+            {"EMAIL_AGENT_OPENAI_API_KEY": "", "OPENAI_API_KEY": ""},
+        )
+        self._private_model_environment.start()
+        self.addCleanup(self._private_model_environment.stop)
+
+    def test_teaching_llm_status_reports_configuration_without_exposing_a_key(self) -> None:
+        with patch.dict("os.environ", {}, clear=True):
+            status = teaching_llm_status()
+
+        self.assertFalse(status["configured"])
+        self.assertEqual(status["status"], "unavailable")
+        self.assertEqual(status["key_source"], "")
+        self.assertNotIn("sk-", str(status))
+
+    def test_llm_teaching_payload_includes_matching_saved_founder_instruction(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                [
+                    {
+                        "source": "protonmail",
+                        "account_id": "founder-proton",
+                        "message_id": "newsletter-message",
+                        "sender": "DeepLearning.AI <thebatch@deeplearning.ai>",
+                        "subject": "The Batch",
+                        "snippet": "AI news",
+                        "body": "Weekly newsletter",
+                        "review_state": "reviewed",
+                        "final_labels": ["job-related"],
+                        "applied_labels": ["job-related"],
+                    }
+                ],
+                provider="protonmail",
+            )
+            TeachableRuleMemory(teachable_rules_path(storage_dir)).save_rule(
+                TeachableRule(
+                    id="work-boundary",
+                    instruction="Work is for apps and interviews, never newsletters.",
+                    label="job-related",
+                    terms=("deeplearning.ai",),
+                    keep_visible=False,
+                    created_at="2026-08-07T00:00:00Z",
+                )
+            )
+            client = Mock()
+            client.interpret.return_value = {
+                "target_label": "newsletter",
+                "semantic_pattern": "newsletter emails",
+                "cross_sender": False,
+                "confidence": "high",
+                "rationale": "The latest note corrects the stored boundary.",
+            }
+
+            with patch("src.teaching_loop.OpenAITeachingIntentClient.from_env", return_value=client):
+                build_sidebar_teach_preview(
+                    storage_dir,
+                    selected_context={"provider": "protonmail", "message_id": "newsletter-message"},
+                    target_label="job-related",
+                    target_label_explicit=True,
+                    note="Newsletter is correct, but this is not Work.",
+                    scope="sender",
+                )
+
+            remembered = client.interpret.call_args.args[0]["remembered_instructions"]
+            self.assertEqual(remembered[0]["id"], "work-boundary")
+            self.assertIn("never newsletters", remembered[0]["instruction"])
+
     def test_prefilled_label_does_not_override_explicit_label_in_founder_note(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
@@ -95,6 +168,7 @@ class TeachingLoopTests(unittest.TestCase):
             result = OpenAITeachingIntentClient("test-key", "test-model").interpret({"note": "shipment"})
 
         self.assertEqual(result["target_label"], "shopping-order")
+        self.assertEqual(result["_model"], "test-model")
         self.assertEqual(urlopen.call_args.kwargs["timeout"], 8)
 
         with patch("src.teaching_loop.urllib.request.urlopen", side_effect=TimeoutError("slow model")):
@@ -198,6 +272,89 @@ class TeachingLoopTests(unittest.TestCase):
             self.assertIn("purchase is on its way", llm_payload["current_body"])
             self.assertEqual(preview["selected_label_after"], ["shopping-order"])
             self.assertIn("shipment", preview["semantic_rule"]["semantic_pattern"])
+
+    def test_note_can_reject_prefilled_work_label_and_choose_newsletter(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                [
+                    {
+                        "source": "protonmail",
+                        "account_id": "founder-proton",
+                        "message_id": "newsletter-with-work-label",
+                        "sender": "DeepLearning.AI <thebatch@deeplearning.ai>",
+                        "subject": "DeepSeek-V4-Flash Outshines Pro",
+                        "snippet": "The Biggest GitHub Crawl Yet",
+                        "body": "Engineering System Prompts for Safer Code.",
+                        "review_state": "reviewed",
+                        "final_labels": ["job-related", "newsletter"],
+                        "applied_labels": ["job-related", "newsletter"],
+                    }
+                ],
+                provider="protonmail",
+            )
+
+            with patch("src.teaching_loop.OpenAITeachingIntentClient.from_env", return_value=None):
+                preview = build_sidebar_teach_preview(
+                    storage_dir,
+                    selected_context={"provider": "protonmail", "message_id": "newsletter-with-work-label"},
+                    target_label="job-related",
+                    target_label_explicit=True,
+                    note=(
+                        "It is correct that this is a newsletter, but it is NOT work. "
+                        "There is never a case where something can be work and newsletter."
+                    ),
+                    scope="sender",
+                )
+
+            self.assertEqual(preview["selected_label_after"], ["newsletter"])
+            self.assertEqual(preview["target_label_name"], "EA/Newsletter")
+
+    def test_llm_result_is_not_replaced_by_rejected_prefilled_work_label(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            self._write_batch(
+                storage_dir,
+                "founder-test-batch-1",
+                [
+                    {
+                        "source": "protonmail",
+                        "account_id": "founder-proton",
+                        "message_id": "newsletter-with-work-label",
+                        "sender": "DeepLearning.AI <thebatch@deeplearning.ai>",
+                        "subject": "DeepSeek-V4-Flash Outshines Pro",
+                        "snippet": "The Biggest GitHub Crawl Yet",
+                        "body": "Engineering System Prompts for Safer Code.",
+                        "review_state": "reviewed",
+                        "final_labels": ["job-related", "newsletter"],
+                        "applied_labels": ["job-related", "newsletter"],
+                    }
+                ],
+                provider="protonmail",
+            )
+            client = Mock()
+            client.interpret.return_value = {
+                "target_label": "newsletter",
+                "semantic_pattern": "newsletter emails",
+                "cross_sender": False,
+                "confidence": "high",
+                "rationale": "The note explicitly rejects Work and confirms Newsletter.",
+            }
+
+            with patch("src.teaching_loop.OpenAITeachingIntentClient.from_env", return_value=client):
+                preview = build_sidebar_teach_preview(
+                    storage_dir,
+                    selected_context={"provider": "protonmail", "message_id": "newsletter-with-work-label"},
+                    target_label="job-related",
+                    target_label_explicit=True,
+                    note="Newsletter is correct, but this is not Work.",
+                    scope="sender",
+                )
+
+            self.assertEqual(preview["selected_label_after"], ["newsletter"])
+            self.assertEqual(client.interpret.call_args.args[0]["explicit_target_label"], "newsletter")
 
     def test_work_label_preserves_explicit_workspace_administration_boundary(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1818,7 +1975,7 @@ class TeachingLoopTests(unittest.TestCase):
         self.assertEqual(list(selected), ["founder-test-batch-10"])
         self.assertEqual(selected["founder-test-batch-10"][0]["final_labels"], ["job-related"])
 
-    def _write_batch(self, storage_dir: Path, batch_id: str, items: list[dict]) -> None:
+    def _write_batch(self, storage_dir: Path, batch_id: str, items: list[dict], provider: str = "gmail") -> None:
         batch_dir = storage_dir / "batches"
         batch_dir.mkdir(parents=True, exist_ok=True)
         (batch_dir / f"{batch_id}.json").write_text(
@@ -1826,7 +1983,7 @@ class TeachingLoopTests(unittest.TestCase):
                 {
                     "batch_id": batch_id,
                     "account_id": "founder-test",
-                    "provider": "gmail",
+                    "provider": provider,
                     "items": items,
                     "raw_messages": [],
                 },

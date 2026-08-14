@@ -878,7 +878,6 @@ class LocalBrowserReviewRenderingMixin:
         candidate_change_html = self._render_candidate_change_panel()
         reminder_html = self._render_threshold_reminders()
         trusted_sender_html = self._render_trusted_sender_summary()
-        unsubscribe_inventory_html = self._render_unsubscribe_inventory()
         shadow_eval_html = self._render_shadow_eval_summary()
         batch_cards = "".join(self._render_batch_card(summary) for summary in self._list_batch_summaries())
         if not batch_cards:
@@ -896,7 +895,6 @@ class LocalBrowserReviewRenderingMixin:
             '</section>'
             + reminder_html
             + trusted_sender_html
-            + unsubscribe_inventory_html
             + shadow_eval_html
             + '<section class="panel">'
             '<h2>Stored batches</h2>'

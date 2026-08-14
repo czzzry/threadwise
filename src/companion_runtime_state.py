@@ -15,7 +15,6 @@ from src.gmail_run_control import load_gmail_dashboard_run_status
 from src.handled_review_store import HandledReviewStore
 from src.label_taxonomy import CANONICAL_LABEL_ORDER, gmail_label_name
 from src.provider_write_queue import ProviderWriteQueue
-from src.unsubscribe_inventory_store import UnsubscribeInventoryStore
 
 
 HARNESS_STATE_CACHE_SECONDS = 120.0
@@ -29,14 +28,14 @@ class CompanionRuntimeState:
         self,
         storage_dir: Path,
         *,
-        unsubscribe_store: UnsubscribeInventoryStore,
         handled_review_store: HandledReviewStore,
         analytics_status: Callable[[], dict],
         live_inbox_ids_loader: Callable[[], set[str] | None],
+        unsubscribe_store: object | None = None,
         background_runner: Callable[[Callable[[], None]], None] | None = None,
     ) -> None:
+        del unsubscribe_store  # Accepted only for callers migrating from the removed product flow.
         self._storage_dir = storage_dir
-        self._unsubscribe_store = unsubscribe_store
         self._handled_review_store = handled_review_store
         self._analytics_status = analytics_status
         self._live_inbox_ids_loader = live_inbox_ids_loader
@@ -45,8 +44,9 @@ class CompanionRuntimeState:
         self._harness_lock = threading.Lock()
         self._runtime_payload_cache: tuple[float, dict] | None = None
         self._live_inbox_ids_cache: tuple[float, set[str] | None] | None = None
+        self._live_inbox_ids_refreshing = False
+        self._live_inbox_ids_generation = 0
         self._daily_summary_cache: tuple[float, dict] | None = None
-        self._unsubscribe_candidates_cache: tuple[float, list[dict]] | None = None
         self._data_lock = threading.Lock()
         self._async_follow_up_state: dict | None = None
         self._async_lock = threading.Lock()
@@ -65,7 +65,6 @@ class CompanionRuntimeState:
             "selected_context": selected_context,
             "selected_email": build_selected_email_state(
                 self._storage_dir,
-                self.unsubscribe_candidates(),
                 selected_context,
             ),
             "daily_summary": self._daily_summary(),
@@ -94,31 +93,23 @@ class CompanionRuntimeState:
                 created_at, payload = self._runtime_payload_cache
                 if now - created_at <= COMPANION_DATA_CACHE_SECONDS:
                     return payload
-            payload = build_companion_runtime_payload(
-                self._storage_dir,
-                provider="gmail",
-                allowed_review_message_ids=self._live_inbox_ids(),
-            )
-            self._runtime_payload_cache = (time.monotonic(), payload)
-            return payload
-
-    def unsubscribe_candidates(self) -> list[dict]:
-        now = time.monotonic()
+        live_inbox_ids, live_inbox_generation = self._live_inbox_ids_snapshot()
+        payload = build_companion_runtime_payload(
+            self._storage_dir,
+            provider="gmail",
+            allowed_review_message_ids=live_inbox_ids,
+        )
         with self._data_lock:
-            if self._unsubscribe_candidates_cache is not None:
-                created_at, payload = self._unsubscribe_candidates_cache
-                if now - created_at <= COMPANION_DATA_CACHE_SECONDS:
-                    return payload
-            payload = self._unsubscribe_store.list_candidates()
-            self._unsubscribe_candidates_cache = (time.monotonic(), payload)
-            return payload
+            if live_inbox_generation == self._live_inbox_ids_generation:
+                self._runtime_payload_cache = (time.monotonic(), payload)
+        return payload
 
     def invalidate(self) -> None:
         with self._data_lock:
             self._runtime_payload_cache = None
             self._live_inbox_ids_cache = None
+            self._live_inbox_ids_generation += 1
             self._daily_summary_cache = None
-            self._unsubscribe_candidates_cache = None
         with self._harness_lock:
             self._harness_cache.clear()
 
@@ -182,15 +173,51 @@ class CompanionRuntimeState:
             self._daily_summary_cache = (time.monotonic(), payload)
             return payload
 
-    def _live_inbox_ids(self) -> set[str] | None:
+    def _live_inbox_ids_snapshot(self) -> tuple[set[str] | None, int]:
         now = time.monotonic()
-        if self._live_inbox_ids_cache is not None:
-            created_at, message_ids = self._live_inbox_ids_cache
-            if now - created_at <= COMPANION_DATA_CACHE_SECONDS:
-                return message_ids
-        message_ids = self._live_inbox_ids_loader()
-        self._live_inbox_ids_cache = (time.monotonic(), message_ids)
-        return message_ids
+        should_refresh = False
+        with self._data_lock:
+            generation = self._live_inbox_ids_generation
+            if self._live_inbox_ids_cache is not None:
+                created_at, message_ids = self._live_inbox_ids_cache
+                if now - created_at <= COMPANION_DATA_CACHE_SECONDS:
+                    return message_ids, generation
+            stale_message_ids = (
+                self._live_inbox_ids_cache[1]
+                if self._live_inbox_ids_cache is not None
+                else None
+            )
+            if not self._live_inbox_ids_refreshing:
+                self._live_inbox_ids_refreshing = True
+                should_refresh = True
+        if should_refresh:
+            try:
+                self._background_runner(self._refresh_live_inbox_ids)
+            except Exception:
+                with self._data_lock:
+                    self._live_inbox_ids_refreshing = False
+        return stale_message_ids, generation
+
+    def _refresh_live_inbox_ids(self) -> None:
+        try:
+            message_ids = self._live_inbox_ids_loader()
+        except Exception:
+            message_ids = None
+        with self._data_lock:
+            previous_message_ids = (
+                self._live_inbox_ids_cache[1]
+                if self._live_inbox_ids_cache is not None
+                else None
+            )
+            self._live_inbox_ids_cache = (time.monotonic(), message_ids)
+            self._live_inbox_ids_refreshing = False
+            inbox_ids_changed = previous_message_ids != message_ids
+            if inbox_ids_changed:
+                self._runtime_payload_cache = None
+                self._live_inbox_ids_generation += 1
+        if inbox_ids_changed:
+            with self._harness_lock:
+                self._harness_cache.clear()
 
     def _async_follow_up(self) -> dict | None:
         with self._async_lock:

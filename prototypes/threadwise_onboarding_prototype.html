@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Threadwise onboarding prototype</title>
+  <style>
+    :root {
+      --ink: #241812;
+      --muted: #6b6255;
+      --paper: #fffdf7;
+      --cream: #fff4d7;
+      --sand: #f5efe2;
+      --green: #2eb67d;
+      --green-soft: #dff8ed;
+      --teal: #0f766e;
+      --yellow: #ffc64a;
+      --orange: #ad6400;
+      --line: rgba(36, 24, 18, .18);
+      --shadow: 4px 4px 0 var(--ink);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: #eef1ea;
+      color: var(--ink);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+    button:focus-visible, input:focus-visible { outline: 3px solid #247c9b; outline-offset: 3px; }
+    .prototype-bar {
+      padding: 9px 18px;
+      background: var(--ink);
+      color: #fff8df;
+      text-align: center;
+      font-size: .78rem;
+      font-weight: 800;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+    }
+    .shell {
+      width: min(1180px, calc(100% - 28px));
+      margin: 24px auto 120px;
+    }
+    .masthead {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .brand-mark {
+      width: 46px;
+      height: 46px;
+      border: 2px solid var(--ink);
+      border-radius: 13px;
+      background: var(--yellow);
+      box-shadow: 3px 3px 0 var(--ink);
+      display: grid;
+      place-items: center;
+      font-weight: 950;
+      font-size: 1.1rem;
+    }
+    .brand-name { font-size: 1.35rem; font-weight: 900; letter-spacing: -.03em; }
+    .eyebrow {
+      color: var(--orange);
+      font-family: ui-serif, Georgia, serif;
+      font-size: .7rem;
+      font-weight: 900;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+    .privacy {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 11px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--paper);
+      color: var(--muted);
+      font-size: .8rem;
+      font-weight: 700;
+    }
+    .privacy-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
+    .workspace {
+      display: grid;
+      grid-template-columns: minmax(0, 1.4fr) minmax(300px, .8fr);
+      gap: 18px;
+      align-items: start;
+    }
+    .panel {
+      border: 3px solid var(--ink);
+      border-radius: 18px;
+      background: var(--paper);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .panel-head {
+      padding: 23px 24px 18px;
+      border-bottom: 2px solid var(--ink);
+      background: var(--cream);
+    }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { margin-bottom: 9px; font-size: clamp(2rem, 5vw, 3.3rem); line-height: .98; letter-spacing: -.055em; }
+    h2 { margin-bottom: 8px; font-size: 1.45rem; letter-spacing: -.035em; }
+    h3 { margin-bottom: 4px; font-size: 1rem; }
+    .lede { max-width: 650px; margin-bottom: 0; color: var(--muted); line-height: 1.5; }
+    .panel-body { padding: 22px 24px 25px; }
+    .stepper { display: flex; gap: 0; margin-bottom: 24px; }
+    .step {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-width: 0;
+      color: #887c6e;
+      font-size: .78rem;
+      font-weight: 800;
+    }
+    .step:not(:last-child)::after { content: ""; width: 26px; height: 2px; margin: 0 8px; background: var(--line); }
+    .step-number {
+      display: grid;
+      place-items: center;
+      width: 24px;
+      height: 24px;
+      flex: 0 0 auto;
+      border: 1px solid var(--line);
+      border-radius: 50%;
+      background: var(--sand);
+    }
+    .step.is-current { color: var(--ink); }
+    .step.is-current .step-number { border: 2px solid var(--ink); background: var(--yellow); }
+    .step.is-done { color: var(--teal); }
+    .step.is-done .step-number { border-color: var(--teal); background: var(--green-soft); }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+    .button {
+      min-height: 44px;
+      padding: 10px 14px;
+      border: 2px solid var(--ink);
+      border-radius: 11px;
+      background: var(--paper);
+      color: var(--ink);
+      font-weight: 850;
+      box-shadow: 2px 2px 0 var(--ink);
+    }
+    .button.primary { background: var(--green); }
+    .button.warm { background: var(--yellow); }
+    .button.ghost { border-color: transparent; box-shadow: none; text-decoration: underline; text-underline-offset: 3px; }
+    .button:active { transform: translate(1px, 1px); box-shadow: 1px 1px 0 var(--ink); }
+    .connect-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .choice {
+      width: 100%;
+      padding: 15px;
+      border: 2px solid var(--line);
+      border-radius: 13px;
+      background: var(--paper);
+      text-align: left;
+    }
+    .choice.is-selected { border-color: var(--ink); background: var(--green-soft); box-shadow: 2px 2px 0 var(--ink); }
+    .choice strong { display: block; margin-bottom: 5px; }
+    .choice span { color: var(--muted); font-size: .86rem; line-height: 1.35; }
+    .status-row, .coverage-row, .mail-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .status-row + .status-row { margin-top: 14px; }
+    .status-label { color: var(--muted); font-size: .84rem; }
+    .status-value { font-size: .84rem; font-weight: 850; }
+    .status-value.ready { color: var(--teal); }
+    .status-value.pending { color: var(--orange); }
+    .rule-list { display: grid; gap: 9px; margin-top: 16px; }
+    .rule {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fff8eb;
+    }
+    .rule small { display: block; margin-top: 3px; color: var(--muted); line-height: 1.35; }
+    .tag { display: inline-flex; align-items: center; min-height: 25px; padding: 4px 8px; border-radius: 999px; background: var(--green-soft); color: var(--teal); font-size: .73rem; font-weight: 850; white-space: nowrap; }
+    .tag.warm { background: #fff1c9; color: var(--orange); }
+    .ai-box {
+      padding: 15px;
+      border: 2px solid var(--ink);
+      border-radius: 14px;
+      background: #f0f7f3;
+    }
+    .ai-box p { margin-bottom: 10px; color: var(--muted); line-height: 1.45; }
+    .ai-input { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+    .ai-input input { width: 100%; min-height: 43px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 10px; background: #fff; color: var(--ink); }
+    .chat { display: grid; gap: 10px; margin-top: 16px; }
+    .bubble { max-width: 90%; padding: 12px 13px; border-radius: 14px; line-height: 1.42; font-size: .89rem; }
+    .bubble.ai { background: var(--sand); }
+    .bubble.user { justify-self: end; background: var(--green-soft); }
+    .coverage { display: grid; gap: 12px; margin-top: 17px; }
+    .coverage-row { padding-bottom: 11px; border-bottom: 1px solid var(--line); }
+    .coverage-row:last-child { border-bottom: 0; padding-bottom: 0; }
+    .bar { width: 120px; height: 8px; overflow: hidden; border-radius: 999px; background: #e1dfd7; }
+    .bar span { display: block; height: 100%; background: var(--green); }
+    .metric-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; margin-top: 16px; }
+    .metric { padding: 12px; border-radius: 12px; background: var(--sand); }
+    .metric strong { display: block; font-size: 1.35rem; }
+    .metric span { color: var(--muted); font-size: .75rem; }
+    .mail-list { display: grid; gap: 8px; margin-top: 15px; }
+    .mail-row { padding: 11px 12px; border: 1px solid var(--line); border-radius: 11px; background: #fff; }
+    .mail-copy { min-width: 0; }
+    .mail-copy strong, .mail-copy span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mail-copy span { margin-top: 3px; color: var(--muted); font-size: .78rem; }
+    .question { margin-top: 18px; padding: 16px; border: 2px solid var(--ink); border-radius: 14px; background: #fff8eb; }
+    .question p { margin-bottom: 12px; line-height: 1.45; }
+    .question-options { display: grid; gap: 8px; }
+    .question-option { padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); text-align: left; font-weight: 750; }
+    .question-option.is-selected { border: 2px solid var(--ink); background: var(--green-soft); }
+    .side-section { padding: 20px; }
+    .side-section + .side-section { border-top: 2px solid var(--ink); }
+    .side-section p { color: var(--muted); line-height: 1.45; font-size: .89rem; }
+    .side-section ul { display: grid; gap: 9px; padding-left: 18px; margin: 12px 0 0; color: var(--muted); font-size: .86rem; line-height: 1.4; }
+    .timeline { display: grid; gap: 13px; margin-top: 14px; }
+    .timeline-item { display: grid; grid-template-columns: 12px 1fr; gap: 10px; }
+    .timeline-dot { width: 10px; height: 10px; margin-top: 4px; border-radius: 50%; background: var(--green); }
+    .timeline-item strong { display: block; font-size: .84rem; }
+    .timeline-item span { display: block; margin-top: 2px; color: var(--muted); font-size: .78rem; line-height: 1.35; }
+    .mini-hero { display: flex; align-items: end; justify-content: space-between; gap: 16px; }
+    .mini-hero .hero-number { font-size: 2.5rem; line-height: .9; font-weight: 950; letter-spacing: -.06em; }
+    .mini-hero .hero-label { color: var(--muted); font-size: .78rem; }
+    .bottom-switcher {
+      position: fixed;
+      left: 50%;
+      bottom: 18px;
+      z-index: 5;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      transform: translateX(-50%);
+      padding: 8px 10px;
+      border: 2px solid var(--ink);
+      border-radius: 999px;
+      background: var(--ink);
+      color: #fff8df;
+      box-shadow: 4px 4px 0 rgba(36, 24, 18, .25);
+      font-size: .78rem;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+    .switch-button { width: 30px; height: 30px; border: 1px solid #fff8df; border-radius: 50%; background: transparent; color: #fff8df; font-weight: 900; }
+    .switch-button:hover { background: #fff8df; color: var(--ink); }
+    .hidden { display: none !important; }
+    @media (max-width: 850px) {
+      .workspace { grid-template-columns: 1fr; }
+      .side-panel { order: -1; }
+    }
+    @media (max-width: 560px) {
+      .shell { width: min(100% - 18px, 1180px); margin-top: 13px; }
+      .masthead { align-items: flex-start; flex-direction: column; }
+      .panel-head, .panel-body { padding-left: 17px; padding-right: 17px; }
+      .stepper { overflow-x: auto; padding-bottom: 5px; }
+      .step { flex: 0 0 auto; }
+      .connect-grid, .metric-grid { grid-template-columns: 1fr; }
+      .ai-input { grid-template-columns: 1fr; }
+      .bottom-switcher { max-width: calc(100% - 20px); overflow: hidden; }
+    }
+  </style>
+</head>
+<body>
+  <div class="prototype-bar">Throwaway prototype - no provider connection, no AI key, no mailbox writes</div>
+  <main class="shell">
+    <header class="masthead">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">TW</div>
+        <div>
+          <div class="eyebrow">Inbox intelligence, with you in control</div>
+          <div class="brand-name">Threadwise</div>
+        </div>
+      </div>
+      <div class="privacy"><span class="privacy-dot" aria-hidden="true"></span> Your email stays yours</div>
+    </header>
+
+    <section id="variant-guided" class="variant hidden" data-name="Guided setup">
+      <div class="workspace">
+        <section class="panel">
+          <div class="panel-head">
+            <div class="eyebrow">First run</div>
+            <h1>Make your inbox make sense.</h1>
+            <p class="lede">Threadwise starts with the obvious stuff, then asks you about the decisions that are genuinely personal.</p>
+          </div>
+          <div class="panel-body">
+            <div class="stepper" data-stepper></div>
+            <div data-guided-stage></div>
+          </div>
+        </section>
+        <aside class="panel side-panel">
+          <div class="side-section">
+            <div class="eyebrow">What Threadwise will do</div>
+            <h2>Start useful, stay teachable.</h2>
+            <div class="timeline">
+              <div class="timeline-item"><span class="timeline-dot"></span><div><strong>Common sense first</strong><span>Delivery, orders, receipts, security, newsletters and calendar mail get a baseline judgment.</span></div></div>
+              <div class="timeline-item"><span class="timeline-dot"></span><div><strong>AI for the ambiguous bits</strong><span>Your connected model sees the message context and explains its uncertainty.</span></div></div>
+              <div class="timeline-item"><span class="timeline-dot"></span><div><strong>You approve the policy</strong><span>Nothing changes in your inbox until you accept the preview.</span></div></div>
+              <div class="timeline-item"><span class="timeline-dot"></span><div><strong>It learns your exceptions</strong><span>Private rules are scoped to your account and can be edited or rolled back.</span></div></div>
+            </div>
+          </div>
+          <div class="side-section">
+            <div class="eyebrow">AI connection</div>
+            <p>Threadwise is designed to use an AI model. You bring the model and choose whether messages are processed locally, through OpenAI, or through a compatible provider.</p>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section id="variant-map" class="variant hidden" data-name="Inbox map">
+      <div class="workspace">
+        <section class="panel">
+          <div class="panel-head">
+            <div class="eyebrow">Your starting map</div>
+            <div class="mini-hero"><div><h1>See the inbox before you change it.</h1><p class="lede">A dry run turns a scary setup into a concrete conversation: here is what Threadwise understands, here is what it does not.</p></div><div><div class="hero-number" data-map-progress>0%</div><div class="hero-label">baseline coverage</div></div></div>
+          </div>
+          <div class="panel-body">
+            <div class="stepper" data-stepper></div>
+            <div data-map-stage></div>
+          </div>
+        </section>
+        <aside class="panel side-panel">
+          <div class="side-section">
+            <div class="eyebrow">The promise</div>
+            <h2>No mystery queue.</h2>
+            <p>Every result is visible as a count, a sample, or a question. “Needs your input” means something specific, not that the system silently skipped the email.</p>
+          </div>
+          <div class="side-section">
+            <div class="eyebrow">Safety boundary</div>
+            <ul><li>Preview first.</li><li>Label changes are reversible.</li><li>AI suggestions explain their evidence.</li><li>Personal rules never become global rules by accident.</li></ul>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section id="variant-copilot" class="variant hidden" data-name="AI copilot">
+      <div class="workspace">
+        <section class="panel">
+          <div class="panel-head">
+            <div class="eyebrow">Set up with your AI</div>
+            <h1>Tell Threadwise how you work.</h1>
+            <p class="lede">This version makes the setup feel like a short, useful conversation with an inbox specialist who can show its work.</p>
+          </div>
+          <div class="panel-body">
+            <div class="stepper" data-stepper></div>
+            <div data-copilot-stage></div>
+          </div>
+        </section>
+        <aside class="panel side-panel">
+          <div class="side-section">
+            <div class="eyebrow">AI working agreement</div>
+            <h2>You stay the editor.</h2>
+            <p>Threadwise can use your model to interpret full message context, but it proposes rules instead of silently inventing a personal filing system.</p>
+          </div>
+          <div class="side-section">
+            <div class="eyebrow">Good questions have leverage</div>
+            <p>One answer should resolve a whole family of messages. “What should this one email be?” is review. “How should this kind of email behave?” is onboarding.</p>
+          </div>
+        </aside>
+      </div>
+    </section>
+  </main>
+
+  <nav class="bottom-switcher" aria-label="Prototype variations">
+    <button class="switch-button" type="button" data-switch="prev" aria-label="Previous prototype">&lt;</button>
+    <span><span data-variant-label></span> - use the arrows to compare</span>
+    <button class="switch-button" type="button" data-switch="next" aria-label="Next prototype">&gt;</button>
+  </nav>
+
+  <script>
+    const VARIANTS = [
+      { key: "guided", label: "A - Guided setup" },
+      { key: "map", label: "B - Inbox map" },
+      { key: "copilot", label: "C - AI copilot" }
+    ];
+    const state = {
+      variant: new URLSearchParams(location.search).get("variant") || "guided",
+      stage: 0,
+      provider: "",
+      ai: "",
+      aiConnected: false,
+      apiKey: "",
+      questionAnswer: "",
+      instruction: ""
+    };
+    const stages = ["Connect", "AI", "Preview", "Shape", "Live"];
+    const safe = (value) => String(value).replace(/[&<>\"]/g, (char) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[char]));
+    const updateUrl = () => history.replaceState({}, "", `?variant=${state.variant}`);
+    const el = (selector) => document.querySelector(selector);
+    const all = (selector) => Array.from(document.querySelectorAll(selector));
+    const advance = (nextStage) => { state.stage = Math.min(4, nextStage ?? state.stage + 1); render(); };
+    const providerName = () => state.provider === "proton" ? "Proton Mail" : "Gmail";
+    const renderStepper = (node) => {
+      node.innerHTML = stages.map((stage, index) => `<div class="step ${index === state.stage ? "is-current" : ""} ${index < state.stage ? "is-done" : ""}"><span class="step-number">${index < state.stage ? "OK" : index + 1}</span><span>${stage}</span></div>`).join("");
+    };
+    const connectStage = (next) => `
+      <div class="eyebrow">Step 1 of 5</div>
+      <h2>Connect an inbox</h2>
+      <p class="lede">Choose where Threadwise should work. Gmail and Proton stay separate, but the interaction stays the same.</p>
+      <div class="connect-grid" style="margin-top:16px">
+        <button class="choice ${state.provider === "gmail" ? "is-selected" : ""}" data-provider="gmail" type="button"><strong>Gmail</strong><span>Use the browser companion beside your inbox.</span></button>
+        <button class="choice ${state.provider === "proton" ? "is-selected" : ""}" data-provider="proton" type="button"><strong>Proton Mail</strong><span>Use the Bridge-backed companion with the same review flow.</span></button>
+      </div>
+      <div class="actions"><button class="button primary" data-action="next" type="button" ${state.provider ? "" : "disabled"}>Continue with ${state.provider ? providerName() : "your inbox"}</button></div>`;
+    const aiStage = (next) => `
+      <div class="eyebrow">Step 2 of 5</div>
+      <h2>Connect the AI that Threadwise will use</h2>
+      <p class="lede">Threadwise is intentionally AI-powered. Pick the model connection you trust, then test it before any email is changed.</p>
+      <div class="connect-grid" style="margin-top:16px">
+        <button class="choice ${state.ai === "openai" ? "is-selected" : ""}" data-ai="openai" type="button"><strong>OpenAI API</strong><span>Bring an API key from your OpenAI account. Usage is visible and capped.</span></button>
+        <button class="choice ${state.ai === "codex" ? "is-selected" : ""}" data-ai="codex" type="button"><strong>Codex / local companion</strong><span>Use a connected local AI environment when available.</span></button>
+      </div>
+      <div class="ai-box" style="margin-top:16px"><strong>Connect your model</strong><p>Threadwise uses the model for message context, ambiguous intent, plain-English rules, and explanations. This prototype never sends or stores a real key.</p>${state.ai === "openai" ? `<label style="display:grid;gap:6px;margin-top:12px;font-size:.84rem;font-weight:800">OpenAI API key<input data-api-key type="password" placeholder="sk-... (prototype only)" value="${safe(state.apiKey || "")}" style="width:100%;min-height:43px;padding:9px 11px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink)"></label>` : ""}<div class="actions" style="margin-top:12px"><button class="button warm" data-action="connect-ai" type="button" ${state.ai ? "" : "disabled"}>${state.aiConnected ? "Connection tested" : state.ai === "openai" ? "Test OpenAI connection" : "Check Codex connection"}</button></div><div class="status-row" style="margin-top:13px"><span class="status-label">Connection test</span><span class="status-value ${state.aiConnected ? "ready" : "pending"}">${state.aiConnected ? "Ready for a dry run" : state.ai ? "Not tested yet" : "Choose a connection"}</span></div></div>
+      <div class="actions"><button class="button primary" data-action="next" type="button" ${state.aiConnected ? "" : "disabled"}>Run a safe preview</button><button class="button ghost" data-action="back" type="button">Back</button></div>`;
+    const previewStage = (next) => `
+      <div class="eyebrow">Step 3 of 5</div>
+      <h2>Here is what Threadwise sees</h2>
+      <p class="lede">This is a read-only sample from ${providerName()}. The baseline pack handles common patterns, while the AI identifies the families that need your preference.</p>
+      <div class="metric-grid"><div class="metric"><strong>68%</strong><span>safe baseline coverage</span></div><div class="metric"><strong>21%</strong><span>needs a preference</span></div><div class="metric"><strong>11%</strong><span>still unfamiliar</span></div></div>
+      <div class="coverage"><div class="coverage-row"><span>Delivery and tracking</span><span class="bar"><span style="width:96%"></span></span><strong>96%</strong></div><div class="coverage-row"><span>Orders and receipts</span><span class="bar"><span style="width:91%"></span></span><strong>91%</strong></div><div class="coverage-row"><span>Account and security</span><span class="bar"><span style="width:88%"></span></span><strong>88%</strong></div><div class="coverage-row"><span>Personal project notifications</span><span class="bar"><span style="width:28%;background:var(--yellow)"></span></span><strong>Question</strong></div></div>
+      <div class="mail-list"><div class="mail-row"><div class="mail-copy"><strong>DHL Paket - shipment update</strong><span>Recognized as delivery, no question needed</span></div><span class="tag">Orders</span></div><div class="mail-row"><div class="mail-copy"><strong>Your Google data is ready to download</strong><span>Account and security, but your preference is needed</span></div><span class="tag warm">Question</span></div><div class="mail-row"><div class="mail-copy"><strong>Vercel failed production deployment</strong><span>Project notification, personal or work?</span></div><span class="tag warm">Question</span></div></div>
+      <div class="actions"><button class="button primary" data-action="next" type="button">Answer the useful questions</button><button class="button ghost" data-action="back" type="button">Back</button></div>`;
+    const shapeStage = (next) => `
+      <div class="eyebrow">Step 4 of 5</div>
+      <h2>Two answers will shape your first pass</h2>
+      <p class="lede">Threadwise asks about families, not isolated messages. Each answer becomes a private, reviewable rule.</p>
+      <div class="question"><strong>Project notifications from GitHub and Vercel</strong><p>How should Threadwise handle notifications about your own software projects?</p><div class="question-options"><button class="question-option ${state.questionAnswer === "personal" ? "is-selected" : ""}" data-answer="personal" type="button">Personal projects</button><button class="question-option ${state.questionAnswer === "work" ? "is-selected" : ""}" data-answer="work" type="button">Work projects</button><button class="question-option ${state.questionAnswer === "ask" ? "is-selected" : ""}" data-answer="ask" type="button">Keep these visible and ask when unclear</button></div></div>
+      <div class="ai-box" style="margin-top:15px"><strong>Ask Threadwise in your own words</strong><p>Natural language is first-class. The model will use the full message context, not just a hardcoded keyword rule.</p><div class="ai-input"><input data-instruction value="${safe(state.instruction)}" placeholder="For example: my AI project alerts are personal"><button class="button warm" data-action="save-instruction" type="button">Use this</button></div></div>
+      <div class="rule-list"><div class="rule"><div><strong>Delivery updates -> Orders</strong><small>Universal baseline rule. No question required.</small></div><span class="tag">Active</span></div><div class="rule"><div><strong>Google account notices -> Account</strong><small>Suggested for this account, with a Personal exception for rare archive emails.</small></div><span class="tag warm">Review</span></div><div class="rule"><div><strong>Project alerts -> ${state.questionAnswer === "personal" ? "Personal" : state.questionAnswer === "work" ? "Work" : "Ask me"}</strong><small>Private rule. You can edit the scope before applying.</small></div><span class="tag warm">Draft</span></div></div>
+      <div class="actions"><button class="button primary" data-action="next" type="button" ${state.questionAnswer || state.instruction ? "" : "disabled"}>Preview first pass</button><button class="button ghost" data-action="back" type="button">Back</button></div>`;
+    const liveStage = (next) => `
+      <div class="eyebrow">Step 5 of 5</div>
+      <h2>Ready to make Threadwise useful</h2>
+      <p class="lede">This is the final checkpoint. You will see exactly what will happen before the first labels are written.</p>
+      <div class="ai-box"><div class="status-row"><span class="status-label">Baseline classifications</span><span class="status-value ready">136 messages</span></div><div class="status-row"><span class="status-label">Private rules added</span><span class="status-value ready">2 rules</span></div><div class="status-row"><span class="status-label">Messages left for review</span><span class="status-value pending">18 messages</span></div><div class="status-row"><span class="status-label">First daily run</span><span class="status-value ready">Tomorrow at 06:00</span></div></div>
+      <div class="rule-list"><div class="rule"><div><strong>Safe to apply automatically</strong><small>Delivery, orders, receipts, security, calendar and newsletters where confidence is high.</small></div><span class="tag">118</span></div><div class="rule"><div><strong>Ask me in Threadwise</strong><small>Ambiguous or personal messages stay visible in the review space.</small></div><span class="tag warm">18</span></div></div>
+      <div class="actions"><button class="button primary" data-action="finish" type="button">Start Threadwise</button><button class="button ghost" data-action="back" type="button">Back</button></div>`;
+    const finishedStage = () => `
+      <div class="eyebrow">Threadwise is live</div>
+      <h2>Your inbox has a system now.</h2>
+      <p class="lede">The first run is scheduled. Threadwise will handle high-confidence mail in the background and bring only meaningful decisions back to you.</p>
+      <div class="metric-grid"><div class="metric"><strong>118</strong><span>handled automatically</span></div><div class="metric"><strong>18</strong><span>ready for your review</span></div><div class="metric"><strong>2</strong><span>private rules learned</span></div></div>
+      <div class="actions"><button class="button primary" data-action="open-review" type="button">Open review space</button><button class="button warm" data-action="reset" type="button">Run setup again</button></div>`;
+    const stageHtml = () => state.stage === 0 ? connectStage() : state.stage === 1 ? aiStage() : state.stage === 2 ? previewStage() : state.stage === 3 ? shapeStage() : liveStage();
+    const renderGuided = () => { renderStepper(el("[data-guided-stage]").previousElementSibling); el("[data-guided-stage]").innerHTML = state.stage === 4 && state.completed ? finishedStage() : stageHtml(); };
+    const renderMap = () => { renderStepper(el("[data-map-stage]").previousElementSibling); el("[data-map-stage]").innerHTML = state.stage === 4 && state.completed ? finishedStage() : stageHtml(); el("[data-map-progress]").textContent = `${Math.min(100, state.stage * 25)}%`; };
+    const renderCopilot = () => { renderStepper(el("[data-copilot-stage]").previousElementSibling); el("[data-copilot-stage]").innerHTML = state.stage === 4 && state.completed ? finishedStage() : stageHtml(); };
+    state.completed = false;
+    function render() {
+      updateUrl();
+      all(".variant").forEach((node) => node.classList.toggle("hidden", node.id !== `variant-${state.variant}`));
+      el("[data-variant-label]").textContent = VARIANTS.find((variant) => variant.key === state.variant)?.label || VARIANTS[0].label;
+      if (state.variant === "guided") renderGuided();
+      if (state.variant === "map") renderMap();
+      if (state.variant === "copilot") renderCopilot();
+    }
+    document.addEventListener("click", (event) => {
+      const provider = event.target.closest("[data-provider]");
+      if (provider) { state.provider = provider.dataset.provider; render(); return; }
+      const ai = event.target.closest("[data-ai]");
+      if (ai) { state.ai = ai.dataset.ai; state.aiConnected = false; render(); return; }
+      const answer = event.target.closest("[data-answer]");
+      if (answer) { state.questionAnswer = answer.dataset.answer; render(); return; }
+      const action = event.target.closest("[data-action]");
+      if (action) {
+        const name = action.dataset.action;
+        if (name === "next") advance();
+        if (name === "back") advance(state.stage - 1);
+        if (name === "connect-ai") { state.apiKey = el("[data-api-key]")?.value || ""; state.aiConnected = true; render(); }
+        if (name === "finish") { state.completed = true; render(); }
+        if (name === "reset") { state.stage = 0; state.completed = false; state.provider = ""; state.ai = ""; state.aiConnected = false; state.apiKey = ""; state.questionAnswer = ""; state.instruction = ""; render(); }
+        if (name === "open-review") { action.textContent = "Review space opened"; action.disabled = true; }
+        if (name === "save-instruction") { state.instruction = el("[data-instruction]")?.value || ""; render(); }
+      }
+      const switcher = event.target.closest("[data-switch]");
+      if (switcher) {
+        const index = VARIANTS.findIndex((variant) => variant.key === state.variant);
+        const nextIndex = switcher.dataset.switch === "next" ? (index + 1) % VARIANTS.length : (index - 1 + VARIANTS.length) % VARIANTS.length;
+        state.variant = VARIANTS[nextIndex].key; render();
+      }
+    });
+    render();
+  </script>
+</body>
+</html>

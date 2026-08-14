@@ -1,0 +1,748 @@
+{
+  "ok": true,
+  "tracePath": "docs/gauntlet-evidence/coverage-2026-08-11/coverage-trace.json",
+  "screenshots": [
+    "docs/gauntlet-evidence/coverage-2026-08-11/handled-unknown-normal.png",
+    "docs/gauntlet-evidence/coverage-2026-08-11/handled-unknown-short.png",
+    "docs/gauntlet-evidence/coverage-2026-08-11/checking-normal.png",
+    "docs/gauntlet-evidence/coverage-2026-08-11/checking-short.png",
+    "docs/gauntlet-evidence/coverage-2026-08-11/queue-ready-normal.png",
+    "docs/gauntlet-evidence/coverage-2026-08-11/queue-ready-short.png",
+    "docs/gauntlet-evidence/coverage-2026-08-11/review-first-normal.png",
+    "docs/gauntlet-evidence/coverage-2026-08-11/review-first-short.png",
+    "docs/gauntlet-evidence/coverage-2026-08-11/verified-clear-normal.png",
+    "docs/gauntlet-evidence/coverage-2026-08-11/verified-clear-short.png",
+    "docs/gauntlet-evidence/coverage-2026-08-11/partial-normal.png",
+    "docs/gauntlet-evidence/coverage-2026-08-11/partial-short.png",
+    "docs/gauntlet-evidence/coverage-2026-08-11/stale-normal.png",
+    "docs/gauntlet-evidence/coverage-2026-08-11/stale-short.png",
+    "docs/gauntlet-evidence/coverage-2026-08-11/failed-normal.png",
+    "docs/gauntlet-evidence/coverage-2026-08-11/failed-short.png",
+    "docs/gauntlet-evidence/coverage-2026-08-11/offline-normal.png",
+    "docs/gauntlet-evidence/coverage-2026-08-11/offline-short.png"
+  ],
+  "states": [
+    {
+      "name": "handled-unknown",
+      "state": {
+        "status": "unknown",
+        "checked_at": "",
+        "checked_count": 0,
+        "candidate_count": 0,
+        "needs_review_count": 0,
+        "read_failure_count": 0,
+        "unchecked_count": 0,
+        "scope": "Gmail coverage not checked",
+        "review_items": [],
+        "error": "",
+        "previous_status": "",
+        "facts": {
+          "checked": "—",
+          "review": "—",
+          "freshness": "Unknown"
+        },
+        "truthNote": "Unread mail stays in Gmail. Only checked messages needing your judgment enter this queue.",
+        "indicator": "none",
+        "secondary": "",
+        "shell": "Coverage not checked",
+        "title": "Inbox not checked",
+        "action": "Check Gmail",
+        "checkInFlight": false,
+        "detailsOpen": false
+      },
+      "rendered": {
+        "header": "Coverage not checked",
+        "coverageDisplayed": true,
+        "facts": [
+          "—",
+          "—",
+          "Unknown"
+        ]
+      }
+    },
+    {
+      "name": "checking",
+      "state": {
+        "status": "checking",
+        "checked_at": "",
+        "checked_count": 0,
+        "candidate_count": 0,
+        "needs_review_count": 0,
+        "read_failure_count": 0,
+        "unchecked_count": 0,
+        "scope": "Gmail coverage not checked",
+        "review_items": [],
+        "error": "",
+        "previous_status": "",
+        "facts": {
+          "checked": "0",
+          "review": "0",
+          "freshness": "In progress"
+        },
+        "truthNote": "Unread mail stays in Gmail. Only checked messages needing your judgment enter this queue.",
+        "indicator": "indeterminate",
+        "secondary": "",
+        "shell": "Checking Gmail…",
+        "title": "Checking new and changed mail…",
+        "action": "Checking…",
+        "disabled": true,
+        "checkInFlight": true,
+        "detailsOpen": false
+      },
+      "rendered": {
+        "header": "Checking Gmail…",
+        "coverageDisplayed": true,
+        "facts": [
+          "0",
+          "0",
+          "In progress"
+        ]
+      }
+    },
+    {
+      "name": "queue-ready",
+      "state": {
+        "status": "queue-ready",
+        "checked_at": "2026-08-13T19:44:13.713Z",
+        "checked_count": 42,
+        "candidate_count": 42,
+        "needs_review_count": 3,
+        "read_failure_count": 0,
+        "unchecked_count": 0,
+        "scope": "Current Gmail Inbox messages",
+        "review_items": [
+          {
+            "provider": "gmail",
+            "message_id": "coverage-a",
+            "thread_id": "thread-coverage",
+            "subject": "Quarterly approval",
+            "sender": "finance@example.test",
+            "suggested_label": "receipt-billing",
+            "classification": "EA/Receipts",
+            "status": "needs-attention",
+            "status_label": "Needs review",
+            "reason": "A decision is required."
+          },
+          {
+            "provider": "gmail",
+            "message_id": "coverage-b",
+            "thread_id": "thread-coverage",
+            "subject": "Travel exception",
+            "sender": "travel@example.test",
+            "suggested_label": "travel",
+            "classification": "EA/Travel",
+            "status": "needs-attention",
+            "status_label": "Needs review",
+            "reason": "A decision is required."
+          },
+          {
+            "provider": "gmail",
+            "message_id": "coverage-c",
+            "thread_id": "thread-coverage",
+            "subject": "Vendor follow-up",
+            "sender": "vendor@example.test",
+            "suggested_label": "receipt-billing",
+            "classification": "EA/Receipts",
+            "status": "needs-attention",
+            "status_label": "Needs review",
+            "reason": "A decision is required."
+          }
+        ],
+        "error": "",
+        "previous_status": "",
+        "facts": {
+          "checked": "42",
+          "review": "3",
+          "freshness": "Just now"
+        },
+        "truthNote": "Unread mail stays in Gmail. Only checked messages needing your judgment enter this queue.",
+        "indicator": "none",
+        "secondary": "Check again",
+        "shell": "3 need review",
+        "title": "3 emails need your review",
+        "action": "Review first",
+        "checkInFlight": false,
+        "detailsOpen": false
+      },
+      "rendered": {
+        "header": "3 need review",
+        "coverageDisplayed": true,
+        "facts": [
+          "42",
+          "3",
+          "Just now"
+        ]
+      }
+    },
+    {
+      "name": "review-first",
+      "state": {
+        "status": "queue-ready",
+        "checked_at": "2026-08-13T19:44:13.713Z",
+        "checked_count": 42,
+        "candidate_count": 42,
+        "needs_review_count": 3,
+        "read_failure_count": 0,
+        "unchecked_count": 0,
+        "scope": "Current Gmail Inbox messages",
+        "review_items": [
+          {
+            "provider": "gmail",
+            "message_id": "coverage-a",
+            "thread_id": "thread-coverage",
+            "subject": "Quarterly approval",
+            "sender": "finance@example.test",
+            "suggested_label": "receipt-billing",
+            "classification": "EA/Receipts",
+            "status": "needs-attention",
+            "status_label": "Needs review",
+            "reason": "A decision is required."
+          },
+          {
+            "provider": "gmail",
+            "message_id": "coverage-b",
+            "thread_id": "thread-coverage",
+            "subject": "Travel exception",
+            "sender": "travel@example.test",
+            "suggested_label": "travel",
+            "classification": "EA/Travel",
+            "status": "needs-attention",
+            "status_label": "Needs review",
+            "reason": "A decision is required."
+          },
+          {
+            "provider": "gmail",
+            "message_id": "coverage-c",
+            "thread_id": "thread-coverage",
+            "subject": "Vendor follow-up",
+            "sender": "vendor@example.test",
+            "suggested_label": "receipt-billing",
+            "classification": "EA/Receipts",
+            "status": "needs-attention",
+            "status_label": "Needs review",
+            "reason": "A decision is required."
+          }
+        ],
+        "error": "",
+        "previous_status": "",
+        "facts": {
+          "checked": "42",
+          "review": "3",
+          "freshness": "Just now"
+        },
+        "truthNote": "Unread mail stays in Gmail. Only checked messages needing your judgment enter this queue.",
+        "indicator": "none",
+        "secondary": "Check again",
+        "shell": "3 need review",
+        "title": "3 emails need your review",
+        "action": "Review first",
+        "checkInFlight": false,
+        "detailsOpen": false
+      },
+      "rendered": {
+        "header": "Ready",
+        "coverageDisplayed": false,
+        "facts": []
+      }
+    },
+    {
+      "name": "verified-clear",
+      "state": {
+        "status": "verified-clear",
+        "checked_at": "2026-08-13T19:44:13.995Z",
+        "checked_count": 42,
+        "candidate_count": 42,
+        "needs_review_count": 0,
+        "read_failure_count": 0,
+        "unchecked_count": 0,
+        "scope": "Current Gmail Inbox messages",
+        "review_items": [],
+        "error": "",
+        "previous_status": "",
+        "facts": {
+          "checked": "42",
+          "review": "0",
+          "freshness": "Just now"
+        },
+        "truthNote": "Gmail may still contain unread mail. Clear means no checked messages need review.",
+        "indicator": "none",
+        "secondary": "Check again",
+        "shell": "Queue clear · just now",
+        "title": "Review queue clear",
+        "action": "Back to Gmail",
+        "checkInFlight": false,
+        "detailsOpen": false
+      },
+      "rendered": {
+        "header": "Queue clear · just now",
+        "coverageDisplayed": true,
+        "facts": [
+          "42",
+          "0",
+          "Just now"
+        ]
+      }
+    },
+    {
+      "name": "partial",
+      "state": {
+        "status": "partial",
+        "checked_at": "2026-08-13T19:44:14.146Z",
+        "checked_count": 31,
+        "candidate_count": 42,
+        "needs_review_count": 2,
+        "read_failure_count": 0,
+        "unchecked_count": 11,
+        "scope": "First 100 current Gmail Inbox messages",
+        "review_items": [
+          {
+            "provider": "gmail",
+            "message_id": "coverage-a",
+            "thread_id": "thread-coverage",
+            "subject": "Quarterly approval",
+            "sender": "finance@example.test",
+            "suggested_label": "receipt-billing",
+            "classification": "EA/Receipts",
+            "status": "needs-attention",
+            "status_label": "Needs review",
+            "reason": "A decision is required."
+          },
+          {
+            "provider": "gmail",
+            "message_id": "coverage-b",
+            "thread_id": "thread-coverage",
+            "subject": "Travel exception",
+            "sender": "travel@example.test",
+            "suggested_label": "travel",
+            "classification": "EA/Travel",
+            "status": "needs-attention",
+            "status_label": "Needs review",
+            "reason": "A decision is required."
+          }
+        ],
+        "error": "",
+        "previous_status": "",
+        "facts": {
+          "checked": "31",
+          "review": "2",
+          "freshness": "Just now"
+        },
+        "truthNote": "Unread mail stays in Gmail. Only checked messages needing your judgment enter this queue.",
+        "indicator": "determinate",
+        "secondary": "Review 2",
+        "shell": "Check incomplete",
+        "title": "11 messages weren’t checked",
+        "action": "Finish check",
+        "checkInFlight": false,
+        "detailsOpen": false
+      },
+      "rendered": {
+        "header": "Check incomplete",
+        "coverageDisplayed": true,
+        "facts": [
+          "31 of 42",
+          "2",
+          "Just now"
+        ]
+      }
+    },
+    {
+      "name": "stale",
+      "state": {
+        "status": "stale",
+        "checked_at": "2026-08-13T17:44:14.279Z",
+        "checked_count": 42,
+        "candidate_count": 42,
+        "needs_review_count": 0,
+        "read_failure_count": 0,
+        "unchecked_count": 0,
+        "scope": "Current Gmail Inbox messages",
+        "review_items": [],
+        "error": "",
+        "previous_status": "",
+        "facts": {
+          "checked": "42",
+          "review": "0",
+          "freshness": "Out of date"
+        },
+        "truthNote": "Gmail changed since the last check. Threadwise makes no clear claim until it is checked again.",
+        "indicator": "none",
+        "secondary": "",
+        "shell": "Coverage out of date",
+        "title": "Queue status is out of date",
+        "action": "Check Gmail",
+        "checkInFlight": false,
+        "detailsOpen": false
+      },
+      "rendered": {
+        "header": "Coverage out of date",
+        "coverageDisplayed": true,
+        "facts": [
+          "42",
+          "0",
+          "Out of date"
+        ]
+      }
+    },
+    {
+      "name": "failed",
+      "state": {
+        "status": "failed",
+        "checked_at": "",
+        "checked_count": 0,
+        "candidate_count": 0,
+        "needs_review_count": 0,
+        "read_failure_count": 0,
+        "unchecked_count": 0,
+        "scope": "Gmail coverage not checked",
+        "review_items": [],
+        "error": "Threadwise could not load the local companion state.",
+        "previous_status": "",
+        "facts": {
+          "checked": "—",
+          "review": "—",
+          "freshness": "Unknown"
+        },
+        "truthNote": "Unread mail stays in Gmail. Only checked messages needing your judgment enter this queue.",
+        "indicator": "none",
+        "secondary": "",
+        "shell": "Check failed",
+        "title": "Gmail check failed",
+        "action": "Try again",
+        "checkInFlight": false,
+        "detailsOpen": false
+      },
+      "rendered": {
+        "header": "Check failed",
+        "coverageDisplayed": true,
+        "facts": [
+          "—",
+          "—",
+          "Unknown"
+        ]
+      }
+    },
+    {
+      "name": "offline",
+      "state": {
+        "status": "offline",
+        "checked_at": "",
+        "checked_count": 0,
+        "candidate_count": 0,
+        "needs_review_count": 0,
+        "read_failure_count": 0,
+        "unchecked_count": 0,
+        "scope": "Gmail coverage not checked",
+        "review_items": [],
+        "error": "Threadwise could not load the local companion state.",
+        "previous_status": "",
+        "facts": {
+          "checked": "—",
+          "review": "—",
+          "freshness": "Unknown"
+        },
+        "truthNote": "This email is handled. The wider review queue is unverified while coverage is unavailable.",
+        "indicator": "none",
+        "secondary": "Details",
+        "shell": "Offline",
+        "title": "Can’t check Gmail",
+        "action": "Try again",
+        "checkInFlight": false,
+        "detailsOpen": false
+      },
+      "rendered": {
+        "header": "Offline",
+        "coverageDisplayed": true,
+        "facts": [
+          "—",
+          "—",
+          "Unknown"
+        ]
+      }
+    }
+  ],
+  "requests": [
+    {
+      "type": "email-agent:get-state",
+      "path": "",
+      "method": ""
+    },
+    {
+      "type": "threadwise:analytics",
+      "path": "",
+      "method": ""
+    },
+    {
+      "type": "email-agent:get-state",
+      "path": "",
+      "method": ""
+    },
+    {
+      "type": "threadwise:analytics",
+      "path": "",
+      "method": ""
+    },
+    {
+      "type": "email-agent:api",
+      "path": "/api/gmail-coverage-check",
+      "method": "POST"
+    },
+    {
+      "type": "email-agent:get-state",
+      "path": "",
+      "method": ""
+    },
+    {
+      "type": "email-agent:get-state",
+      "path": "",
+      "method": ""
+    },
+    {
+      "type": "email-agent:api",
+      "path": "/api/gmail-coverage-check",
+      "method": "POST"
+    },
+    {
+      "type": "email-agent:api",
+      "path": "/api/gmail-coverage-check",
+      "method": "POST"
+    }
+  ],
+  "forbiddenRequests": [],
+  "containment": [
+    {
+      "state": "handled-unknown",
+      "viewport": "normal",
+      "contained": true,
+      "root": {
+        "left": 843,
+        "top": 14,
+        "right": 1251,
+        "bottom": 505.390625,
+        "width": 408,
+        "height": 491.390625
+      }
+    },
+    {
+      "state": "handled-unknown",
+      "viewport": "short",
+      "contained": true,
+      "root": {
+        "left": 319,
+        "top": 14,
+        "right": 727,
+        "bottom": 469,
+        "width": 408,
+        "height": 455
+      }
+    },
+    {
+      "state": "checking",
+      "viewport": "normal",
+      "contained": true,
+      "root": {
+        "left": 843,
+        "top": 14,
+        "right": 1251,
+        "bottom": 518.390625,
+        "width": 408,
+        "height": 504.390625
+      }
+    },
+    {
+      "state": "checking",
+      "viewport": "short",
+      "contained": true,
+      "root": {
+        "left": 319,
+        "top": 14,
+        "right": 727,
+        "bottom": 469,
+        "width": 408,
+        "height": 455
+      }
+    },
+    {
+      "state": "queue-ready",
+      "viewport": "normal",
+      "contained": true,
+      "root": {
+        "left": 843,
+        "top": 14,
+        "right": 1251,
+        "bottom": 610.390625,
+        "width": 408,
+        "height": 596.390625
+      }
+    },
+    {
+      "state": "queue-ready",
+      "viewport": "short",
+      "contained": true,
+      "root": {
+        "left": 319,
+        "top": 14,
+        "right": 727,
+        "bottom": 469,
+        "width": 408,
+        "height": 455
+      }
+    },
+    {
+      "state": "review-first",
+      "viewport": "normal",
+      "contained": true,
+      "root": {
+        "left": 843,
+        "top": 14,
+        "right": 1251,
+        "bottom": 458.59375,
+        "width": 408,
+        "height": 444.59375
+      }
+    },
+    {
+      "state": "review-first",
+      "viewport": "short",
+      "contained": true,
+      "root": {
+        "left": 319,
+        "top": 14,
+        "right": 727,
+        "bottom": 460.59375,
+        "width": 408,
+        "height": 446.59375
+      }
+    },
+    {
+      "state": "verified-clear",
+      "viewport": "normal",
+      "contained": true,
+      "root": {
+        "left": 843,
+        "top": 14,
+        "right": 1251,
+        "bottom": 471.390625,
+        "width": 408,
+        "height": 457.390625
+      }
+    },
+    {
+      "state": "verified-clear",
+      "viewport": "short",
+      "contained": true,
+      "root": {
+        "left": 319,
+        "top": 14,
+        "right": 727,
+        "bottom": 463.390625,
+        "width": 408,
+        "height": 449.390625
+      }
+    },
+    {
+      "state": "partial",
+      "viewport": "normal",
+      "contained": true,
+      "root": {
+        "left": 843,
+        "top": 14,
+        "right": 1251,
+        "bottom": 484.390625,
+        "width": 408,
+        "height": 470.390625
+      }
+    },
+    {
+      "state": "partial",
+      "viewport": "short",
+      "contained": true,
+      "root": {
+        "left": 319,
+        "top": 14,
+        "right": 727,
+        "bottom": 469,
+        "width": 408,
+        "height": 455
+      }
+    },
+    {
+      "state": "stale",
+      "viewport": "normal",
+      "contained": true,
+      "root": {
+        "left": 843,
+        "top": 14,
+        "right": 1251,
+        "bottom": 437.390625,
+        "width": 408,
+        "height": 423.390625
+      }
+    },
+    {
+      "state": "stale",
+      "viewport": "short",
+      "contained": true,
+      "root": {
+        "left": 319,
+        "top": 14,
+        "right": 727,
+        "bottom": 429.390625,
+        "width": 408,
+        "height": 415.390625
+      }
+    },
+    {
+      "state": "failed",
+      "viewport": "normal",
+      "contained": true,
+      "root": {
+        "left": 843,
+        "top": 14,
+        "right": 1251,
+        "bottom": 419.671875,
+        "width": 408,
+        "height": 405.671875
+      }
+    },
+    {
+      "state": "failed",
+      "viewport": "short",
+      "contained": true,
+      "root": {
+        "left": 319,
+        "top": 14,
+        "right": 727,
+        "bottom": 411.671875,
+        "width": 408,
+        "height": 397.671875
+      }
+    },
+    {
+      "state": "offline",
+      "viewport": "normal",
+      "contained": true,
+      "root": {
+        "left": 843,
+        "top": 14,
+        "right": 1251,
+        "bottom": 471.390625,
+        "width": 408,
+        "height": 457.390625
+      }
+    },
+    {
+      "state": "offline",
+      "viewport": "short",
+      "contained": true,
+      "root": {
+        "left": 319,
+        "top": 14,
+        "right": 727,
+        "bottom": 463.390625,
+        "width": 408,
+        "height": 449.390625
+      }
+    }
+  ]
+}

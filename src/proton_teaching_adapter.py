@@ -15,7 +15,12 @@ class ProtonTeachingAdapter:
         if request.mode == "save-future-rule":
             return _write_summary("no-gmail-write-future-rule-only")
 
+        self.preflight(request)
+        label_change = request.label_change or {}
+        target_labels = list(label_change.get("target_labels") or []) if label_change else []
         target_label = str((request.semantic_rule or {}).get("target_label") or "")
+        if not target_labels and target_label:
+            target_labels = [target_label]
         message_ids = [request.current_message_id]
         if request.mode == "apply-included":
             message_ids.extend(sorted(request.included_message_ids))
@@ -29,16 +34,30 @@ class ProtonTeachingAdapter:
         summary = _write_summary("applied")
         console = self._console_loader()
         for message_id in message_ids:
-            try:
-                console.apply_companion_label(message_id, target_label)
-                summary["messages_written"] += 1
-            except Exception as exc:
+            message_failed = False
+            for requested_label in target_labels:
+                try:
+                    console.apply_companion_label(message_id, requested_label)
+                    summary.setdefault("confirmed_labels", {}).setdefault(message_id, []).append(requested_label)
+                except Exception as exc:
+                    message_failed = True
+                    summary.setdefault("errors", []).append({
+                        "message_id": message_id,
+                        "label": requested_label,
+                        "error": str(exc),
+                    })
+            if message_failed:
                 summary["label_write_failed"] += 1
-                summary.setdefault("errors", []).append({
-                    "message_id": message_id,
-                    "error": str(exc),
-                })
+            else:
+                summary["messages_written"] += 1
         return summary
+
+    def preflight(self, request: TeachingWriteRequest) -> None:
+        label_change = request.label_change or {}
+        if label_change and str(label_change.get("operation") or "") != "add":
+            raise ValueError(
+                "Proton Mail currently supports verified additive label corrections only. Nothing was changed."
+            )
 
     def preview_backfill(self, preview: dict) -> dict:
         console = self._console_loader()

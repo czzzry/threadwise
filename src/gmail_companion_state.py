@@ -17,7 +17,6 @@ from src.local_artifacts import (
 )
 from src.sender_utils import normalized_sender_email
 from src.unsubscribe_execution import UnsubscribeExecutor
-from src.unsubscribe_inventory_store import UnsubscribeInventoryStore, candidate_from_message
 
 
 HIGH_CONSEQUENCE_ATTENTION_CATEGORIES = {
@@ -60,7 +59,18 @@ def first_query_value(query: dict[str, list[str]], key: str) -> str:
     values = query.get(key) or [""]
     return values[0]
 
-def build_selected_email_state(storage_dir: Path, unsubscribe_candidates: list[dict], selected_context: dict) -> dict:
+def build_selected_email_state(
+    storage_dir: Path,
+    selected_context_or_legacy_candidates: dict | list[dict],
+    selected_context: dict | None = None,
+) -> dict:
+    # Accept the former candidate-list argument while callers migrate; the
+    # unsubscribe data is deliberately ignored and never enters product state.
+    selected_context = (
+        selected_context_or_legacy_candidates
+        if selected_context is None
+        else selected_context
+    )
     has_context = bool(selected_context.get("message_id") or selected_context.get("subject") or selected_context.get("sender"))
     if not has_context:
         return {
@@ -73,8 +83,6 @@ def build_selected_email_state(storage_dir: Path, unsubscribe_candidates: list[d
             "reason": None,
             "subject": "",
             "sender": "",
-            "unsubscribe_available": False,
-            "unsubscribe": None,
             **selected_email_understanding_state(selected_context),
         }
     matched = find_matching_item(storage_dir, selected_context)
@@ -93,8 +101,6 @@ def build_selected_email_state(storage_dir: Path, unsubscribe_candidates: list[d
             ),
             "subject": selected_context.get("subject") or "",
             "sender": selected_context.get("sender") or "",
-            "unsubscribe_available": False,
-            "unsubscribe": None,
             **selected_email_understanding_state(selected_context),
         }
 
@@ -120,6 +126,7 @@ def build_selected_email_state(storage_dir: Path, unsubscribe_candidates: list[d
         write_status = latest_write_status
     if latest_inbox_status is not None:
         inbox_status = latest_inbox_status
+    write_receipt = latest_message_mutation_attempt(storage_dir, item["message_id"], "write_attempts")
     if visible_gmail_labels:
         write_status = "applied"
         status, status_label = (
@@ -138,13 +145,6 @@ def build_selected_email_state(storage_dir: Path, unsubscribe_candidates: list[d
         and item.get("review_state") == "reviewed"
     ):
         status, status_label = "write-unconfirmed", "Gmail update needs confirmation"
-    candidate = candidate_from_message(
-        batch.get("provider", "gmail"),
-        batch.get("account_id", ""),
-        item,
-        raw_message,
-    ) or find_unsubscribe_candidate(unsubscribe_candidates, item.get("sender") or selected_context.get("sender") or "")
-    unsubscribe_available = candidate is not None
     return {
         "found": True,
         "provider": batch.get("provider", "gmail"),
@@ -159,12 +159,11 @@ def build_selected_email_state(storage_dir: Path, unsubscribe_candidates: list[d
         "status": status,
         "status_label": status_label,
         "reason": item.get("interpretation") or item.get("snippet") or "",
-        "details": build_selected_email_details(item, write_status, inbox_status, candidate),
+        "rationale": item.get("interpretation") or "",
+        "details": build_selected_email_details(item, write_status, inbox_status, write_receipt),
         "subject": item.get("subject") or selected_context.get("subject") or "",
         "sender": item.get("sender") or selected_context.get("sender") or "",
         "received_at": item.get("date") or "",
-        "unsubscribe_available": unsubscribe_available,
-        "unsubscribe": build_unsubscribe_detail(candidate, storage_dir) if candidate else None,
         **selected_email_understanding_state(selected_context),
     }
 
@@ -245,6 +244,35 @@ def latest_message_mutation_status(storage_dir: Path, message_id: str, artifact_
             return str(status)
     return None
 
+
+def latest_message_mutation_attempt(storage_dir: Path, message_id: str, artifact_suffix: str) -> dict:
+    paths = sorted(
+        storage_dir.glob(f"*_{artifact_suffix}.json"),
+        key=lambda path: path.stat().st_mtime_ns,
+        reverse=True,
+    )
+    for path in paths:
+        history = load_json_or_default(path, {}).get(message_id)
+        if not isinstance(history, list) or not history:
+            continue
+        attempt = history[-1]
+        if not isinstance(attempt, dict):
+            continue
+        request_id = str(attempt.get("request_id") or "").strip()[:200]
+        status = str(attempt.get("status") or "").strip().lower()
+        final_labels = [
+            str(label)
+            for label in attempt.get("final_labels") or []
+            if str(label) in CANONICAL_LABEL_ORDER
+        ]
+        if request_id and status in {"applied", "failed"}:
+            return {
+                "request_id": request_id,
+                "status": status,
+                "final_labels": final_labels,
+            }
+    return {}
+
 def action_reason_for_status(status: str) -> str:
     if status == "write-unconfirmed":
         return "Finish Gmail update"
@@ -276,16 +304,69 @@ def review_reason_for_item(item: dict, status: str) -> str:
         )
     return reason
 
+def build_selected_email_details(
+    item: dict,
+    write_status: str | None,
+    inbox_status: str | None,
+    provider_write_receipt: dict | None = None,
+) -> dict:
+    matched_rules = item.get("matched_teachable_rules") or []
+    confidence_band = str(item.get("confidence_band") or "").strip().lower()
+    if confidence_band not in {"high", "medium", "low"}:
+        confidence_band = ""
+    near_misses = []
+    for label in item.get("near_misses") or []:
+        normalized_label = str(label or "").strip().lower()
+        if normalized_label in CANONICAL_LABEL_ORDER and normalized_label not in near_misses:
+            near_misses.append(normalized_label)
+    decision_provenance = normalize_initial_decision_provenance(
+        item.get("decision_provenance")
+    )
+    return {
+        "review_action": item.get("review_action") or "",
+        "write_status": write_status or "",
+        "inbox_status": inbox_status or "",
+        "confidence_band": confidence_band,
+        "near_misses": near_misses,
+        "matched_rule_count": len(matched_rules),
+        "matched_rule_ids": [rule.get("id") for rule in matched_rules if rule.get("id")],
+        "decision_provenance": decision_provenance,
+        "provider_write_receipt": dict(provider_write_receipt or {}),
+    }
+
+
+def normalize_initial_decision_provenance(value: object) -> dict:
+    if not isinstance(value, dict):
+        return {}
+    source = str(value.get("decision_source") or "").strip().lower()
+    if source not in {"rules", "model", "model-failure"}:
+        return {}
+    confidence = str(value.get("llm_confidence") or "").strip().lower()
+    if confidence not in {"low", "medium", "high"}:
+        confidence = ""
+    return {
+        "decision_source": source,
+        "llm_used": bool(value.get("llm_used")),
+        "llm_model": str(value.get("llm_model") or "").strip()[:120],
+        "llm_confidence": confidence,
+        "llm_abstained": bool(value.get("llm_abstained")),
+        "llm_failed": bool(value.get("llm_failed")),
+    }
+
+
 def find_unsubscribe_candidate(candidates: list[dict], sender: str) -> dict | None:
+    """Legacy artifact lookup; no current product state calls this helper."""
     sender_address = normalized_sender_email(sender or "")
     if not sender_address:
         return None
-    for candidate in candidates:
-        if candidate.get("sender_address") == sender_address:
-            return candidate
-    return None
+    return next(
+        (candidate for candidate in candidates if candidate.get("sender_address") == sender_address),
+        None,
+    )
+
 
 def build_unsubscribe_detail(candidate: dict | None, storage_dir: Path) -> dict | None:
+    """Render historical artifact detail without exposing an HTTP route."""
     if candidate is None:
         return None
     preview = UnsubscribeExecutor(storage_dir)._build_preview_item(candidate)
@@ -302,24 +383,7 @@ def build_unsubscribe_detail(candidate: dict | None, storage_dir: Path) -> dict 
         "handoff_path": f"/unsubscribe-review?{urlencode({'list_key': candidate.get('list_key', '')})}",
     }
 
-def build_selected_email_details(
-    item: dict,
-    write_status: str | None,
-    inbox_status: str | None,
-    unsubscribe_candidate: dict | None,
-) -> dict:
-    matched_rules = item.get("matched_teachable_rules") or []
-    return {
-        "review_action": item.get("review_action") or "",
-        "write_status": write_status or "",
-        "inbox_status": inbox_status or "",
-        "matched_rule_count": len(matched_rules),
-        "matched_rule_ids": [rule.get("id") for rule in matched_rules if rule.get("id")],
-        "unsubscribe_reasons": list((unsubscribe_candidate or {}).get("qualification_reasons") or []),
-    }
-
 def build_daily_summary(storage_dir: Path) -> dict:
-    unsubscribe_store = UnsubscribeInventoryStore(storage_dir)
     recent_reports = load_recent_reports(storage_dir, limit=5, provider="gmail")
     if recent_reports:
         label_counts = Counter()
@@ -336,7 +400,6 @@ def build_daily_summary(storage_dir: Path) -> dict:
             {"label": label, "count": count}
             for label, count in sorted(label_counts.items(), key=lambda item: (-item[1], item[0]))[:5]
         ]
-        unsubscribe_count = len(unsubscribe_store.selected_candidate_map())
         changed_today = build_changed_today_summary(storage_dir, latest_report.get("batch_id") or "")
         return {
             "source_label": f"last {len(recent_reports)} Gmail runs",
@@ -348,7 +411,6 @@ def build_daily_summary(storage_dir: Path) -> dict:
             "unlabeled_count": needs_attention_count,
             "top_labels": top_labels,
             "run_count": len(recent_reports),
-            "unsubscribe_candidate_count": unsubscribe_count,
             "changed_today": changed_today,
         }
 
@@ -394,7 +456,6 @@ def build_daily_summary(storage_dir: Path) -> dict:
             for label, count in sorted(label_counts.items(), key=lambda item: (-item[1], item[0]))[:5]
         ],
         "run_count": 1,
-        "unsubscribe_candidate_count": len(unsubscribe_store.selected_candidate_map()),
         "changed_today": build_changed_today_summary(storage_dir, latest_batch.get("batch_id") or ""),
     }
 
@@ -598,11 +659,9 @@ def build_changed_today_summary(storage_dir: Path, batch_id: str) -> dict:
             "label_writes_count": 0,
             "inbox_removed_count": 0,
             "taught_count": 0,
-            "selected_unsubscribe_count": 0,
             "candidate_pending_count": 0,
             "candidate_promoted_count": 0,
             "items": [],
-            "selected_unsubscribe_examples": [],
             "candidate_examples": [],
         }
     batch = load_json_or_default(storage_dir / "batches" / f"{batch_id}.json", {})
@@ -644,18 +703,6 @@ def build_changed_today_summary(storage_dir: Path, batch_id: str) -> dict:
                 "change_summary": change_summary,
             }
         )
-    selected_candidates = [
-        candidate for candidate in _selected_unsubscribe_candidates_for_batch(storage_dir, batch)
-    ]
-    selected_unsubscribe_count = len(selected_candidates)
-    selected_unsubscribe_examples = [
-        {
-            "display_name": candidate.get("display_name") or "(unknown list)",
-            "sender": candidate.get("sender") or "",
-            "handoff_path": f"/unsubscribe-review?{urlencode({'list_key': candidate.get('list_key', '')})}",
-        }
-        for candidate in selected_candidates
-    ][:3]
     candidate_changes = CandidateChangeStore(candidate_changes_path(storage_dir)).list_candidates()
     pending_statuses = {"pending", "evaluated", "recommended-promote", "recommended-review", "recommended-reject"}
     promoted_statuses = {"promoted", "override-promoted"}
@@ -673,12 +720,10 @@ def build_changed_today_summary(storage_dir: Path, batch_id: str) -> dict:
         "label_writes_count": label_writes_count,
         "inbox_removed_count": inbox_removed_count,
         "taught_count": taught_count,
-        "selected_unsubscribe_count": selected_unsubscribe_count,
         "candidate_pending_count": candidate_pending_count,
         "candidate_promoted_count": candidate_promoted_count,
         "items": changed_items[:6],
         "groups": group_changed_today_items(changed_items),
-        "selected_unsubscribe_examples": selected_unsubscribe_examples,
         "candidate_examples": candidate_examples,
     }
 
@@ -715,12 +760,6 @@ def build_runtime_item(
     ):
         status, status_label = "write-unconfirmed", "Gmail update needs confirmation"
     sender_address = normalized_sender_email(item.get("sender") or "")
-    unsubscribe_candidate = candidate_from_message(
-        batch.get("provider", "gmail"),
-        batch.get("account_id", ""),
-        item,
-        raw_message,
-    )
     return {
         "provider": batch.get("provider", "gmail"),
         "account_id": batch.get("account_id", ""),
@@ -738,7 +777,6 @@ def build_runtime_item(
         "status_label": status_label,
         "action_reason": action_reason_for_status(status),
         "reason": review_reason_for_item(item, status),
-        "unsubscribe_available": unsubscribe_candidate is not None,
     }
 
 def build_companion_runtime_payload(
@@ -901,38 +939,6 @@ def find_matching_item(storage_dir: Path, selected_context: dict) -> dict | None
                     return {"batch": batch, "item": item, "raw_message": raw_messages.get(item.get("message_id"), {})}
     return None
 
-
-def _selected_unsubscribe_candidates_for_batch(storage_dir: Path, batch: dict) -> list[dict]:
-    selected_map = UnsubscribeInventoryStore(storage_dir).selected_candidate_map()
-    if not selected_map:
-        return []
-    provider = batch.get("provider") or "gmail"
-    account_id = batch.get("account_id") or ""
-    raw_messages = {message.get("id"): message for message in batch.get("raw_messages", [])}
-    matched: dict[str, dict] = {}
-    for item in batch.get("items", []):
-        candidate = candidate_from_message(provider, account_id, item, raw_messages.get(item.get("message_id"), {}))
-        if candidate is None:
-            continue
-        list_key = candidate.get("list_key")
-        if list_key not in selected_map:
-            continue
-        saved = selected_map[list_key]
-        matched[list_key] = {
-            **candidate,
-            **saved,
-            "list_key": list_key,
-        }
-    for list_key, saved in selected_map.items():
-        matched.setdefault(
-            list_key,
-            {
-                "display_name": saved.get("display_name") or "(unknown list)",
-                "sender": saved.get("sender") or "",
-                "list_key": list_key,
-            },
-        )
-    return list(matched.values())
 
 def selected_email_contract() -> dict:
     return {

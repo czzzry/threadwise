@@ -60,6 +60,41 @@ class ProviderWriteQueueTests(unittest.TestCase):
 
         self.assertEqual(queue.activity()["state"], "error")
 
+    def test_gmail_setup_failure_with_zero_counters_is_retryable(self) -> None:
+        workers = []
+        calls = []
+        queue = ProviderWriteQueue(
+            provider="gmail",
+            provider_name="Gmail",
+            background_runner=workers.append,
+            failure_keys=("label_write_failed", "inbox_remove_failed"),
+        )
+
+        def work() -> dict:
+            calls.append("called")
+            if len(calls) == 1:
+                return {
+                    "mode": "gmail-write-failed",
+                    "error": "Gmail client secret is unavailable",
+                    "label_write_failed": 0,
+                    "inbox_remove_failed": 0,
+                }
+            return {"mode": "applied"}
+
+        queue.submit(work)
+        workers.pop(0)()
+
+        self.assertEqual(queue.activity()["state"], "error")
+        self.assertEqual(queue.activity()["action"], "retry-provider-write")
+        self.assertEqual(queue.activity()["action_label"], "Try again")
+        self.assertNotEqual(queue.activity()["label"], "Gmail labels applied")
+
+        queue.retry()
+        workers.pop(0)()
+
+        self.assertEqual(calls, ["called", "called"])
+        self.assertEqual(queue.activity()["state"], "done")
+
 
 if __name__ == "__main__":
     unittest.main()
