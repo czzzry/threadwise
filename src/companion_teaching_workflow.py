@@ -23,6 +23,7 @@ class TeachingWriteRequest:
     included_message_ids: frozenset[str]
     provider: str = "gmail"
     label_change: dict | None = None
+    request_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -41,9 +42,11 @@ class CompanionTeachingWorkflow:
         storage_dir: Path,
         *,
         write_through: Callable[[TeachingWriteRequest], dict],
+        preflight: Callable[[TeachingWriteRequest], None] | None = None,
     ) -> None:
         self._storage_dir = storage_dir
         self._write_through = write_through
+        self._preflight = preflight or (lambda _request: None)
 
     def build_preview(
         self,
@@ -126,6 +129,28 @@ class CompanionTeachingWorkflow:
         selected_context = dict(payload.get("selected_context") or {})
         target_label = payload["target_label"]
         included_message_ids = _included_message_ids(payload)
+        write_request: TeachingWriteRequest | None = None
+
+        def preflight(plan: dict) -> None:
+            nonlocal write_request
+            write_request = TeachingWriteRequest(
+                account_id=plan["current"]["account_id"],
+                current_message_id=plan["current"]["message_id"],
+                mode=plan["mode"],
+                preview_matches=list(plan["preview_matches"]),
+                semantic_rule={
+                    **dict(plan["semantic_rule"]),
+                    "target_label": plan["semantic_rule"].get("target_label") or target_label,
+                },
+                current_subject=plan["current"].get("subject") or "",
+                current_sender=plan["current"].get("sender") or "",
+                included_message_ids=frozenset(included_message_ids),
+                provider=str(plan["current"].get("provider") or selected_context.get("provider") or "gmail"),
+                label_change=plan.get("label_change"),
+                request_id=_request_id(payload),
+            )
+            self._preflight(write_request)
+
         teaching_result = apply_sidebar_teaching(
             self._storage_dir,
             selected_context=selected_context,
@@ -135,26 +160,11 @@ class CompanionTeachingWorkflow:
             mode=payload["mode"],
             included_message_ids=included_message_ids,
             approved_label_change=payload.get("approved_label_change"),
+            provider_preflight=preflight,
+            request_id=_request_id(payload),
         )
-        current = teaching_result["current"]
-        write_request = TeachingWriteRequest(
-            account_id=current["account_id"],
-            current_message_id=current["message_id"],
-            mode=teaching_result["mode"],
-            preview_matches=list(teaching_result["preview_matches"]),
-            semantic_rule={
-                **(teaching_result.get("semantic_rule") or {}),
-                "target_label": (
-                    (teaching_result.get("semantic_rule") or {}).get("target_label")
-                    or target_label
-                ),
-            },
-            current_subject=current.get("subject") or "",
-            current_sender=current.get("sender") or "",
-            included_message_ids=frozenset(included_message_ids),
-            provider=str(current.get("provider") or selected_context.get("provider") or "gmail"),
-            label_change=teaching_result.get("label_change"),
-        )
+        if write_request is None:
+            raise RuntimeError("Teaching apply did not complete provider preflight.")
         write_summary = (
             _pending_write_summary()
             if defer_provider_write
@@ -189,6 +199,13 @@ def _included_message_ids(payload: dict) -> list[str]:
     ):
         raise ValueError("included_message_ids must be a list of message ids.")
     return included_message_ids
+
+
+def _request_id(payload: dict) -> str:
+    request_id = str(payload.get("request_id") or "").strip()
+    if len(request_id) > 200:
+        raise ValueError("request_id is too long.")
+    return request_id
 
 
 def _pending_write_summary() -> dict:

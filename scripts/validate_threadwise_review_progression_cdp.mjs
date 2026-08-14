@@ -103,86 +103,52 @@ try {
   await waitFor(() => evaluate("globalThis.__eaTestHooks.getSnapshot().manualPreviewContext?.message_id === 'review-a' && Boolean(document.querySelector('[data-ea-queue-navigation]'))"));
   await seedScroll();
 
-  activeStep = "optimistic-first-decision";
+  activeStep = "first-decision-waits-for-local-acceptance";
   const firstBefore = await scrollSnapshot();
   const firstFocusBefore = await activeFocusSnapshot();
   await evaluate("(() => { const node = document.querySelector('[data-ea-queue-navigation]'); if (document.activeElement !== node) node?.focus({ preventScroll: true }); return true; })()");
   await evaluate("window.__reviewProgressionHoldStateRead('review-b')");
   await pressKey("Enter");
   const firstAfterKey = await scrollSnapshot();
-  await waitFor(() => evaluate("globalThis.__eaTestHooks.getSnapshot().manualPreviewContext?.message_id === 'review-b'"));
-  const firstAfterRender = await scrollSnapshot();
-  const firstAfter = await scrollSnapshot();
-  const firstFocusAfter = await activeFocusSnapshot();
   const firstRequestTrace = await requestTrace();
   assert(firstRequestTrace.filter((request) => request.path === "/api/teach-apply").length === 1, "first Enter sends exactly one teach-apply request");
-  assert(await evaluate("globalThis.__eaTestHooks.getSnapshot().optimisticDecision?.responseReceived === false"), "the optimistic flight remains unconfirmed before the held response");
-  assert(await evaluate("!document.querySelector('[data-ea-selected-state=receipt]')?.textContent.includes('Finance approval A')"), "first response cannot render a receipt on the second item");
-  results.scrollTrace.push({ step: "first-decision-stages", before: firstBefore, afterKey: firstAfterKey, afterRender: firstAfterRender });
-  assertScrollUnchanged(firstBefore, firstAfter, "optimistic first decision");
-  results.advancementTrace.push({ step: "first-decision", current: "review-b", requests: firstRequestTrace.filter((request) => request.path === "/api/teach-apply").length });
-  results.focusTrace.push({ step: "first-decision", before: firstFocusBefore, after: firstFocusAfter });
-  results.scrollTrace.push({ step: "first-decision", before: firstBefore, after: firstAfter });
-  activeStep = "late-success-before-next-state-read";
-  const lateApplyBeforeState = await requestTrace();
-  const lateApplyFocusBefore = await activeFocusSnapshot();
-  const lateApplyScrollBefore = await scrollSnapshot();
+  assert(await evaluate("globalThis.__eaTestHooks.getSnapshot().manualPreviewContext?.message_id === 'review-a'"), "review stays on A before local acceptance");
+  assert(await evaluate("globalThis.__eaTestHooks.getSnapshot().optimisticDecision?.responseReceived === false"), "the decision remains unconfirmed before the held response");
+  assertScrollUnchanged(firstBefore, firstAfterKey, "pending first decision");
+
+  activeStep = "mismatched-local-response-stays-current";
   await evaluate("window.__reviewProgressionRespondApply('review-a', true, { omitThreadId: true })");
-  const lateApplyRaceSnapshot = await evaluate("globalThis.__eaTestHooks.getSnapshot()");
-  assert(lateApplyRaceSnapshot.manualPreviewContext?.message_id === "review-b", "late apply response keeps the active manual preview identity before B state arrives");
-  assert(!(await evaluate("document.querySelector('[data-ea-selected-state=receipt]')?.textContent.includes('Finance approval A')")), "late apply response cannot render A receipt while B preview is active");
-  assert(lateApplyRaceSnapshot.optimisticDecision?.responseAccepted === false, "teach-apply response with a missing known thread is logically rejected");
-  assert(!lateApplyRaceSnapshot.committedReviewIdentities.some((identity) => identity.messageId === "review-a"), "rejected teach-apply response unlocks A for retry");
-  assertScrollUnchanged(lateApplyScrollBefore, await scrollSnapshot(), "mismatched teach-apply response");
-  assert(JSON.stringify(lateApplyFocusBefore) === JSON.stringify(await activeFocusSnapshot()), "mismatched teach-apply response preserves focus");
-  results.raceTrace.push({
-    step: "teach-apply-before-preview-state",
-    before: lateApplyBeforeState,
-    snapshot: lateApplyRaceSnapshot,
-    requests: await requestTrace(),
-  });
+  await waitFor(() => evaluate("globalThis.__eaTestHooks.getSnapshot().optimisticDecision?.responseAccepted === false"));
+  const rejectedSnapshot = await evaluate("globalThis.__eaTestHooks.getSnapshot()");
+  assert(rejectedSnapshot.manualPreviewContext?.message_id === "review-a", "a mismatched local response cannot advance review");
+  assert(!rejectedSnapshot.committedReviewIdentities.some((identity) => identity.messageId === "review-a"), "rejected local response keeps A eligible");
   results.responseBoundaryTrace.push({
     step: "known-thread-response-missing",
     response: "omitted-thread-id",
     logicalOutcome: "rejected-retryable",
-    snapshot: lateApplyRaceSnapshot,
+    snapshot: rejectedSnapshot,
     evidence: await progressionEvidence("known-thread-response-missing", firstRequestTrace),
   });
-  await evaluate("window.__reviewProgressionRespondState('review-b')");
-  await waitFor(() => evaluate("globalThis.__eaTestHooks.getSnapshot().manualPreviewContext?.message_id === 'review-b' && document.querySelector('[data-ea-previous-decision-status=retry]')"));
-  await waitFor(() => evaluate("document.querySelector('[data-ea-previous-decision-status=retry]')?.textContent.includes('did not confirm the local save') && !document.querySelector('[data-ea-action=accept-suggestion]')?.disabled"));
-  assert(await evaluate("document.querySelector('[data-ea-selected-state=review]')?.textContent.includes('Finance approval B')"), "late success preserves the second review identity");
-  assert(await evaluate("!document.querySelector('[data-ea-selected-state=receipt]')"), "late success does not render the first receipt on the second item");
-  const postMismatch = await progressionEvidence("post-mismatch-on-next-item", firstRequestTrace);
-  assert(postMismatch.currentIdentity.messageId === "review-b", "mismatch evidence remains on the next review item");
-  assert(postMismatch.snapshot.optimisticDecision?.responseAccepted === false, "mismatch evidence preserves a rejected retry lifecycle");
-  results.responseBoundaryTrace.push({ step: "teach-apply-mismatch-on-next-item", evidence: postMismatch });
-  results.recoveryTrace.push(postMismatch);
 
-  activeStep = "late-valid-response-before-next-state-read";
-  await evaluate("document.querySelector('[data-ea-queue-nav=previous]')?.click()");
-  await waitFor(() => evaluate("globalThis.__eaTestHooks.getSnapshot().manualPreviewContext?.message_id === 'review-a'"));
-  await evaluate("window.__reviewProgressionHoldStateRead('review-b')");
-  const validOldApplyBefore = await requestTrace();
+  activeStep = "accepted-local-response-opens-next";
+  const acceptedBefore = await requestTrace();
   await evaluate("document.querySelector('[data-ea-queue-navigation]')?.focus({ preventScroll: true })");
   await pressKey("Enter");
-  await waitFor(() => evaluate("globalThis.__eaTestHooks.getSnapshot().manualPreviewContext?.message_id === 'review-b'"));
-  const validOldApplyFocusBefore = await activeFocusSnapshot();
-  const validOldApplyScrollBefore = await scrollSnapshot();
+  assert(await evaluate("globalThis.__eaTestHooks.getSnapshot().manualPreviewContext?.message_id === 'review-a'"), "retry remains on A until its local response is accepted");
   await evaluate("window.__reviewProgressionRespondApply('review-a', true)");
-  const validOldApplySnapshot = await evaluate("globalThis.__eaTestHooks.getSnapshot()");
-  assert(validOldApplySnapshot.manualPreviewContext?.message_id === "review-b", "valid old teach-apply response does not reopen A");
-  assert(validOldApplySnapshot.optimisticDecision?.responseAccepted === true, "valid old teach-apply response is logically accepted");
-  assert(validOldApplySnapshot.committedReviewIdentities.some((identity) => identity.messageId === "review-a"), "valid old teach-apply response retains A as committed");
-  assert(!(await evaluate("document.querySelector('[data-ea-selected-state=receipt]')?.textContent.includes('Finance approval A')")), "valid old teach-apply response does not render A receipt on B");
-  assertScrollUnchanged(validOldApplyScrollBefore, await scrollSnapshot(), "valid old teach-apply response");
-  assert(JSON.stringify(validOldApplyFocusBefore) === JSON.stringify(await activeFocusSnapshot()), "valid old teach-apply response preserves focus");
+  await waitFor(() => evaluate("globalThis.__eaTestHooks.getSnapshot().manualPreviewContext?.message_id === 'review-b'"));
+  const acceptedSnapshot = await evaluate("globalThis.__eaTestHooks.getSnapshot()");
+  assert(acceptedSnapshot.optimisticDecision?.responseAccepted === true, "accepted local response records local acceptance");
+  assert(acceptedSnapshot.committedReviewIdentities.some((identity) => identity.messageId === "review-a"), "accepted local response commits A");
   await evaluate("window.__reviewProgressionRespondState('review-b')");
   await waitFor(() => evaluate("globalThis.__eaTestHooks.getSnapshot().manualPreviewContext?.message_id === 'review-b' && globalThis.__eaTestHooks.getSnapshot().optimisticDecision?.responseAccepted === true"));
-  const validOldApplyEvidence = await progressionEvidence("valid-old-response-on-next-item", validOldApplyBefore);
-  assert(validOldApplyEvidence.currentIdentity.messageId === "review-b", "valid old response evidence remains on B");
-  assert(validOldApplyEvidence.requestDelta.added.filter((request) => request.path === "/api/teach-apply").length === 1, "valid old response sends one teaching request");
-  results.localSuccessTrace.push(validOldApplyEvidence);
+  const acceptedEvidence = await progressionEvidence("accepted-local-response-on-next-item", acceptedBefore);
+  assert(acceptedEvidence.currentIdentity.messageId === "review-b", "accepted local response opens B");
+  assert(acceptedEvidence.requestDelta.added.filter((request) => request.path === "/api/teach-apply").length === 1, "accepted retry sends one teaching request");
+  results.localSuccessTrace.push(acceptedEvidence);
+  results.advancementTrace.push({ step: "first-decision", current: "review-b", evidence: acceptedEvidence });
+  results.focusTrace.push({ step: "first-decision", before: firstFocusBefore, after: await activeFocusSnapshot() });
+  results.scrollTrace.push({ step: "first-decision", before: firstBefore, after: await scrollSnapshot() });
   await captureViewportSet("review-next");
 
   activeStep = "filtered-pointer-and-keyboard-navigation";
@@ -227,21 +193,27 @@ try {
   await pressKey("k");
   await waitFor(() => evaluate("globalThis.__eaTestHooks.getSnapshot().manualPreviewContext?.message_id === 'review-b'"));
 
-  activeStep = "provider-failure-on-next-item";
+  activeStep = "rejected-local-response-stays-on-current-item";
   const failureBefore = await requestTrace();
   const failureScrollBefore = await scrollSnapshot();
   await evaluate("(() => { const node = document.querySelector('[data-ea-queue-navigation]'); if (document.activeElement !== node) node?.focus({ preventScroll: true }); return true; })()");
   await pressKey("Enter");
-  await waitFor(() => evaluate("globalThis.__eaTestHooks.getSnapshot().manualPreviewContext?.message_id === 'review-c'"));
-  assert((await requestTrace()).filter((request) => request.path === "/api/teach-apply").length === 3, "second Enter sends one additional teach-apply request");
+  assert(await evaluate("globalThis.__eaTestHooks.getSnapshot().manualPreviewContext?.message_id === 'review-b'"), "B stays current before its local response");
   await evaluate("window.__reviewProgressionRespondApply('review-b', false)");
-  await waitFor(() => evaluate("document.querySelector('[data-ea-previous-decision-status=retry]')"));
-  assert(await evaluate("document.querySelector('[data-ea-selected-state=review]')?.textContent.includes('Finance approval C')"), "provider failure keeps the new current review identity");
-  assert(await evaluate("document.querySelector('[data-ea-previous-decision-status=retry]')"), "provider failure is visible as a retryable previous-decision status");
+  await waitFor(() => evaluate("globalThis.__eaTestHooks.getSnapshot().manualPreviewContext?.message_id === 'review-b' && !globalThis.__eaTestHooks.getSnapshot().optimisticDecision"));
+  assert(!(await evaluate("globalThis.__eaTestHooks.getSnapshot().committedReviewIdentities.some((identity) => identity.messageId === 'review-b')")), "a rejected response keeps B eligible");
+
+  activeStep = "accepted-retry-opens-next-with-provider-retry-status";
+  await evaluate("document.querySelector('[data-ea-queue-navigation]')?.focus({ preventScroll: true })");
+  await pressKey("Enter");
+  assert(await evaluate("globalThis.__eaTestHooks.getSnapshot().manualPreviewContext?.message_id === 'review-b'"), "B remains current until the retry is accepted");
+  await evaluate("window.__reviewProgressionRespondApply('review-b', true)");
+  await waitFor(() => evaluate("globalThis.__eaTestHooks.getSnapshot().manualPreviewContext?.message_id === 'review-c' && Boolean(document.querySelector('[data-ea-previous-decision-status=retry]'))"));
+  assert(await evaluate("document.querySelector('[data-ea-selected-state=review]')?.textContent.includes('Finance approval C')"), "accepted retry opens C");
   const failureEvidence = await progressionEvidence("provider-failure-on-next-item", failureBefore);
-  assert(failureEvidence.currentIdentity.messageId === "review-c", "provider failure evidence keeps the next item current");
+  assert(failureEvidence.currentIdentity.messageId === "review-c", "accepted retry evidence keeps the next item current");
   assert(failureEvidence.query === "finance", "provider failure preserves the nonempty filter");
-  assert(failureEvidence.requestDelta.added.filter((request) => request.path === "/api/teach-apply").length === 1, "provider failure evidence records one new teaching request");
+  assert(failureEvidence.requestDelta.added.filter((request) => request.path === "/api/teach-apply").length === 2, "rejection and accepted retry each send one teaching request");
   assertScrollUnchanged(failureScrollBefore, failureEvidence.scroll, "provider failure");
   results.recoveryTrace.push(failureEvidence);
   results.advancementTrace.push({
@@ -255,7 +227,7 @@ try {
   });
   const staleFollowUpBefore = await requestTrace();
   await evaluate("window.__reviewProgressionSetAsyncFollowUp(true); window.__eaTestHooks.forceRefresh()");
-  await waitFor(() => evaluate("globalThis.__eaTestHooks.getSnapshot().optimisticDecision?.providerWriteState === 'retry' && globalThis.__eaTestHooks.getSnapshot().optimisticDecision?.retryStateLocked === true"));
+  await waitFor(() => evaluate("globalThis.__eaTestHooks.getSnapshot().optimisticDecision?.providerWriteState === 'retry'"));
   const staleFollowUpEvidence = await progressionEvidence("provider-retry-beats-stale-follow-up-done", staleFollowUpBefore);
   assert(await evaluate("Boolean(document.querySelector('[data-ea-previous-decision-status=retry]'))"), "stale async follow-up done does not clear the retryable previous decision");
   assert(staleFollowUpEvidence.snapshot.optimisticDecision?.providerWriteState === "retry", "provider-write retry remains authoritative beside the stale follow-up");
@@ -325,66 +297,34 @@ try {
   const completionBefore = await requestTrace();
   await evaluate("(() => { const node = document.querySelector('[data-ea-queue-navigation]'); if (document.activeElement !== node) node?.focus({ preventScroll: true }); return true; })()");
   await pressKey("Enter");
-  await waitFor(() => evaluate("document.querySelector('[data-ea-review-progression=review-progression-checking]')?.textContent.includes('Checking review queue')"));
-  const checkingSnapshot = await evaluate("globalThis.__eaTestHooks.getSnapshot()");
-  assert(checkingSnapshot.progressionCheck?.status === "checking", "final local item enters a checking lifecycle");
-  assert((await requestTrace()).filter((request) => request.path === "" && request.type === "email-agent:get-state" && !request.identity).length >= 1, "final decision forces a fresh provider-scoped state read");
-  const checkingEvidence = await progressionEvidence("final-item-checking", completionBefore);
-  results.completionTrace.push({ step: "checking", evidence: checkingEvidence, snapshot: checkingSnapshot });
-  await captureViewportSet("checking");
+  assert(await evaluate("globalThis.__eaTestHooks.getSnapshot().manualPreviewContext?.message_id === 'review-c'"), "the final item stays visible before local acceptance");
+  assert(!(await evaluate("document.querySelector('[data-ea-review-progression=review-progression-checking]')")), "queue checking does not start before local acceptance");
 
-  const workingFollowUpAccepted = await evaluate("window.__reviewProgressionRespondCompletion()");
-  results.completionTrace.push({ step: "completion-response-dispatched", accepted: workingFollowUpAccepted, snapshot: await evaluate("globalThis.__eaTestHooks.getSnapshot()") });
-  await waitFor(() => evaluate("document.querySelector('[data-ea-review-progression=review-progression-checking]')?.textContent.includes('background queue refresh')"));
-  await waitFor(() => evaluate("window.__reviewProgressionPendingCompletionCount() === 1"));
-
-  activeStep = "final-apply-failure-during-checking";
-  const finalFailureBefore = await requestTrace();
-  const finalFailureFocusBefore = await activeFocusSnapshot();
+  activeStep = "final-local-rejection-stays-retryable";
   await evaluate("window.__reviewProgressionRespondApply('review-c', false)");
-  await waitFor(() => evaluate("Boolean(document.querySelector('[data-ea-review-progression=review-progression-retry]')) && globalThis.__eaTestHooks.getSnapshot().progressionCheck?.status === 'retry'"));
-  const finalFailureFocusAfter = await activeFocusSnapshot();
+  await waitFor(() => evaluate("globalThis.__eaTestHooks.getSnapshot().manualPreviewContext?.message_id === 'review-c' && !globalThis.__eaTestHooks.getSnapshot().optimisticDecision"));
   const finalFailureSnapshot = await evaluate("globalThis.__eaTestHooks.getSnapshot()");
-  assert(!(await evaluate("document.querySelector('[data-ea-review-progression=review-progression-complete]')")), "final apply failure blocks verified completion");
-  assert(!finalFailureSnapshot.committedReviewIdentities.some((identity) => identity.messageId === "review-c"), "failed final decision is removed from committed eligibility");
-  assert(finalFailureSnapshot.optimisticDecision?.providerWriteState === "retry", "failed final decision keeps a retry lifecycle");
-  assert(finalFailureSnapshot.optimisticDecision?.retryStateLocked === true, "failed final decision locks stale completion follow-up state");
-  assert(await evaluate("window.__reviewProgressionPendingCompletionCount() === 1"), "failed final decision leaves only the superseded completion response pending");
-  assert(JSON.stringify(finalFailureFocusAfter) === JSON.stringify(finalFailureFocusBefore), "final decision failure does not steal focus while replacing checking with retry");
-  const finalFailureEvidence = await progressionEvidence("final-apply-failure-during-checking", finalFailureBefore);
-  assert(finalFailureEvidence.requestDelta.added.filter((request) => request.path === "/api/teach-apply").length === 0, "final failure trace has no duplicate teaching request");
-  results.completionTrace.push({ step: "final-apply-failure-during-checking", focusBefore: finalFailureFocusBefore, focusAfter: finalFailureFocusAfter, evidence: finalFailureEvidence, snapshot: finalFailureSnapshot });
+  assert(!finalFailureSnapshot.committedReviewIdentities.some((identity) => identity.messageId === "review-c"), "rejected final decision remains eligible");
+  assert(!(await evaluate("document.querySelector('[data-ea-review-progression]')")), "rejected final decision never starts or completes a queue check");
+  results.completionTrace.push({ step: "final-local-rejection", evidence: await progressionEvidence("final-local-rejection", completionBefore), snapshot: finalFailureSnapshot });
   await captureViewportSet("final-apply-failure");
-  const readsBeforeSupersededResponse = (await requestTrace()).filter((request) => request.type === "email-agent:get-state" && !request.identity).length;
-  await evaluate("window.__reviewProgressionRespondCompletion()");
-  await waitFor(() => evaluate("globalThis.__eaTestHooks.getSnapshot().progressionCheck?.status === 'retry' && !document.querySelector('[data-ea-review-progression=review-progression-complete]')"));
-  const staleCompletionEvidence = await progressionEvidence("superseded-completion-response-ignored", finalFailureBefore);
-  assert((await requestTrace()).filter((request) => request.type === "email-agent:get-state" && !request.identity).length === readsBeforeSupersededResponse, "superseded completion response schedules no reread");
-  results.raceTrace.push({ step: "final-failure-supersedes-completion", evidence: staleCompletionEvidence, snapshot: await evaluate("globalThis.__eaTestHooks.getSnapshot()") });
-
-  await evaluate("window.__reviewProgressionConfigureCompletion([window.__reviewProgressionMakeState(['review-c'])])");
-  await evaluate("document.querySelector('[data-ea-review-progression=review-progression-retry] [data-ea-action=force-refresh]')?.focus({ preventScroll: true })");
-  const finalReconciliationBefore = await requestTrace();
-  const finalReconciliationFocusBefore = await activeFocusSnapshot();
-  await pressKey("Enter");
-  await waitFor(() => evaluate("window.__reviewProgressionPendingCompletionCount() === 1 && globalThis.__eaTestHooks.getSnapshot().progressionCheck?.status === 'checking'"));
-  await evaluate("window.__reviewProgressionRespondCompletion()");
-  await waitFor(() => evaluate("globalThis.__eaTestHooks.getSnapshot().manualPreviewContext?.message_id === 'review-c' && Boolean(document.querySelector('[data-ea-previous-decision-status=retry]'))"));
-  const finalReconciliationEvidence = await progressionEvidence("fresh-reconciliation-returns-failed-item", finalReconciliationBefore);
-  assert(finalReconciliationEvidence.currentIdentity.messageId === "review-c", "fresh reconciliation returns the failed final item");
-  assert(finalReconciliationFocusBefore.action === "force-refresh", "final failure reconciliation begins from the focused retry control");
-  results.completionTrace.push({ step: "fresh-reconciliation-returns-failed-item", focusBefore: finalReconciliationFocusBefore, evidence: finalReconciliationEvidence, snapshot: await evaluate("globalThis.__eaTestHooks.getSnapshot()") });
-  await captureViewportSet("final-failure-reconciled");
 
   await evaluate("window.__reviewProgressionConfigureCompletion([window.__reviewProgressionMakeState(['review-d'])])");
   await evaluate("(() => { const node = document.querySelector('[data-ea-queue-navigation]'); if (document.activeElement !== node) node?.focus({ preventScroll: true }); return true; })()");
+  const finalRetryBefore = await requestTrace();
   await pressKey("Enter");
-  await waitFor(() => evaluate("globalThis.__eaTestHooks.getSnapshot().progressionCheck?.status === 'checking'"));
+  assert(await evaluate("globalThis.__eaTestHooks.getSnapshot().manualPreviewContext?.message_id === 'review-c'"), "the final retry still waits for local acceptance");
   await evaluate("window.__reviewProgressionRespondApply('review-c', true)");
+  await waitFor(() => evaluate("globalThis.__eaTestHooks.getSnapshot().progressionCheck?.status === 'checking'"));
+  const checkingSnapshot = await evaluate("globalThis.__eaTestHooks.getSnapshot()");
+  assert(checkingSnapshot.committedReviewIdentities.some((identity) => identity.messageId === "review-c"), "accepted final retry commits C before queue checking");
+  const checkingEvidence = await progressionEvidence("final-item-checking", finalRetryBefore);
+  results.completionTrace.push({ step: "checking-after-local-acceptance", evidence: checkingEvidence, snapshot: checkingSnapshot });
+  await captureViewportSet("checking");
   await evaluate("window.__reviewProgressionRespondCompletion()");
   await waitFor(() => evaluate("globalThis.__eaTestHooks.getSnapshot().manualPreviewContext?.message_id === 'review-d'"));
   assert(await evaluate("!document.querySelector('[data-ea-review-progression=review-progression-complete]')"), "a fresh eligible item prevents a false complete verdict after retry");
-  results.completionTrace.push({ step: "retried-final-item-opens-next", evidence: await progressionEvidence("retried-final-item-opens-next", finalReconciliationBefore), snapshot: await evaluate("globalThis.__eaTestHooks.getSnapshot()") });
+  results.completionTrace.push({ step: "retried-final-item-opens-next", evidence: await progressionEvidence("retried-final-item-opens-next", finalRetryBefore), snapshot: await evaluate("globalThis.__eaTestHooks.getSnapshot()") });
 
   activeStep = "null-authoritative-count-stays-unverified";
   await evaluate("window.__reviewProgressionConfigureCompletion([window.__reviewProgressionMakeState([], { dailyCount: null })])");
@@ -525,8 +465,8 @@ try {
   await evaluate("window.__reviewProgressionPhase = 'handled'; window.__reviewProgressionCompletionMode = false; window.__reviewProgressionResetHandledQueue()");
   await setHostMessage("handled-a", "Handled synthetic A", "handled-a@example.test");
   await waitFor(() => evaluate("document.querySelector('[data-ea-selected-state=handled-receipt]')?.textContent.includes('Handled synthetic A')"));
-  const handledButton = await evaluate("document.querySelector('[data-ea-action=confirm-handled-and-next]') !== null");
-  assert(handledButton, "handled receipt exposes Looks right · Next");
+  const handledButton = await evaluate("document.querySelector('[data-ea-action=confirm-handled-and-next]')?.textContent.trim() || ''");
+  assert(handledButton === "Looks right · Next", "handled receipt offers Next when another handled item is eligible");
   const handledBeforeTrace = await requestTrace();
   const handledBefore = handledBeforeTrace.filter((request) => request.path === "/api/handled-review-acknowledge").length;
   const handledFocusReady = await evaluate("(() => { const node = document.querySelector('[data-ea-action=confirm-handled-and-next]'); node?.focus({ preventScroll: true }); return document.activeElement === node; })()");
@@ -596,6 +536,10 @@ try {
   results.keyboardTrace.push({ step: "handled-success", activation: "keyboard-enter", acknowledgementCount: handledBefore + 2, evidence: handledSuccessEvidence });
 
   activeStep = "handled-failure-and-completion";
+  assert(
+    await evaluate("document.querySelector('[data-ea-action=confirm-handled-and-next]')?.textContent.trim() === 'Looks right · Check queue'"),
+    "the final handled item offers a queue check instead of Next",
+  );
   const handledFailureBefore = await requestTrace();
   const handledAckBeforeFailure = handledFailureBefore.filter((request) => request.path === "/api/handled-review-acknowledge").length;
   await evaluate("document.querySelector('[data-ea-action=confirm-handled-and-next]')?.focus({ preventScroll: true })");
@@ -866,6 +810,15 @@ async function installBridge() {
       }
       const responseState = applyResponseThread(makeState(entry.context).sidebar_state, responseOptions);
       entry.callback({ ok: true, payload: { acknowledgment: 'Synthetic local decision accepted.', outcome: { scope: 'current-email', current_email_changed_locally: true, provider_write_queued: true, current_email_written_to_provider: false }, sidebar_state: responseState } });
+      return true;
+    };
+    window.__reviewProgressionRespondApplyTransportError = (messageId) => {
+      const index = pendingApplies.findIndex((entry) => entry.messageId === messageId);
+      if (index < 0) return false;
+      const entry = pendingApplies.splice(index, 1)[0];
+      window.chrome.runtime.lastError = { message: 'Synthetic transport response lost.' };
+      entry.callback();
+      window.chrome.runtime.lastError = null;
       return true;
     };
     window.__reviewProgressionRespondHandled = (messageId, ok = true, responseOptions = {}) => {
@@ -1221,7 +1174,7 @@ async function proveStaleReconciliationResponseIsInert() {
   await evaluate("document.querySelector('[data-ea-action=accept-suggestion]')?.focus({ preventScroll: true })");
   const activationBefore = await requestTrace();
   await pressKey("Enter");
-  await waitFor(() => evaluate("globalThis.__eaTestHooks.getSnapshot().manualPreviewContext === null && document.querySelector('[data-ea-queue-no-results]')?.textContent.includes('No loaded review emails match')"));
+  await waitFor(() => evaluate(`globalThis.__eaTestHooks.getSnapshot().manualPreviewContext?.message_id === ${JSON.stringify(source.messageId)} && globalThis.__eaTestHooks.getSnapshot().optimisticDecision?.responseReceived === false`));
   assert(
     (await requestTrace()).filter((request) => request.path === "/api/teach-apply").length
       === activationBefore.filter((request) => request.path === "/api/teach-apply").length + 1,
@@ -1229,7 +1182,7 @@ async function proveStaleReconciliationResponseIsInert() {
   );
 
   await evaluate("window.__reviewProgressionHoldNextStateRead()");
-  assert(await evaluate("window.__reviewProgressionRespondApply('review-a', false)"), `${label} dispatches the source teaching failure while its host is current`);
+  assert(await evaluate("window.__reviewProgressionRespondApplyTransportError('review-a')"), `${label} dispatches a lost source response while its host is current`);
   await waitFor(() => evaluate("window.__reviewProgressionPendingStateReadCount() === 1"));
 
   const navigationBefore = await requestTrace();

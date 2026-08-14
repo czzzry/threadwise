@@ -119,6 +119,17 @@ class GmailTeachingAdapter:
             "mode": "applied",
         }
 
+    def preflight(self, request: TeachingWriteRequest) -> None:
+        if request.mode == "save-future-rule" or not self._write_enabled:
+            return
+        try:
+            gmail_client = self._gmail_client(request.account_id)
+        except Exception as exc:
+            raise ValueError(str(exc)) from exc
+        baseline_error = self._verify_current_label_baseline(gmail_client, request)
+        if baseline_error:
+            raise ValueError(baseline_error)
+
     def _verify_current_label_baseline(self, gmail_client, request: TeachingWriteRequest) -> str:
         change = request.label_change or {}
         if request.mode != "current-only" or not change:

@@ -15,11 +15,8 @@ class ProtonTeachingAdapter:
         if request.mode == "save-future-rule":
             return _write_summary("no-gmail-write-future-rule-only")
 
+        self.preflight(request)
         label_change = request.label_change or {}
-        if label_change and str(label_change.get("operation") or "") != "add":
-            raise ValueError(
-                "Proton Mail currently supports verified additive label corrections only. Nothing was changed."
-            )
         target_labels = list(label_change.get("target_labels") or []) if label_change else []
         target_label = str((request.semantic_rule or {}).get("target_label") or "")
         if not target_labels and target_label:
@@ -54,6 +51,13 @@ class ProtonTeachingAdapter:
             else:
                 summary["messages_written"] += 1
         return summary
+
+    def preflight(self, request: TeachingWriteRequest) -> None:
+        label_change = request.label_change or {}
+        if label_change and str(label_change.get("operation") or "") != "add":
+            raise ValueError(
+                "Proton Mail currently supports verified additive label corrections only. Nothing was changed."
+            )
 
     def preview_backfill(self, preview: dict) -> dict:
         console = self._console_loader()

@@ -273,11 +273,13 @@ class GmailCompanionApp:
         gmail_teaching_workflow = CompanionTeachingWorkflow(
             storage_dir,
             write_through=gmail_teaching_adapter.apply,
+            preflight=gmail_teaching_adapter.preflight,
         )
         proton_teaching_adapter = ProtonTeachingAdapter(self._proton_console)
         proton_teaching_workflow = CompanionTeachingWorkflow(
             proton_storage_dir,
             write_through=proton_teaching_adapter.apply,
+            preflight=proton_teaching_adapter.preflight,
         )
         self._provider_runtimes = CompanionProviderRuntimes(
             [

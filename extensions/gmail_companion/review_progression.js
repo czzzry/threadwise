@@ -134,20 +134,109 @@
     return null;
   }
 
+  function labelChangeRequiresCurrentOnly(change = {}) {
+    if (!change || typeof change !== "object") {
+      return false;
+    }
+    const operation = text(change.operation).toLowerCase();
+    const labelsAfter = Array.isArray(change.labels_after) ? change.labels_after.filter((label) => text(label)) : [];
+    const legacySingleLabel = text(change.compatibility) === "legacy-single-label"
+      && operation === "only"
+      && labelsAfter.length === 1;
+    return Boolean(operation) && !legacySingleLabel;
+  }
+
+  function hasApprovedLabelChange(change = {}) {
+    return Boolean(
+      change && typeof change === "object"
+      && text(change.operation)
+      && Array.isArray(change.labels_after)
+      && change.labels_after.some((label) => text(label)),
+    );
+  }
+
+  function sameLabelSet(left, right) {
+    if (!Array.isArray(left) || !Array.isArray(right)) {
+      return false;
+    }
+    const normalizedLeft = [...new Set(left.map(text).filter(Boolean))].sort();
+    const normalizedRight = [...new Set(right.map(text).filter(Boolean))].sort();
+    return normalizedLeft.length === normalizedRight.length
+      && normalizedLeft.every((label, index) => label === normalizedRight[index]);
+  }
+
+  function recoveryConfirmation({
+    responseOk = false,
+    sameMessage = false,
+    selected = {},
+    expectedLabels = [],
+    requestId = "",
+  } = {}) {
+    const details = selected?.details || {};
+    const receipt = details.provider_write_receipt || {};
+    const receiptStatus = text(receipt.status).toLowerCase();
+    const localAccepted = Boolean(
+      responseOk
+      && sameMessage
+      && text(requestId)
+      && text(receipt.request_id) === text(requestId)
+      && ["applied", "failed"].includes(receiptStatus)
+      && sameLabelSet(receipt.final_labels, expectedLabels)
+      && sameLabelSet(selected.all_labels, expectedLabels)
+    );
+    const confirmed = Boolean(
+      localAccepted
+      && receiptStatus === "applied"
+      && text(details.write_status).toLowerCase() === "applied"
+      && text(details.inbox_status).toLowerCase() !== "failed"
+    );
+    return Object.freeze({
+      localAccepted,
+      confirmed,
+      providerFailed: localAccepted && !confirmed,
+      inboxRemoved: confirmed && text(details.inbox_status).toLowerCase() === "applied",
+    });
+  }
+
+  function handledAcknowledgementAction({
+    items = [],
+    currentIdentity = {},
+    activeProvider = DEFAULT_PROVIDER,
+    committedIdentities = [],
+  } = {}) {
+    const next = nextEligibleItem({ items, currentIdentity, activeProvider, committedIdentities });
+    return Object.freeze({
+      hasNext: Boolean(next),
+      label: next ? "Looks right · Next" : "Looks right · Check queue",
+      item: next || null,
+    });
+  }
+
+  function decisionMayAdvance({
+    localAccepted = false,
+    responseReceived = false,
+    responseAccepted = null,
+  } = {}) {
+    return Boolean(localAccepted && responseReceived && responseAccepted === true);
+  }
+
   function createRequestToken({
     generation = 0,
     kind = "decision",
     identity = {},
+    attemptId = "",
   } = {}) {
     const normalized = normalizeIdentity(identity);
     const key = identityKey(normalized);
     const numericGeneration = Number.isFinite(Number(generation)) ? Number(generation) : 0;
+    const baseToken = `${text(kind) || "decision"}:${numericGeneration}:${key}`;
+    const normalizedAttemptId = text(attemptId);
     return Object.freeze({
       kind: text(kind) || "decision",
       generation: numericGeneration,
       identity: Object.freeze(normalized),
       identityKey: key,
-      token: `${text(kind) || "decision"}:${numericGeneration}:${key}`,
+      token: normalizedAttemptId ? `${baseToken}:${normalizedAttemptId}` : baseToken,
     });
   }
 
@@ -385,6 +474,12 @@
     filterEligibleItems: eligibleItems,
     nextEligibleItem,
     chooseNextItem: nextEligibleItem,
+    labelChangeRequiresCurrentOnly,
+    hasApprovedLabelChange,
+    sameLabelSet,
+    recoveryConfirmation,
+    handledAcknowledgementAction,
+    decisionMayAdvance,
     createRequestToken,
     makeRequestToken: createRequestToken,
     matchesRequestToken,

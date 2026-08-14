@@ -1,7 +1,7 @@
 # Set Up Threadwise on a Fresh Mac
 
 Status: Current portability guide
-Current as of: 2026-08-12
+Current as of: 2026-08-14
 
 This guide gets the same Threadwise code running on another Mac without putting private email, passwords, OAuth tokens, or API keys in GitHub.
 
@@ -26,11 +26,9 @@ mkdir -p ~/Developer
 cd ~/Developer
 git clone https://github.com/czzzry/threadwise.git
 cd threadwise
-git switch codex/threadwise-coverage-implementation
+git switch main
 git pull --ff-only
 ```
-
-The branch command above is for the current handoff branch. After that work is merged, use `git switch main` followed by `git pull --ff-only` instead.
 
 Whenever work is pushed from another computer, update this Mac with:
 

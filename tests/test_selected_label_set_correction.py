@@ -5,8 +5,10 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from src.gmail_writer import MockGmailLabelClient, MockGmailLabelWriter
+from src.gmail_teaching_adapter import GmailTeachingAdapter
+from src.gmail_companion_state import build_selected_email_state
 from src.proton_teaching_adapter import ProtonTeachingAdapter
-from src.companion_teaching_workflow import TeachingWriteRequest
+from src.companion_teaching_workflow import CompanionTeachingWorkflow, TeachingWriteRequest
 from src.teaching_loop import apply_sidebar_teaching, build_sidebar_teach_preview, infer_label_change_from_note
 
 
@@ -19,11 +21,11 @@ class SelectedLabelSetCorrectionTests(unittest.TestCase):
         self._private_model_environment.start()
         self.addCleanup(self._private_model_environment.stop)
 
-    def write_batch(self, storage_dir: Path, labels: list[str]) -> None:
+    def write_batch(self, storage_dir: Path, labels: list[str], *, provider: str = "gmail") -> None:
         batches = storage_dir / "batches"
         batches.mkdir(parents=True)
         (batches / "batch.json").write_text(json.dumps({
-            "batch_id": "batch", "provider": "gmail", "account_id": "founder-test",
+            "batch_id": "batch", "provider": provider, "account_id": "founder-test",
             "items": [{
                 "message_id": "message-1", "sender": "Shop <shop@example.com>",
                 "subject": "Your order receipt", "review_state": "pending",
@@ -51,6 +53,35 @@ class SelectedLabelSetCorrectionTests(unittest.TestCase):
             self.assertEqual(result["label_change"]["labels_after"], ["shopping-order", "receipt-billing"])
             stored = json.loads((storage / "batches" / "batch.json").read_text())
             self.assertEqual(stored["items"][0]["final_labels"], ["shopping-order", "receipt-billing"])
+
+    def test_legacy_single_label_preview_keeps_broader_teaching_compatible(self):
+        with tempfile.TemporaryDirectory() as temp:
+            storage = Path(temp)
+            self.write_batch(storage, ["shopping-order"])
+            preview = build_sidebar_teach_preview(
+                storage,
+                selected_context={"provider": "gmail", "message_id": "message-1"},
+                target_label="personal",
+                note="",
+                scope="sender",
+            )
+
+            self.assertEqual(preview["label_change"]["compatibility"], "legacy-single-label")
+            with patch("src.teaching_loop.interpret_teaching_intent") as interpret:
+                result = apply_sidebar_teaching(
+                    storage,
+                    selected_context={"provider": "gmail", "message_id": "message-1"},
+                    target_label="personal",
+                    note="",
+                    scope="sender",
+                    mode="matching-existing",
+                    approved_label_change=preview["label_change"],
+                )
+
+            interpret.assert_not_called()
+            self.assertIsNone(result["label_change"])
+            stored = json.loads((storage / "batches" / "batch.json").read_text())
+            self.assertEqual(stored["items"][0]["final_labels"], ["personal"])
 
     def test_llm_label_change_repairs_safe_structural_inconsistencies(self):
         scenarios = [
@@ -166,20 +197,37 @@ class SelectedLabelSetCorrectionTests(unittest.TestCase):
 
     def test_gmail_writer_requires_exact_readback_and_preserves_unrelated_label(self):
         with tempfile.TemporaryDirectory() as temp:
+            storage = Path(temp)
+            self.write_batch(storage, ["shopping-order", "receipt-billing"])
             client = MockGmailLabelClient(
                 existing_labels={"EA/Orders": "orders", "EA/Receipts": "receipts", "STARRED": "starred"},
                 message_labels_by_id={"message-1": ["starred", "orders"]},
             )
-            writer = MockGmailLabelWriter(client, Path(temp), label_name_resolver={
+            writer = MockGmailLabelWriter(client, storage, label_name_resolver={
                 "shopping-order": "EA/Orders", "receipt-billing": "EA/Receipts",
             }.get)
             result = writer.write_reviewed_labels("batch", [{
                 "message_id": "message-1", "review_state": "reviewed",
                 "final_labels": ["shopping-order", "receipt-billing"],
                 "require_exact_label_set_verification": True,
+                "provider_write_request_id": "teach-apply:7:gmail:message-1",
             }])
             self.assertEqual(result["applied_count"], 1)
             self.assertEqual(client._message_labels_by_id["message-1"], ["starred", "orders", "receipts"])
+            self.assertEqual(writer.get_write_attempt_history("batch", "message-1")[-1], {
+                "status": "applied",
+                "final_labels": ["shopping-order", "receipt-billing"],
+                "request_id": "teach-apply:7:gmail:message-1",
+            })
+            selected = build_selected_email_state(
+                storage,
+                {"provider": "gmail", "message_id": "message-1"},
+            )
+            self.assertEqual(selected["details"]["provider_write_receipt"], {
+                "status": "applied",
+                "final_labels": ["shopping-order", "receipt-billing"],
+                "request_id": "teach-apply:7:gmail:message-1",
+            })
 
             client.get_threadwise_label_names = Mock(return_value=["EA/Orders"])
             mismatch = writer.write_reviewed_labels("batch-2", [{
@@ -188,6 +236,91 @@ class SelectedLabelSetCorrectionTests(unittest.TestCase):
                 "require_exact_label_set_verification": True,
             }])
             self.assertEqual(mismatch["failed_count"], 1)
+
+    def test_gmail_preflight_rejects_drift_before_local_persistence(self):
+        class DriftedClient:
+            def __init__(self):
+                self.calls = []
+
+            def get_threadwise_label_names(self, message_id, namespace_prefix):
+                self.calls.append(("get_threadwise_label_names", message_id, namespace_prefix))
+                return ["EA/Finance"]
+
+            def replace_threadwise_labels(self, *args):
+                self.calls.append(("replace_threadwise_labels", *args))
+
+        with tempfile.TemporaryDirectory() as temp:
+            storage = Path(temp)
+            self.write_batch(storage, ["shopping-order"])
+            preview = build_sidebar_teach_preview(
+                storage,
+                selected_context={"provider": "gmail", "message_id": "message-1"},
+                target_label="shopping-order",
+                note="keep Orders and add Receipts",
+                scope="sender",
+            )
+            client = DriftedClient()
+            adapter = GmailTeachingAdapter(
+                storage,
+                credentials_dir=storage / "credentials",
+                client_secret_path=None,
+                gmail_client_factory=lambda *args: client,
+            )
+            workflow = CompanionTeachingWorkflow(
+                storage,
+                write_through=adapter.apply,
+                preflight=adapter.preflight,
+            )
+
+            with self.assertRaisesRegex(ValueError, "changed after preview"):
+                workflow.apply({
+                    "selected_context": {"provider": "gmail", "message_id": "message-1"},
+                    "target_label": "shopping-order",
+                    "note": "keep Orders and add Receipts",
+                    "scope": "sender",
+                    "mode": "current-only",
+                    "approved_label_change": preview["label_change"],
+                    "request_id": "teach-apply:7:gmail:message-1",
+                }, defer_provider_write=True)
+
+            stored = json.loads((storage / "batches" / "batch.json").read_text())
+            self.assertEqual(stored["items"][0]["review_state"], "pending")
+            self.assertEqual(stored["items"][0]["final_labels"], ["shopping-order"])
+            self.assertEqual(client.calls, [("get_threadwise_label_names", "message-1", "EA/")])
+
+    def test_proton_preflight_rejects_legacy_only_before_local_persistence(self):
+        with tempfile.TemporaryDirectory() as temp:
+            storage = Path(temp)
+            self.write_batch(storage, ["shopping-order"], provider="protonmail")
+            preview = build_sidebar_teach_preview(
+                storage,
+                selected_context={"provider": "protonmail", "message_id": "message-1"},
+                target_label="personal",
+                note="",
+                scope="sender",
+            )
+            loader = Mock()
+            adapter = ProtonTeachingAdapter(loader)
+            workflow = CompanionTeachingWorkflow(
+                storage,
+                write_through=adapter.apply,
+                preflight=adapter.preflight,
+            )
+
+            with self.assertRaisesRegex(ValueError, "additive"):
+                workflow.apply({
+                    "selected_context": {"provider": "protonmail", "message_id": "message-1"},
+                    "target_label": "personal",
+                    "note": "",
+                    "scope": "sender",
+                    "mode": "current-only",
+                    "approved_label_change": preview["label_change"],
+                }, defer_provider_write=True)
+
+            stored = json.loads((storage / "batches" / "batch.json").read_text())
+            self.assertEqual(stored["items"][0]["review_state"], "pending")
+            self.assertEqual(stored["items"][0]["final_labels"], ["shopping-order"])
+            loader.assert_not_called()
 
     def test_proton_blocks_non_additive_label_change_before_console_load(self):
         loader = Mock()

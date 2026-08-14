@@ -1,6 +1,7 @@
 # Issue 141 — Wire review-only model-assisted initial labeling
 
-Status: Implemented; automated acceptance passed, real-model LIVE gate blocked by local configuration
+Status: Complete; automated and real-model LIVE acceptance passed
+Current as of: 2026-08-13
 Approved by: Founder, 2026-08-12
 Parent direction: `docs/prd-threadwise-gauntlet-2026-08-09.md`
 

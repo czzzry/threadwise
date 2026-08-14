@@ -126,6 +126,7 @@ def build_selected_email_state(
         write_status = latest_write_status
     if latest_inbox_status is not None:
         inbox_status = latest_inbox_status
+    write_receipt = latest_message_mutation_attempt(storage_dir, item["message_id"], "write_attempts")
     if visible_gmail_labels:
         write_status = "applied"
         status, status_label = (
@@ -159,7 +160,7 @@ def build_selected_email_state(
         "status_label": status_label,
         "reason": item.get("interpretation") or item.get("snippet") or "",
         "rationale": item.get("interpretation") or "",
-        "details": build_selected_email_details(item, write_status, inbox_status),
+        "details": build_selected_email_details(item, write_status, inbox_status, write_receipt),
         "subject": item.get("subject") or selected_context.get("subject") or "",
         "sender": item.get("sender") or selected_context.get("sender") or "",
         "received_at": item.get("date") or "",
@@ -243,6 +244,35 @@ def latest_message_mutation_status(storage_dir: Path, message_id: str, artifact_
             return str(status)
     return None
 
+
+def latest_message_mutation_attempt(storage_dir: Path, message_id: str, artifact_suffix: str) -> dict:
+    paths = sorted(
+        storage_dir.glob(f"*_{artifact_suffix}.json"),
+        key=lambda path: path.stat().st_mtime_ns,
+        reverse=True,
+    )
+    for path in paths:
+        history = load_json_or_default(path, {}).get(message_id)
+        if not isinstance(history, list) or not history:
+            continue
+        attempt = history[-1]
+        if not isinstance(attempt, dict):
+            continue
+        request_id = str(attempt.get("request_id") or "").strip()[:200]
+        status = str(attempt.get("status") or "").strip().lower()
+        final_labels = [
+            str(label)
+            for label in attempt.get("final_labels") or []
+            if str(label) in CANONICAL_LABEL_ORDER
+        ]
+        if request_id and status in {"applied", "failed"}:
+            return {
+                "request_id": request_id,
+                "status": status,
+                "final_labels": final_labels,
+            }
+    return {}
+
 def action_reason_for_status(status: str) -> str:
     if status == "write-unconfirmed":
         return "Finish Gmail update"
@@ -278,6 +308,7 @@ def build_selected_email_details(
     item: dict,
     write_status: str | None,
     inbox_status: str | None,
+    provider_write_receipt: dict | None = None,
 ) -> dict:
     matched_rules = item.get("matched_teachable_rules") or []
     confidence_band = str(item.get("confidence_band") or "").strip().lower()
@@ -300,6 +331,7 @@ def build_selected_email_details(
         "matched_rule_count": len(matched_rules),
         "matched_rule_ids": [rule.get("id") for rule in matched_rules if rule.get("id")],
         "decision_provenance": decision_provenance,
+        "provider_write_receipt": dict(provider_write_receipt or {}),
     }
 
 

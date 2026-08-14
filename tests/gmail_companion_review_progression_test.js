@@ -65,6 +65,62 @@ function run() {
     "the policy never wraps after the final eligible item",
   );
 
+  assert.equal(progression.labelChangeRequiresCurrentOnly({
+    operation: "only",
+    labels_after: ["personal"],
+    compatibility: "legacy-single-label",
+  }), false, "legacy one-label corrections keep broader teaching scopes");
+  assert.equal(progression.labelChangeRequiresCurrentOnly({
+    operation: "only",
+    labels_after: ["personal"],
+  }), true, "explicit only corrections remain bounded to the selected email");
+  assert.equal(progression.labelChangeRequiresCurrentOnly({
+    operation: "only",
+    labels_after: ["shopping-order", "receipt-billing"],
+  }), true);
+  assert.equal(progression.labelChangeRequiresCurrentOnly({
+    operation: "add",
+    labels_after: ["shopping-order", "receipt-billing"],
+  }), true);
+  assert.equal(progression.hasApprovedLabelChange({
+    operation: "only",
+    labels_after: ["personal"],
+  }), true);
+
+  assert.deepEqual(progression.handledAcknowledgementAction({
+    items: [item("a"), item("b")],
+    currentIdentity: { provider: "gmail", message_id: "a" },
+    activeProvider: "gmail",
+  }), {
+    hasNext: true,
+    label: "Looks right · Next",
+    item: item("b"),
+  });
+  assert.deepEqual(progression.handledAcknowledgementAction({
+    items: [item("a")],
+    currentIdentity: { provider: "gmail", message_id: "a" },
+    activeProvider: "gmail",
+  }), {
+    hasNext: false,
+    label: "Looks right · Check queue",
+    item: null,
+  });
+  assert.equal(progression.decisionMayAdvance({
+    localAccepted: false,
+    responseReceived: false,
+    responseAccepted: null,
+  }), false, "a decision cannot advance before local acceptance");
+  assert.equal(progression.decisionMayAdvance({
+    localAccepted: false,
+    responseReceived: true,
+    responseAccepted: false,
+  }), false, "a rejected response cannot advance review");
+  assert.equal(progression.decisionMayAdvance({
+    localAccepted: true,
+    responseReceived: true,
+    responseAccepted: true,
+  }), true, "an accepted local response can advance while provider work continues");
+
   const token = progression.createRequestToken({
     generation: 7,
     kind: "teach-apply",
@@ -72,6 +128,19 @@ function run() {
   });
   assert.equal(Object.isFrozen(token), true);
   assert.equal(token.token, "teach-apply:7:gmail:a");
+  const firstAttempt = progression.createRequestToken({
+    generation: 7,
+    kind: "teach-apply",
+    identity: { provider: "gmail", message_id: "a" },
+    attemptId: "attempt-a",
+  });
+  const secondAttempt = progression.createRequestToken({
+    generation: 7,
+    kind: "teach-apply",
+    identity: { provider: "gmail", message_id: "a" },
+    attemptId: "attempt-b",
+  });
+  assert.notEqual(firstAttempt.token, secondAttempt.token, "provider receipts are bound to one apply attempt");
   assert.equal(progression.matchesRequestToken(token, {
     generation: 7,
     identity: { provider: "gmail", message_id: "a" },
@@ -113,6 +182,67 @@ function run() {
     generation: 8,
     identity: { provider: "gmail", message_id: "a", thread_id: "thread-a" },
   }), true, "a response with the known thread id authorizes the item UI");
+
+  const recoverySelected = {
+    all_labels: ["shopping-order", "receipt-billing"],
+    details: {
+      write_status: "applied",
+      inbox_status: "ineligible",
+      provider_write_receipt: {
+        request_id: token.token,
+        status: "applied",
+        final_labels: ["shopping-order", "receipt-billing"],
+      },
+    },
+  };
+  assert.deepEqual(progression.recoveryConfirmation({
+    responseOk: true,
+    sameMessage: true,
+    selected: recoverySelected,
+    expectedLabels: ["shopping-order", "receipt-billing"],
+    requestId: token.token,
+  }), {
+    localAccepted: true,
+    confirmed: true,
+    providerFailed: false,
+    inboxRemoved: false,
+  });
+  assert.equal(progression.recoveryConfirmation({
+    responseOk: true,
+    sameMessage: true,
+    selected: recoverySelected,
+    expectedLabels: ["shopping-order"],
+    requestId: token.token,
+  }).confirmed, false, "the old primary label cannot confirm a missing secondary label");
+  assert.equal(progression.recoveryConfirmation({
+    responseOk: true,
+    sameMessage: true,
+    selected: recoverySelected,
+    expectedLabels: ["shopping-order", "receipt-billing"],
+    requestId: "teach-apply:8:gmail:a",
+  }).confirmed, false, "a stale provider receipt cannot confirm a newer attempt");
+  assert.deepEqual(progression.recoveryConfirmation({
+    responseOk: true,
+    sameMessage: true,
+    selected: {
+      ...recoverySelected,
+      details: {
+        ...recoverySelected.details,
+        write_status: "failed",
+        provider_write_receipt: {
+          ...recoverySelected.details.provider_write_receipt,
+          status: "failed",
+        },
+      },
+    },
+    expectedLabels: ["shopping-order", "receipt-billing"],
+    requestId: token.token,
+  }), {
+    localAccepted: true,
+    confirmed: false,
+    providerFailed: true,
+    inboxRemoved: false,
+  }, "a failed exact attempt proves only local acceptance and remains retryable");
 
   const filteredEmpty = progression.completionPresentation({
     query: "not-loaded",

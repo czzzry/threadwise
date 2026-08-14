@@ -155,7 +155,7 @@ class CompanionTeachingWorkflowTests(unittest.TestCase):
 
         with patch(
             "src.companion_teaching_workflow.apply_sidebar_teaching",
-            return_value=teaching_result,
+            side_effect=_apply_result_after_preflight(teaching_result),
         ) as apply_teaching:
             result = workflow.apply(
                 {
@@ -198,7 +198,10 @@ class CompanionTeachingWorkflowTests(unittest.TestCase):
             "future_rule_saved": False,
         }
 
-        with patch("src.companion_teaching_workflow.apply_sidebar_teaching", return_value=teaching_result):
+        with patch(
+            "src.companion_teaching_workflow.apply_sidebar_teaching",
+            side_effect=_apply_result_after_preflight(teaching_result),
+        ):
             result = workflow.apply(
                 {
                     "selected_context": {"provider": "gmail", "message_id": "message-1"},
@@ -237,7 +240,7 @@ class CompanionTeachingWorkflowTests(unittest.TestCase):
 
         with patch(
             "src.companion_teaching_workflow.apply_sidebar_teaching",
-            return_value=teaching_result,
+            side_effect=_apply_result_after_preflight(teaching_result),
         ):
             result = workflow.apply(
                 {
@@ -254,6 +257,20 @@ class CompanionTeachingWorkflowTests(unittest.TestCase):
         self.assertIsNotNone(result.write_request)
         self.assertEqual(workflow.complete_deferred_write(result.write_request), write_summary)
         self.assertEqual(len(write_requests), 1)
+
+
+def _apply_result_after_preflight(teaching_result: dict):
+    def apply(*_args, **kwargs):
+        kwargs["provider_preflight"]({
+            "current": teaching_result["current"],
+            "mode": teaching_result["mode"],
+            "preview_matches": teaching_result["preview_matches"],
+            "semantic_rule": teaching_result["semantic_rule"],
+            "label_change": teaching_result.get("label_change"),
+        })
+        return teaching_result
+
+    return apply
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 import io
+import json
 from pathlib import Path
 
 from src.gmail_initial_classifier import (
@@ -10,6 +11,7 @@ from src.gmail_initial_classifier import (
 from src.gmail_automation import run_daily_gmail_automation
 from src.gmail_writer import MockGmailLabelClient
 from src.gmail_companion_ui import GmailCompanionApp, main as companion_main
+from src.gmail_companion_state import build_companion_runtime_payload, build_selected_email_state
 
 
 class RecordingModelClient:
@@ -198,6 +200,60 @@ class GmailInitialClassifierTests(unittest.TestCase):
             self.assertEqual(
                 [call[0] for call in client.calls],
                 ["list_messages", "get_message"],
+            )
+
+    def test_runtime_queue_preserves_model_suggestion_during_deterministic_refresh(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage = Path(temp_dir)
+            batches = storage / "batches"
+            batches.mkdir()
+            batches.joinpath("batch-1.json").write_text(json.dumps({
+                "batch_id": "batch-1",
+                "provider": "gmail",
+                "account_id": "founder-test",
+                "items": [{
+                    **self.message(),
+                    "review_state": "pending",
+                    "applied_labels": [],
+                    "near_misses": ["personal"],
+                    "interpretation": "A personal note that needs confirmation.",
+                    "decision_provenance": {
+                        "decision_source": "model",
+                        "llm_used": True,
+                        "llm_model": "test-model",
+                        "llm_confidence": "medium",
+                        "llm_abstained": False,
+                        "llm_failed": False,
+                    },
+                }],
+                "raw_messages": [{
+                    "id": "message-1",
+                    "threadId": "thread-1",
+                    "internalDate": "1786528800000",
+                    "snippet": "Please take a look.",
+                    "labelIds": ["INBOX"],
+                    "payload": {"headers": [
+                        {"name": "From", "value": "Unknown <unknown@example.com>"},
+                        {"name": "Subject", "value": "A hard to classify note"},
+                        {"name": "Date", "value": "Wed, 12 Aug 2026 10:00:00 +0000"},
+                    ]},
+                }],
+            }))
+
+            runtime = build_companion_runtime_payload(storage)
+            selected = build_selected_email_state(
+                storage,
+                {"provider": "gmail", "message_id": "message-1"},
+            )
+
+            self.assertEqual(runtime["needs_attention_items"][0]["suggested_label"], "personal")
+            self.assertEqual(
+                runtime["needs_attention_items"][0]["reason"],
+                "A personal note that needs confirmation.",
+            )
+            self.assertEqual(
+                selected["details"]["decision_provenance"]["llm_model"],
+                "test-model",
             )
 
     def test_companion_startup_option_is_forwarded_explicitly(self):

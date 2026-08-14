@@ -1217,13 +1217,13 @@
       ...(existing || {
         token,
         identity: token.identity,
-        localAccepted: true,
+        localAccepted: false,
         decisionKind: token.kind,
         advanceDone: false,
       }),
       token,
       identity: token.identity,
-      localAccepted: true,
+      localAccepted: false,
       decisionKind: token.kind,
       providerWriteState: "retry",
       retryStateLocked: true,
@@ -3159,6 +3159,7 @@
     } else if (workspaceMode === "handled-receipt") {
       gmailCheckResult = null;
       const label = decisionLabelName(selected.internal_label || selected.classification || "Uncategorized");
+      const handledAction = handledAcknowledgementModel();
       const writeStatus = String((selected.details || {}).write_status || "").toLowerCase();
       const inboxStatus = String((selected.details || {}).inbox_status || "").toLowerCase();
       const handlingReceipt = selected.status === "auto-handled" && writeStatus === "applied" && inboxStatus === "applied"
@@ -3177,7 +3178,7 @@
           ${renderPreviousDecisionStatusHtml()}
           ${selected.handled_review_acknowledged
             ? `<div data-ea-handled-reviewed role="status" style="color:#16815d;font-size:.76rem;font-weight:800;">Reviewed · Threadwise will not offer this email again</div>${remainingNeedsAttentionItems().length ? "" : renderCoverageHtml()}`
-            : '<button type="button" data-ea-action="confirm-handled-and-next" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Looks right · Next</button>'}
+            : `<button type="button" data-ea-action="confirm-handled-and-next" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">${escapeHtml(handledAction.label)}</button>`}
           ${handledAdvanceError ? `<div data-ea-handled-advance-error role="alert" style="border-radius:14px;background:#f7e2e2;padding:12px;color:#8a1f1f;line-height:1.45;">${escapeHtml(handledAdvanceError)}</div>` : ""}
           <div style="display:flex;gap:12px;flex-wrap:wrap;">
             <button type="button" data-ea-action="change-auto-handled" style="border:0;background:transparent;color:#5d5342;padding:7px 2px;cursor:pointer;font:inherit;font-weight:760;text-decoration:underline;text-underline-offset:3px;">Change</button>
@@ -3908,6 +3909,22 @@
     });
   }
 
+  function handledAcknowledgementModel() {
+    const current = currentReviewIdentity();
+    const activeItems = summaryItemsForFilter(activeSummaryFilter);
+    const currentBelongsToActiveQueue = activeItems.some((item) => reviewItemMatchesIdentity(item, current));
+    const filter = currentBelongsToActiveQueue ? activeSummaryFilter : "needs_attention_items";
+    return {
+      filter,
+      ...REVIEW_PROGRESSION.handledAcknowledgementAction({
+        items: progressionItemsForFilter(filter, { includeCommitted: true }),
+        currentIdentity: current,
+        activeProvider: ACTIVE_PROVIDER,
+        committedIdentities: committedReviewIdentities,
+      }),
+    };
+  }
+
   function currentReviewIdentity() {
     const selected = (lastSidebarState || {}).selected_email || {};
     const context = (lastSidebarState || {}).selected_context || {};
@@ -3989,6 +4006,7 @@
     }
     forgetCommittedIdentity(token.identity);
     optimisticDecision.providerWriteState = "retry";
+    optimisticDecision.localAccepted = false;
     optimisticDecision.retryStateLocked = true;
     optimisticDecision.responseReceived = true;
     optimisticDecision.responseAccepted = false;
@@ -4029,13 +4047,14 @@
       generation: ++reviewProgressionGeneration,
       kind: mode === "current-only" ? "teach-apply" : "decision",
       identity,
+      attemptId: globalThis.crypto?.randomUUID?.()
+        || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
     });
-    rememberCommittedIdentity(identity);
     optimisticDecision = {
       token,
       identity,
       hostAnchor: currentProgressionHostAnchor(),
-      localAccepted: true,
+      localAccepted: false,
       decisionKind: "teach-apply",
       providerWriteState: "working",
       retryStateLocked: false,
@@ -4053,6 +4072,9 @@
     }
     if (optimisticDecision.advanceDone) {
       return true;
+    }
+    if (!REVIEW_PROGRESSION.decisionMayAdvance(optimisticDecision)) {
+      return false;
     }
     optimisticDecision.advanceDone = true;
     const next = nextProgressionItem(filter, token.identity);
@@ -5031,8 +5053,11 @@
   }
 
   function isSelectedEmailLabelSetChange(preview) {
-    const change = preview?.label_change || {};
-    return Boolean(change.operation && Array.isArray(change.labels_after) && change.labels_after.length);
+    return REVIEW_PROGRESSION.labelChangeRequiresCurrentOnly(preview?.label_change || {});
+  }
+
+  function hasApprovedSelectedEmailLabelChange(preview) {
+    return REVIEW_PROGRESSION.hasApprovedLabelChange(preview?.label_change || {});
   }
 
   function renderSelectedEmailLabelChange(preview) {
@@ -5694,7 +5719,8 @@
         method: "POST",
         body: { selected_context: lastSidebarState?.selected_context || { provider: ACTIVE_PROVIDER } },
       }, (response) => {
-        if (optimisticDecision?.retryStateLocked && !chrome.runtime.lastError && response?.ok) {
+        if (optimisticDecision?.retryStateLocked && optimisticDecision.localAccepted
+          && !chrome.runtime.lastError && response?.ok) {
           rememberCommittedIdentity(optimisticDecision.identity);
           optimisticDecision.retryStateLocked = false;
           optimisticDecision.providerWriteState = "working";
@@ -6348,9 +6374,7 @@
       return false;
     }
     const current = currentReviewIdentity();
-    const activeItems = summaryItemsForFilter(activeSummaryFilter);
-    const currentBelongsToActiveQueue = activeItems.some((item) => reviewItemMatchesIdentity(item, current));
-    const nextFilter = currentBelongsToActiveQueue ? activeSummaryFilter : "needs_attention_items";
+    const nextFilter = handledAcknowledgementModel().filter;
     const requestContext = { ...(lastSidebarState?.selected_context || {}) };
     const token = REVIEW_PROGRESSION.createRequestToken({
       generation: ++reviewProgressionGeneration,
@@ -6447,10 +6471,12 @@
       selectedContext: { ...(lastSidebarState.selected_context || {}) },
       targetLabel: teachDraft.targetLabel,
       note: teachDraft.note,
+      approvedLabelChange: hasApprovedSelectedEmailLabelChange(teachPreview)
+        ? REVIEW_PROGRESSION.cloneSerializable(teachPreview.label_change)
+        : null,
     };
     let progressionToken = null;
     if (mode === "current-only") {
-      recordCommittedCurrentDecision();
       progressionToken = beginCurrentDecisionProgression(mode, requestSnapshot);
       if (!progressionToken) {
         return false;
@@ -6461,25 +6487,22 @@
     activeTeachApplyMode = mode;
     teachFlowState = "applying";
     teachResult = teachPendingResult("apply", mode);
-    if ((lastHarnessState || lastSidebarState) && mode !== "current-only") {
+    if (lastHarnessState || lastSidebarState) {
       renderState(lastHarnessState || lastSidebarState);
     }
     applyTeach(mode, progressionToken, requestSnapshot);
-    if (mode === "current-only" && progressionToken) {
-      if (optimisticDecision?.responseReceived && optimisticDecision.responseAccepted === false) {
-        return true;
-      }
-      advanceAfterCommittedDecision(progressionToken);
-    }
     return true;
   }
 
-  function reconcileCurrentApplyAfterTransportFailure(rawError, targetLabel, requestIdentity) {
+  function reconcileCurrentApplyAfterTransportFailure(rawError, expectedLabels, requestIdentity, retriesRemaining = 4) {
     const selectedContext = { ...(lastSidebarState?.selected_context || {}) };
     chrome.runtime.sendMessage({
       type: "email-agent:get-state",
       context: selectedContext,
     }, (response) => {
+      if (requestIdentity && !progressionFlightIsCurrent(requestIdentity)) {
+        return;
+      }
       if (requestIdentity && !progressionFlightHostIsCurrent(requestIdentity)) {
         releaseStaleProgressionFlight(requestIdentity);
         return;
@@ -6487,53 +6510,73 @@
       const payload = response?.payload;
       const sidebarState = payload?.sidebar_state || {};
       const selected = sidebarState.selected_email || {};
-      const appliedLabel = internalLabelId(selected.internal_label || selected.classification || "");
-      const writeApplied = selected.details?.write_status === "applied";
-      const writeFailed = selected.details?.write_status === "failed";
-      const inboxFailed = selected.details?.inbox_status === "failed";
       const sameMessage = Boolean(requestIdentity && REVIEW_PROGRESSION.responseMatchesToken(requestIdentity, {
         generation: requestIdentity.generation,
         identity: progressionIdentity(sidebarState, selected),
       }));
-      if (response?.ok && sameMessage && appliedLabel === targetLabel && writeApplied && !writeFailed && !inboxFailed) {
-        const inboxRemoved = selected.details?.inbox_status === "applied";
+      const confirmation = REVIEW_PROGRESSION.recoveryConfirmation({
+        responseOk: Boolean(response?.ok),
+        sameMessage,
+        selected,
+        expectedLabels,
+        requestId: requestIdentity?.token || "",
+      });
+      if (confirmation.localAccepted) {
         rememberCommittedIdentity(requestIdentity.identity);
         teachPreview = null;
         previousTeachPreview = null;
         teachResult = {
           kind: "apply-success",
-          title: "Change confirmed",
-          message: "Threadwise confirmed the completed Gmail change after reconnecting.",
+          title: confirmation.confirmed ? "Change confirmed" : "Change saved",
+          message: confirmation.confirmed
+            ? "Threadwise confirmed the completed Gmail change after reconnecting."
+            : "Threadwise saved your decision. The Gmail update needs a background retry.",
         };
         teachFlowState = "result";
         teachOutcome = {
           scope: "current-email",
           current_email_changed_locally: true,
-          current_email_written_to_gmail: true,
+          current_email_written_to_gmail: confirmation.confirmed,
           local_decision_accepted: true,
-          provider_confirmation: true,
-          provider_write_queued: false,
-          gmail_label_write_failed: 0,
+          provider_confirmation: confirmation.confirmed,
+          provider_write_queued: confirmation.providerFailed,
+          gmail_label_write_failed: confirmation.providerFailed ? 1 : 0,
         };
         teachWriteThrough = {
-          label_write_applied: 1,
-          label_write_failed: 0,
-          inbox_removed: inboxRemoved ? 1 : 0,
+          label_write_applied: confirmation.confirmed ? 1 : 0,
+          label_write_failed: confirmation.providerFailed ? 1 : 0,
+          inbox_removed: confirmation.inboxRemoved ? 1 : 0,
           inbox_remove_failed: 0,
         };
         currentApplyError = "";
         if (optimisticDecision?.token?.token === requestIdentity.token) {
-          optimisticDecision.providerWriteState = "done";
-          optimisticDecision.retryStateLocked = false;
+          optimisticDecision.localAccepted = true;
+          optimisticDecision.providerWriteState = confirmation.confirmed ? "done" : "retry";
+          optimisticDecision.retryStateLocked = confirmation.providerFailed;
           optimisticDecision.responseReceived = true;
           optimisticDecision.responseAccepted = true;
           optimisticDecision.flightActive = false;
         }
-        renderState(payload);
+        recordCommittedCurrentDecision();
+        advanceAfterCommittedDecision(requestIdentity);
         return;
       }
-      currentApplyError = `${friendlyErrorMessage(rawError)} Threadwise checked again but could not confirm that the change completed.`;
-      renderState(payload || lastHarnessState || lastSidebarState);
+      if (response?.ok && sameMessage && retriesRemaining > 0) {
+        window.setTimeout(
+          () => reconcileCurrentApplyAfterTransportFailure(
+            rawError,
+            expectedLabels,
+            requestIdentity,
+            retriesRemaining - 1,
+          ),
+          500,
+        );
+        return;
+      }
+      rollbackSynchronousDecision(
+        requestIdentity,
+        `${friendlyErrorMessage(rawError)} Threadwise checked again but could not confirm that the change completed.`,
+      );
     });
   }
 
@@ -6558,6 +6601,11 @@
     ANALYTICS?.confirmRule(ruleScope, affectedCount, false);
     const targetLabel = requestSnapshot?.targetLabel || teachDraft.targetLabel;
     const note = requestSnapshot?.note ?? teachDraft.note;
+    const approvedLabelChange = requestSnapshot?.approvedLabelChange
+      || (hasApprovedSelectedEmailLabelChange(teachPreview) ? teachPreview.label_change : null);
+    const expectedLabels = Array.isArray(approvedLabelChange?.labels_after)
+      ? approvedLabelChange.labels_after
+      : [targetLabel].filter(Boolean);
     chrome.runtime.sendMessage({
       type: "email-agent:api",
       path: "/api/teach-apply",
@@ -6568,13 +6616,12 @@
         note,
         scope: "sender",
         mode,
+        request_id: requestToken?.token || "",
         defer_provider_write: mode !== "save-future-rule",
         included_message_ids: mode === "apply-included"
           ? affectedReviewItemsFromPreview(teachPreview).map((item) => item.message_id).filter(Boolean)
           : [],
-        approved_label_change: isSelectedEmailLabelSetChange(teachPreview)
-          ? teachPreview.label_change
-          : null,
+        approved_label_change: approvedLabelChange,
       },
     }, (response) => {
       if (requestToken && !progressionFlightIsCurrent(requestToken)) {
@@ -6616,7 +6663,19 @@
         optimisticDecision.responseReceived = true;
         optimisticDecision.responseAccepted = !transportError && Boolean(response?.ok);
         if (optimisticDecision.responseAccepted) {
+          optimisticDecision.localAccepted = true;
+          rememberCommittedIdentity(requestToken.identity);
+          recordCommittedCurrentDecision();
           updateOptimisticDecisionLifecycle(response?.payload?.sidebar_state || lastSidebarState);
+          optimisticDecision.flightActive = false;
+          advanceAfterCommittedDecision(requestToken);
+          return;
+        } else if (transportError) {
+          return reconcileCurrentApplyAfterTransportFailure(
+            transportError,
+            expectedLabels,
+            requestToken,
+          );
         } else {
           const completionBlocked = invalidateCompletionForDecisionFailure(
             requestToken,
@@ -6660,7 +6719,7 @@
         } else if (mode === "current-only") {
           return reconcileCurrentApplyAfterTransportFailure(
             transportError || "Could not apply the change.",
-            targetLabel,
+            expectedLabels,
             requestToken,
           );
         }
@@ -6673,7 +6732,7 @@
         if (mode === "save-future-rule") {
           futureLearningError = teachResult.message;
         } else if (mode === "current-only") {
-          return reconcileCurrentApplyAfterTransportFailure(rawError, targetLabel, requestToken);
+          return reconcileCurrentApplyAfterTransportFailure(rawError, expectedLabels, requestToken);
         }
         renderState(lastHarnessState || lastSidebarState);
         return;

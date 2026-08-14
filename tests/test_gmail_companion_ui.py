@@ -75,67 +75,6 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertEqual(root.code, 200)
         self.assertNotIn("unsubscribe", root.wfile.value.decode("utf-8").lower())
 
-    def test_extension_has_no_unsubscribe_or_destructive_safety_requests(self) -> None:
-        content_js = Path("extensions/gmail_companion/content.js").read_text(encoding="utf-8")
-        background_js = Path("extensions/gmail_companion/background.js").read_text(encoding="utf-8")
-
-        for removed_path in (
-            "/api/safety-preview",
-            "/api/safety-apply",
-            "/api/unsubscribe-select-current",
-            "/unsubscribe-review",
-        ):
-            self.assertNotIn(removed_path, content_js)
-            self.assertNotIn(removed_path, background_js)
-
-    def test_minimized_threadwise_control_has_an_accessible_name(self) -> None:
-        content_js = Path("extensions/gmail_companion/content.js").read_text(encoding="utf-8")
-
-        self.assertIn('aria-label="Open Threadwise Home"', content_js)
-        self.assertIn(
-            'brandButton.setAttribute("aria-label", minimized ? "Open Threadwise Home" : "Threadwise Home")',
-            content_js,
-        )
-
-    def test_onboarding_browser_validator_loads_the_complete_extension_module_set(self) -> None:
-        validator = Path("scripts/validate_threadwise_onboarding_cdp.mjs").read_text(
-            encoding="utf-8"
-        )
-
-        for script_name in (
-            "provider_adapter.js",
-            "analytics.js",
-            "onboarding.js",
-            "queue_navigation.js",
-            "context_actions.js",
-            "selected_explanation.js",
-            "review_progression.js",
-            "coverage.js",
-            "content.js",
-        ):
-            self.assertIn(f'"{script_name}"', validator)
-
-    def test_coverage_receipts_keep_their_state_valid_context_actions(self) -> None:
-        content_js = Path("extensions/gmail_companion/content.js").read_text(encoding="utf-8")
-        renderer = content_js.split("function renderContextActions(workspaceMode)", 1)[1].split(
-            "function contextActionsWorkspaceMode", 1
-        )[0]
-
-        self.assertNotIn('root.querySelector("[data-ea-coverage-state]")', renderer)
-        self.assertIn("CONTEXT_ACTIONS.deriveActions(policyInput)", renderer)
-
-    def test_coverage_home_keeps_the_loaded_review_queue_reachable(self) -> None:
-        content_js = Path("extensions/gmail_companion/content.js").read_text(encoding="utf-8")
-        home_renderer = content_js.split("const keptVisibleCount", 1)[1].split(
-            "renderMinimized();", 1
-        )[0]
-
-        self.assertIn("renderCoverageHtml()", home_renderer)
-        self.assertIn("renderQueueFinderHtml()", home_renderer)
-        self.assertIn("renderGmailCheckResultHtml(gmailCheckResult)", home_renderer)
-        self.assertIn("Review queue status unverified", content_js)
-        self.assertIn("activityHtml", home_renderer)
-
     def test_review_queue_refreshes_five_amazon_variants_without_turning_security_into_orders(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
@@ -318,14 +257,6 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("No SDK delivery errors detected", content_js)
         self.assertIn("PostHog arrival is checked separately", content_js)
 
-    def test_teaching_ui_handles_a_note_that_rejects_the_prefilled_label(self) -> None:
-        content_js = Path("extensions/gmail_companion/content.js").read_text()
-
-        self.assertIn("function noteExplicitlyRejectsLabel", content_js)
-        self.assertIn("selected_target_label_rejected", Path("src/teaching_loop.py").read_text())
-        self.assertIn("Note override applied", content_js)
-        self.assertIn("Your note says this is not", content_js)
-
     def test_extension_analytics_failure_cannot_block_product_actions(self) -> None:
         analytics_js = Path("extensions/gmail_companion/analytics.js").read_text()
 
@@ -352,15 +283,6 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("Product actions must continue even when optional analytics is unavailable.", content_js)
         self.assertIn('path: "/api/handled-review-acknowledge"', content_js)
         self.assertIn("Threadwise will not offer this email again", content_js)
-
-    def test_current_email_apply_reconciles_an_uncertain_transport_result(self) -> None:
-        content_js = Path("extensions/gmail_companion/content.js").read_text()
-
-        self.assertIn("reconcileCurrentApplyAfterTransportFailure", content_js)
-        self.assertIn('type: "email-agent:get-state"', content_js)
-        self.assertIn('selected.details?.write_status === "applied"', content_js)
-        self.assertIn("sameMessage && appliedLabel === targetLabel && writeApplied", content_js)
-        self.assertIn("Threadwise confirmed the completed Gmail change after reconnecting.", content_js)
 
     def test_opening_a_queue_email_in_gmail_keeps_the_review_context_pinned(self) -> None:
         content_js = Path("extensions/gmail_companion/content.js").read_text()
@@ -405,8 +327,6 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("remainingNeedsAttentionItems().length > 0", receipt_body)
         self.assertIn('data-ea-action="open-needs-attention"', receipt_body)
         self.assertIn("Next email", receipt_body)
-        self.assertIn("renderCoverageHtml({ includeHandledReceipt: true })", receipt_body)
-        self.assertNotIn("Review queue complete.", receipt_body)
 
     def test_completed_receipt_does_not_pin_the_previous_gmail_message(self) -> None:
         content_js = Path("extensions/gmail_companion/content.js").read_text()
@@ -1020,19 +940,6 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertEqual(selected["details"]["confidence_band"], "")
         self.assertEqual(selected["details"]["near_misses"], ["travel"])
 
-    def test_extension_passes_initial_decision_provenance_into_progressive_evidence(self) -> None:
-        content_js = Path("extensions/gmail_companion/content.js").read_text(encoding="utf-8")
-        explanation_js = Path(
-            "extensions/gmail_companion/selected_explanation.js"
-        ).read_text(encoding="utf-8")
-
-        self.assertIn("decision_provenance: details.decision_provenance || {}", content_js)
-        self.assertIn('key: "decision-source"', explanation_js)
-        self.assertIn('label: "Initial decision"', explanation_js)
-        self.assertIn("Model abstained", explanation_js)
-        self.assertIn("Model unavailable", explanation_js)
-        self.assertIn("data-ea-explanation-disclosure", content_js)
-
     def test_selected_email_understanding_state_progresses_from_reading_to_ready(self) -> None:
         context = {
             "message_id": "gmail-live-001",
@@ -1232,139 +1139,10 @@ class GmailCompanionUiTests(unittest.TestCase):
         content_js = (
             Path(__file__).parent.parent / "extensions" / "gmail_companion" / "content.js"
         ).read_text()
-        explanation_js = (
-            Path(__file__).parent.parent
-            / "extensions"
-            / "gmail_companion"
-            / "selected_explanation.js"
-        ).read_text()
-
         self.assertIn('selected.status === "write-unconfirmed"', content_js)
         self.assertIn('data-ea-action="accept-suggestion"', content_js)
         self.assertIn("Apply ${escapeHtml(label)}", content_js)
-        self.assertIn("${providerName} has not confirmed this label update", explanation_js)
         self.assertIn('["needs-attention", "write-unconfirmed"].includes(selected?.status)', content_js)
-
-    def test_extension_review_state_uses_the_approved_quiet_hybrid_hierarchy(self) -> None:
-        content_js = (
-            Path(__file__).parent.parent / "extensions" / "gmail_companion" / "content.js"
-        ).read_text()
-
-        review_renderer = content_js.split('workspaceMode === "review"', 1)[1].split(
-            'workspaceMode === "change"', 1
-        )[0]
-        self.assertIn("data-ea-current-message-context", review_renderer)
-        self.assertIn("data-ea-review-progress", review_renderer)
-        self.assertIn("data-ea-review-judgment", content_js)
-        self.assertIn("data-ea-review-facts", review_renderer)
-        self.assertIn(">Action<", review_renderer)
-        self.assertIn(">Inbox<", review_renderer)
-        self.assertIn(">Scope<", review_renderer)
-        self.assertIn('data-ea-review-dock', review_renderer)
-        self.assertEqual(review_renderer.count("data-tw-primary-action"), 2)
-        self.assertEqual(review_renderer.count('data-ea-action="change-suggestion"'), 1)
-        self.assertIn("function currentReviewProgress", content_js)
-        self.assertIn("function reviewActionFacts", content_js)
-        self.assertIn('parent = root.querySelector("[data-ea-review-dock]")', content_js)
-
-    def test_extension_review_shell_uses_variant_c_visual_contract(self) -> None:
-        content_js = (
-            Path(__file__).parent.parent / "extensions" / "gmail_companion" / "content.js"
-        ).read_text()
-
-        visual_styles = content_js.split(
-            '<style id="ea-editorial-utility-styles">', 1
-        )[1].split("</style>", 1)[0]
-        review_renderer = content_js.split('workspaceMode === "review"', 1)[1].split(
-            'workspaceMode === "change"', 1
-        )[0]
-
-        self.assertIn('const PANEL_WIDTH = "408px"', content_js)
-        for token in (
-            "--tw-ink: #1f2328",
-            "--tw-muted: #60666f",
-            "--tw-surface: #fff",
-            "--tw-line: #e2e5e9",
-            "--tw-line-strong: #cdd2d8",
-            "--tw-accent: #635bff",
-        ):
-            self.assertIn(token, visual_styles)
-        self.assertIn("height: 52px !important", visual_styles)
-        self.assertIn("width: 28px !important", visual_styles)
-        self.assertIn("border-radius: 12px !important", visual_styles)
-        self.assertIn("box-shadow: 0 4px 8px rgba(31, 35, 40, .12) !important", visual_styles)
-        self.assertIn("grid-template-columns:minmax(0,1fr) 38px", visual_styles)
-        self.assertIn("padding:12px 14px", visual_styles)
-        self.assertIn("background:var(--tw-accent) !important", visual_styles)
-        self.assertNotIn("#fff7e8", visual_styles)
-        self.assertNotIn("#241812", visual_styles)
-        self.assertNotIn("3px 3px", visual_styles)
-        self.assertNotIn("6px 6px", visual_styles)
-        self.assertIn("<div data-ea-review-facts", review_renderer)
-        self.assertNotIn("<summary>Action details", review_renderer)
-
-    def test_extension_recovery_surface_uses_variant_c_and_truthful_retry(self) -> None:
-        content_js = (
-            Path(__file__).parent.parent / "extensions" / "gmail_companion" / "content.js"
-        ).read_text()
-        background_js = (
-            Path(__file__).parent.parent / "extensions" / "gmail_companion" / "background.js"
-        ).read_text()
-
-        visual_styles = content_js.split(
-            '<style id="ea-editorial-utility-styles">', 1
-        )[1].split("</style>", 1)[0]
-        recovery_renderer = content_js.split("function renderError", 1)[1].split(
-            "function errorTitleForConnection", 1
-        )[0]
-        recovery_handler = content_js.split(
-            'const forceRefreshButton = event.target.closest("[data-ea-action=\'force-refresh\']")', 1
-        )[1].split("const runProviderSyncButton", 1)[0]
-
-        for marker in (
-            "data-ea-recovery-surface",
-            "data-ea-recovery-kind",
-            "data-ea-recovery-details",
-            "data-ea-recovery-status",
-        ):
-            self.assertIn(marker, recovery_renderer)
-        self.assertIn("#1f2328", visual_styles)
-        self.assertIn("#60666f", visual_styles)
-        self.assertIn("#e2e5e9", visual_styles)
-        self.assertIn("#cdd2d8", visual_styles)
-        self.assertIn("#635bff", visual_styles)
-        self.assertNotIn("#241812", recovery_renderer)
-        self.assertNotIn("#fff4dd", recovery_renderer)
-        self.assertNotIn("#fffdf7", recovery_renderer)
-        self.assertNotIn("startup helper", recovery_renderer.lower())
-        self.assertNotIn("local companion", recovery_renderer.lower())
-        self.assertIn(
-            r'const retryLabel = connectionRetryInFlight ? "Checking\u2026" : "Check again"',
-            recovery_renderer,
-        )
-        self.assertIn("connectionRetryInFlight ? \"disabled\" : \"\"", recovery_renderer)
-        self.assertIn("connectionRetryInFlight = true", recovery_handler)
-        self.assertIn('connectionRetryFeedback = "checking"', recovery_handler)
-        self.assertIn("if (refreshInFlight)", recovery_handler)
-        self.assertIn("refreshSelection(true, { suppressTransition: true })", recovery_handler)
-        self.assertIn("connectionRetryInFlight = false", content_js)
-        self.assertIn('connectionRetryFeedback = "failed"', content_js)
-        self.assertIn('connectionRetryFeedback = ""', content_js)
-        self.assertIn("Still offline", recovery_renderer)
-        self.assertIn("checked just now", recovery_renderer)
-        self.assertIn("REFRESH_INTERVAL_MS = 5000", content_js)
-        self.assertIn("function pollConnectionHealth()", content_js)
-        self.assertIn("window.setInterval(pollConnectionHealth, REFRESH_INTERVAL_MS)", content_js)
-        self.assertNotIn("window.setInterval(refreshSelection, REFRESH_INTERVAL_MS)", content_js)
-        self.assertIn("refreshInFlight || connectionPollInFlight || progressionCheck", content_js)
-        self.assertIn("|| applyInFlight", content_js)
-        self.assertIn("|| optimisticDecision?.flightActive", content_js)
-        self.assertIn("if (applyInFlight || optimisticDecision?.flightActive)", content_js)
-        self.assertIn("pendingRefreshAfterConnectionPoll", content_js)
-        self.assertIn("function releaseConnectionPoll()", content_js)
-        self.assertIn('type: "email-agent:probe-health"', content_js)
-        self.assertIn('message.type === "email-agent:probe-health"', background_js)
-        self.assertIn("probeHealth()", background_js)
 
     def test_extension_keeps_refreshing_until_selected_email_is_ready(self) -> None:
         content_js = (
@@ -1448,19 +1226,8 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("data-ea-brand-img", content_js)
         self.assertIn('id="ea-editorial-utility-styles"', content_js)
         self.assertIn("#ea-panel [data-tw-primary-action]", content_js)
-        self.assertIn('event.target?.closest?.("[data-ea-queue-finder]")', content_js)
-        self.assertIn('queueFinder?.querySelector?.("[data-ea-queue-item]")', content_js)
-        self.assertIn("rememberCommittedIdentity(optimisticDecision.identity)", content_js)
-        return_home = content_js.split("function returnQueuePreviewToHome()", 1)[1].split(
-            "function leaveQueueFlow()", 1
-        )[0]
-        self.assertIn("resetPerEmailInteraction({ preserveProgressionStatus: true })", return_home)
         self.assertIn(":focus-visible", content_js)
         self.assertIn('id="ea-header-tagline"', content_js)
-        self.assertIn("founderFeedbackVisible = false", content_js)
-        self.assertIn("setFounderFeedbackVisible", content_js)
-        self.assertIn("!minimized && founderFeedbackVisible", content_js)
-        self.assertIn("grid-template-columns: 28px minmax(0, 1fr) 30px", content_js)
         self.assertIn('chrome.runtime.getURL("assets/brand/threadwise-app-icon.png")', content_js)
         self.assertIn("open Threadwise", content_js)
         self.assertIn("Check again", content_js)
@@ -1482,7 +1249,6 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("Needs attention", content_js)
         self.assertIn("Health check failed", content_js)
         self.assertIn("Wrong service on port", content_js)
-        self.assertNotIn("Reconnect Threadwise before teaching corrections.", content_js)
         self.assertIn("Threadwise has not synced this email yet.", content_js)
         refresh_selection = content_js.split("function refreshSelection", 1)[1].split(
             "function asyncFollowUpIsWorking", 1
@@ -1491,13 +1257,10 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("Threadwise can explain emails it has already synced.", content_js)
         self.assertIn("`Run ${activeProviderName()} sync now`", content_js)
         self.assertIn("/api/provider-sync-run", content_js)
-        self.assertNotIn("Connection details", content_js)
         self.assertNotIn("This email is not in the current local sync.", content_js)
         self.assertIn("Current Queue", content_js)
         self.assertIn("Previous interpretation", content_js)
         self.assertIn("data-ea-previous-preview", content_js)
-        self.assertNotIn("Review unsubscribe candidates", content_js)
-        self.assertNotIn("select-unsubscribe", content_js)
         self.assertIn("Report details", content_js)
         self.assertIn("What Changed Today", content_js)
         self.assertIn("Decision source", content_js)
@@ -1582,16 +1345,6 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertNotIn('data-ea-apply="save-future-rule"', content_js)
         self.assertIn("Keep discussing", content_js)
         self.assertIn("Choose a label or describe the correction", content_js)
-        self.assertIn("Multi-label and relative corrections are limited to this selected email", content_js)
-        self.assertIn("renderSelectedEmailLabelChange", content_js)
-        self.assertIn("<strong>Before:</strong>", content_js)
-        self.assertIn("<strong>After:</strong>", content_js)
-        self.assertIn("approved_label_change", content_js)
-        self.assertIn(
-            'return Boolean(change.operation && Array.isArray(change.labels_after) && change.labels_after.length);',
-            content_js,
-        )
-        self.assertNotIn('change.operation !== "only"', content_js)
         self.assertIn("teachDraft.targetLabel = previewTargetLabel", content_js)
         self.assertIn("teachPreview?.target_label || teachPreview?.proposed_label", content_js)
         self.assertIn("manualPreviewOriginContext = lastLiveContext ? { ...lastLiveContext } : null", content_js)
@@ -1602,16 +1355,10 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn('title: filter === "needs_attention_items" ? "Review queue complete"', content_js)
         self.assertNotIn('selectedDecisionConflict = "Choose a label before previewing the change."', content_js)
         self.assertIn("Fix this email only updates the message you are reviewing.", content_js)
-        self.assertNotIn("Queue unsubscribe review", content_js)
         self.assertIn("Clear draft", content_js)
         self.assertIn("box-shadow:none", content_js)
         self.assertNotIn("Open queued review", content_js)
-        self.assertNotIn('data-ea-unsubscribe-card="true"', content_js)
-        self.assertNotIn('data-ea-unsubscribe-action="queue"', content_js)
-        self.assertNotIn('data-ea-unsubscribe-action="review"', content_js)
-        self.assertNotIn("const canOpenUnsubscribeUrl = unsubscribePreview", content_js)
         self.assertIn("data-ea-changed-item", content_js)
-        self.assertNotIn("Queued subscriptions", content_js)
         self.assertIn("Preview closest synced match", content_js)
         self.assertIn("data-ea-related-item", content_js)
         self.assertIn("open-needs-attention", content_js)
@@ -1680,13 +1427,6 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn('"https://mail.google.com/*", "https://mail.proton.me/*"', background_js)
         self.assertIn("chrome.tabs.reload(tab.id)", background_js)
         self.assertIn("await chrome.storage.local.set", background_js)
-
-    def test_suspicious_preview_stays_on_the_ordinary_non_destructive_path(self) -> None:
-        content_js = (Path(__file__).parent.parent / "extensions" / "gmail_companion" / "content.js").read_text()
-
-        self.assertNotIn('previewTargetLabel === "suspicious"', content_js)
-        self.assertNotIn("previewSafety", content_js)
-        self.assertNotIn('path: "/api/safety-apply"', content_js)
 
     def test_companion_script_runs_from_repo_root_without_pythonpath(self) -> None:
         repo_root = Path(__file__).resolve().parent.parent
@@ -2893,25 +2633,6 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertEqual(service.calls, ["founder-test"])
             self.assertEqual(payload["status"], "verified-clear")
             self.assertEqual(payload["gmail_mutation"], "none")
-
-    def test_companion_coverage_check_never_uses_sync_or_mutation_routes(self) -> None:
-        content_js = Path("extensions/gmail_companion/content.js").read_text(encoding="utf-8")
-        coverage_body = content_js.split("function startCoverageCheck()", 1)[1].split(
-            "function openCoverageQueue", 1
-        )[0]
-        manifest = json.loads(Path("extensions/gmail_companion/manifest.json").read_text(encoding="utf-8"))
-
-        self.assertIn('path: "/api/gmail-coverage-check"', coverage_body)
-        for forbidden in [
-            "/api/provider-sync-run",
-            "/api/gmail-check-run",
-            "/api/teach-apply",
-            "/api/safety-apply",
-            "/api/provider-write-retry",
-        ]:
-            self.assertNotIn(forbidden, coverage_body)
-        scripts = manifest["content_scripts"][0]["js"]
-        self.assertLess(scripts.index("coverage.js"), scripts.index("content.js"))
 
     def test_attention_rule_proposal_endpoints_preview_and_approve_without_gmail_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

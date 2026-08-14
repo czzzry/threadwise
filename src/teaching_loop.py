@@ -3,6 +3,7 @@ import os
 import re
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from pathlib import Path
 
 from src.gmail_batch_review_store import GmailBatchReviewStore
@@ -26,6 +27,7 @@ from src.teaching_exclusions import (
 from src.teachable_rule_memory import TeachableRuleMemory, matching_rules_for_message
 from src.label_change import (
     LabelChangeError,
+    is_legacy_single_label_change,
     legacy_only_change,
     normalize_label_change,
     require_current_baseline,
@@ -358,23 +360,27 @@ def apply_sidebar_teaching(
     mode: str,
     included_message_ids: list[str] | None = None,
     approved_label_change: dict | None = None,
+    provider_preflight: Callable[[dict], None] | None = None,
+    request_id: str = "",
 ) -> dict:
     if mode not in VALID_TEACHING_APPLY_MODES:
         raise ValueError("Unsupported apply mode.")
     current = load_selected_storage_item(storage_dir, selected_context)
     if approved_label_change is not None:
-        if mode != "current-only":
+        legacy_single_label = is_legacy_single_label_change(approved_label_change)
+        if mode != "current-only" and not legacy_single_label:
             raise LabelChangeError("Label-set corrections are limited to this email in this release.")
-        label_change = normalize_label_change(approved_label_change)
+        normalized_change = normalize_label_change(approved_label_change)
         require_current_baseline(
-            label_change,
+            normalized_change,
             list(current.get("final_labels") or current.get("applied_labels") or []),
         )
-        target_label = label_change.primary_label
+        target_label = normalized_change.primary_label
         intent = {
             "target_label": target_label,
-            "source": label_change.interpretation.get("source") or "manual",
+            "source": normalized_change.interpretation.get("source") or "manual",
         }
+        label_change = normalized_change if mode == "current-only" else None
     else:
         intent = interpret_teaching_intent(
             current=current,
@@ -420,6 +426,19 @@ def apply_sidebar_teaching(
             )
         ]
 
+    label_change_payload = label_change.to_dict() if label_change else None
+    if provider_preflight is not None:
+        provider_preflight({
+            "current": current,
+            "mode": mode,
+            "preview_matches": preview_matches,
+            "semantic_rule": {
+                **semantic_rule,
+                "target_label": semantic_rule.get("target_label") or target_label,
+            },
+            "label_change": label_change_payload,
+        })
+
     current_changed = False
     if mode in {"current-only", "matching-existing", "future-only", "apply-included"}:
         current_changed = apply_label_to_message(
@@ -430,6 +449,7 @@ def apply_sidebar_teaching(
             labels=list(label_change.labels_after) if label_change else None,
             note=note,
             review_action="sidebar-current-only" if mode == "current-only" else f"sidebar-{mode}",
+            provider_write_request_id=request_id,
         )
 
     matched_existing_count = 0
@@ -510,7 +530,7 @@ def apply_sidebar_teaching(
         "current": current,
         "preview_matches": preview_matches,
         "semantic_rule": semantic_rule,
-        "label_change": label_change.to_dict() if label_change else None,
+        "label_change": label_change_payload,
     }
 
 
@@ -1592,6 +1612,7 @@ def apply_label_to_message(
     labels: list[str] | None = None,
     note: str,
     review_action: str,
+    provider_write_request_id: str = "",
 ) -> bool:
     store = GmailBatchReviewStore(storage_dir)
     stored_batch = store.load_batch(batch_id)
@@ -1606,6 +1627,8 @@ def apply_label_to_message(
         item["applied_labels"] = final_labels
         if labels is not None:
             item["require_exact_label_set_verification"] = True
+        if provider_write_request_id:
+            item["provider_write_request_id"] = provider_write_request_id
         if note:
             item["interpretation"] = note
         changed = True

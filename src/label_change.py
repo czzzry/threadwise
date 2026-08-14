@@ -7,6 +7,7 @@ from src.label_taxonomy import CANONICAL_LABEL_ORDER
 
 VALID_LABEL_CHANGE_OPERATIONS = {"only", "add", "remove", "replace"}
 MAX_SELECTED_LABELS = 3
+LEGACY_SINGLE_LABEL_COMPATIBILITY = "legacy-single-label"
 
 
 class LabelChangeError(ValueError):
@@ -100,7 +101,7 @@ def require_current_baseline(change: NormalizedLabelChange, current_labels: list
 
 
 def legacy_only_change(*, labels_before: list[str], target_label: str, interpretation: dict) -> dict:
-    return normalize_label_change(
+    normalized = normalize_label_change(
         {
             "schema_version": 1,
             "operation": "only",
@@ -111,6 +112,23 @@ def legacy_only_change(*, labels_before: list[str], target_label: str, interpret
         },
         allow_noop=True,
     ).to_dict()
+    return {
+        **normalized,
+        "compatibility": LEGACY_SINGLE_LABEL_COMPATIBILITY,
+    }
+
+
+def is_legacy_single_label_change(payload: object) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    return bool(
+        payload.get("compatibility") == LEGACY_SINGLE_LABEL_COMPATIBILITY
+        and str(payload.get("operation") or "").strip().lower() == "only"
+        and isinstance(payload.get("target_labels"), list)
+        and len(payload["target_labels"]) == 1
+        and isinstance(payload.get("labels_after"), list)
+        and len(payload["labels_after"]) == 1
+    )
 
 
 def _canonical_labels(value: object, field: str) -> tuple[str, ...]:
