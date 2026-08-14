@@ -56,7 +56,7 @@ The repo already proves:
 - Gmail daily run flows with bounded Gmail mutation
 - browser-based Gmail companion flows
 - dashboard and workbench surfaces
-- unsubscribe review and explicit execution support
+- historical local unsubscribe artifacts retained without any current review or execution surface
 - ProtonMail read paths plus a bounded Bridge-backed, label-only review console
 - local artifact, reporting, and review tooling
 - a public no-login demo that runs entirely on synthetic browser-local data

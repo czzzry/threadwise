@@ -1,10 +1,11 @@
 # Threadwise World-Class Triage Gauntlet PRD
 
 Status: Current product-direction PRD; implementation proceeds one triaged slice at a time
-Current as of: 2026-08-09
+Current as of: 2026-08-12
 Builds on: `docs/v2-alignment.md`, `docs/prd-universal-threadwise-experience-2026-08-01.md`, and the founder's August 9 Gauntlet brief
 GitHub parent issue: `#104`
 Current slice map: `docs/threadwise-gauntlet-slice-map-2026-08-09.md`
+Amended by: `docs/issues/139-remove-unsubscribe-and-destructive-suspicious-sender-flows.md`
 
 ## Problem Statement
 
@@ -52,7 +53,7 @@ The first production slice is a provider-aware, Gmail-first onboarding experienc
 28. As a user, I want a clear queue-complete moment, so that finishing a review session feels final and trustworthy.
 29. As a user, I want compact settings for Threadwise behavior only, so that the extension does not duplicate Gmail settings.
 30. As a user, I want density, explanation visibility, onboarding replay, and keyboard help progressively disclosed, so that configuration stays compact.
-31. As a user, I want unsubscribe opportunities surfaced beside relevant messages, so that the action is contextual and explicitly approved.
+31. As a user, I want `List-Unsubscribe` treated only as classification evidence, so that Threadwise never presents a removed unsubscribe action.
 32. As a user, I want activity, undo where safe, and retry available without dominating the first viewport, so that trust tools remain close but quiet.
 33. As a user, I want the panel to remain contained at compact, expanded-review, and narrow viewport sizes, so that Gmail stays usable.
 34. As a user using assistive technology, I want meaningful labels, focus order, live status, and keyboard reachability, so that the full triage loop is accessible.
@@ -79,6 +80,7 @@ The first production slice is a provider-aware, Gmail-first onboarding experienc
 - Search and filtering operate on the already-loaded provider-scoped Threadwise queue before any broader indexing work is considered.
 - Existing optimistic advancement, provider receipts, retry, reconciliation, and audit behavior remain the trust baseline.
 - No new dependency, service, framework, credential flow, or live-provider mutation is authorized by this PRD.
+- Unsubscribe UI and execution plus destructive suspicious-sender actions are removed; `List-Unsubscribe` remains classification evidence, while `suspicious` remains a non-destructive classification and review label.
 - Every important slice follows builder → independent critic → bounded correction. A slice wins only when it passes the rubric, beats its baseline by at least ten points where a scored A/B is feasible, wins at least four of six fixed tasks, and introduces no hard-gate regression.
 
 ## Testing Decisions
@@ -100,7 +102,7 @@ The first production slice is a provider-aware, Gmail-first onboarding experienc
 - Changing or replacing the Threadwise logo.
 - A separate Threadwise inbox, unified inbox, email client, or Gmail replacement.
 - AI-generated email writing, auto-response, reply, forward, compose, drafts, or send.
-- New delete, Trash, Spam, broad archive, autonomous unsubscribe, provider-rule, or other mailbox mutation.
+- New delete, Trash, Spam, broad archive, unsubscribe execution, provider-rule, or other mailbox mutation.
 - Merging Gmail and Proton state or transferring learned rules across providers.
 - Team accounts, shared inboxes, or multi-user infrastructure.
 - Rebuilding the current runtime architecture before a vertical slice requires it.

@@ -5,12 +5,13 @@ import { fileURLToPath } from "node:url";
 const cdpBase = process.argv[2] || "http://127.0.0.1:9222";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const extensionRoot = path.join(repoRoot, "extensions", "gmail_companion");
-const artifactRoot = "/tmp/threadwise-review-progression";
+const artifactRoot = process.env.THREADWISE_REVIEW_PROGRESSION_ARTIFACT_ROOT || "/tmp/threadwise-review-progression";
 const tracePath = path.join(artifactRoot, "review-progression-trace.json");
 const appUrl = "http://127.0.0.1:8891/#inbox/FMreview-a";
 const onboardingStorageKey = "threadwise_onboarding_state";
 const onboardingVersion = "2026-08-09-v1";
 const requestLogStorageKey = "__tw_review_progression_request_log";
+const pendingAcceptanceOnly = process.env.THREADWISE_REVIEW_PROGRESSION_SCENARIO === "pending-acceptance";
 const seededPageScrollY = 180;
 const seededContentScrollTop = 72;
 const viewports = [
@@ -110,12 +111,32 @@ try {
   await evaluate("window.__reviewProgressionHoldStateRead('review-b')");
   await pressKey("Enter");
   const firstAfterKey = await scrollSnapshot();
+  const firstFocusAfterKey = await activeFocusSnapshot();
   const firstRequestTrace = await requestTrace();
+  const pendingReviewSurface = await evaluate(`(() => {
+    const action = document.querySelector('[data-ea-action="accept-suggestion"]');
+    return {
+      reviewVisible: Boolean(document.querySelector('[data-ea-selected-state="review"]')),
+      actionDisabled: Boolean(action?.disabled),
+      actionText: action?.textContent || '',
+    };
+  })()`);
   assert(firstRequestTrace.filter((request) => request.path === "/api/teach-apply").length === 1, "first Enter sends exactly one teach-apply request");
   assert(await evaluate("globalThis.__eaTestHooks.getSnapshot().manualPreviewContext?.message_id === 'review-a'"), "review stays on A before local acceptance");
   assert(await evaluate("globalThis.__eaTestHooks.getSnapshot().optimisticDecision?.responseReceived === false"), "the decision remains unconfirmed before the held response");
+  assert(pendingReviewSurface.reviewVisible, "pending first decision keeps the current review surface visible");
+  assert(pendingReviewSurface.actionDisabled && pendingReviewSurface.actionText.includes("Saving"), "pending first decision disables its primary action with truthful saving copy");
+  assert(firstFocusAfterKey.queue, "pending first decision preserves queue navigation focus");
   assertScrollUnchanged(firstBefore, firstAfterKey, "pending first decision");
+  if (pendingAcceptanceOnly) {
+    const outputPath = path.join(artifactRoot, "pending-acceptance-756x469.png");
+    await captureScreenshot(outputPath);
+    results.screenshots.push({ state: "pending-acceptance", viewport: "756x469", path: outputPath, containment: await containmentSnapshot() });
+    results.scrollTrace.push({ step: "pending-first-decision", before: firstBefore, after: firstAfterKey });
+    results.focusTrace.push({ step: "pending-first-decision", before: firstFocusBefore, after: firstFocusAfterKey });
+  }
 
+  if (!pendingAcceptanceOnly) {
   activeStep = "mismatched-local-response-stays-current";
   await evaluate("window.__reviewProgressionRespondApply('review-a', true, { omitThreadId: true })");
   await waitFor(() => evaluate("globalThis.__eaTestHooks.getSnapshot().optimisticDecision?.responseAccepted === false"));
@@ -583,10 +604,12 @@ try {
     results.responseBoundaryTrace.push(await proveStaleActionResponseIsInert(scenario));
   }
   results.responseBoundaryTrace.push(await proveStaleReconciliationResponseIsInert());
+  }
 
   const requests = await requestTrace();
   const forbidden = requests.filter((request) => !(
     request.type === "email-agent:get-state"
+    || request.type === "email-agent:probe-health"
     || request.type === "threadwise:analytics"
     || request.path === "/api/teach-apply"
     || request.path === "/api/provider-write-retry"
@@ -604,6 +627,7 @@ try {
     results.requestTrace = await requestTrace();
     results.forbiddenRequests = results.requestTrace.filter((request) => !(
       request.type === "email-agent:get-state"
+      || request.type === "email-agent:probe-health"
       || request.type === "threadwise:analytics"
       || request.path === "/api/teach-apply"
       || request.path === "/api/provider-write-retry"
@@ -886,6 +910,10 @@ async function installBridge() {
             return true;
           }
           callback?.({ ok: true, payload: stateForContext(context), connection_state: { kind: 'ready', label: 'Ready', details: 'Synthetic fixture state.' } });
+          return true;
+        }
+        if (message?.type === 'email-agent:probe-health') {
+          callback?.({ ok: true, connection_state: { kind: 'ready', label: 'Ready', details: 'Synthetic fixture state.' } });
           return true;
         }
         if (message?.type === 'threadwise:analytics') { callback?.({ ok: true }); return true; }

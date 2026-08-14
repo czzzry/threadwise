@@ -2566,6 +2566,9 @@
     if (isBroaderTeachResult()) {
       return "teach-result-receipt";
     }
+    if (teachFlowState === "applying" && selectedDecisionMode === "review" && optimisticDecision?.flightActive) {
+      return "review";
+    }
     if (teachFlowState === "applying") {
       return "applying";
     }
@@ -5946,7 +5949,7 @@
         return;
       }
       teachDraft = { targetLabel: suggestedLabel, note: "" };
-      selectedDecisionMode = "preview";
+      selectedDecisionMode = "review";
       return startTeachApply("current-only");
     }
     const changeSuggestionButton = event.target.closest("[data-ea-action='change-suggestion']");
@@ -6488,7 +6491,7 @@
     teachFlowState = "applying";
     teachResult = teachPendingResult("apply", mode);
     if (lastHarnessState || lastSidebarState) {
-      renderState(lastHarnessState || lastSidebarState);
+      renderCurrentStatePreservingFocus(lastHarnessState || lastSidebarState);
     }
     applyTeach(mode, progressionToken, requestSnapshot);
     return true;

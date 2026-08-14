@@ -13,11 +13,11 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/threadwise-recruiter-story.gif" alt="Threadwise demo showing Gmail triage, teaching, approved unsubscribe cleanup, and roadmap." width="720">
+  <img src="docs/assets/threadwise-recruiter-story.gif" alt="Threadwise demo showing Gmail triage, teaching, bounded correction, and roadmap." width="720">
 </p>
 
 <p align="center">
-  <em>Demo uses synthetic Gmail-style data. No private email, credentials, or real unsubscribe execution are shown.</em>
+  <em>Demo uses synthetic Gmail-style data. No private email or credentials are shown.</em>
 </p>
 
 Threadwise is a local-first prototype for AI-assisted inbox triage. It combines deterministic rules, optional model-assisted classification, a browser-side inbox companion, and explicit human review before broader provider-side changes.
@@ -41,7 +41,7 @@ The recorded walkthrough above covers:
 - Selected-email rationale in plain English
 - `Correct / Teach` flow for telling the agent what it got wrong
 - Broader-impact preview before changing matching emails
-- Unsubscribe cleanup that waits for confirmation
+- Provider-scoped review that keeps Gmail and ProtonMail queues separate
 - Roadmap framing for future inbox-agnostic support without claiming it is already shipped
 
 The hosted synthetic demo focuses on selected-email reasoning, guided correction, broader-impact preview, and explicit scope choice. Approved changes appear on the matching inbox rows and in derived folder counts; future-only and confirmation paths show their outcome without pretending to relabel existing mail. It runs entirely on browser-local synthetic data and cannot access a provider inbox.
@@ -54,7 +54,7 @@ The hosted synthetic demo focuses on selected-email reasoning, guided correction
 - Limited Gmail `INBOX` removal for already-approved low-value categories only
 - ProtonMail read-only fetch/reporting plus a bounded label-only review console
 - Daily and weekly reporting from local run artifacts
-- Unsubscribe inventory plus explicit, auditable follow-up flows
+- Exact one-to-three-label correction with explicit scope and impact preview
 
 ## Why It Exists
 
@@ -86,18 +86,18 @@ flowchart LR
 
 Key choices:
 
-- **Local-first artifacts:** fetched messages, review decisions, reports, write status, unsubscribe inventory, and teaching memory are stored locally so every action can be inspected.
+- **Local-first artifacts:** fetched messages, review decisions, reports, write status, and teaching memory are stored locally so every current action can be inspected. Historical unsubscribe artifacts remain preserved locally but are not exposed as product actions.
 - **Provider adapters, not a generic platform:** Gmail remains the primary write-capable release target. ProtonMail has read paths plus one bounded label-only Bridge review action; broader provider behavior remains out of scope.
 - **Rules before model calls:** deterministic classification and accepted teaching memory run first. OpenAI Chat Completions are available in optional evaluation/runtime-cascade paths when a model is explicitly configured, but the product does not depend on silent model autonomy for every action.
 - **A browser companion as the product surface:** the sidebar sits next to Gmail so correction happens where the user sees the mistake.
-- **Explicit mutation gates:** label write-back and limited `INBOX` removal are bounded. Broader rewrites, unsubscribe execution, and uncertain cases require user approval or stay visible.
+- **Explicit mutation gates:** label write-back and limited `INBOX` removal are bounded. Broader rewrites require preview and user approval; unsubscribe execution and destructive suspicious-sender actions are unavailable.
 - **Demo assets are deterministic:** the public GIF is generated from a synthetic capture stage so the README is understandable without setup and does not expose private inbox data.
 
 ## Current vs Roadmap
 
 | Area | Current | Roadmap |
 | --- | --- | --- |
-| Gmail | Label write-back, limited `INBOX` removal, companion sidebar, teaching preview, unsubscribe review | More polished extension packaging and daily-use hardening |
+| Gmail | Label write-back, limited `INBOX` removal, companion sidebar, teaching preview, read-only coverage | More polished extension packaging and daily-use hardening |
 | ProtonMail | Read-only fetch/reporting plus a bounded label-only review console | Carry more of the supervised loop into a second inbox |
 | Outlook / Hotmail | Experimental/readiness work only | Later inbox-agnostic support |
 | Autonomy | Bounded labels and low-value inbox removal | No broad delete, send, reply, or full autonomous inbox operation by default |
@@ -107,6 +107,7 @@ Key choices:
 - This repo does not claim full inbox autonomy.
 - It does not default to deleting, trashing, broadly archiving, or sending email.
 - It does not claim phishing or security-grade detection.
+- It exposes no unsubscribe execution or destructive suspicious-sender action; `List-Unsubscribe` is classification evidence only.
 - ProtonMail writes are limited to the bounded, verified label-only review-console operation.
 - Broader existing-message rewrites are previewed first and require confirmation.
 
