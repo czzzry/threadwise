@@ -60,7 +60,7 @@ from src.gmail_companion_state import (
 )
 from src.companion_teaching_workflow import CompanionTeachingWorkflow
 from src.companion_runtime_state import CompanionRuntimeState
-from src.teaching_loop import teaching_llm_status
+from src.teaching_loop import TeachingLLMError, teaching_llm_status
 from src.gmail_teaching_adapter import GmailTeachingAdapter, INBOX_BACKFILL_ESTIMATE_CAP
 from src.proton_teaching_adapter import ProtonTeachingAdapter
 from src.provider_companion_runtime import (
@@ -439,6 +439,13 @@ class GmailCompanionApp:
                     analytics_distinct_id=self._analytics_distinct_id_from_request(handler),
                 )
                 return self._write_json(handler, HTTPStatus.OK, response)
+            except TeachingLLMError as exc:
+                self._capture_workflow_event(
+                    handler,
+                    "teach/fix failed",
+                    {"surface": "gmail_companion", "error_category": exc.category},
+                )
+                return self._write_json(handler, exc.response_status, exc.public_payload())
             except (KeyError, ValueError, HTTPException) as exc:
                 self._capture_workflow_event(
                     handler,

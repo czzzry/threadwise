@@ -1,6 +1,8 @@
+import io
 import json
 import tempfile
 import unittest
+import urllib.error
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -8,6 +10,7 @@ from src.candidate_change_store import CandidateChangeStore
 from src.local_artifacts import candidate_changes_path, teachable_rules_path
 from src.teaching_loop import (
     OpenAITeachingIntentClient,
+    TeachingLLMError,
     apply_rule_amendment_decision,
     apply_sidebar_teaching,
     build_sidebar_teach_preview,
@@ -171,8 +174,84 @@ class TeachingLoopTests(unittest.TestCase):
         self.assertEqual(result["_model"], "test-model")
         self.assertEqual(urlopen.call_args.kwargs["timeout"], 8)
 
-        with patch("src.teaching_loop.urllib.request.urlopen", side_effect=TimeoutError("slow model")):
-            self.assertEqual(OpenAITeachingIntentClient("test-key", "test-model").interpret({"note": "shipment"}), {})
+        with (
+            patch("src.teaching_loop.urllib.request.urlopen", side_effect=TimeoutError("slow model")),
+            self.assertRaises(TeachingLLMError) as caught,
+        ):
+            OpenAITeachingIntentClient("test-key", "test-model").interpret({"note": "shipment"})
+
+        self.assertEqual(caught.exception.category, "timeout")
+        self.assertTrue(caught.exception.retryable)
+
+    def test_teaching_intent_client_preserves_openai_quota_failure_without_exposing_response_body(self) -> None:
+        provider_body = json.dumps(
+            {
+                "error": {
+                    "message": "You exceeded your current quota. Billing details are private.",
+                    "type": "insufficient_quota",
+                    "code": "insufficient_quota",
+                }
+            }
+        ).encode("utf-8")
+        response_error = urllib.error.HTTPError(
+            "https://api.openai.com/v1/chat/completions",
+            429,
+            "Too Many Requests",
+            {},
+            io.BytesIO(provider_body),
+        )
+
+        with (
+            patch("src.teaching_loop.urllib.request.urlopen", side_effect=response_error),
+            self.assertRaises(TeachingLLMError) as caught,
+        ):
+            OpenAITeachingIntentClient("test-key", "test-model").interpret({"note": "shipment"})
+
+        self.assertEqual(caught.exception.category, "quota_exceeded")
+        self.assertEqual(caught.exception.http_status, 429)
+        self.assertEqual(caught.exception.provider_code, "insufficient_quota")
+        self.assertFalse(caught.exception.retryable)
+        self.assertNotIn("Billing details are private", str(caught.exception))
+
+    def test_teaching_intent_client_distinguishes_authentication_from_rate_limit(self) -> None:
+        cases = (
+            (401, "invalid_api_key", "authentication_failed", False),
+            (429, "rate_limit_exceeded", "rate_limited", True),
+        )
+        for status, provider_code, expected_category, retryable in cases:
+            with self.subTest(status=status, provider_code=provider_code):
+                response_error = urllib.error.HTTPError(
+                    "https://api.openai.com/v1/chat/completions",
+                    status,
+                    "OpenAI request failed",
+                    {},
+                    io.BytesIO(json.dumps({"error": {"code": provider_code}}).encode("utf-8")),
+                )
+                with (
+                    patch("src.teaching_loop.urllib.request.urlopen", side_effect=response_error),
+                    self.assertRaises(TeachingLLMError) as caught,
+                ):
+                    OpenAITeachingIntentClient("test-key", "test-model").interpret({"note": "shipment"})
+
+                self.assertEqual(caught.exception.category, expected_category)
+                self.assertEqual(caught.exception.retryable, retryable)
+
+    def test_teaching_intent_client_reports_an_unusable_model_response(self) -> None:
+        response = Mock()
+        response.read.return_value = json.dumps(
+            {"choices": [{"message": {"content": "not valid json"}}]}
+        ).encode("utf-8")
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+
+        with (
+            patch("src.teaching_loop.urllib.request.urlopen", return_value=response),
+            self.assertRaises(TeachingLLMError) as caught,
+        ):
+            OpenAITeachingIntentClient("test-key", "test-model").interpret({"note": "shipment"})
+
+        self.assertEqual(caught.exception.category, "invalid_response")
+        self.assertTrue(caught.exception.retryable)
 
     def test_saved_semantic_rule_keeps_same_sender_security_mail_out_of_orders(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -39,6 +39,7 @@ from src.gmail_companion_state import (
 from src.gmail_companion_ui import GmailCompanionApp, main, script_safe_json
 from src.gmail_writer import MockGmailLabelClient, MockGmailLabelWriter
 from src.local_artifacts import candidate_changes_path
+from src.teaching_loop import TeachingLLMError
 from src.unsubscribe_inventory_store import UnsubscribeInventoryStore
 from src.unsubscribe_execution import UnsubscribeExecutor
 
@@ -74,6 +75,32 @@ class GmailCompanionUiTests(unittest.TestCase):
         app.handle_request(root)
         self.assertEqual(root.code, 200)
         self.assertNotIn("unsubscribe", root.wfile.value.decode("utf-8").lower())
+
+    def test_teach_preview_returns_structured_openai_quota_failure(self) -> None:
+        app = GmailCompanionApp(Path("/tmp/example"))
+        handler = _FakeRequestHandler("/api/teach-preview", method="POST", json_body={})
+        failure = TeachingLLMError(
+            category="quota_exceeded",
+            message="The connected OpenAI account has no available API quota.",
+            http_status=429,
+            provider_code="insufficient_quota",
+            retryable=False,
+        )
+
+        with patch.object(app, "teach_preview_initial", side_effect=failure):
+            app.handle_request(handler)
+
+        self.assertEqual(handler.code, 402)
+        self.assertEqual(
+            json.loads(handler.wfile.value),
+            {
+                "error": "The connected OpenAI account has no available API quota.",
+                "error_code": "quota_exceeded",
+                "provider": "openai",
+                "provider_code": "insufficient_quota",
+                "retryable": False,
+            },
+        )
 
     def test_review_queue_refreshes_five_amazon_variants_without_turning_security_into_orders(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1431,7 +1458,7 @@ class GmailCompanionUiTests(unittest.TestCase):
         manifest = json.loads((repo_root / "extensions" / "gmail_companion" / "manifest.json").read_text())
         background_js = (repo_root / "extensions" / "gmail_companion" / "background.js").read_text()
 
-        self.assertEqual(manifest["version"], "0.3.3")
+        self.assertEqual(manifest["version"], "0.3.4")
         self.assertIn("threadwise_active_extension_version", background_js)
         self.assertIn("chrome.runtime.getManifest().version", background_js)
         self.assertIn('"https://mail.google.com/*", "https://mail.proton.me/*"', background_js)

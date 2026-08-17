@@ -6,8 +6,11 @@
   function failureDetails(input = {}) {
     const response = input.response && typeof input.response === "object" ? input.response : {};
     const payload = response.payload && typeof response.payload === "object" ? response.payload : {};
+    const payloadError = payload.error && typeof payload.error === "object" ? payload.error : {};
     return {
-      raw: text(input.error || payload.error || response.error),
+      raw: text(input.error || payloadError.message || payload.error || response.error),
+      errorCode: text(input.error_code || payload.error_code || payloadError.code || response.error_code).toLowerCase(),
+      providerCode: text(payload.provider_code || payloadError.code).toLowerCase(),
       status: Number(response.status || 0),
       connectionKind: text(response.connection_state?.kind).toLowerCase(),
     };
@@ -80,6 +83,53 @@
       );
     }
 
+    const quotaExceeded = details.errorCode === "quota_exceeded"
+      || details.providerCode === "insufficient_quota"
+      || details.providerCode.includes("billing_hard_limit")
+      || normalized.includes("insufficient_quota")
+      || normalized.includes("no available api quota")
+      || normalized.includes("exceeded your current quota");
+    if (quotaExceeded) {
+      return result(
+        operation,
+        "ai-quota-exceeded",
+        "OpenAI API credits or usage limit reached",
+        `Threadwise could not ask the AI to review your instruction because the connected OpenAI account has no available API quota. ${outcomeCopy} Add API credits or raise the project's usage limit, then retry.`,
+        action(operation === "apply" ? "retry-apply-teach" : "retry-preview-teach", operation === "apply" ? "Check and retry" : "Retry AI preview"),
+        stateLabel,
+      );
+    }
+
+    const authenticationFailed = details.errorCode === "authentication_failed"
+      || details.providerCode === "invalid_api_key"
+      || details.status === 401
+      || details.status === 403;
+    if (authenticationFailed) {
+      return result(
+        operation,
+        "ai-authentication-failed",
+        "OpenAI API key was rejected",
+        `Threadwise could not authenticate with OpenAI. ${outcomeCopy} Open Threadwise Control and reconnect a valid private API key.`,
+        action("force-refresh", "Check AI connection"),
+        stateLabel,
+      );
+    }
+
+    const rateLimited = details.errorCode === "rate_limited"
+      || details.providerCode === "rate_limit_exceeded"
+      || normalized.includes("rate limit")
+      || details.status === 429;
+    if (rateLimited) {
+      return result(
+        operation,
+        "ai-rate-limited",
+        "OpenAI is temporarily rate-limited",
+        `Threadwise is connected, but OpenAI asked it to slow down. ${outcomeCopy} Wait a moment, then retry.`,
+        action(operation === "apply" ? "retry-apply-teach" : "retry-preview-teach", operation === "apply" ? "Check and retry" : "Retry AI preview"),
+        stateLabel,
+      );
+    }
+
     const aiNotConfigured = normalized.includes("llm review is not configured")
       || normalized.includes("openai key")
       || normalized.includes("api key");
@@ -95,10 +145,12 @@
     }
 
     const aiUnavailable = normalized.includes("llm review was unavailable")
-      || normalized.includes("rate limit")
       || normalized.includes("timed out")
       || normalized.includes("timeout")
-      || details.status === 429;
+      || details.errorCode === "timeout"
+      || details.errorCode === "network_error"
+      || details.errorCode === "provider_error"
+      || details.errorCode === "invalid_response";
     if (aiUnavailable) {
       return result(
         operation,

@@ -125,6 +125,19 @@ try {
       results.viewportChecks.push({ state: "teaching-stale-recovery", viewport: viewport.name, ...containment });
     }
 
+    await send("Emulation.setDeviceMetricsOverride", { width: 459, height: 800, deviceScaleFactor: 1, mobile: false });
+    const quotaResult = await evaluate("globalThis.__eaTestHooks.showTeachError('preview', { ok: false, status: 402, payload: { error: 'The connected OpenAI account has no available API quota.', error_code: 'quota_exceeded', provider: 'openai', provider_code: 'insufficient_quota', retryable: false }, connection_state: { kind: 'ready' } })");
+    assert(quotaResult.result.category === "ai-quota-exceeded", "OpenAI quota exhaustion is identified explicitly");
+    assert(await evaluate("document.querySelector('[data-ea-selected-state]')?.textContent.includes('OpenAI API credits or usage limit reached')"), "quota recovery names API credits or the usage limit");
+    assert(await evaluate("document.querySelector('[data-ea-selected-state]')?.textContent.includes('Your instruction was not applied and no labels changed')"), "quota recovery says exactly what did not happen");
+    const quotaContainment = await containmentSnapshot();
+    assert(quotaContainment.contained, "OpenAI quota recovery stays internally contained at Proton-sized width");
+    const quotaOutputPath = path.join(artifactRoot, "teaching-openai-quota-459x800.png");
+    await captureScreenshot(quotaOutputPath);
+    results.screenshots.push({ state: "teaching-openai-quota", viewport: "459x800", path: quotaOutputPath, containment: quotaContainment });
+    results.viewportChecks.push({ state: "teaching-openai-quota", viewport: "459x800", ...quotaContainment });
+
+    await send("Emulation.setDeviceMetricsOverride", { width: 756, height: 469, deviceScaleFactor: 1, mobile: false });
     const healthyResult = await evaluate("globalThis.__eaTestHooks.showTeachError('preview', { ok: false, status: 500, error: 'Unexpected preview failure', connection_state: { kind: 'ready' } })");
     assert(healthyResult.result.category === "preview-failed", "healthy companion errors remain AI preview errors");
     assert(await evaluate("document.querySelector('[data-ea-selected-state]')?.textContent.includes('Threadwise is connected, but it could not prepare the AI interpretation')"), "healthy companion is never described as unavailable");
@@ -137,7 +150,7 @@ try {
     const healthyOutputPath = path.join(artifactRoot, "teaching-ai-recovery-756x469.png");
     await captureScreenshot(healthyOutputPath);
     results.screenshots.push({ state: "teaching-ai-recovery", viewport: "756x469", path: healthyOutputPath, containment: healthyContainment });
-    results.recoveryTrace.push({ staleResult, healthyResult, retryRequestSent: true });
+    results.recoveryTrace.push({ staleResult, quotaResult, healthyResult, retryRequestSent: true });
   } else {
   activeStep = "enter-queue-preview";
   await evaluate("document.querySelector('#ea-brand-toggle').click()");

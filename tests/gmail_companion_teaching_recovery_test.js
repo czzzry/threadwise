@@ -77,6 +77,53 @@ function run() {
   assert.equal(aiUnavailable.title, "AI review could not finish");
   assert.equal(aiUnavailable.actions[0].label, "Try AI preview again");
 
+  const quotaExceeded = recovery.describe({
+    operation: "preview",
+    response: {
+      ok: false,
+      status: 402,
+      payload: {
+        error: "The connected OpenAI account has no available API quota.",
+        error_code: "quota_exceeded",
+        provider: "openai",
+        provider_code: "insufficient_quota",
+        retryable: false,
+      },
+      connection_state: { kind: "ready" },
+    },
+    providerName: "Proton Mail",
+  });
+  assert.equal(quotaExceeded.category, "ai-quota-exceeded");
+  assert.equal(quotaExceeded.title, "OpenAI API credits or usage limit reached");
+  assert.match(quotaExceeded.message, /instruction was not applied and no labels changed/i);
+  assert.match(quotaExceeded.message, /add API credits or raise the project's usage limit/i);
+
+  const rejectedKey = recovery.describe({
+    operation: "preview",
+    response: {
+      ok: false,
+      status: 401,
+      payload: { error_code: "authentication_failed", provider: "openai" },
+      connection_state: { kind: "ready" },
+    },
+    providerName: "Gmail",
+  });
+  assert.equal(rejectedKey.category, "ai-authentication-failed");
+  assert.equal(rejectedKey.title, "OpenAI API key was rejected");
+
+  const rateLimited = recovery.describe({
+    operation: "preview",
+    response: {
+      ok: false,
+      status: 429,
+      payload: { error_code: "rate_limited", provider: "openai", retryable: true },
+      connection_state: { kind: "ready" },
+    },
+    providerName: "Gmail",
+  });
+  assert.equal(rateLimited.category, "ai-rate-limited");
+  assert.equal(rateLimited.title, "OpenAI is temporarily rate-limited");
+
   const applyFailure = recovery.describe({
     operation: "apply",
     response: {

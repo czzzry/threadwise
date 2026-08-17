@@ -39,6 +39,92 @@ DEFAULT_TEACHING_INTENT_MODEL = "gpt-4.1-mini"
 DEFAULT_TEACHING_INTENT_TIMEOUT_SECONDS = 8
 
 
+class TeachingLLMError(RuntimeError):
+    """A safe, structured failure from the teaching model boundary."""
+
+    def __init__(
+        self,
+        *,
+        category: str,
+        message: str,
+        http_status: int | None = None,
+        provider_code: str = "",
+        retryable: bool,
+    ) -> None:
+        super().__init__(message)
+        self.category = category
+        self.http_status = http_status
+        self.provider_code = provider_code
+        self.retryable = retryable
+
+    def public_payload(self) -> dict:
+        return {
+            "error": str(self),
+            "error_code": self.category,
+            "provider": "openai",
+            "provider_code": self.provider_code,
+            "retryable": self.retryable,
+        }
+
+    @property
+    def response_status(self) -> int:
+        return {
+            "quota_exceeded": 402,
+            "authentication_failed": 401,
+            "rate_limited": 429,
+            "timeout": 503,
+            "network_error": 503,
+        }.get(self.category, 502)
+
+
+def _teaching_llm_http_error(exc: urllib.error.HTTPError) -> TeachingLLMError:
+    provider_code = ""
+    provider_type = ""
+    provider_message = ""
+    try:
+        body = json.loads(exc.read().decode("utf-8"))
+        error = body.get("error") if isinstance(body, dict) else {}
+        if isinstance(error, dict):
+            provider_code = str(error.get("code") or "").strip().lower()
+            provider_type = str(error.get("type") or "").strip().lower()
+            provider_message = str(error.get("message") or "").strip().lower()
+    except (AttributeError, UnicodeDecodeError, json.JSONDecodeError):
+        pass
+
+    provider_markers = " ".join((provider_code, provider_type, provider_message))
+    if any(marker in provider_markers for marker in ("insufficient_quota", "billing_hard_limit", "current quota")):
+        return TeachingLLMError(
+            category="quota_exceeded",
+            message="The connected OpenAI account has no available API quota.",
+            http_status=exc.code,
+            provider_code=provider_code,
+            retryable=False,
+        )
+    if exc.code in {401, 403} or provider_code in {"invalid_api_key", "authentication_error"}:
+        return TeachingLLMError(
+            category="authentication_failed",
+            message="OpenAI rejected the configured API key.",
+            http_status=exc.code,
+            provider_code=provider_code,
+            retryable=False,
+        )
+    if exc.code == 429:
+        return TeachingLLMError(
+            category="rate_limited",
+            message="OpenAI temporarily rate-limited this request.",
+            http_status=exc.code,
+            provider_code=provider_code,
+            retryable=True,
+        )
+    return TeachingLLMError(
+        category="provider_error",
+        message="OpenAI could not complete the teaching review.",
+        http_status=exc.code,
+        provider_code=provider_code,
+        retryable=exc.code >= 500,
+    )
+
+
 def teaching_llm_status() -> dict:
     """Expose configuration state without exposing the credential itself."""
     key_source = "EMAIL_AGENT_OPENAI_API_KEY" if os.getenv("EMAIL_AGENT_OPENAI_API_KEY") else (
@@ -109,20 +195,54 @@ class OpenAITeachingIntentClient:
         try:
             with urllib.request.urlopen(request, timeout=self._timeout_seconds) as response:
                 body = json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError:
-            return {}
-        except urllib.error.URLError:
-            return {}
-        except TimeoutError:
-            return {}
+        except urllib.error.HTTPError as exc:
+            raise _teaching_llm_http_error(exc) from exc
+        except urllib.error.URLError as exc:
+            raise TeachingLLMError(
+                category="network_error",
+                message="Threadwise could not reach OpenAI.",
+                retryable=True,
+            ) from exc
+        except TimeoutError as exc:
+            raise TeachingLLMError(
+                category="timeout",
+                message="OpenAI did not finish the teaching review in time.",
+                retryable=True,
+            ) from exc
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise TeachingLLMError(
+                category="invalid_response",
+                message="OpenAI returned a response Threadwise could not interpret.",
+                retryable=True,
+            ) from exc
+        if not isinstance(body, dict):
+            raise TeachingLLMError(
+                category="invalid_response",
+                message="OpenAI returned a response Threadwise could not interpret.",
+                retryable=True,
+            )
         content = (((body.get("choices") or [{}])[0].get("message") or {}).get("content") or "").strip()
         if not content:
-            return {}
+            raise TeachingLLMError(
+                category="invalid_response",
+                message="OpenAI returned a response Threadwise could not interpret.",
+                retryable=True,
+            )
         try:
             parsed = json.loads(content)
-        except json.JSONDecodeError:
-            return {}
-        return {**parsed, "_model": self._model} if isinstance(parsed, dict) else {}
+        except json.JSONDecodeError as exc:
+            raise TeachingLLMError(
+                category="invalid_response",
+                message="OpenAI returned a response Threadwise could not interpret.",
+                retryable=True,
+            ) from exc
+        if not isinstance(parsed, dict):
+            raise TeachingLLMError(
+                category="invalid_response",
+                message="OpenAI returned a response Threadwise could not interpret.",
+                retryable=True,
+            )
+        return {**parsed, "_model": self._model}
 
 
 def build_sidebar_teach_preview(
