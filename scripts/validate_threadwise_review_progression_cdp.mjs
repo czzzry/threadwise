@@ -13,6 +13,7 @@ const onboardingVersion = "2026-08-09-v1";
 const requestLogStorageKey = "__tw_review_progression_request_log";
 const pendingAcceptanceOnly = process.env.THREADWISE_REVIEW_PROGRESSION_SCENARIO === "pending-acceptance";
 const recoveryOnly = process.env.THREADWISE_REVIEW_PROGRESSION_SCENARIO === "recovery";
+const teachingRecoveryOnly = process.env.THREADWISE_REVIEW_PROGRESSION_SCENARIO === "teaching-recovery";
 const seededPageScrollY = 180;
 const seededContentScrollTop = 72;
 const viewports = [
@@ -22,7 +23,7 @@ const viewports = [
 ];
 
 const reviewItems = [
-  { provider: "gmail", message_id: "review-a", thread_id: "thread-review", subject: "Finance approval A", sender: "a@example.test", classification: "EA/Finance", suggested_label: "job-related", status_label: "Needs attention", status: "needs-attention" },
+  { provider: "gmail", message_id: "review-a", thread_id: "thread-review", subject: "Finance approval A", sender: "anders-lyo-pedersen@trackunit-notifications.example.test", classification: "EA/Finance", suggested_label: "job-related", status_label: "Needs attention", status: "needs-attention" },
   { provider: "gmail", message_id: "review-b", thread_id: "thread-review", subject: "Finance approval B", sender: "b@example.test", classification: "EA/Finance", suggested_label: "job-related", status_label: "Needs attention", status: "needs-attention" },
   { provider: "gmail", message_id: "review-c", thread_id: "thread-review", subject: "Finance approval C", sender: "c@example.test", classification: "EA/Finance", suggested_label: "job-related", status_label: "Needs attention", status: "needs-attention" },
 ];
@@ -94,6 +95,50 @@ try {
   assert(initial.minimized, "fresh synthetic mount remains minimized");
   assert(initial.contentHidden, "fresh synthetic mount hides content");
 
+  if (teachingRecoveryOnly) {
+    activeStep = "teaching-recovery-surface";
+    await evaluate("document.querySelector('#ea-brand-toggle').click()");
+    await waitFor(() => evaluate("document.querySelector('[data-ea-selected-state=review]')?.textContent.includes('Finance approval A')"));
+    await send("Emulation.setDeviceMetricsOverride", { width: 459, height: 800, deviceScaleFactor: 1, mobile: false });
+    const longSenderContainment = await containmentSnapshot();
+    assert(longSenderContainment.contained, "long sender review stays internally contained at Proton-sized width");
+    assert(longSenderContainment.internal.some((entry) => entry.selector === "[data-ea-current-message-context]" && entry.overflow === 0), "current message header has no horizontal overflow");
+    const longSenderPath = path.join(artifactRoot, "review-long-sender-459x800.png");
+    await captureScreenshot(longSenderPath);
+    results.screenshots.push({ state: "review-long-sender", viewport: "459x800", path: longSenderPath, containment: longSenderContainment });
+    results.viewportChecks.push({ state: "review-long-sender", viewport: "459x800", ...longSenderContainment });
+    await evaluate("globalThis.__eaTestHooks.setDraft('account-security', 'Welcome emails should be Account and LowValue.')");
+    const staleResult = await evaluate("globalThis.__eaTestHooks.showTeachError('preview', { error: 'Extension context invalidated.' })");
+    assert(staleResult.result.category === "stale-extension", "stale extension context is identified explicitly");
+    assert(await evaluate("document.querySelector('[data-ea-action=reload-provider-tab]')?.textContent.trim() === 'Refresh Proton Mail'"), "stale extension context offers one clear refresh action");
+    assert(await evaluate("document.querySelector('[data-ea-selected-state]')?.textContent.includes('Your instruction was not applied and no labels changed')"), "stale extension recovery says exactly what did not happen");
+    for (const viewport of [
+      { name: "459x800", width: 459, height: 800 },
+      { name: "756x469", width: 756, height: 469 },
+    ]) {
+      await send("Emulation.setDeviceMetricsOverride", { width: viewport.width, height: viewport.height, deviceScaleFactor: 1, mobile: false });
+      const containment = await containmentSnapshot();
+      assert(containment.contained, `stale recovery stays internally contained at ${viewport.name}`);
+      const outputPath = path.join(artifactRoot, `teaching-stale-recovery-${viewport.name}.png`);
+      await captureScreenshot(outputPath);
+      results.screenshots.push({ state: "teaching-stale-recovery", viewport: viewport.name, path: outputPath, containment });
+      results.viewportChecks.push({ state: "teaching-stale-recovery", viewport: viewport.name, ...containment });
+    }
+
+    const healthyResult = await evaluate("globalThis.__eaTestHooks.showTeachError('preview', { ok: false, status: 500, error: 'Unexpected preview failure', connection_state: { kind: 'ready' } })");
+    assert(healthyResult.result.category === "preview-failed", "healthy companion errors remain AI preview errors");
+    assert(await evaluate("document.querySelector('[data-ea-selected-state]')?.textContent.includes('Threadwise is connected, but it could not prepare the AI interpretation')"), "healthy companion is never described as unavailable");
+    assert(await evaluate("document.querySelector('[data-ea-action=retry-preview-teach]')?.textContent.trim() === 'Try AI preview again'"), "AI preview failure offers one specific retry action");
+    const beforeRetry = await requestTrace();
+    await evaluate("document.querySelector('[data-ea-action=retry-preview-teach]').click()");
+    await waitFor(async () => (await requestTrace()).filter((request) => request.path === "/api/teach-preview").length > beforeRetry.filter((request) => request.path === "/api/teach-preview").length);
+    const healthyContainment = await containmentSnapshot();
+    assert(healthyContainment.contained, "retried AI preview remains internally contained");
+    const healthyOutputPath = path.join(artifactRoot, "teaching-ai-recovery-756x469.png");
+    await captureScreenshot(healthyOutputPath);
+    results.screenshots.push({ state: "teaching-ai-recovery", viewport: "756x469", path: healthyOutputPath, containment: healthyContainment });
+    results.recoveryTrace.push({ staleResult, healthyResult, retryRequestSent: true });
+  } else {
   activeStep = "enter-queue-preview";
   await evaluate("document.querySelector('#ea-brand-toggle').click()");
   await waitFor(() => evaluate("document.querySelector('[data-ea-selected-state=review]')?.textContent.includes('Finance approval A')"));
@@ -502,6 +547,7 @@ try {
     reinjectionRequests: reinjectionAfter.slice(reinjectionBefore.length),
     hashTriggeredRequests: reinjectionHashAfter.slice(reinjectionHashBefore.length),
   });
+  await evaluate("document.getElementById('__tw-vertical-scroll-fixture')?.remove(); const content = document.getElementById('ea-content'); if (content) content.scrollTop = 0;");
   await evaluate("document.getElementById('ea-brand-toggle')?.click()");
   await waitFor(() => evaluate("document.getElementById('email-agent-companion-root')?.dataset.eaMinimized === 'false' && document.getElementById('ea-content')?.style.display !== 'none'"));
 
@@ -629,12 +675,14 @@ try {
   results.responseBoundaryTrace.push(await proveStaleReconciliationResponseIsInert());
   }
   }
+  }
 
   const requests = await requestTrace();
   const forbidden = requests.filter((request) => !(
     request.type === "email-agent:get-state"
     || request.type === "email-agent:probe-health"
     || request.type === "threadwise:analytics"
+    || request.path === "/api/teach-preview"
     || request.path === "/api/teach-apply"
     || request.path === "/api/provider-write-retry"
     || request.path === "/api/handled-review-acknowledge"
@@ -653,6 +701,7 @@ try {
       request.type === "email-agent:get-state"
       || request.type === "email-agent:probe-health"
       || request.type === "threadwise:analytics"
+      || request.path === "/api/teach-preview"
       || request.path === "/api/teach-apply"
       || request.path === "/api/provider-write-retry"
       || request.path === "/api/handled-review-acknowledge"
@@ -782,7 +831,7 @@ async function installBridge() {
           selected_context: selectedContext,
           selected_email: selected,
           daily_summary: { processed_count: 8, auto_handled_count: handled.length, kept_visible_count: 1, needs_attention_count: queue.length, ...daily },
-          ui_state: { provider_name: 'Gmail', allowed_labels: labels, async_follow_up: clone(options.asyncFollowUp || (staleAsyncFollowUpDone ? { kind: 'teach-apply-refresh', state: 'done', label: 'Background refresh', message: 'Synthetic stale follow-up completed.' } : {})), activity_feed: phase === 'review' ? currentActivity() : [] },
+          ui_state: { provider_name: ${JSON.stringify(teachingRecoveryOnly ? "Proton Mail" : "Gmail")}, allowed_labels: labels, async_follow_up: clone(options.asyncFollowUp || (staleAsyncFollowUpDone ? { kind: 'teach-apply-refresh', state: 'done', label: 'Background refresh', message: 'Synthetic stale follow-up completed.' } : {})), activity_feed: phase === 'review' ? currentActivity() : [] },
         },
         needs_attention_items: clone(queue),
         recent_items: phase === 'handled' ? clone(handled) : clone(queue),
@@ -973,16 +1022,29 @@ async function installBridge() {
 }
 
 async function injectContentScript() {
-  for (const scriptName of ["provider_adapter.js", "analytics.js", "onboarding.js", "queue_navigation.js", "context_actions.js", "selected_explanation.js", "review_progression.js", "coverage.js", "content.js"]) {
+  for (const scriptName of ["provider_adapter.js", "teaching_recovery.js", "analytics.js", "onboarding.js", "queue_navigation.js", "context_actions.js", "selected_explanation.js", "review_progression.js", "coverage.js", "content.js"]) {
     await evaluate(await fs.readFile(path.join(extensionRoot, scriptName), "utf8"));
   }
 }
 
 async function seedScroll() {
-  await evaluate(`(() => { const content = document.getElementById('ea-content'); window.scrollTo(0, ${seededPageScrollY}); content.scrollTop = ${seededContentScrollTop}; return true; })()`);
+  await evaluate(`(() => {
+    const content = document.getElementById('ea-content');
+    let spacer = document.getElementById('__tw-vertical-scroll-fixture');
+    if (content.scrollHeight - content.clientHeight < ${seededContentScrollTop}) {
+      spacer = spacer || document.createElement('div');
+      spacer.id = '__tw-vertical-scroll-fixture';
+      spacer.setAttribute('aria-hidden', 'true');
+      spacer.style.cssText = 'height:600px;min-height:600px;visibility:hidden;pointer-events:none;';
+      content.appendChild(spacer);
+    }
+    window.scrollTo(0, ${seededPageScrollY});
+    content.scrollTop = ${seededContentScrollTop};
+    return true;
+  })()`);
   const snapshot = await scrollSnapshot();
   assert(snapshot.pageY === seededPageScrollY, "synthetic Gmail page scroll is genuinely nonzero");
-  assert(snapshot.contentScrollTop === seededContentScrollTop, "synthetic companion scroll is genuinely nonzero");
+  assert(snapshot.contentScrollTop === seededContentScrollTop, `synthetic companion scroll is genuinely nonzero: ${JSON.stringify(snapshot)}`);
   return snapshot;
 }
 
@@ -1008,7 +1070,7 @@ async function captureViewportSet(stateName) {
 }
 
 async function scrollSnapshot() {
-  return evaluate("(() => ({ pageX: window.scrollX, pageY: window.scrollY, contentScrollTop: document.getElementById('ea-content')?.scrollTop || 0, contentScrollLeft: document.getElementById('ea-content')?.scrollLeft || 0 }))()");
+  return evaluate("(() => { const content = document.getElementById('ea-content'); return { pageX: window.scrollX, pageY: window.scrollY, contentScrollTop: content?.scrollTop || 0, contentScrollLeft: content?.scrollLeft || 0, contentClientHeight: content?.clientHeight || 0, contentScrollHeight: content?.scrollHeight || 0 }; })()");
 }
 
 async function activeFocusSnapshot() {
@@ -1288,7 +1350,7 @@ async function proveStaleReconciliationResponseIsInert() {
 }
 
 async function containmentSnapshot() {
-  return evaluate("(() => { const root = document.getElementById('email-agent-companion-root')?.getBoundingClientRect(); const host = document.getElementById('synthetic-gmail-host')?.getBoundingClientRect(); return { contained: Boolean(root && root.left >= 0 && root.top >= 0 && root.right <= innerWidth + 1 && root.bottom <= innerHeight + 1 && document.documentElement.scrollWidth <= innerWidth && document.body.scrollWidth <= innerWidth && host?.left === 0), root: root ? { left: root.left, top: root.top, right: root.right, bottom: root.bottom, width: root.width } : null, viewport: { width: innerWidth, height: innerHeight } }; })()");
+  return evaluate("(() => { const rootNode = document.getElementById('email-agent-companion-root'); const root = rootNode?.getBoundingClientRect(); const host = document.getElementById('synthetic-gmail-host')?.getBoundingClientRect(); const selectors = ['#email-agent-companion-root', '#ea-panel', '#ea-content', '#ea-workspace', '[data-ea-workspace-body]', '[data-ea-current-message-context]', '[data-ea-selected-state]']; const internal = selectors.map((selector) => { const node = document.querySelector(selector); return node ? { selector, clientWidth: node.clientWidth, scrollWidth: node.scrollWidth, overflow: Math.max(0, node.scrollWidth - node.clientWidth) } : null; }).filter(Boolean); const internalContained = internal.every((entry) => entry.overflow <= 1); return { contained: Boolean(root && root.left >= 0 && root.top >= 0 && root.right <= innerWidth + 1 && root.bottom <= innerHeight + 1 && document.documentElement.scrollWidth <= innerWidth && document.body.scrollWidth <= innerWidth && host?.left === 0 && internalContained), root: root ? { left: root.left, top: root.top, right: root.right, bottom: root.bottom, width: root.width } : null, internal, viewport: { width: innerWidth, height: innerHeight } }; })()");
 }
 
 function assertScrollUnchanged(before, after, label) {

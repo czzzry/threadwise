@@ -1130,11 +1130,19 @@ class GmailCompanionUiTests(unittest.TestCase):
             text=True,
             check=False,
         )
+        teaching_recovery_result = subprocess.run(
+            ["node", "tests/gmail_companion_teaching_recovery_test.js"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
 
         self.assertEqual(manifest_result.returncode, 0, manifest_result.stderr)
         self.assertEqual(content_result.returncode, 0, content_result.stderr)
         self.assertEqual(background_result.returncode, 0, background_result.stderr)
         self.assertEqual(analytics_result.returncode, 0, analytics_result.stderr)
+        self.assertEqual(teaching_recovery_result.returncode, 0, teaching_recovery_result.stderr)
 
     def test_extension_offers_apply_suggestion_for_unconfirmed_selected_email(self) -> None:
         content_js = (
@@ -1175,7 +1183,8 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("https://mail.proton.me/*", manifest["host_permissions"])
         self.assertIn("https://mail.proton.me/*", manifest["content_scripts"][0]["matches"])
         self.assertEqual(manifest["content_scripts"][0]["js"][0], "provider_adapter.js")
-        self.assertEqual(manifest["content_scripts"][0]["js"][1], "analytics.js")
+        self.assertEqual(manifest["content_scripts"][0]["js"][1], "teaching_recovery.js")
+        self.assertEqual(manifest["content_scripts"][0]["js"][2], "analytics.js")
         self.assertIn("globalThis.ThreadwiseProvider", content_js)
         self.assertIn("return PROVIDER.selectedContext();", content_js)
         self.assertIn("provider_labels: context.provider_labels || \"\"", content_js)
@@ -1279,9 +1288,8 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("box-sizing:border-box;width:100%", content_js)
         self.assertIn("teachErrorResult", content_js)
         self.assertIn("renderTeachResultHtml", content_js)
-        self.assertIn("Preview blocked", content_js)
-        self.assertIn("Lesson blocked", content_js)
-        self.assertIn("Retry available", content_js)
+        self.assertIn("ThreadwiseTeachingRecovery", content_js)
+        self.assertIn("reload-provider-tab", content_js)
         self.assertIn("Preview accepted", content_js)
         self.assertIn("Fix accepted", content_js)
         self.assertIn("Fix + future accepted", content_js)
@@ -1296,11 +1304,12 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("data-ea-activity-item", content_js)
         self.assertIn("teach-apply-refresh", content_js)
         self.assertIn("Background refresh", content_js)
-        self.assertIn("Nothing was stored or changed. The preview is still here", content_js)
-        self.assertIn("Try fix again", content_js)
-        self.assertIn("data-ea-action=\"retry-preview-teach\"", content_js)
+        self.assertIn("teachResult.actions", content_js)
+        self.assertIn("showTeachError", content_js)
+        self.assertIn('data-ea-action="${escapeHtml(item.action || "")}"', content_js)
         self.assertIn("max-width:100%;overflow-wrap:anywhere;word-break:break-word", content_js)
-        self.assertIn("Nothing was changed. Check the local companion connection and try Preview again.", content_js)
+        self.assertNotIn("Nothing was changed. Check the local companion connection and try Preview again.", content_js)
+        self.assertIn("overflow-x: hidden", content_js)
         self.assertNotIn("No confirmed lesson was applied from this failed request", content_js)
         self.assertIn("isTeachPending()", content_js)
         self.assertIn('teachFlowState = "previewing"', content_js)
@@ -1422,7 +1431,7 @@ class GmailCompanionUiTests(unittest.TestCase):
         manifest = json.loads((repo_root / "extensions" / "gmail_companion" / "manifest.json").read_text())
         background_js = (repo_root / "extensions" / "gmail_companion" / "background.js").read_text()
 
-        self.assertEqual(manifest["version"], "0.3.2")
+        self.assertEqual(manifest["version"], "0.3.3")
         self.assertIn("threadwise_active_extension_version", background_js)
         self.assertIn("chrome.runtime.getManifest().version", background_js)
         self.assertIn('"https://mail.google.com/*", "https://mail.proton.me/*"', background_js)

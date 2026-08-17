@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Threadwise Companion",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Shows the same Threadwise companion inside Gmail and Proton Mail.",
   "permissions": [
     "tabs",
@@ -23,6 +23,7 @@
       ],
       "js": [
         "provider_adapter.js",
+        "teaching_recovery.js",
         "analytics.js",
         "onboarding.js",
         "queue_navigation.js",

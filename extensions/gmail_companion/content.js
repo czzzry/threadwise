@@ -7,6 +7,7 @@
   const LOCAL_ORIGIN = "http://127.0.0.1:8021";
   const HEALTH_PATH = "/api/health";
   const HEALTH_SERVICE_ID = "threadwise-gmail-companion";
+  const TEACHING_RECOVERY = globalThis.ThreadwiseTeachingRecovery;
   const ANALYTICS = globalThis.ThreadwiseAnalytics;
   const PROVIDER = globalThis.ThreadwiseProvider;
   const ONBOARDING = globalThis.ThreadwiseOnboarding;
@@ -17,6 +18,9 @@
   const COVERAGE = globalThis.ThreadwiseCoverage;
   if (!PROVIDER) {
     throw new Error("Threadwise provider adapter did not load.");
+  }
+  if (!TEACHING_RECOVERY) {
+    throw new Error("Threadwise teaching recovery module did not load.");
   }
   if (!ONBOARDING) {
     throw new Error("Threadwise onboarding module did not load.");
@@ -221,6 +225,9 @@
       width: PANEL_WIDTH,
       maxWidth: "calc(100vw - 28px)",
       maxHeight: "calc(100vh - 28px)",
+      boxSizing: "border-box",
+      minWidth: "0",
+      overflowX: "hidden",
       zIndex: "2147483647",
       pointerEvents: "auto",
     });
@@ -243,9 +250,16 @@
           --tw-focus: #1a73e8;
           color: var(--tw-ink);
           font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+          box-sizing: border-box;
+          min-width: 0;
+          overflow-x: hidden;
         }
         #${ROOT_ID} #ea-panel {
+          box-sizing: border-box;
           width: 100%;
+          min-width: 0;
+          max-width: 100%;
+          overflow-x: hidden;
           border: 1px solid var(--tw-line-strong) !important;
           border-radius: 12px !important;
           background: var(--tw-surface) !important;
@@ -253,6 +267,7 @@
           box-shadow: 0 4px 8px rgba(31, 35, 40, .12) !important;
         }
         #${ROOT_ID} #ea-panel * {
+          box-sizing: border-box;
           box-shadow: none !important;
         }
         #${ROOT_ID} #ea-header {
@@ -323,12 +338,35 @@
           background: var(--tw-hover) !important;
         }
         #${ROOT_ID} #ea-content {
+          box-sizing: border-box;
+          width: 100%;
+          min-width: 0;
+          max-width: 100%;
+          overflow-x: hidden;
           padding: 12px !important;
           gap: 0 !important;
           background: var(--tw-surface) !important;
         }
         #${ROOT_ID} #ea-content[data-ea-workspace-mode="review"] {
           padding: 0 !important;
+        }
+        #${ROOT_ID} #ea-workspace,
+        #${ROOT_ID} #ea-workspace > [data-ea-workspace-body],
+        #${ROOT_ID} [data-ea-current-message-context],
+        #${ROOT_ID} [data-ea-selected-state] {
+          box-sizing: border-box;
+          width: 100%;
+          min-width: 0;
+          max-width: 100%;
+        }
+        #${ROOT_ID} #ea-workspace,
+        #${ROOT_ID} #ea-workspace > [data-ea-workspace-body] {
+          overflow-x: hidden;
+        }
+        #${ROOT_ID} #ea-workspace > [data-ea-workspace-body] > *,
+        #${ROOT_ID} [data-ea-current-message-context] > * {
+          min-width: 0;
+          max-width: 100%;
         }
         #${ROOT_ID} #ea-workspace > [data-ea-workspace-body] {
           border: 0 !important;
@@ -4447,21 +4485,14 @@
     window.location.href = PROVIDER.messageUrl(item);
   }
 
-  function teachErrorResult(operation, rawMessage) {
-    const operationLabel = operation === "preview" ? "preview" : "apply";
-    const normalized = String(rawMessage || "").toLowerCase();
-    const llmNotConfigured = normalized.includes("llm review is not configured");
-    const retryCopy = llmNotConfigured
-      ? "Nothing was changed. Configure the companion's private OpenAI key, restart Threadwise, then try Ask LLM again."
-      : operation === "preview"
-        ? "Nothing was changed. Check the local companion connection and try Preview again."
-        : "Nothing was stored or changed. The preview is still here so you can check the connection and retry without rewriting your note.";
-    return {
-      kind: `${operation}-error`,
-      state_label: "Retry available",
-      title: operation === "preview" ? "Preview blocked" : "Lesson blocked",
-      message: `${friendlyErrorMessage(rawMessage || `Could not ${operationLabel} the lesson.`)} ${retryCopy}`,
-    };
+  function teachErrorResult(operation, failure) {
+    const response = failure && typeof failure === "object" ? failure : null;
+    return TEACHING_RECOVERY.describe({
+      operation,
+      error: response ? "" : failure,
+      response,
+      providerName: activeProviderName(),
+    });
   }
 
   function teachPendingResult(operation, mode) {
@@ -4496,17 +4527,13 @@
         ? { background: "#fff4dd", color: "#8a4b00" }
         : { background: "#d8f3ef", color: "#0f766e" };
     const stateLabel = result.state_label || (isPending ? "Working" : isError ? "Retry available" : "Done");
-    const recoveryActions = isError
-      ? `
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
-          <button type="button" data-ea-action="force-refresh" style="border:2px solid #241812;background:#ffc64a;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Check again</button>
-          ${
-            result.kind === "apply-error"
-              ? '<button type="button" data-ea-action="retry-apply-teach" data-ea-apply="current-only" style="border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Try fix again</button>'
-              : '<button type="button" data-ea-action="retry-preview-teach" style="border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Try preview again</button>'
-          }
-        </div>
-      `
+    const recoveryActions = isError && Array.isArray(result.actions)
+      ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">${result.actions.map((item) => {
+        const background = item.primary ? "#635bff" : "#fff";
+        const color = item.primary ? "#fff" : "#1f2328";
+        const applyMode = item.action === "retry-apply-teach" ? ' data-ea-apply="current-only"' : "";
+        return `<button type="button" data-ea-action="${escapeHtml(item.action || "")}"${applyMode} style="min-height:40px;border:1px solid ${item.primary ? "#635bff" : "#cdd2d8"};background:${background};color:${color};border-radius:8px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:700;">${escapeHtml(item.label || "Try again")}</button>`;
+      }).join("")}</div>`
       : "";
     return `
       <div style="box-sizing:border-box;width:100%;min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word;margin-top:12px;border-radius:14px;background:${tone.background};padding:12px;color:${tone.color};line-height:1.45;">
@@ -4575,8 +4602,8 @@
         state: "retry",
         label: teachResult.title || "Retry available",
         message: teachResult.message || "",
-        action: kind === "apply-error" ? "retry-apply-teach" : "retry-preview-teach",
-        action_label: kind === "apply-error" ? "Retry fix" : "Retry preview",
+        action: teachResult.actions?.[0]?.action || (kind === "apply-error" ? "retry-apply-teach" : "retry-preview-teach"),
+        action_label: teachResult.actions?.[0]?.label || (kind === "apply-error" ? "Retry fix" : "Retry preview"),
       };
     }
     if (teachFlowState === "result") {
@@ -5716,6 +5743,12 @@
       refreshSelection(true);
       return;
     }
+    const reloadProviderTabButton = event.target.closest("[data-ea-action='reload-provider-tab']");
+    if (reloadProviderTabButton) {
+      event.preventDefault();
+      window.location.reload();
+      return;
+    }
     const runProviderSyncButton = event.target.closest("[data-ea-action='run-provider-sync']");
     if (runProviderSyncButton) {
       event.preventDefault();
@@ -6333,7 +6366,7 @@
         teachFlowState = "preview-error";
         affectedReviewOpen = false;
       } else if (!response || !response.ok) {
-        teachResult = teachErrorResult("preview", (response && (response.payload?.error || response.error)) || "Could not preview the lesson.");
+        teachResult = teachErrorResult("preview", response || "Could not preview the lesson.");
         teachPreview = null;
         teachFlowState = "preview-error";
         affectedReviewOpen = false;
@@ -6741,7 +6774,7 @@
         return;
       }
       if (!response || !response.ok) {
-        teachResult = teachErrorResult("apply", rawError);
+        teachResult = teachErrorResult("apply", response || rawError);
         teachFlowState = mode === "save-future-rule" || mode === "current-only" ? "teaching" : "scope-confirmation";
         if (mode === "save-future-rule") {
           futureLearningError = teachResult.message;
@@ -6937,7 +6970,7 @@
       if (chrome.runtime.lastError) {
         teachResult = teachErrorResult("apply", chrome.runtime.lastError.message || "Could not save the exception.");
       } else if (!response || !response.ok) {
-        teachResult = teachErrorResult("apply", (response && (response.payload?.error || response.error)) || "Could not save the exception.");
+        teachResult = teachErrorResult("apply", response || "Could not save the exception.");
       } else {
         const payload = response.payload || {};
         teachPreview = payload.preview || teachPreview;
@@ -6973,7 +7006,7 @@
       if (chrome.runtime.lastError) {
         teachResult = teachErrorResult("apply", chrome.runtime.lastError.message || "Could not review the amendment.");
       } else if (!response || !response.ok) {
-        teachResult = teachErrorResult("apply", (response && (response.payload?.error || response.error)) || "Could not review the amendment.");
+        teachResult = teachErrorResult("apply", response || "Could not review the amendment.");
       } else {
         const payload = response.payload || {};
         teachPreview = payload.preview || teachPreview;
@@ -7275,6 +7308,16 @@
           renderState(lastHarnessState || lastSidebarState);
         }
         return { ok: true };
+      },
+      showTeachError(operation = "preview", failure = {}) {
+        teachPreview = null;
+        teachResult = teachErrorResult(operation, failure);
+        teachFlowState = operation === "preview" ? "preview-error" : "teaching";
+        selectedDecisionMode = operation === "preview" ? "teach-preview" : "change";
+        if (lastHarnessState || lastSidebarState) {
+          renderState(lastHarnessState || lastSidebarState);
+        }
+        return { ok: true, result: { ...teachResult } };
       },
       showReceipt({ success = true, complete = false, inboxRemoved = true } = {}) {
         if (complete && lastHarnessState) {
