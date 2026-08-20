@@ -92,6 +92,40 @@ class GmailCompanionStateTests(unittest.TestCase):
                 ["gmail-current"],
             )
 
+    def test_model_failure_is_operational_error_not_unlabeled_review_work(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            batches_dir = storage_dir / "batches"
+            batches_dir.mkdir()
+            (batches_dir / "gmail-current.json").write_text(json.dumps({
+                "batch_id": "gmail-current",
+                "provider": "gmail",
+                "account_id": "founder-test",
+                "items": [{
+                    "message_id": "model-failed",
+                    "review_state": "pending",
+                    "final_labels": [],
+                    "applied_labels": [],
+                    "decision_provenance": {
+                        "decision_source": "model-failure",
+                        "llm_failed": True,
+                    },
+                }],
+                "raw_messages": [],
+            }))
+
+            payload = build_companion_runtime_payload(
+                storage_dir,
+                refresh_pending=False,
+            )
+
+            self.assertEqual(payload["needs_attention_items"], [])
+            self.assertEqual(
+                [item["message_id"] for item in payload["classification_error_items"]],
+                ["model-failed"],
+            )
+            self.assertEqual(payload["daily_summary"]["classification_error_count"], 1)
+
     def test_runtime_queue_is_provider_scoped_and_reconciled_to_live_inbox(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
@@ -112,8 +146,8 @@ class GmailCompanionStateTests(unittest.TestCase):
                                 {
                                     "message_id": message_id,
                                     "review_state": "pending",
-                                    "final_labels": [],
-                                    "applied_labels": [],
+                                    "final_labels": ["personal"],
+                                    "applied_labels": ["personal"],
                                 }
                             ],
                             "raw_messages": [],

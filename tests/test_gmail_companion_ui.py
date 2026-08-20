@@ -4499,6 +4499,7 @@ class GmailCompanionUiTests(unittest.TestCase):
                 storage_dir,
                 gmail_client_factory=lambda account_id, credentials_dir, client_secret_path, required_scope: gmail_client,
                 gmail_write_through_enabled=False,
+                background_runner=lambda work: work(),
             ).teach_apply(
                 {
                     "selected_context": {

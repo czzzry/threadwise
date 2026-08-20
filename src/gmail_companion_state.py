@@ -219,6 +219,9 @@ def selected_email_understanding_state(selected_context: dict, now: datetime | N
 
 def classify_handling_status(item: dict, write_status: str | None, inbox_status: str | None) -> tuple[str, str]:
     labels = item.get("final_labels") or item.get("applied_labels") or []
+    provenance = item.get("decision_provenance") or {}
+    if not labels and provenance.get("decision_source") == "model-failure":
+        return "classification-error", "Classification unavailable"
     if not labels or item.get("review_state") != "reviewed":
         return "needs-attention", "Needs attention"
     if inbox_status == "applied":
@@ -278,6 +281,8 @@ def action_reason_for_status(status: str) -> str:
         return "Finish Gmail update"
     if status == "needs-attention":
         return "Choose or confirm label"
+    if status == "classification-error":
+        return "Retry classification"
     return ""
 
 def suggested_label_for_item(item: dict) -> str | None:
@@ -878,10 +883,14 @@ def build_companion_runtime_payload(
                 )
                 if runtime_item["status"] in {"needs-attention", "write-unconfirmed"}:
                     actionable_items.append(runtime_item)
+    classification_error_items = [
+        item for item in items if item.get("status") == "classification-error"
+    ]
     live_daily_summary = {
         **build_daily_summary(storage_dir),
         "needs_attention_count": len(actionable_items),
-        "unlabeled_count": len(actionable_items),
+        "unlabeled_count": len(classification_error_items),
+        "classification_error_count": len(classification_error_items),
     }
     return {
         "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
@@ -893,6 +902,7 @@ def build_companion_runtime_payload(
         "items": items[:80],
         "recent_items": items[:24],
         "needs_attention_items": actionable_items[:12],
+        "classification_error_items": classification_error_items[:12],
         "auto_handled_items": [item for item in items if item.get("status") == "auto-handled"][:12],
         "kept_visible_items": [item for item in items if item.get("status") in {"kept-visible", "auto-labeled", "provider-confirmed"}][:12],
     }
