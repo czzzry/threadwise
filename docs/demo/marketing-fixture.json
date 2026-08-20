@@ -1,0 +1,3054 @@
+{
+  "gmail": {
+    "selected_context": {
+      "provider": "gmail",
+      "message_id": "demo-001"
+    },
+    "sidebar_state": {
+      "contract_version": "gmail-companion-sidebar-v1",
+      "generated_at": "2026-08-20T00:00:00Z",
+      "selected_context": {
+        "provider": "gmail",
+        "message_id": "demo-001"
+      },
+      "selected_email": {
+        "found": true,
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-001",
+        "internal_label": null,
+        "suggested_label": "job-related",
+        "classification": "Uncategorized",
+        "all_labels": [],
+        "all_classifications": [],
+        "status": "needs-attention",
+        "status_label": "Needs attention",
+        "reason": "Job recommendations look work-adjacent, but the agent wants approval before treating the sender as Work.",
+        "rationale": "Job recommendations look work-adjacent, but the agent wants approval before treating the sender as Work.",
+        "details": {
+          "review_action": "",
+          "write_status": "",
+          "inbox_status": "",
+          "confidence_band": "low",
+          "near_misses": [
+            "job-related",
+            "promotions"
+          ],
+          "matched_rule_count": 0,
+          "matched_rule_ids": [],
+          "decision_provenance": {},
+          "provider_write_receipt": {}
+        },
+        "subject": "Senior AI product roles this week",
+        "sender": "RoleScout Jobs <jobs@example.test>",
+        "received_at": "2026-06-30T09:18:00Z",
+        "understanding_state": "ready",
+        "understanding_label": "Ready",
+        "understanding_message": "Threadwise is ready with the current email.",
+        "action_reason": "Choose or confirm label",
+        "handled_review_acknowledged": false
+      },
+      "daily_summary": {
+        "source_label": "latest stored batch",
+        "batch_id": "demo-inbox-batch",
+        "report_date": null,
+        "processed_count": 12,
+        "auto_handled_count": 2,
+        "needs_attention_count": 6,
+        "unlabeled_count": 0,
+        "top_labels": [
+          {
+            "label": "EA/Newsletter",
+            "count": 3
+          },
+          {
+            "label": "EA/Promotions",
+            "count": 2
+          },
+          {
+            "label": "EA/Account",
+            "count": 1
+          },
+          {
+            "label": "EA/Calendar",
+            "count": 1
+          },
+          {
+            "label": "EA/Orders",
+            "count": 1
+          }
+        ],
+        "run_count": 1,
+        "changed_today": {
+          "label_writes_count": 4,
+          "inbox_removed_count": 2,
+          "taught_count": 0,
+          "candidate_pending_count": 0,
+          "candidate_promoted_count": 0,
+          "items": [
+            {
+              "message_id": "demo-004",
+              "subject": "New planning templates for product teams",
+              "sender": "Workspace Weekly <newsletter@workspaceweekly.example>",
+              "change_group": "Labels written",
+              "change_summary": "Applied EA/Newsletter in Gmail."
+            },
+            {
+              "message_id": "demo-005",
+              "subject": "This week's founder digest",
+              "sender": "Founder Digest <digest@founderdigest.example>",
+              "change_group": "Labels written",
+              "change_summary": "Applied EA/Newsletter in Gmail."
+            },
+            {
+              "message_id": "demo-006",
+              "subject": "Your trip receipt",
+              "sender": "Railway <receipts@railway.example>",
+              "change_group": "Labels written",
+              "change_summary": "Applied EA/Travel in Gmail."
+            },
+            {
+              "message_id": "demo-007",
+              "subject": "Security alert resolved",
+              "sender": "GitHub <noreply@github.example>",
+              "change_group": "Labels written",
+              "change_summary": "Applied EA/Account in Gmail."
+            },
+            {
+              "message_id": "demo-008",
+              "subject": "Five papers worth reading",
+              "sender": "AI Research Brief <brief@airesearch.example>",
+              "change_group": "Removed from inbox",
+              "change_summary": "Removed from inbox as low-value mail."
+            },
+            {
+              "message_id": "demo-009",
+              "subject": "Team swag sale ends Friday",
+              "sender": "Brand Supply <hello@brandsupply.example>",
+              "change_group": "Removed from inbox",
+              "change_summary": "Removed from inbox as low-value mail."
+            }
+          ],
+          "groups": [
+            {
+              "label": "Labels written",
+              "items": [
+                {
+                  "message_id": "demo-004",
+                  "subject": "New planning templates for product teams",
+                  "sender": "Workspace Weekly <newsletter@workspaceweekly.example>",
+                  "change_group": "Labels written",
+                  "change_summary": "Applied EA/Newsletter in Gmail."
+                },
+                {
+                  "message_id": "demo-005",
+                  "subject": "This week's founder digest",
+                  "sender": "Founder Digest <digest@founderdigest.example>",
+                  "change_group": "Labels written",
+                  "change_summary": "Applied EA/Newsletter in Gmail."
+                },
+                {
+                  "message_id": "demo-006",
+                  "subject": "Your trip receipt",
+                  "sender": "Railway <receipts@railway.example>",
+                  "change_group": "Labels written",
+                  "change_summary": "Applied EA/Travel in Gmail."
+                },
+                {
+                  "message_id": "demo-007",
+                  "subject": "Security alert resolved",
+                  "sender": "GitHub <noreply@github.example>",
+                  "change_group": "Labels written",
+                  "change_summary": "Applied EA/Account in Gmail."
+                }
+              ]
+            },
+            {
+              "label": "Removed from inbox",
+              "items": [
+                {
+                  "message_id": "demo-008",
+                  "subject": "Five papers worth reading",
+                  "sender": "AI Research Brief <brief@airesearch.example>",
+                  "change_group": "Removed from inbox",
+                  "change_summary": "Removed from inbox as low-value mail."
+                },
+                {
+                  "message_id": "demo-009",
+                  "subject": "Team swag sale ends Friday",
+                  "sender": "Brand Supply <hello@brandsupply.example>",
+                  "change_group": "Removed from inbox",
+                  "change_summary": "Removed from inbox as low-value mail."
+                }
+              ]
+            }
+          ],
+          "candidate_examples": []
+        },
+        "classification_error_count": 0,
+        "provider": "gmail",
+        "live_inbox_count": null
+      },
+      "run_status": {
+        "schema_version": 1,
+        "status": "idle",
+        "dashboard_path": "/daily-dashboard#run-gmail-check"
+      },
+      "ui_state": {
+        "default_mode": "expanded",
+        "can_minimize": true,
+        "panel_title": "Threadwise",
+        "allowed_labels": [
+          {
+            "id": "travel",
+            "name": "EA/Travel"
+          },
+          {
+            "id": "receipt-billing",
+            "name": "EA/Receipts"
+          },
+          {
+            "id": "shopping-order",
+            "name": "EA/Orders"
+          },
+          {
+            "id": "financial-account",
+            "name": "EA/Finance"
+          },
+          {
+            "id": "newsletter",
+            "name": "EA/Newsletter"
+          },
+          {
+            "id": "promotions",
+            "name": "EA/Promotions"
+          },
+          {
+            "id": "account-security",
+            "name": "EA/Account"
+          },
+          {
+            "id": "calendar-event",
+            "name": "EA/Calendar"
+          },
+          {
+            "id": "personal",
+            "name": "EA/Personal"
+          },
+          {
+            "id": "job-related",
+            "name": "EA/Work"
+          },
+          {
+            "id": "spam-low-value",
+            "name": "EA/LowValue"
+          },
+          {
+            "id": "reply-needed",
+            "name": "EA/NeedsAction"
+          },
+          {
+            "id": "suspicious",
+            "name": "EA/Suspicious"
+          }
+        ],
+        "async_follow_up": null,
+        "provider_write": null,
+        "activity_feed": []
+      }
+    },
+    "recent_items": [
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-001",
+        "subject": "Senior AI product roles this week",
+        "subject_key": "senior ai product roles this week",
+        "sender": "RoleScout Jobs <jobs@example.test>",
+        "received_at": "2026-06-30T09:18:00Z",
+        "sender_address": "jobs@example.test",
+        "internal_label": null,
+        "suggested_label": "job-related",
+        "classification": "Uncategorized",
+        "status": "needs-attention",
+        "status_label": "Needs attention",
+        "action_reason": "Choose or confirm label",
+        "reason": "Job recommendations look work-adjacent, but the agent wants approval before treating the sender as Work."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-002",
+        "subject": "Monthly invoice available",
+        "subject_key": "monthly invoice available",
+        "sender": "Cloud Billing <billing@cloudledger.example>",
+        "received_at": "2026-06-30T08:44:00Z",
+        "sender_address": "billing@cloudledger.example",
+        "internal_label": null,
+        "suggested_label": "receipt-billing",
+        "classification": "Uncategorized",
+        "status": "needs-attention",
+        "status_label": "Needs attention",
+        "action_reason": "Choose or confirm label",
+        "reason": "Possible receipt or finance email, but the agent needs confirmation before filing it."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-003",
+        "subject": "Confirm Thursday review",
+        "subject_key": "confirm thursday review",
+        "sender": "Maya Chen <maya@northstar.example>",
+        "received_at": "2026-06-30T08:12:00Z",
+        "sender_address": "maya@northstar.example",
+        "internal_label": null,
+        "suggested_label": "reply-needed",
+        "classification": "Uncategorized",
+        "status": "needs-attention",
+        "status_label": "Needs attention",
+        "action_reason": "Choose or confirm label",
+        "reason": "Looks like a direct reply-needed message from a person."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-004",
+        "subject": "New planning templates for product teams",
+        "subject_key": "new planning templates for product teams",
+        "sender": "Workspace Weekly <newsletter@workspaceweekly.example>",
+        "received_at": "2026-06-30T07:52:00Z",
+        "sender_address": "newsletter@workspaceweekly.example",
+        "internal_label": "newsletter",
+        "suggested_label": "newsletter",
+        "classification": "EA/Newsletter",
+        "status": "kept-visible",
+        "status_label": "Kept visible",
+        "action_reason": "",
+        "reason": "Recurring product newsletter with a supported unsubscribe path."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-005",
+        "subject": "This week's founder digest",
+        "subject_key": "this week's founder digest",
+        "sender": "Founder Digest <digest@founderdigest.example>",
+        "received_at": "2026-06-30T07:30:00Z",
+        "sender_address": "digest@founderdigest.example",
+        "internal_label": "newsletter",
+        "suggested_label": "newsletter",
+        "classification": "EA/Newsletter",
+        "status": "kept-visible",
+        "status_label": "Kept visible",
+        "action_reason": "",
+        "reason": "Newsletter content kept visible because it may be useful."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-006",
+        "subject": "Your trip receipt",
+        "subject_key": "your trip receipt",
+        "sender": "Railway <receipts@railway.example>",
+        "received_at": "2026-06-30T07:06:00Z",
+        "sender_address": "receipts@railway.example",
+        "internal_label": "travel",
+        "suggested_label": "travel",
+        "classification": "EA/Travel",
+        "status": "kept-visible",
+        "status_label": "Kept visible",
+        "action_reason": "",
+        "reason": "Travel receipt and itinerary."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-007",
+        "subject": "Security alert resolved",
+        "subject_key": "security alert resolved",
+        "sender": "GitHub <noreply@github.example>",
+        "received_at": "2026-06-30T06:45:00Z",
+        "sender_address": "noreply@github.example",
+        "internal_label": "account-security",
+        "suggested_label": "account-security",
+        "classification": "EA/Account",
+        "status": "kept-visible",
+        "status_label": "Kept visible",
+        "action_reason": "",
+        "reason": "Account/security update from a developer tool."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-008",
+        "subject": "Five papers worth reading",
+        "subject_key": "five papers worth reading",
+        "sender": "AI Research Brief <brief@airesearch.example>",
+        "received_at": "2026-06-30T06:12:00Z",
+        "sender_address": "brief@airesearch.example",
+        "internal_label": "newsletter",
+        "suggested_label": "newsletter",
+        "classification": "EA/Newsletter",
+        "status": "auto-handled",
+        "status_label": "Auto-handled",
+        "action_reason": "",
+        "reason": "Newsletter the agent can auto-handle as low-priority reading."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-009",
+        "subject": "Team swag sale ends Friday",
+        "subject_key": "team swag sale ends friday",
+        "sender": "Brand Supply <hello@brandsupply.example>",
+        "received_at": "2026-06-30T05:55:00Z",
+        "sender_address": "hello@brandsupply.example",
+        "internal_label": "promotions",
+        "suggested_label": "promotions",
+        "classification": "EA/Promotions",
+        "status": "auto-handled",
+        "status_label": "Auto-handled",
+        "action_reason": "",
+        "reason": "Promotional sale email from a recurring sender."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-010",
+        "subject": "Your order has shipped",
+        "subject_key": "your order has shipped",
+        "sender": "Northstar Store <orders@northstarstore.example>",
+        "received_at": "2026-06-30T05:22:00Z",
+        "sender_address": "orders@northstarstore.example",
+        "internal_label": "shopping-order",
+        "suggested_label": "shopping-order",
+        "classification": "EA/Orders",
+        "status": "auto-labeled",
+        "status_label": "Auto-labeled",
+        "action_reason": "",
+        "reason": "Shopping order update."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-011",
+        "subject": "Product sync moved to 3 PM",
+        "subject_key": "product sync moved to 3 pm",
+        "sender": "Calendar <calendar@threadwise.example>",
+        "received_at": "2026-06-30T05:00:00Z",
+        "sender_address": "calendar@threadwise.example",
+        "internal_label": "calendar-event",
+        "suggested_label": "calendar-event",
+        "classification": "EA/Calendar",
+        "status": "auto-labeled",
+        "status_label": "Auto-labeled",
+        "action_reason": "",
+        "reason": "Calendar update for a work meeting."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-012",
+        "subject": "Product leadership roles matching your alerts",
+        "subject_key": "product leadership roles matching your alerts",
+        "sender": "RoleScout Jobs <jobs@example.test>",
+        "received_at": "2026-06-30T04:40:00Z",
+        "sender_address": "jobs@example.test",
+        "internal_label": "promotions",
+        "suggested_label": "promotions",
+        "classification": "EA/Promotions",
+        "status": "auto-labeled",
+        "status_label": "Auto-labeled",
+        "action_reason": "",
+        "reason": "LinkedIn job alert that can be treated as work-adjacent after teaching."
+      }
+    ],
+    "needs_attention_items": [
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-001",
+        "subject": "Senior AI product roles this week",
+        "subject_key": "senior ai product roles this week",
+        "sender": "RoleScout Jobs <jobs@example.test>",
+        "received_at": "2026-06-30T09:18:00Z",
+        "sender_address": "jobs@example.test",
+        "internal_label": null,
+        "suggested_label": "job-related",
+        "classification": "Uncategorized",
+        "status": "needs-attention",
+        "status_label": "Needs attention",
+        "action_reason": "Choose or confirm label",
+        "reason": "Job recommendations look work-adjacent, but the agent wants approval before treating the sender as Work."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-002",
+        "subject": "Monthly invoice available",
+        "subject_key": "monthly invoice available",
+        "sender": "Cloud Billing <billing@cloudledger.example>",
+        "received_at": "2026-06-30T08:44:00Z",
+        "sender_address": "billing@cloudledger.example",
+        "internal_label": null,
+        "suggested_label": "receipt-billing",
+        "classification": "Uncategorized",
+        "status": "needs-attention",
+        "status_label": "Needs attention",
+        "action_reason": "Choose or confirm label",
+        "reason": "Possible receipt or finance email, but the agent needs confirmation before filing it."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-003",
+        "subject": "Confirm Thursday review",
+        "subject_key": "confirm thursday review",
+        "sender": "Maya Chen <maya@northstar.example>",
+        "received_at": "2026-06-30T08:12:00Z",
+        "sender_address": "maya@northstar.example",
+        "internal_label": null,
+        "suggested_label": "reply-needed",
+        "classification": "Uncategorized",
+        "status": "needs-attention",
+        "status_label": "Needs attention",
+        "action_reason": "Choose or confirm label",
+        "reason": "Looks like a direct reply-needed message from a person."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-010",
+        "subject": "Your order has shipped",
+        "subject_key": "your order has shipped",
+        "sender": "Northstar Store <orders@northstarstore.example>",
+        "received_at": "2026-06-30T05:22:00Z",
+        "sender_address": "orders@northstarstore.example",
+        "internal_label": "shopping-order",
+        "suggested_label": "shopping-order",
+        "classification": "EA/Orders",
+        "status": "write-unconfirmed",
+        "status_label": "Gmail update needs confirmation",
+        "action_reason": "Finish Gmail update",
+        "reason": "Shopping order update."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-011",
+        "subject": "Product sync moved to 3 PM",
+        "subject_key": "product sync moved to 3 pm",
+        "sender": "Calendar <calendar@threadwise.example>",
+        "received_at": "2026-06-30T05:00:00Z",
+        "sender_address": "calendar@threadwise.example",
+        "internal_label": "calendar-event",
+        "suggested_label": "calendar-event",
+        "classification": "EA/Calendar",
+        "status": "write-unconfirmed",
+        "status_label": "Gmail update needs confirmation",
+        "action_reason": "Finish Gmail update",
+        "reason": "Calendar update for a work meeting."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-012",
+        "subject": "Product leadership roles matching your alerts",
+        "subject_key": "product leadership roles matching your alerts",
+        "sender": "RoleScout Jobs <jobs@example.test>",
+        "received_at": "2026-06-30T04:40:00Z",
+        "sender_address": "jobs@example.test",
+        "internal_label": "promotions",
+        "suggested_label": "promotions",
+        "classification": "EA/Promotions",
+        "status": "write-unconfirmed",
+        "status_label": "Gmail update needs confirmation",
+        "action_reason": "Finish Gmail update",
+        "reason": "LinkedIn job alert that can be treated as work-adjacent after teaching."
+      }
+    ],
+    "auto_handled_items": [
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-008",
+        "subject": "Five papers worth reading",
+        "subject_key": "five papers worth reading",
+        "sender": "AI Research Brief <brief@airesearch.example>",
+        "received_at": "2026-06-30T06:12:00Z",
+        "sender_address": "brief@airesearch.example",
+        "internal_label": "newsletter",
+        "suggested_label": "newsletter",
+        "classification": "EA/Newsletter",
+        "status": "auto-handled",
+        "status_label": "Auto-handled",
+        "action_reason": "",
+        "reason": "Newsletter the agent can auto-handle as low-priority reading."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-009",
+        "subject": "Team swag sale ends Friday",
+        "subject_key": "team swag sale ends friday",
+        "sender": "Brand Supply <hello@brandsupply.example>",
+        "received_at": "2026-06-30T05:55:00Z",
+        "sender_address": "hello@brandsupply.example",
+        "internal_label": "promotions",
+        "suggested_label": "promotions",
+        "classification": "EA/Promotions",
+        "status": "auto-handled",
+        "status_label": "Auto-handled",
+        "action_reason": "",
+        "reason": "Promotional sale email from a recurring sender."
+      }
+    ],
+    "kept_visible_items": [
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-004",
+        "subject": "New planning templates for product teams",
+        "subject_key": "new planning templates for product teams",
+        "sender": "Workspace Weekly <newsletter@workspaceweekly.example>",
+        "received_at": "2026-06-30T07:52:00Z",
+        "sender_address": "newsletter@workspaceweekly.example",
+        "internal_label": "newsletter",
+        "suggested_label": "newsletter",
+        "classification": "EA/Newsletter",
+        "status": "kept-visible",
+        "status_label": "Kept visible",
+        "action_reason": "",
+        "reason": "Recurring product newsletter with a supported unsubscribe path."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-005",
+        "subject": "This week's founder digest",
+        "subject_key": "this week's founder digest",
+        "sender": "Founder Digest <digest@founderdigest.example>",
+        "received_at": "2026-06-30T07:30:00Z",
+        "sender_address": "digest@founderdigest.example",
+        "internal_label": "newsletter",
+        "suggested_label": "newsletter",
+        "classification": "EA/Newsletter",
+        "status": "kept-visible",
+        "status_label": "Kept visible",
+        "action_reason": "",
+        "reason": "Newsletter content kept visible because it may be useful."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-006",
+        "subject": "Your trip receipt",
+        "subject_key": "your trip receipt",
+        "sender": "Railway <receipts@railway.example>",
+        "received_at": "2026-06-30T07:06:00Z",
+        "sender_address": "receipts@railway.example",
+        "internal_label": "travel",
+        "suggested_label": "travel",
+        "classification": "EA/Travel",
+        "status": "kept-visible",
+        "status_label": "Kept visible",
+        "action_reason": "",
+        "reason": "Travel receipt and itinerary."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-007",
+        "subject": "Security alert resolved",
+        "subject_key": "security alert resolved",
+        "sender": "GitHub <noreply@github.example>",
+        "received_at": "2026-06-30T06:45:00Z",
+        "sender_address": "noreply@github.example",
+        "internal_label": "account-security",
+        "suggested_label": "account-security",
+        "classification": "EA/Account",
+        "status": "kept-visible",
+        "status_label": "Kept visible",
+        "action_reason": "",
+        "reason": "Account/security update from a developer tool."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-010",
+        "subject": "Your order has shipped",
+        "subject_key": "your order has shipped",
+        "sender": "Northstar Store <orders@northstarstore.example>",
+        "received_at": "2026-06-30T05:22:00Z",
+        "sender_address": "orders@northstarstore.example",
+        "internal_label": "shopping-order",
+        "suggested_label": "shopping-order",
+        "classification": "EA/Orders",
+        "status": "auto-labeled",
+        "status_label": "Auto-labeled",
+        "action_reason": "",
+        "reason": "Shopping order update."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-011",
+        "subject": "Product sync moved to 3 PM",
+        "subject_key": "product sync moved to 3 pm",
+        "sender": "Calendar <calendar@threadwise.example>",
+        "received_at": "2026-06-30T05:00:00Z",
+        "sender_address": "calendar@threadwise.example",
+        "internal_label": "calendar-event",
+        "suggested_label": "calendar-event",
+        "classification": "EA/Calendar",
+        "status": "auto-labeled",
+        "status_label": "Auto-labeled",
+        "action_reason": "",
+        "reason": "Calendar update for a work meeting."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-012",
+        "subject": "Product leadership roles matching your alerts",
+        "subject_key": "product leadership roles matching your alerts",
+        "sender": "RoleScout Jobs <jobs@example.test>",
+        "received_at": "2026-06-30T04:40:00Z",
+        "sender_address": "jobs@example.test",
+        "internal_label": "promotions",
+        "suggested_label": "promotions",
+        "classification": "EA/Promotions",
+        "status": "auto-labeled",
+        "status_label": "Auto-labeled",
+        "action_reason": "",
+        "reason": "LinkedIn job alert that can be treated as work-adjacent after teaching."
+      }
+    ],
+    "analytics_status": {
+      "state": "disabled",
+      "configured": false,
+      "queued_count": 0,
+      "last_queued_at": null,
+      "last_delivery_error_at": null,
+      "error_category": null,
+      "assurance": "local_sdk"
+    }
+  },
+  "gmail_next": {
+    "selected_context": {
+      "provider": "gmail",
+      "message_id": "demo-002"
+    },
+    "sidebar_state": {
+      "contract_version": "gmail-companion-sidebar-v1",
+      "generated_at": "2026-08-20T00:00:00Z",
+      "selected_context": {
+        "provider": "gmail",
+        "message_id": "demo-002"
+      },
+      "selected_email": {
+        "found": true,
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-002",
+        "internal_label": null,
+        "suggested_label": "receipt-billing",
+        "classification": "Uncategorized",
+        "all_labels": [],
+        "all_classifications": [],
+        "status": "needs-attention",
+        "status_label": "Needs attention",
+        "reason": "Possible receipt or finance email, but the agent needs confirmation before filing it.",
+        "rationale": "Possible receipt or finance email, but the agent needs confirmation before filing it.",
+        "details": {
+          "review_action": "",
+          "write_status": "",
+          "inbox_status": "",
+          "confidence_band": "low",
+          "near_misses": [
+            "receipt-billing",
+            "financial-account"
+          ],
+          "matched_rule_count": 0,
+          "matched_rule_ids": [],
+          "decision_provenance": {},
+          "provider_write_receipt": {}
+        },
+        "subject": "Monthly invoice available",
+        "sender": "Cloud Billing <billing@cloudledger.example>",
+        "received_at": "2026-06-30T08:44:00Z",
+        "understanding_state": "ready",
+        "understanding_label": "Ready",
+        "understanding_message": "Threadwise is ready with the current email.",
+        "action_reason": "Choose or confirm label",
+        "handled_review_acknowledged": false
+      },
+      "daily_summary": {
+        "source_label": "latest stored batch",
+        "batch_id": "demo-inbox-batch",
+        "report_date": null,
+        "processed_count": 12,
+        "auto_handled_count": 2,
+        "needs_attention_count": 6,
+        "unlabeled_count": 0,
+        "top_labels": [
+          {
+            "label": "EA/Newsletter",
+            "count": 3
+          },
+          {
+            "label": "EA/Promotions",
+            "count": 2
+          },
+          {
+            "label": "EA/Account",
+            "count": 1
+          },
+          {
+            "label": "EA/Calendar",
+            "count": 1
+          },
+          {
+            "label": "EA/Orders",
+            "count": 1
+          }
+        ],
+        "run_count": 1,
+        "changed_today": {
+          "label_writes_count": 4,
+          "inbox_removed_count": 2,
+          "taught_count": 0,
+          "candidate_pending_count": 0,
+          "candidate_promoted_count": 0,
+          "items": [
+            {
+              "message_id": "demo-004",
+              "subject": "New planning templates for product teams",
+              "sender": "Workspace Weekly <newsletter@workspaceweekly.example>",
+              "change_group": "Labels written",
+              "change_summary": "Applied EA/Newsletter in Gmail."
+            },
+            {
+              "message_id": "demo-005",
+              "subject": "This week's founder digest",
+              "sender": "Founder Digest <digest@founderdigest.example>",
+              "change_group": "Labels written",
+              "change_summary": "Applied EA/Newsletter in Gmail."
+            },
+            {
+              "message_id": "demo-006",
+              "subject": "Your trip receipt",
+              "sender": "Railway <receipts@railway.example>",
+              "change_group": "Labels written",
+              "change_summary": "Applied EA/Travel in Gmail."
+            },
+            {
+              "message_id": "demo-007",
+              "subject": "Security alert resolved",
+              "sender": "GitHub <noreply@github.example>",
+              "change_group": "Labels written",
+              "change_summary": "Applied EA/Account in Gmail."
+            },
+            {
+              "message_id": "demo-008",
+              "subject": "Five papers worth reading",
+              "sender": "AI Research Brief <brief@airesearch.example>",
+              "change_group": "Removed from inbox",
+              "change_summary": "Removed from inbox as low-value mail."
+            },
+            {
+              "message_id": "demo-009",
+              "subject": "Team swag sale ends Friday",
+              "sender": "Brand Supply <hello@brandsupply.example>",
+              "change_group": "Removed from inbox",
+              "change_summary": "Removed from inbox as low-value mail."
+            }
+          ],
+          "groups": [
+            {
+              "label": "Labels written",
+              "items": [
+                {
+                  "message_id": "demo-004",
+                  "subject": "New planning templates for product teams",
+                  "sender": "Workspace Weekly <newsletter@workspaceweekly.example>",
+                  "change_group": "Labels written",
+                  "change_summary": "Applied EA/Newsletter in Gmail."
+                },
+                {
+                  "message_id": "demo-005",
+                  "subject": "This week's founder digest",
+                  "sender": "Founder Digest <digest@founderdigest.example>",
+                  "change_group": "Labels written",
+                  "change_summary": "Applied EA/Newsletter in Gmail."
+                },
+                {
+                  "message_id": "demo-006",
+                  "subject": "Your trip receipt",
+                  "sender": "Railway <receipts@railway.example>",
+                  "change_group": "Labels written",
+                  "change_summary": "Applied EA/Travel in Gmail."
+                },
+                {
+                  "message_id": "demo-007",
+                  "subject": "Security alert resolved",
+                  "sender": "GitHub <noreply@github.example>",
+                  "change_group": "Labels written",
+                  "change_summary": "Applied EA/Account in Gmail."
+                }
+              ]
+            },
+            {
+              "label": "Removed from inbox",
+              "items": [
+                {
+                  "message_id": "demo-008",
+                  "subject": "Five papers worth reading",
+                  "sender": "AI Research Brief <brief@airesearch.example>",
+                  "change_group": "Removed from inbox",
+                  "change_summary": "Removed from inbox as low-value mail."
+                },
+                {
+                  "message_id": "demo-009",
+                  "subject": "Team swag sale ends Friday",
+                  "sender": "Brand Supply <hello@brandsupply.example>",
+                  "change_group": "Removed from inbox",
+                  "change_summary": "Removed from inbox as low-value mail."
+                }
+              ]
+            }
+          ],
+          "candidate_examples": []
+        },
+        "classification_error_count": 0,
+        "provider": "gmail",
+        "live_inbox_count": null
+      },
+      "run_status": {
+        "schema_version": 1,
+        "status": "idle",
+        "dashboard_path": "/daily-dashboard#run-gmail-check"
+      },
+      "ui_state": {
+        "default_mode": "expanded",
+        "can_minimize": true,
+        "panel_title": "Threadwise",
+        "allowed_labels": [
+          {
+            "id": "travel",
+            "name": "EA/Travel"
+          },
+          {
+            "id": "receipt-billing",
+            "name": "EA/Receipts"
+          },
+          {
+            "id": "shopping-order",
+            "name": "EA/Orders"
+          },
+          {
+            "id": "financial-account",
+            "name": "EA/Finance"
+          },
+          {
+            "id": "newsletter",
+            "name": "EA/Newsletter"
+          },
+          {
+            "id": "promotions",
+            "name": "EA/Promotions"
+          },
+          {
+            "id": "account-security",
+            "name": "EA/Account"
+          },
+          {
+            "id": "calendar-event",
+            "name": "EA/Calendar"
+          },
+          {
+            "id": "personal",
+            "name": "EA/Personal"
+          },
+          {
+            "id": "job-related",
+            "name": "EA/Work"
+          },
+          {
+            "id": "spam-low-value",
+            "name": "EA/LowValue"
+          },
+          {
+            "id": "reply-needed",
+            "name": "EA/NeedsAction"
+          },
+          {
+            "id": "suspicious",
+            "name": "EA/Suspicious"
+          }
+        ],
+        "async_follow_up": null,
+        "provider_write": null,
+        "activity_feed": []
+      }
+    },
+    "recent_items": [
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-001",
+        "subject": "Senior AI product roles this week",
+        "subject_key": "senior ai product roles this week",
+        "sender": "RoleScout Jobs <jobs@example.test>",
+        "received_at": "2026-06-30T09:18:00Z",
+        "sender_address": "jobs@example.test",
+        "internal_label": null,
+        "suggested_label": "job-related",
+        "classification": "Uncategorized",
+        "status": "needs-attention",
+        "status_label": "Needs attention",
+        "action_reason": "Choose or confirm label",
+        "reason": "Job recommendations look work-adjacent, but the agent wants approval before treating the sender as Work."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-002",
+        "subject": "Monthly invoice available",
+        "subject_key": "monthly invoice available",
+        "sender": "Cloud Billing <billing@cloudledger.example>",
+        "received_at": "2026-06-30T08:44:00Z",
+        "sender_address": "billing@cloudledger.example",
+        "internal_label": null,
+        "suggested_label": "receipt-billing",
+        "classification": "Uncategorized",
+        "status": "needs-attention",
+        "status_label": "Needs attention",
+        "action_reason": "Choose or confirm label",
+        "reason": "Possible receipt or finance email, but the agent needs confirmation before filing it."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-003",
+        "subject": "Confirm Thursday review",
+        "subject_key": "confirm thursday review",
+        "sender": "Maya Chen <maya@northstar.example>",
+        "received_at": "2026-06-30T08:12:00Z",
+        "sender_address": "maya@northstar.example",
+        "internal_label": null,
+        "suggested_label": "reply-needed",
+        "classification": "Uncategorized",
+        "status": "needs-attention",
+        "status_label": "Needs attention",
+        "action_reason": "Choose or confirm label",
+        "reason": "Looks like a direct reply-needed message from a person."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-004",
+        "subject": "New planning templates for product teams",
+        "subject_key": "new planning templates for product teams",
+        "sender": "Workspace Weekly <newsletter@workspaceweekly.example>",
+        "received_at": "2026-06-30T07:52:00Z",
+        "sender_address": "newsletter@workspaceweekly.example",
+        "internal_label": "newsletter",
+        "suggested_label": "newsletter",
+        "classification": "EA/Newsletter",
+        "status": "kept-visible",
+        "status_label": "Kept visible",
+        "action_reason": "",
+        "reason": "Recurring product newsletter with a supported unsubscribe path."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-005",
+        "subject": "This week's founder digest",
+        "subject_key": "this week's founder digest",
+        "sender": "Founder Digest <digest@founderdigest.example>",
+        "received_at": "2026-06-30T07:30:00Z",
+        "sender_address": "digest@founderdigest.example",
+        "internal_label": "newsletter",
+        "suggested_label": "newsletter",
+        "classification": "EA/Newsletter",
+        "status": "kept-visible",
+        "status_label": "Kept visible",
+        "action_reason": "",
+        "reason": "Newsletter content kept visible because it may be useful."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-006",
+        "subject": "Your trip receipt",
+        "subject_key": "your trip receipt",
+        "sender": "Railway <receipts@railway.example>",
+        "received_at": "2026-06-30T07:06:00Z",
+        "sender_address": "receipts@railway.example",
+        "internal_label": "travel",
+        "suggested_label": "travel",
+        "classification": "EA/Travel",
+        "status": "kept-visible",
+        "status_label": "Kept visible",
+        "action_reason": "",
+        "reason": "Travel receipt and itinerary."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-007",
+        "subject": "Security alert resolved",
+        "subject_key": "security alert resolved",
+        "sender": "GitHub <noreply@github.example>",
+        "received_at": "2026-06-30T06:45:00Z",
+        "sender_address": "noreply@github.example",
+        "internal_label": "account-security",
+        "suggested_label": "account-security",
+        "classification": "EA/Account",
+        "status": "kept-visible",
+        "status_label": "Kept visible",
+        "action_reason": "",
+        "reason": "Account/security update from a developer tool."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-008",
+        "subject": "Five papers worth reading",
+        "subject_key": "five papers worth reading",
+        "sender": "AI Research Brief <brief@airesearch.example>",
+        "received_at": "2026-06-30T06:12:00Z",
+        "sender_address": "brief@airesearch.example",
+        "internal_label": "newsletter",
+        "suggested_label": "newsletter",
+        "classification": "EA/Newsletter",
+        "status": "auto-handled",
+        "status_label": "Auto-handled",
+        "action_reason": "",
+        "reason": "Newsletter the agent can auto-handle as low-priority reading."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-009",
+        "subject": "Team swag sale ends Friday",
+        "subject_key": "team swag sale ends friday",
+        "sender": "Brand Supply <hello@brandsupply.example>",
+        "received_at": "2026-06-30T05:55:00Z",
+        "sender_address": "hello@brandsupply.example",
+        "internal_label": "promotions",
+        "suggested_label": "promotions",
+        "classification": "EA/Promotions",
+        "status": "auto-handled",
+        "status_label": "Auto-handled",
+        "action_reason": "",
+        "reason": "Promotional sale email from a recurring sender."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-010",
+        "subject": "Your order has shipped",
+        "subject_key": "your order has shipped",
+        "sender": "Northstar Store <orders@northstarstore.example>",
+        "received_at": "2026-06-30T05:22:00Z",
+        "sender_address": "orders@northstarstore.example",
+        "internal_label": "shopping-order",
+        "suggested_label": "shopping-order",
+        "classification": "EA/Orders",
+        "status": "auto-labeled",
+        "status_label": "Auto-labeled",
+        "action_reason": "",
+        "reason": "Shopping order update."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-011",
+        "subject": "Product sync moved to 3 PM",
+        "subject_key": "product sync moved to 3 pm",
+        "sender": "Calendar <calendar@threadwise.example>",
+        "received_at": "2026-06-30T05:00:00Z",
+        "sender_address": "calendar@threadwise.example",
+        "internal_label": "calendar-event",
+        "suggested_label": "calendar-event",
+        "classification": "EA/Calendar",
+        "status": "auto-labeled",
+        "status_label": "Auto-labeled",
+        "action_reason": "",
+        "reason": "Calendar update for a work meeting."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-012",
+        "subject": "Product leadership roles matching your alerts",
+        "subject_key": "product leadership roles matching your alerts",
+        "sender": "RoleScout Jobs <jobs@example.test>",
+        "received_at": "2026-06-30T04:40:00Z",
+        "sender_address": "jobs@example.test",
+        "internal_label": "promotions",
+        "suggested_label": "promotions",
+        "classification": "EA/Promotions",
+        "status": "auto-labeled",
+        "status_label": "Auto-labeled",
+        "action_reason": "",
+        "reason": "LinkedIn job alert that can be treated as work-adjacent after teaching."
+      }
+    ],
+    "needs_attention_items": [
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-001",
+        "subject": "Senior AI product roles this week",
+        "subject_key": "senior ai product roles this week",
+        "sender": "RoleScout Jobs <jobs@example.test>",
+        "received_at": "2026-06-30T09:18:00Z",
+        "sender_address": "jobs@example.test",
+        "internal_label": null,
+        "suggested_label": "job-related",
+        "classification": "Uncategorized",
+        "status": "needs-attention",
+        "status_label": "Needs attention",
+        "action_reason": "Choose or confirm label",
+        "reason": "Job recommendations look work-adjacent, but the agent wants approval before treating the sender as Work."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-002",
+        "subject": "Monthly invoice available",
+        "subject_key": "monthly invoice available",
+        "sender": "Cloud Billing <billing@cloudledger.example>",
+        "received_at": "2026-06-30T08:44:00Z",
+        "sender_address": "billing@cloudledger.example",
+        "internal_label": null,
+        "suggested_label": "receipt-billing",
+        "classification": "Uncategorized",
+        "status": "needs-attention",
+        "status_label": "Needs attention",
+        "action_reason": "Choose or confirm label",
+        "reason": "Possible receipt or finance email, but the agent needs confirmation before filing it."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-003",
+        "subject": "Confirm Thursday review",
+        "subject_key": "confirm thursday review",
+        "sender": "Maya Chen <maya@northstar.example>",
+        "received_at": "2026-06-30T08:12:00Z",
+        "sender_address": "maya@northstar.example",
+        "internal_label": null,
+        "suggested_label": "reply-needed",
+        "classification": "Uncategorized",
+        "status": "needs-attention",
+        "status_label": "Needs attention",
+        "action_reason": "Choose or confirm label",
+        "reason": "Looks like a direct reply-needed message from a person."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-010",
+        "subject": "Your order has shipped",
+        "subject_key": "your order has shipped",
+        "sender": "Northstar Store <orders@northstarstore.example>",
+        "received_at": "2026-06-30T05:22:00Z",
+        "sender_address": "orders@northstarstore.example",
+        "internal_label": "shopping-order",
+        "suggested_label": "shopping-order",
+        "classification": "EA/Orders",
+        "status": "write-unconfirmed",
+        "status_label": "Gmail update needs confirmation",
+        "action_reason": "Finish Gmail update",
+        "reason": "Shopping order update."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-011",
+        "subject": "Product sync moved to 3 PM",
+        "subject_key": "product sync moved to 3 pm",
+        "sender": "Calendar <calendar@threadwise.example>",
+        "received_at": "2026-06-30T05:00:00Z",
+        "sender_address": "calendar@threadwise.example",
+        "internal_label": "calendar-event",
+        "suggested_label": "calendar-event",
+        "classification": "EA/Calendar",
+        "status": "write-unconfirmed",
+        "status_label": "Gmail update needs confirmation",
+        "action_reason": "Finish Gmail update",
+        "reason": "Calendar update for a work meeting."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-012",
+        "subject": "Product leadership roles matching your alerts",
+        "subject_key": "product leadership roles matching your alerts",
+        "sender": "RoleScout Jobs <jobs@example.test>",
+        "received_at": "2026-06-30T04:40:00Z",
+        "sender_address": "jobs@example.test",
+        "internal_label": "promotions",
+        "suggested_label": "promotions",
+        "classification": "EA/Promotions",
+        "status": "write-unconfirmed",
+        "status_label": "Gmail update needs confirmation",
+        "action_reason": "Finish Gmail update",
+        "reason": "LinkedIn job alert that can be treated as work-adjacent after teaching."
+      }
+    ],
+    "auto_handled_items": [
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-008",
+        "subject": "Five papers worth reading",
+        "subject_key": "five papers worth reading",
+        "sender": "AI Research Brief <brief@airesearch.example>",
+        "received_at": "2026-06-30T06:12:00Z",
+        "sender_address": "brief@airesearch.example",
+        "internal_label": "newsletter",
+        "suggested_label": "newsletter",
+        "classification": "EA/Newsletter",
+        "status": "auto-handled",
+        "status_label": "Auto-handled",
+        "action_reason": "",
+        "reason": "Newsletter the agent can auto-handle as low-priority reading."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-009",
+        "subject": "Team swag sale ends Friday",
+        "subject_key": "team swag sale ends friday",
+        "sender": "Brand Supply <hello@brandsupply.example>",
+        "received_at": "2026-06-30T05:55:00Z",
+        "sender_address": "hello@brandsupply.example",
+        "internal_label": "promotions",
+        "suggested_label": "promotions",
+        "classification": "EA/Promotions",
+        "status": "auto-handled",
+        "status_label": "Auto-handled",
+        "action_reason": "",
+        "reason": "Promotional sale email from a recurring sender."
+      }
+    ],
+    "kept_visible_items": [
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-004",
+        "subject": "New planning templates for product teams",
+        "subject_key": "new planning templates for product teams",
+        "sender": "Workspace Weekly <newsletter@workspaceweekly.example>",
+        "received_at": "2026-06-30T07:52:00Z",
+        "sender_address": "newsletter@workspaceweekly.example",
+        "internal_label": "newsletter",
+        "suggested_label": "newsletter",
+        "classification": "EA/Newsletter",
+        "status": "kept-visible",
+        "status_label": "Kept visible",
+        "action_reason": "",
+        "reason": "Recurring product newsletter with a supported unsubscribe path."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-005",
+        "subject": "This week's founder digest",
+        "subject_key": "this week's founder digest",
+        "sender": "Founder Digest <digest@founderdigest.example>",
+        "received_at": "2026-06-30T07:30:00Z",
+        "sender_address": "digest@founderdigest.example",
+        "internal_label": "newsletter",
+        "suggested_label": "newsletter",
+        "classification": "EA/Newsletter",
+        "status": "kept-visible",
+        "status_label": "Kept visible",
+        "action_reason": "",
+        "reason": "Newsletter content kept visible because it may be useful."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-006",
+        "subject": "Your trip receipt",
+        "subject_key": "your trip receipt",
+        "sender": "Railway <receipts@railway.example>",
+        "received_at": "2026-06-30T07:06:00Z",
+        "sender_address": "receipts@railway.example",
+        "internal_label": "travel",
+        "suggested_label": "travel",
+        "classification": "EA/Travel",
+        "status": "kept-visible",
+        "status_label": "Kept visible",
+        "action_reason": "",
+        "reason": "Travel receipt and itinerary."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-007",
+        "subject": "Security alert resolved",
+        "subject_key": "security alert resolved",
+        "sender": "GitHub <noreply@github.example>",
+        "received_at": "2026-06-30T06:45:00Z",
+        "sender_address": "noreply@github.example",
+        "internal_label": "account-security",
+        "suggested_label": "account-security",
+        "classification": "EA/Account",
+        "status": "kept-visible",
+        "status_label": "Kept visible",
+        "action_reason": "",
+        "reason": "Account/security update from a developer tool."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-010",
+        "subject": "Your order has shipped",
+        "subject_key": "your order has shipped",
+        "sender": "Northstar Store <orders@northstarstore.example>",
+        "received_at": "2026-06-30T05:22:00Z",
+        "sender_address": "orders@northstarstore.example",
+        "internal_label": "shopping-order",
+        "suggested_label": "shopping-order",
+        "classification": "EA/Orders",
+        "status": "auto-labeled",
+        "status_label": "Auto-labeled",
+        "action_reason": "",
+        "reason": "Shopping order update."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-011",
+        "subject": "Product sync moved to 3 PM",
+        "subject_key": "product sync moved to 3 pm",
+        "sender": "Calendar <calendar@threadwise.example>",
+        "received_at": "2026-06-30T05:00:00Z",
+        "sender_address": "calendar@threadwise.example",
+        "internal_label": "calendar-event",
+        "suggested_label": "calendar-event",
+        "classification": "EA/Calendar",
+        "status": "auto-labeled",
+        "status_label": "Auto-labeled",
+        "action_reason": "",
+        "reason": "Calendar update for a work meeting."
+      },
+      {
+        "provider": "gmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-012",
+        "subject": "Product leadership roles matching your alerts",
+        "subject_key": "product leadership roles matching your alerts",
+        "sender": "RoleScout Jobs <jobs@example.test>",
+        "received_at": "2026-06-30T04:40:00Z",
+        "sender_address": "jobs@example.test",
+        "internal_label": "promotions",
+        "suggested_label": "promotions",
+        "classification": "EA/Promotions",
+        "status": "auto-labeled",
+        "status_label": "Auto-labeled",
+        "action_reason": "",
+        "reason": "LinkedIn job alert that can be treated as work-adjacent after teaching."
+      }
+    ],
+    "analytics_status": {
+      "state": "disabled",
+      "configured": false,
+      "queued_count": 0,
+      "last_queued_at": null,
+      "last_delivery_error_at": null,
+      "error_category": null,
+      "assurance": "local_sdk"
+    }
+  },
+  "protonmail": {
+    "selected_context": {
+      "provider": "protonmail",
+      "message_id": "demo-001"
+    },
+    "sidebar_state": {
+      "contract_version": "gmail-companion-sidebar-v1",
+      "generated_at": "2026-08-20T00:00:00Z",
+      "selected_context": {
+        "provider": "protonmail",
+        "message_id": "demo-001"
+      },
+      "selected_email": {
+        "found": true,
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-001",
+        "internal_label": null,
+        "suggested_label": "job-related",
+        "classification": "Uncategorized",
+        "all_labels": [],
+        "all_classifications": [],
+        "status": "needs-attention",
+        "status_label": "Needs attention",
+        "reason": "Job recommendations look work-adjacent, but the agent wants approval before treating the sender as Work.",
+        "rationale": "Job recommendations look work-adjacent, but the agent wants approval before treating the sender as Work.",
+        "details": {
+          "review_action": "",
+          "write_status": "",
+          "inbox_status": "",
+          "confidence_band": "low",
+          "near_misses": [
+            "job-related",
+            "promotions"
+          ],
+          "matched_rule_count": 0,
+          "matched_rule_ids": [],
+          "decision_provenance": {},
+          "provider_write_receipt": {}
+        },
+        "subject": "Senior AI product roles this week",
+        "sender": "RoleScout Jobs <jobs@example.test>",
+        "received_at": "2026-06-30T09:18:00Z",
+        "understanding_state": "ready",
+        "understanding_label": "Ready",
+        "understanding_message": "Threadwise is ready with the current email.",
+        "action_reason": "Choose or confirm label",
+        "handled_review_acknowledged": false
+      },
+      "daily_summary": {
+        "source_label": "latest stored batch",
+        "batch_id": "demo-inbox-batch",
+        "report_date": null,
+        "processed_count": 12,
+        "auto_handled_count": 2,
+        "needs_attention_count": 6,
+        "unlabeled_count": 0,
+        "top_labels": [
+          {
+            "label": "EA/Newsletter",
+            "count": 3
+          },
+          {
+            "label": "EA/Promotions",
+            "count": 2
+          },
+          {
+            "label": "EA/Account",
+            "count": 1
+          },
+          {
+            "label": "EA/Calendar",
+            "count": 1
+          },
+          {
+            "label": "EA/Orders",
+            "count": 1
+          }
+        ],
+        "run_count": 1,
+        "changed_today": {
+          "label_writes_count": 4,
+          "inbox_removed_count": 2,
+          "taught_count": 0,
+          "candidate_pending_count": 0,
+          "candidate_promoted_count": 0,
+          "items": [
+            {
+              "message_id": "demo-004",
+              "subject": "New planning templates for product teams",
+              "sender": "Workspace Weekly <newsletter@workspaceweekly.example>",
+              "change_group": "Labels written",
+              "change_summary": "Applied EA/Newsletter in Proton Mail."
+            },
+            {
+              "message_id": "demo-005",
+              "subject": "This week's founder digest",
+              "sender": "Founder Digest <digest@founderdigest.example>",
+              "change_group": "Labels written",
+              "change_summary": "Applied EA/Newsletter in Proton Mail."
+            },
+            {
+              "message_id": "demo-006",
+              "subject": "Your trip receipt",
+              "sender": "Railway <receipts@railway.example>",
+              "change_group": "Labels written",
+              "change_summary": "Applied EA/Travel in Proton Mail."
+            },
+            {
+              "message_id": "demo-007",
+              "subject": "Security alert resolved",
+              "sender": "GitHub <noreply@github.example>",
+              "change_group": "Labels written",
+              "change_summary": "Applied EA/Account in Proton Mail."
+            },
+            {
+              "message_id": "demo-008",
+              "subject": "Five papers worth reading",
+              "sender": "AI Research Brief <brief@airesearch.example>",
+              "change_group": "Removed from inbox",
+              "change_summary": "Removed from inbox as low-value mail."
+            },
+            {
+              "message_id": "demo-009",
+              "subject": "Team swag sale ends Friday",
+              "sender": "Brand Supply <hello@brandsupply.example>",
+              "change_group": "Removed from inbox",
+              "change_summary": "Removed from inbox as low-value mail."
+            }
+          ],
+          "groups": [
+            {
+              "label": "Labels written",
+              "items": [
+                {
+                  "message_id": "demo-004",
+                  "subject": "New planning templates for product teams",
+                  "sender": "Workspace Weekly <newsletter@workspaceweekly.example>",
+                  "change_group": "Labels written",
+                  "change_summary": "Applied EA/Newsletter in Proton Mail."
+                },
+                {
+                  "message_id": "demo-005",
+                  "subject": "This week's founder digest",
+                  "sender": "Founder Digest <digest@founderdigest.example>",
+                  "change_group": "Labels written",
+                  "change_summary": "Applied EA/Newsletter in Proton Mail."
+                },
+                {
+                  "message_id": "demo-006",
+                  "subject": "Your trip receipt",
+                  "sender": "Railway <receipts@railway.example>",
+                  "change_group": "Labels written",
+                  "change_summary": "Applied EA/Travel in Proton Mail."
+                },
+                {
+                  "message_id": "demo-007",
+                  "subject": "Security alert resolved",
+                  "sender": "GitHub <noreply@github.example>",
+                  "change_group": "Labels written",
+                  "change_summary": "Applied EA/Account in Proton Mail."
+                }
+              ]
+            },
+            {
+              "label": "Removed from inbox",
+              "items": [
+                {
+                  "message_id": "demo-008",
+                  "subject": "Five papers worth reading",
+                  "sender": "AI Research Brief <brief@airesearch.example>",
+                  "change_group": "Removed from inbox",
+                  "change_summary": "Removed from inbox as low-value mail."
+                },
+                {
+                  "message_id": "demo-009",
+                  "subject": "Team swag sale ends Friday",
+                  "sender": "Brand Supply <hello@brandsupply.example>",
+                  "change_group": "Removed from inbox",
+                  "change_summary": "Removed from inbox as low-value mail."
+                }
+              ]
+            }
+          ],
+          "candidate_examples": []
+        },
+        "classification_error_count": 0,
+        "provider": "protonmail",
+        "live_inbox_count": null
+      },
+      "run_status": {
+        "schema_version": 1,
+        "status": "idle",
+        "dashboard_path": "/daily-dashboard#run-protonmail-check"
+      },
+      "ui_state": {
+        "default_mode": "expanded",
+        "can_minimize": true,
+        "panel_title": "Threadwise",
+        "allowed_labels": [
+          {
+            "id": "travel",
+            "name": "EA/Travel"
+          },
+          {
+            "id": "receipt-billing",
+            "name": "EA/Receipts"
+          },
+          {
+            "id": "shopping-order",
+            "name": "EA/Orders"
+          },
+          {
+            "id": "financial-account",
+            "name": "EA/Finance"
+          },
+          {
+            "id": "newsletter",
+            "name": "EA/Newsletter"
+          },
+          {
+            "id": "promotions",
+            "name": "EA/Promotions"
+          },
+          {
+            "id": "account-security",
+            "name": "EA/Account"
+          },
+          {
+            "id": "calendar-event",
+            "name": "EA/Calendar"
+          },
+          {
+            "id": "personal",
+            "name": "EA/Personal"
+          },
+          {
+            "id": "job-related",
+            "name": "EA/Work"
+          },
+          {
+            "id": "spam-low-value",
+            "name": "EA/LowValue"
+          },
+          {
+            "id": "reply-needed",
+            "name": "EA/NeedsAction"
+          },
+          {
+            "id": "suspicious",
+            "name": "EA/Suspicious"
+          }
+        ],
+        "async_follow_up": null,
+        "provider_write": null,
+        "activity_feed": []
+      }
+    },
+    "recent_items": [
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-001",
+        "subject": "Senior AI product roles this week",
+        "subject_key": "senior ai product roles this week",
+        "sender": "RoleScout Jobs <jobs@example.test>",
+        "received_at": "2026-06-30T09:18:00Z",
+        "sender_address": "jobs@example.test",
+        "internal_label": null,
+        "suggested_label": "job-related",
+        "classification": "Uncategorized",
+        "status": "needs-attention",
+        "status_label": "Needs attention",
+        "action_reason": "Choose or confirm label",
+        "reason": "Job recommendations look work-adjacent, but the agent wants approval before treating the sender as Work."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-002",
+        "subject": "Monthly invoice available",
+        "subject_key": "monthly invoice available",
+        "sender": "Cloud Billing <billing@cloudledger.example>",
+        "received_at": "2026-06-30T08:44:00Z",
+        "sender_address": "billing@cloudledger.example",
+        "internal_label": null,
+        "suggested_label": "receipt-billing",
+        "classification": "Uncategorized",
+        "status": "needs-attention",
+        "status_label": "Needs attention",
+        "action_reason": "Choose or confirm label",
+        "reason": "Possible receipt or finance email, but the agent needs confirmation before filing it."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-003",
+        "subject": "Confirm Thursday review",
+        "subject_key": "confirm thursday review",
+        "sender": "Maya Chen <maya@northstar.example>",
+        "received_at": "2026-06-30T08:12:00Z",
+        "sender_address": "maya@northstar.example",
+        "internal_label": null,
+        "suggested_label": "reply-needed",
+        "classification": "Uncategorized",
+        "status": "needs-attention",
+        "status_label": "Needs attention",
+        "action_reason": "Choose or confirm label",
+        "reason": "Looks like a direct reply-needed message from a person."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-004",
+        "subject": "New planning templates for product teams",
+        "subject_key": "new planning templates for product teams",
+        "sender": "Workspace Weekly <newsletter@workspaceweekly.example>",
+        "received_at": "2026-06-30T07:52:00Z",
+        "sender_address": "newsletter@workspaceweekly.example",
+        "internal_label": "newsletter",
+        "suggested_label": "newsletter",
+        "classification": "EA/Newsletter",
+        "status": "kept-visible",
+        "status_label": "Kept visible",
+        "action_reason": "",
+        "reason": "Recurring product newsletter with a supported unsubscribe path."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-005",
+        "subject": "This week's founder digest",
+        "subject_key": "this week's founder digest",
+        "sender": "Founder Digest <digest@founderdigest.example>",
+        "received_at": "2026-06-30T07:30:00Z",
+        "sender_address": "digest@founderdigest.example",
+        "internal_label": "newsletter",
+        "suggested_label": "newsletter",
+        "classification": "EA/Newsletter",
+        "status": "kept-visible",
+        "status_label": "Kept visible",
+        "action_reason": "",
+        "reason": "Newsletter content kept visible because it may be useful."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-006",
+        "subject": "Your trip receipt",
+        "subject_key": "your trip receipt",
+        "sender": "Railway <receipts@railway.example>",
+        "received_at": "2026-06-30T07:06:00Z",
+        "sender_address": "receipts@railway.example",
+        "internal_label": "travel",
+        "suggested_label": "travel",
+        "classification": "EA/Travel",
+        "status": "kept-visible",
+        "status_label": "Kept visible",
+        "action_reason": "",
+        "reason": "Travel receipt and itinerary."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-007",
+        "subject": "Security alert resolved",
+        "subject_key": "security alert resolved",
+        "sender": "GitHub <noreply@github.example>",
+        "received_at": "2026-06-30T06:45:00Z",
+        "sender_address": "noreply@github.example",
+        "internal_label": "account-security",
+        "suggested_label": "account-security",
+        "classification": "EA/Account",
+        "status": "kept-visible",
+        "status_label": "Kept visible",
+        "action_reason": "",
+        "reason": "Account/security update from a developer tool."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-008",
+        "subject": "Five papers worth reading",
+        "subject_key": "five papers worth reading",
+        "sender": "AI Research Brief <brief@airesearch.example>",
+        "received_at": "2026-06-30T06:12:00Z",
+        "sender_address": "brief@airesearch.example",
+        "internal_label": "newsletter",
+        "suggested_label": "newsletter",
+        "classification": "EA/Newsletter",
+        "status": "auto-handled",
+        "status_label": "Auto-handled",
+        "action_reason": "",
+        "reason": "Newsletter the agent can auto-handle as low-priority reading."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-009",
+        "subject": "Team swag sale ends Friday",
+        "subject_key": "team swag sale ends friday",
+        "sender": "Brand Supply <hello@brandsupply.example>",
+        "received_at": "2026-06-30T05:55:00Z",
+        "sender_address": "hello@brandsupply.example",
+        "internal_label": "promotions",
+        "suggested_label": "promotions",
+        "classification": "EA/Promotions",
+        "status": "auto-handled",
+        "status_label": "Auto-handled",
+        "action_reason": "",
+        "reason": "Promotional sale email from a recurring sender."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-010",
+        "subject": "Your order has shipped",
+        "subject_key": "your order has shipped",
+        "sender": "Northstar Store <orders@northstarstore.example>",
+        "received_at": "2026-06-30T05:22:00Z",
+        "sender_address": "orders@northstarstore.example",
+        "internal_label": "shopping-order",
+        "suggested_label": "shopping-order",
+        "classification": "EA/Orders",
+        "status": "auto-labeled",
+        "status_label": "Auto-labeled",
+        "action_reason": "",
+        "reason": "Shopping order update."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-011",
+        "subject": "Product sync moved to 3 PM",
+        "subject_key": "product sync moved to 3 pm",
+        "sender": "Calendar <calendar@threadwise.example>",
+        "received_at": "2026-06-30T05:00:00Z",
+        "sender_address": "calendar@threadwise.example",
+        "internal_label": "calendar-event",
+        "suggested_label": "calendar-event",
+        "classification": "EA/Calendar",
+        "status": "auto-labeled",
+        "status_label": "Auto-labeled",
+        "action_reason": "",
+        "reason": "Calendar update for a work meeting."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-012",
+        "subject": "Product leadership roles matching your alerts",
+        "subject_key": "product leadership roles matching your alerts",
+        "sender": "RoleScout Jobs <jobs@example.test>",
+        "received_at": "2026-06-30T04:40:00Z",
+        "sender_address": "jobs@example.test",
+        "internal_label": "promotions",
+        "suggested_label": "promotions",
+        "classification": "EA/Promotions",
+        "status": "auto-labeled",
+        "status_label": "Auto-labeled",
+        "action_reason": "",
+        "reason": "LinkedIn job alert that can be treated as work-adjacent after teaching."
+      }
+    ],
+    "needs_attention_items": [
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-001",
+        "subject": "Senior AI product roles this week",
+        "subject_key": "senior ai product roles this week",
+        "sender": "RoleScout Jobs <jobs@example.test>",
+        "received_at": "2026-06-30T09:18:00Z",
+        "sender_address": "jobs@example.test",
+        "internal_label": null,
+        "suggested_label": "job-related",
+        "classification": "Uncategorized",
+        "status": "needs-attention",
+        "status_label": "Needs attention",
+        "action_reason": "Choose or confirm label",
+        "reason": "Job recommendations look work-adjacent, but the agent wants approval before treating the sender as Work."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-002",
+        "subject": "Monthly invoice available",
+        "subject_key": "monthly invoice available",
+        "sender": "Cloud Billing <billing@cloudledger.example>",
+        "received_at": "2026-06-30T08:44:00Z",
+        "sender_address": "billing@cloudledger.example",
+        "internal_label": null,
+        "suggested_label": "receipt-billing",
+        "classification": "Uncategorized",
+        "status": "needs-attention",
+        "status_label": "Needs attention",
+        "action_reason": "Choose or confirm label",
+        "reason": "Possible receipt or finance email, but the agent needs confirmation before filing it."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-003",
+        "subject": "Confirm Thursday review",
+        "subject_key": "confirm thursday review",
+        "sender": "Maya Chen <maya@northstar.example>",
+        "received_at": "2026-06-30T08:12:00Z",
+        "sender_address": "maya@northstar.example",
+        "internal_label": null,
+        "suggested_label": "reply-needed",
+        "classification": "Uncategorized",
+        "status": "needs-attention",
+        "status_label": "Needs attention",
+        "action_reason": "Choose or confirm label",
+        "reason": "Looks like a direct reply-needed message from a person."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-010",
+        "subject": "Your order has shipped",
+        "subject_key": "your order has shipped",
+        "sender": "Northstar Store <orders@northstarstore.example>",
+        "received_at": "2026-06-30T05:22:00Z",
+        "sender_address": "orders@northstarstore.example",
+        "internal_label": "shopping-order",
+        "suggested_label": "shopping-order",
+        "classification": "EA/Orders",
+        "status": "write-unconfirmed",
+        "status_label": "Proton Mail update needs confirmation",
+        "action_reason": "Finish Proton Mail update",
+        "reason": "Shopping order update."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-011",
+        "subject": "Product sync moved to 3 PM",
+        "subject_key": "product sync moved to 3 pm",
+        "sender": "Calendar <calendar@threadwise.example>",
+        "received_at": "2026-06-30T05:00:00Z",
+        "sender_address": "calendar@threadwise.example",
+        "internal_label": "calendar-event",
+        "suggested_label": "calendar-event",
+        "classification": "EA/Calendar",
+        "status": "write-unconfirmed",
+        "status_label": "Proton Mail update needs confirmation",
+        "action_reason": "Finish Proton Mail update",
+        "reason": "Calendar update for a work meeting."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-012",
+        "subject": "Product leadership roles matching your alerts",
+        "subject_key": "product leadership roles matching your alerts",
+        "sender": "RoleScout Jobs <jobs@example.test>",
+        "received_at": "2026-06-30T04:40:00Z",
+        "sender_address": "jobs@example.test",
+        "internal_label": "promotions",
+        "suggested_label": "promotions",
+        "classification": "EA/Promotions",
+        "status": "write-unconfirmed",
+        "status_label": "Proton Mail update needs confirmation",
+        "action_reason": "Finish Proton Mail update",
+        "reason": "LinkedIn job alert that can be treated as work-adjacent after teaching."
+      }
+    ],
+    "auto_handled_items": [
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-008",
+        "subject": "Five papers worth reading",
+        "subject_key": "five papers worth reading",
+        "sender": "AI Research Brief <brief@airesearch.example>",
+        "received_at": "2026-06-30T06:12:00Z",
+        "sender_address": "brief@airesearch.example",
+        "internal_label": "newsletter",
+        "suggested_label": "newsletter",
+        "classification": "EA/Newsletter",
+        "status": "auto-handled",
+        "status_label": "Auto-handled",
+        "action_reason": "",
+        "reason": "Newsletter the agent can auto-handle as low-priority reading."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-009",
+        "subject": "Team swag sale ends Friday",
+        "subject_key": "team swag sale ends friday",
+        "sender": "Brand Supply <hello@brandsupply.example>",
+        "received_at": "2026-06-30T05:55:00Z",
+        "sender_address": "hello@brandsupply.example",
+        "internal_label": "promotions",
+        "suggested_label": "promotions",
+        "classification": "EA/Promotions",
+        "status": "auto-handled",
+        "status_label": "Auto-handled",
+        "action_reason": "",
+        "reason": "Promotional sale email from a recurring sender."
+      }
+    ],
+    "kept_visible_items": [
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-004",
+        "subject": "New planning templates for product teams",
+        "subject_key": "new planning templates for product teams",
+        "sender": "Workspace Weekly <newsletter@workspaceweekly.example>",
+        "received_at": "2026-06-30T07:52:00Z",
+        "sender_address": "newsletter@workspaceweekly.example",
+        "internal_label": "newsletter",
+        "suggested_label": "newsletter",
+        "classification": "EA/Newsletter",
+        "status": "kept-visible",
+        "status_label": "Kept visible",
+        "action_reason": "",
+        "reason": "Recurring product newsletter with a supported unsubscribe path."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-005",
+        "subject": "This week's founder digest",
+        "subject_key": "this week's founder digest",
+        "sender": "Founder Digest <digest@founderdigest.example>",
+        "received_at": "2026-06-30T07:30:00Z",
+        "sender_address": "digest@founderdigest.example",
+        "internal_label": "newsletter",
+        "suggested_label": "newsletter",
+        "classification": "EA/Newsletter",
+        "status": "kept-visible",
+        "status_label": "Kept visible",
+        "action_reason": "",
+        "reason": "Newsletter content kept visible because it may be useful."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-006",
+        "subject": "Your trip receipt",
+        "subject_key": "your trip receipt",
+        "sender": "Railway <receipts@railway.example>",
+        "received_at": "2026-06-30T07:06:00Z",
+        "sender_address": "receipts@railway.example",
+        "internal_label": "travel",
+        "suggested_label": "travel",
+        "classification": "EA/Travel",
+        "status": "kept-visible",
+        "status_label": "Kept visible",
+        "action_reason": "",
+        "reason": "Travel receipt and itinerary."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-007",
+        "subject": "Security alert resolved",
+        "subject_key": "security alert resolved",
+        "sender": "GitHub <noreply@github.example>",
+        "received_at": "2026-06-30T06:45:00Z",
+        "sender_address": "noreply@github.example",
+        "internal_label": "account-security",
+        "suggested_label": "account-security",
+        "classification": "EA/Account",
+        "status": "kept-visible",
+        "status_label": "Kept visible",
+        "action_reason": "",
+        "reason": "Account/security update from a developer tool."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-010",
+        "subject": "Your order has shipped",
+        "subject_key": "your order has shipped",
+        "sender": "Northstar Store <orders@northstarstore.example>",
+        "received_at": "2026-06-30T05:22:00Z",
+        "sender_address": "orders@northstarstore.example",
+        "internal_label": "shopping-order",
+        "suggested_label": "shopping-order",
+        "classification": "EA/Orders",
+        "status": "auto-labeled",
+        "status_label": "Auto-labeled",
+        "action_reason": "",
+        "reason": "Shopping order update."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-011",
+        "subject": "Product sync moved to 3 PM",
+        "subject_key": "product sync moved to 3 pm",
+        "sender": "Calendar <calendar@threadwise.example>",
+        "received_at": "2026-06-30T05:00:00Z",
+        "sender_address": "calendar@threadwise.example",
+        "internal_label": "calendar-event",
+        "suggested_label": "calendar-event",
+        "classification": "EA/Calendar",
+        "status": "auto-labeled",
+        "status_label": "Auto-labeled",
+        "action_reason": "",
+        "reason": "Calendar update for a work meeting."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-012",
+        "subject": "Product leadership roles matching your alerts",
+        "subject_key": "product leadership roles matching your alerts",
+        "sender": "RoleScout Jobs <jobs@example.test>",
+        "received_at": "2026-06-30T04:40:00Z",
+        "sender_address": "jobs@example.test",
+        "internal_label": "promotions",
+        "suggested_label": "promotions",
+        "classification": "EA/Promotions",
+        "status": "auto-labeled",
+        "status_label": "Auto-labeled",
+        "action_reason": "",
+        "reason": "LinkedIn job alert that can be treated as work-adjacent after teaching."
+      }
+    ],
+    "analytics_status": {
+      "state": "disabled",
+      "configured": false,
+      "queued_count": 0,
+      "last_queued_at": null,
+      "last_delivery_error_at": null,
+      "error_category": null,
+      "assurance": "local_sdk"
+    }
+  },
+  "protonmail_next": {
+    "selected_context": {
+      "provider": "protonmail",
+      "message_id": "demo-002"
+    },
+    "sidebar_state": {
+      "contract_version": "gmail-companion-sidebar-v1",
+      "generated_at": "2026-08-20T00:00:00Z",
+      "selected_context": {
+        "provider": "protonmail",
+        "message_id": "demo-002"
+      },
+      "selected_email": {
+        "found": true,
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-002",
+        "internal_label": null,
+        "suggested_label": "receipt-billing",
+        "classification": "Uncategorized",
+        "all_labels": [],
+        "all_classifications": [],
+        "status": "needs-attention",
+        "status_label": "Needs attention",
+        "reason": "Possible receipt or finance email, but the agent needs confirmation before filing it.",
+        "rationale": "Possible receipt or finance email, but the agent needs confirmation before filing it.",
+        "details": {
+          "review_action": "",
+          "write_status": "",
+          "inbox_status": "",
+          "confidence_band": "low",
+          "near_misses": [
+            "receipt-billing",
+            "financial-account"
+          ],
+          "matched_rule_count": 0,
+          "matched_rule_ids": [],
+          "decision_provenance": {},
+          "provider_write_receipt": {}
+        },
+        "subject": "Monthly invoice available",
+        "sender": "Cloud Billing <billing@cloudledger.example>",
+        "received_at": "2026-06-30T08:44:00Z",
+        "understanding_state": "ready",
+        "understanding_label": "Ready",
+        "understanding_message": "Threadwise is ready with the current email.",
+        "action_reason": "Choose or confirm label",
+        "handled_review_acknowledged": false
+      },
+      "daily_summary": {
+        "source_label": "latest stored batch",
+        "batch_id": "demo-inbox-batch",
+        "report_date": null,
+        "processed_count": 12,
+        "auto_handled_count": 2,
+        "needs_attention_count": 6,
+        "unlabeled_count": 0,
+        "top_labels": [
+          {
+            "label": "EA/Newsletter",
+            "count": 3
+          },
+          {
+            "label": "EA/Promotions",
+            "count": 2
+          },
+          {
+            "label": "EA/Account",
+            "count": 1
+          },
+          {
+            "label": "EA/Calendar",
+            "count": 1
+          },
+          {
+            "label": "EA/Orders",
+            "count": 1
+          }
+        ],
+        "run_count": 1,
+        "changed_today": {
+          "label_writes_count": 4,
+          "inbox_removed_count": 2,
+          "taught_count": 0,
+          "candidate_pending_count": 0,
+          "candidate_promoted_count": 0,
+          "items": [
+            {
+              "message_id": "demo-004",
+              "subject": "New planning templates for product teams",
+              "sender": "Workspace Weekly <newsletter@workspaceweekly.example>",
+              "change_group": "Labels written",
+              "change_summary": "Applied EA/Newsletter in Proton Mail."
+            },
+            {
+              "message_id": "demo-005",
+              "subject": "This week's founder digest",
+              "sender": "Founder Digest <digest@founderdigest.example>",
+              "change_group": "Labels written",
+              "change_summary": "Applied EA/Newsletter in Proton Mail."
+            },
+            {
+              "message_id": "demo-006",
+              "subject": "Your trip receipt",
+              "sender": "Railway <receipts@railway.example>",
+              "change_group": "Labels written",
+              "change_summary": "Applied EA/Travel in Proton Mail."
+            },
+            {
+              "message_id": "demo-007",
+              "subject": "Security alert resolved",
+              "sender": "GitHub <noreply@github.example>",
+              "change_group": "Labels written",
+              "change_summary": "Applied EA/Account in Proton Mail."
+            },
+            {
+              "message_id": "demo-008",
+              "subject": "Five papers worth reading",
+              "sender": "AI Research Brief <brief@airesearch.example>",
+              "change_group": "Removed from inbox",
+              "change_summary": "Removed from inbox as low-value mail."
+            },
+            {
+              "message_id": "demo-009",
+              "subject": "Team swag sale ends Friday",
+              "sender": "Brand Supply <hello@brandsupply.example>",
+              "change_group": "Removed from inbox",
+              "change_summary": "Removed from inbox as low-value mail."
+            }
+          ],
+          "groups": [
+            {
+              "label": "Labels written",
+              "items": [
+                {
+                  "message_id": "demo-004",
+                  "subject": "New planning templates for product teams",
+                  "sender": "Workspace Weekly <newsletter@workspaceweekly.example>",
+                  "change_group": "Labels written",
+                  "change_summary": "Applied EA/Newsletter in Proton Mail."
+                },
+                {
+                  "message_id": "demo-005",
+                  "subject": "This week's founder digest",
+                  "sender": "Founder Digest <digest@founderdigest.example>",
+                  "change_group": "Labels written",
+                  "change_summary": "Applied EA/Newsletter in Proton Mail."
+                },
+                {
+                  "message_id": "demo-006",
+                  "subject": "Your trip receipt",
+                  "sender": "Railway <receipts@railway.example>",
+                  "change_group": "Labels written",
+                  "change_summary": "Applied EA/Travel in Proton Mail."
+                },
+                {
+                  "message_id": "demo-007",
+                  "subject": "Security alert resolved",
+                  "sender": "GitHub <noreply@github.example>",
+                  "change_group": "Labels written",
+                  "change_summary": "Applied EA/Account in Proton Mail."
+                }
+              ]
+            },
+            {
+              "label": "Removed from inbox",
+              "items": [
+                {
+                  "message_id": "demo-008",
+                  "subject": "Five papers worth reading",
+                  "sender": "AI Research Brief <brief@airesearch.example>",
+                  "change_group": "Removed from inbox",
+                  "change_summary": "Removed from inbox as low-value mail."
+                },
+                {
+                  "message_id": "demo-009",
+                  "subject": "Team swag sale ends Friday",
+                  "sender": "Brand Supply <hello@brandsupply.example>",
+                  "change_group": "Removed from inbox",
+                  "change_summary": "Removed from inbox as low-value mail."
+                }
+              ]
+            }
+          ],
+          "candidate_examples": []
+        },
+        "classification_error_count": 0,
+        "provider": "protonmail",
+        "live_inbox_count": null
+      },
+      "run_status": {
+        "schema_version": 1,
+        "status": "idle",
+        "dashboard_path": "/daily-dashboard#run-protonmail-check"
+      },
+      "ui_state": {
+        "default_mode": "expanded",
+        "can_minimize": true,
+        "panel_title": "Threadwise",
+        "allowed_labels": [
+          {
+            "id": "travel",
+            "name": "EA/Travel"
+          },
+          {
+            "id": "receipt-billing",
+            "name": "EA/Receipts"
+          },
+          {
+            "id": "shopping-order",
+            "name": "EA/Orders"
+          },
+          {
+            "id": "financial-account",
+            "name": "EA/Finance"
+          },
+          {
+            "id": "newsletter",
+            "name": "EA/Newsletter"
+          },
+          {
+            "id": "promotions",
+            "name": "EA/Promotions"
+          },
+          {
+            "id": "account-security",
+            "name": "EA/Account"
+          },
+          {
+            "id": "calendar-event",
+            "name": "EA/Calendar"
+          },
+          {
+            "id": "personal",
+            "name": "EA/Personal"
+          },
+          {
+            "id": "job-related",
+            "name": "EA/Work"
+          },
+          {
+            "id": "spam-low-value",
+            "name": "EA/LowValue"
+          },
+          {
+            "id": "reply-needed",
+            "name": "EA/NeedsAction"
+          },
+          {
+            "id": "suspicious",
+            "name": "EA/Suspicious"
+          }
+        ],
+        "async_follow_up": null,
+        "provider_write": null,
+        "activity_feed": []
+      }
+    },
+    "recent_items": [
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-001",
+        "subject": "Senior AI product roles this week",
+        "subject_key": "senior ai product roles this week",
+        "sender": "RoleScout Jobs <jobs@example.test>",
+        "received_at": "2026-06-30T09:18:00Z",
+        "sender_address": "jobs@example.test",
+        "internal_label": null,
+        "suggested_label": "job-related",
+        "classification": "Uncategorized",
+        "status": "needs-attention",
+        "status_label": "Needs attention",
+        "action_reason": "Choose or confirm label",
+        "reason": "Job recommendations look work-adjacent, but the agent wants approval before treating the sender as Work."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-002",
+        "subject": "Monthly invoice available",
+        "subject_key": "monthly invoice available",
+        "sender": "Cloud Billing <billing@cloudledger.example>",
+        "received_at": "2026-06-30T08:44:00Z",
+        "sender_address": "billing@cloudledger.example",
+        "internal_label": null,
+        "suggested_label": "receipt-billing",
+        "classification": "Uncategorized",
+        "status": "needs-attention",
+        "status_label": "Needs attention",
+        "action_reason": "Choose or confirm label",
+        "reason": "Possible receipt or finance email, but the agent needs confirmation before filing it."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-003",
+        "subject": "Confirm Thursday review",
+        "subject_key": "confirm thursday review",
+        "sender": "Maya Chen <maya@northstar.example>",
+        "received_at": "2026-06-30T08:12:00Z",
+        "sender_address": "maya@northstar.example",
+        "internal_label": null,
+        "suggested_label": "reply-needed",
+        "classification": "Uncategorized",
+        "status": "needs-attention",
+        "status_label": "Needs attention",
+        "action_reason": "Choose or confirm label",
+        "reason": "Looks like a direct reply-needed message from a person."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-004",
+        "subject": "New planning templates for product teams",
+        "subject_key": "new planning templates for product teams",
+        "sender": "Workspace Weekly <newsletter@workspaceweekly.example>",
+        "received_at": "2026-06-30T07:52:00Z",
+        "sender_address": "newsletter@workspaceweekly.example",
+        "internal_label": "newsletter",
+        "suggested_label": "newsletter",
+        "classification": "EA/Newsletter",
+        "status": "kept-visible",
+        "status_label": "Kept visible",
+        "action_reason": "",
+        "reason": "Recurring product newsletter with a supported unsubscribe path."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-005",
+        "subject": "This week's founder digest",
+        "subject_key": "this week's founder digest",
+        "sender": "Founder Digest <digest@founderdigest.example>",
+        "received_at": "2026-06-30T07:30:00Z",
+        "sender_address": "digest@founderdigest.example",
+        "internal_label": "newsletter",
+        "suggested_label": "newsletter",
+        "classification": "EA/Newsletter",
+        "status": "kept-visible",
+        "status_label": "Kept visible",
+        "action_reason": "",
+        "reason": "Newsletter content kept visible because it may be useful."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-006",
+        "subject": "Your trip receipt",
+        "subject_key": "your trip receipt",
+        "sender": "Railway <receipts@railway.example>",
+        "received_at": "2026-06-30T07:06:00Z",
+        "sender_address": "receipts@railway.example",
+        "internal_label": "travel",
+        "suggested_label": "travel",
+        "classification": "EA/Travel",
+        "status": "kept-visible",
+        "status_label": "Kept visible",
+        "action_reason": "",
+        "reason": "Travel receipt and itinerary."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-007",
+        "subject": "Security alert resolved",
+        "subject_key": "security alert resolved",
+        "sender": "GitHub <noreply@github.example>",
+        "received_at": "2026-06-30T06:45:00Z",
+        "sender_address": "noreply@github.example",
+        "internal_label": "account-security",
+        "suggested_label": "account-security",
+        "classification": "EA/Account",
+        "status": "kept-visible",
+        "status_label": "Kept visible",
+        "action_reason": "",
+        "reason": "Account/security update from a developer tool."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-008",
+        "subject": "Five papers worth reading",
+        "subject_key": "five papers worth reading",
+        "sender": "AI Research Brief <brief@airesearch.example>",
+        "received_at": "2026-06-30T06:12:00Z",
+        "sender_address": "brief@airesearch.example",
+        "internal_label": "newsletter",
+        "suggested_label": "newsletter",
+        "classification": "EA/Newsletter",
+        "status": "auto-handled",
+        "status_label": "Auto-handled",
+        "action_reason": "",
+        "reason": "Newsletter the agent can auto-handle as low-priority reading."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-009",
+        "subject": "Team swag sale ends Friday",
+        "subject_key": "team swag sale ends friday",
+        "sender": "Brand Supply <hello@brandsupply.example>",
+        "received_at": "2026-06-30T05:55:00Z",
+        "sender_address": "hello@brandsupply.example",
+        "internal_label": "promotions",
+        "suggested_label": "promotions",
+        "classification": "EA/Promotions",
+        "status": "auto-handled",
+        "status_label": "Auto-handled",
+        "action_reason": "",
+        "reason": "Promotional sale email from a recurring sender."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-010",
+        "subject": "Your order has shipped",
+        "subject_key": "your order has shipped",
+        "sender": "Northstar Store <orders@northstarstore.example>",
+        "received_at": "2026-06-30T05:22:00Z",
+        "sender_address": "orders@northstarstore.example",
+        "internal_label": "shopping-order",
+        "suggested_label": "shopping-order",
+        "classification": "EA/Orders",
+        "status": "auto-labeled",
+        "status_label": "Auto-labeled",
+        "action_reason": "",
+        "reason": "Shopping order update."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-011",
+        "subject": "Product sync moved to 3 PM",
+        "subject_key": "product sync moved to 3 pm",
+        "sender": "Calendar <calendar@threadwise.example>",
+        "received_at": "2026-06-30T05:00:00Z",
+        "sender_address": "calendar@threadwise.example",
+        "internal_label": "calendar-event",
+        "suggested_label": "calendar-event",
+        "classification": "EA/Calendar",
+        "status": "auto-labeled",
+        "status_label": "Auto-labeled",
+        "action_reason": "",
+        "reason": "Calendar update for a work meeting."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-012",
+        "subject": "Product leadership roles matching your alerts",
+        "subject_key": "product leadership roles matching your alerts",
+        "sender": "RoleScout Jobs <jobs@example.test>",
+        "received_at": "2026-06-30T04:40:00Z",
+        "sender_address": "jobs@example.test",
+        "internal_label": "promotions",
+        "suggested_label": "promotions",
+        "classification": "EA/Promotions",
+        "status": "auto-labeled",
+        "status_label": "Auto-labeled",
+        "action_reason": "",
+        "reason": "LinkedIn job alert that can be treated as work-adjacent after teaching."
+      }
+    ],
+    "needs_attention_items": [
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-001",
+        "subject": "Senior AI product roles this week",
+        "subject_key": "senior ai product roles this week",
+        "sender": "RoleScout Jobs <jobs@example.test>",
+        "received_at": "2026-06-30T09:18:00Z",
+        "sender_address": "jobs@example.test",
+        "internal_label": null,
+        "suggested_label": "job-related",
+        "classification": "Uncategorized",
+        "status": "needs-attention",
+        "status_label": "Needs attention",
+        "action_reason": "Choose or confirm label",
+        "reason": "Job recommendations look work-adjacent, but the agent wants approval before treating the sender as Work."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-002",
+        "subject": "Monthly invoice available",
+        "subject_key": "monthly invoice available",
+        "sender": "Cloud Billing <billing@cloudledger.example>",
+        "received_at": "2026-06-30T08:44:00Z",
+        "sender_address": "billing@cloudledger.example",
+        "internal_label": null,
+        "suggested_label": "receipt-billing",
+        "classification": "Uncategorized",
+        "status": "needs-attention",
+        "status_label": "Needs attention",
+        "action_reason": "Choose or confirm label",
+        "reason": "Possible receipt or finance email, but the agent needs confirmation before filing it."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-003",
+        "subject": "Confirm Thursday review",
+        "subject_key": "confirm thursday review",
+        "sender": "Maya Chen <maya@northstar.example>",
+        "received_at": "2026-06-30T08:12:00Z",
+        "sender_address": "maya@northstar.example",
+        "internal_label": null,
+        "suggested_label": "reply-needed",
+        "classification": "Uncategorized",
+        "status": "needs-attention",
+        "status_label": "Needs attention",
+        "action_reason": "Choose or confirm label",
+        "reason": "Looks like a direct reply-needed message from a person."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-010",
+        "subject": "Your order has shipped",
+        "subject_key": "your order has shipped",
+        "sender": "Northstar Store <orders@northstarstore.example>",
+        "received_at": "2026-06-30T05:22:00Z",
+        "sender_address": "orders@northstarstore.example",
+        "internal_label": "shopping-order",
+        "suggested_label": "shopping-order",
+        "classification": "EA/Orders",
+        "status": "write-unconfirmed",
+        "status_label": "Proton Mail update needs confirmation",
+        "action_reason": "Finish Proton Mail update",
+        "reason": "Shopping order update."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-011",
+        "subject": "Product sync moved to 3 PM",
+        "subject_key": "product sync moved to 3 pm",
+        "sender": "Calendar <calendar@threadwise.example>",
+        "received_at": "2026-06-30T05:00:00Z",
+        "sender_address": "calendar@threadwise.example",
+        "internal_label": "calendar-event",
+        "suggested_label": "calendar-event",
+        "classification": "EA/Calendar",
+        "status": "write-unconfirmed",
+        "status_label": "Proton Mail update needs confirmation",
+        "action_reason": "Finish Proton Mail update",
+        "reason": "Calendar update for a work meeting."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-012",
+        "subject": "Product leadership roles matching your alerts",
+        "subject_key": "product leadership roles matching your alerts",
+        "sender": "RoleScout Jobs <jobs@example.test>",
+        "received_at": "2026-06-30T04:40:00Z",
+        "sender_address": "jobs@example.test",
+        "internal_label": "promotions",
+        "suggested_label": "promotions",
+        "classification": "EA/Promotions",
+        "status": "write-unconfirmed",
+        "status_label": "Proton Mail update needs confirmation",
+        "action_reason": "Finish Proton Mail update",
+        "reason": "LinkedIn job alert that can be treated as work-adjacent after teaching."
+      }
+    ],
+    "auto_handled_items": [
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-008",
+        "subject": "Five papers worth reading",
+        "subject_key": "five papers worth reading",
+        "sender": "AI Research Brief <brief@airesearch.example>",
+        "received_at": "2026-06-30T06:12:00Z",
+        "sender_address": "brief@airesearch.example",
+        "internal_label": "newsletter",
+        "suggested_label": "newsletter",
+        "classification": "EA/Newsletter",
+        "status": "auto-handled",
+        "status_label": "Auto-handled",
+        "action_reason": "",
+        "reason": "Newsletter the agent can auto-handle as low-priority reading."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-009",
+        "subject": "Team swag sale ends Friday",
+        "subject_key": "team swag sale ends friday",
+        "sender": "Brand Supply <hello@brandsupply.example>",
+        "received_at": "2026-06-30T05:55:00Z",
+        "sender_address": "hello@brandsupply.example",
+        "internal_label": "promotions",
+        "suggested_label": "promotions",
+        "classification": "EA/Promotions",
+        "status": "auto-handled",
+        "status_label": "Auto-handled",
+        "action_reason": "",
+        "reason": "Promotional sale email from a recurring sender."
+      }
+    ],
+    "kept_visible_items": [
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-004",
+        "subject": "New planning templates for product teams",
+        "subject_key": "new planning templates for product teams",
+        "sender": "Workspace Weekly <newsletter@workspaceweekly.example>",
+        "received_at": "2026-06-30T07:52:00Z",
+        "sender_address": "newsletter@workspaceweekly.example",
+        "internal_label": "newsletter",
+        "suggested_label": "newsletter",
+        "classification": "EA/Newsletter",
+        "status": "kept-visible",
+        "status_label": "Kept visible",
+        "action_reason": "",
+        "reason": "Recurring product newsletter with a supported unsubscribe path."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-005",
+        "subject": "This week's founder digest",
+        "subject_key": "this week's founder digest",
+        "sender": "Founder Digest <digest@founderdigest.example>",
+        "received_at": "2026-06-30T07:30:00Z",
+        "sender_address": "digest@founderdigest.example",
+        "internal_label": "newsletter",
+        "suggested_label": "newsletter",
+        "classification": "EA/Newsletter",
+        "status": "kept-visible",
+        "status_label": "Kept visible",
+        "action_reason": "",
+        "reason": "Newsletter content kept visible because it may be useful."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-006",
+        "subject": "Your trip receipt",
+        "subject_key": "your trip receipt",
+        "sender": "Railway <receipts@railway.example>",
+        "received_at": "2026-06-30T07:06:00Z",
+        "sender_address": "receipts@railway.example",
+        "internal_label": "travel",
+        "suggested_label": "travel",
+        "classification": "EA/Travel",
+        "status": "kept-visible",
+        "status_label": "Kept visible",
+        "action_reason": "",
+        "reason": "Travel receipt and itinerary."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-007",
+        "subject": "Security alert resolved",
+        "subject_key": "security alert resolved",
+        "sender": "GitHub <noreply@github.example>",
+        "received_at": "2026-06-30T06:45:00Z",
+        "sender_address": "noreply@github.example",
+        "internal_label": "account-security",
+        "suggested_label": "account-security",
+        "classification": "EA/Account",
+        "status": "kept-visible",
+        "status_label": "Kept visible",
+        "action_reason": "",
+        "reason": "Account/security update from a developer tool."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-010",
+        "subject": "Your order has shipped",
+        "subject_key": "your order has shipped",
+        "sender": "Northstar Store <orders@northstarstore.example>",
+        "received_at": "2026-06-30T05:22:00Z",
+        "sender_address": "orders@northstarstore.example",
+        "internal_label": "shopping-order",
+        "suggested_label": "shopping-order",
+        "classification": "EA/Orders",
+        "status": "auto-labeled",
+        "status_label": "Auto-labeled",
+        "action_reason": "",
+        "reason": "Shopping order update."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-011",
+        "subject": "Product sync moved to 3 PM",
+        "subject_key": "product sync moved to 3 pm",
+        "sender": "Calendar <calendar@threadwise.example>",
+        "received_at": "2026-06-30T05:00:00Z",
+        "sender_address": "calendar@threadwise.example",
+        "internal_label": "calendar-event",
+        "suggested_label": "calendar-event",
+        "classification": "EA/Calendar",
+        "status": "auto-labeled",
+        "status_label": "Auto-labeled",
+        "action_reason": "",
+        "reason": "Calendar update for a work meeting."
+      },
+      {
+        "provider": "protonmail",
+        "account_id": "demo-account",
+        "batch_id": "demo-inbox-batch",
+        "message_id": "demo-012",
+        "subject": "Product leadership roles matching your alerts",
+        "subject_key": "product leadership roles matching your alerts",
+        "sender": "RoleScout Jobs <jobs@example.test>",
+        "received_at": "2026-06-30T04:40:00Z",
+        "sender_address": "jobs@example.test",
+        "internal_label": "promotions",
+        "suggested_label": "promotions",
+        "classification": "EA/Promotions",
+        "status": "auto-labeled",
+        "status_label": "Auto-labeled",
+        "action_reason": "",
+        "reason": "LinkedIn job alert that can be treated as work-adjacent after teaching."
+      }
+    ],
+    "analytics_status": {
+      "state": "disabled",
+      "configured": false,
+      "queued_count": 0,
+      "last_queued_at": null,
+      "last_delivery_error_at": null,
+      "error_category": null,
+      "assurance": "local_sdk"
+    }
+  }
+}

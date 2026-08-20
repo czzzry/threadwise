@@ -1419,6 +1419,14 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("No emails need review", content_js)
         self.assertNotIn('${gmailCheckPending ? "Running Gmail sync..." : "Run Gmail sync"}', content_js)
 
+    def test_brand_mark_crops_the_legacy_square_backing(self) -> None:
+        content_js = (Path(__file__).parent.parent / "extensions" / "gmail_companion" / "content.js").read_text()
+
+        brand_styles = content_js.split("#${ROOT_ID} #ea-brand-toggle {", 1)[1].split("}", 1)[0]
+        self.assertIn("overflow: hidden !important", brand_styles)
+        self.assertIn("#${ROOT_ID} #ea-brand-toggle img", content_js)
+        self.assertIn("transform: scale(1.08)", content_js)
+
     def test_final_review_receipt_does_not_offer_a_nonexistent_next_email(self) -> None:
         content_js = (Path(__file__).parent.parent / "extensions" / "gmail_companion" / "content.js").read_text()
 

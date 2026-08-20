@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Threadwise marketing capture host</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --host-accent: #d84a41;
+      --host-soft: #f4f7fb;
+      --host-selected: #f5f3ff;
+      --ink: #20242c;
+      --muted: #687180;
+      --line: #e1e5ea;
+    }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; }
+    body {
+      margin: 0;
+      overflow: hidden;
+      color: var(--ink);
+      background: #f2f4f7;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+    body[data-provider="protonmail"] {
+      --host-accent: #6d4aff;
+      --host-soft: #f7f5ff;
+      --host-selected: #f1efff;
+    }
+    .browser {
+      position: absolute;
+      inset: 32px 38px;
+      overflow: hidden;
+      border: 1px solid #cbd1da;
+      border-radius: 10px;
+      background: #fff;
+      box-shadow: 0 14px 36px rgba(30, 38, 52, .13);
+    }
+    .browser-bar {
+      height: 54px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 18px;
+      border-bottom: 1px solid #dfe3e9;
+      background: #f8f9fb;
+    }
+    .browser-dot { width: 11px; height: 11px; border-radius: 50%; background: #c9cfd8; }
+    .address {
+      width: min(560px, 46vw);
+      height: 30px;
+      margin-left: 12px;
+      padding: 7px 13px;
+      border: 1px solid #e0e4e9;
+      border-radius: 6px;
+      color: #89919d;
+      background: #fff;
+      font-size: 12px;
+    }
+    .browser-tools { margin-left: auto; color: #9ba2ad; font-size: 18px; }
+    .mail-app { height: calc(100% - 54px); display: grid; grid-template-columns: 212px minmax(0, 1fr); }
+    .mail-workspace { min-width: 0; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr); }
+    .proton-toolbar { display: none; }
+    .mail-nav {
+      padding: 24px 18px;
+      border-right: 1px solid var(--line);
+      background: var(--host-soft);
+    }
+    .provider-lockup { display: flex; align-items: center; gap: 10px; margin: 0 8px 25px; font-size: 19px; font-weight: 700; }
+    .provider-mark {
+      width: 30px;
+      height: 30px;
+      display: grid;
+      place-items: center;
+      border-radius: 7px;
+      color: #fff;
+      background: var(--host-accent);
+      font-size: 17px;
+      font-weight: 800;
+    }
+    .compose {
+      width: 100%;
+      height: 42px;
+      margin-bottom: 18px;
+      border: 0;
+      border-radius: 7px;
+      color: #fff;
+      background: var(--host-accent);
+      font: inherit;
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .nav-item { padding: 10px 12px; border-radius: 7px; color: #657080; font-size: 14px; }
+    .nav-item.active { color: #252a33; background: rgba(255,255,255,.8); font-weight: 700; }
+    .nav-count { float: right; color: #8b94a1; font-variant-numeric: tabular-nums; }
+    .mail-main { min-width: 0; display: grid; grid-template-columns: minmax(390px, 42%) minmax(0, 58%); }
+    .message-list { min-width: 0; border-right: 1px solid var(--line); background: #fff; }
+    .list-header {
+      height: 58px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      border-bottom: 1px solid var(--line);
+    }
+    .list-header strong { font-size: 18px; }
+    .list-tools { color: #8d95a1; letter-spacing: .18em; }
+    .message-row {
+      min-height: 102px;
+      padding: 15px 18px;
+      border-bottom: 1px solid #edf0f3;
+      background: #fff;
+    }
+    .message-row.selected { position: relative; background: var(--host-selected); }
+    .message-row.selected::before { position: absolute; inset: 0 auto 0 0; width: 4px; background: #635bff; content: ""; }
+    .row-head { display: flex; justify-content: space-between; gap: 12px; }
+    .row-head strong { font-size: 15px; }
+    .row-head time { color: #929aa6; font-size: 12px; }
+    .subject { margin-top: 7px; overflow: hidden; color: #576170; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+    .labels { min-height: 25px; display: flex; gap: 6px; margin-top: 10px; }
+    .label { padding: 4px 7px; border-radius: 5px; color: #2b63a9; background: #eaf2ff; font-size: 11px; font-weight: 700; }
+    .label.green { color: #12714f; background: #e1f5ec; }
+    .label.purple { color: #554bbb; background: #efedff; }
+    .review-dot { width: 7px; height: 7px; margin-top: 7px; border-radius: 50%; background: #635bff; }
+    .message-view { min-width: 0; padding: 36px 34px; background: #fff; }
+    .message-meta { color: #717b89; font-size: 14px; }
+    .message-view h2 { max-width: 660px; margin: 18px 0 14px; font-size: 30px; line-height: 1.2; }
+    .to-line { color: #969eaa; font-size: 13px; }
+    .message-divider { height: 1px; margin: 26px 0 32px; background: #e8ebef; }
+    .body-line { width: 88%; height: 10px; margin-top: 18px; border-radius: 5px; background: #edf0f4; }
+    .body-line.medium { width: 72%; }
+    .body-line.short { width: 48%; }
+    .message-callout { display: inline-flex; margin-top: 38px; padding: 10px 13px; border-radius: 7px; color: #687180; background: #f3f5f8; font-size: 13px; }
+    body[data-provider="protonmail"] .mail-app { grid-template-columns: 230px minmax(0, 1fr); }
+    body[data-provider="protonmail"] .mail-workspace { grid-template-rows: 58px minmax(0, 1fr); }
+    body[data-provider="protonmail"] .proton-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 0 20px;
+      border-bottom: 1px solid #ded9f2;
+      background: #f9f7ff;
+    }
+    .proton-toolbar strong { color: #443477; font-size: 15px; }
+    .proton-search {
+      flex: 1;
+      max-width: 520px;
+      padding: 9px 13px;
+      border: 1px solid #ded9f2;
+      border-radius: 7px;
+      color: #7b7392;
+      background: #fff;
+      font-size: 12px;
+    }
+    .proton-actions { margin-left: auto; color: #71668f; font-size: 13px; }
+    body[data-provider="protonmail"] .mail-nav { border-color: #ded9f2; background: #f4f0ff; }
+    body[data-provider="protonmail"] .nav-item.active { color: #4f3693; background: #fff; }
+    body[data-provider="protonmail"] .mail-main { grid-template-columns: minmax(430px, 43%) minmax(0, 57%); }
+    body[data-provider="protonmail"] .list-header { background: #fbfaff; }
+    body[data-provider="protonmail"] .message-list { border-color: #ded9f2; }
+    body[data-provider="protonmail"] .message-view { background: #fefeff; }
+    @media (max-width: 920px) {
+      .browser { inset: 18px; }
+      .mail-app { grid-template-columns: 150px minmax(0, 1fr); }
+      .mail-main { grid-template-columns: minmax(320px, 46%) minmax(0, 54%); }
+      .mail-nav { padding-inline: 10px; }
+      .provider-lockup { font-size: 15px; }
+    }
+  </style>
+</head>
+<body data-provider="gmail">
+  <div class="browser">
+    <div class="browser-bar">
+      <span class="browser-dot"></span><span class="browser-dot"></span><span class="browser-dot"></span>
+      <div class="address" data-address>mail.google.com · Inbox</div>
+      <div class="browser-tools">□ &nbsp; ⋮</div>
+    </div>
+    <div class="mail-app">
+      <nav class="mail-nav" aria-label="Synthetic mailbox folders">
+        <div class="provider-lockup"><span class="provider-mark" data-provider-mark>M</span><span data-provider-name>Gmail</span></div>
+        <button class="compose" type="button">Compose</button>
+        <div class="nav-item active">Inbox <span class="nav-count">12</span></div>
+        <div class="nav-item" data-secondary-folder>Starred</div>
+        <div class="nav-item">Sent</div>
+        <div class="nav-item">Archive</div>
+      </nav>
+      <div class="mail-workspace">
+        <header class="proton-toolbar">
+          <strong>Mail</strong>
+          <div class="proton-search">Search messages</div>
+          <div class="proton-actions">Folders &nbsp; Settings</div>
+        </header>
+        <main class="mail-main">
+        <section class="message-list" aria-label="Synthetic messages">
+          <div class="list-header"><strong>Inbox</strong><span class="list-tools">□ ···</span></div>
+          <article class="message-row selected" data-message-id="demo-001">
+            <div class="row-head"><strong>RoleScout Jobs</strong><time>9:18 AM</time></div>
+            <div class="subject">Senior AI product roles this week</div>
+            <div class="labels"><span class="review-dot" title="Needs review"></span></div>
+          </article>
+          <article class="message-row" data-message-id="demo-002">
+            <div class="row-head"><strong>CloudLedger</strong><time>8:44 AM</time></div>
+            <div class="subject">Monthly invoice available</div>
+            <div class="labels"><span class="label">Receipts</span><span class="label purple">Account</span></div>
+          </article>
+          <article class="message-row" data-message-id="demo-007">
+            <div class="row-head"><strong>GitHub</strong><time>7:52 AM</time></div>
+            <div class="subject">Your Actions workflow completed</div>
+            <div class="labels"><span class="label green">Personal</span></div>
+          </article>
+          <article class="message-row" data-message-id="demo-004">
+            <div class="row-head"><strong>Workspace Weekly</strong><time>Yesterday</time></div>
+            <div class="subject">New planning templates for product teams</div>
+            <div class="labels"><span class="label">Newsletter</span></div>
+          </article>
+          <article class="message-row" data-message-id="demo-010">
+            <div class="row-head"><strong>Northstar Store</strong><time>Yesterday</time></div>
+            <div class="subject">Your order has shipped</div>
+            <div class="labels"><span class="label purple">Orders</span></div>
+          </article>
+        </section>
+        <article class="message-view" data-thread-perm-id="demo-thread">
+          <div class="message-meta" data-open-sender>RoleScout Jobs &lt;jobs@example.test&gt;</div>
+          <h2 data-open-subject>Senior AI product roles this week</h2>
+          <div class="to-line">To you · 9:18 AM</div>
+          <div class="message-divider"></div>
+          <div data-legacy-message-id="demo-001">
+            <div class="body-line"></div>
+            <div class="body-line medium"></div>
+            <div class="body-line"></div>
+            <div class="body-line short"></div>
+            <div class="message-callout">12 new roles match your saved search</div>
+          </div>
+        </article>
+        </main>
+      </div>
+    </div>
+  </div>
+  <script>
+    const provider = new URLSearchParams(location.search).get("provider") === "protonmail" ? "protonmail" : "gmail";
+    document.body.dataset.provider = provider;
+    if (provider === "protonmail") {
+      document.querySelector("[data-provider-name]").textContent = "Proton Mail";
+      document.querySelector("[data-provider-mark]").textContent = "P";
+      document.querySelector("[data-address]").textContent = "mail.proton.me · Inbox";
+      document.querySelector("[data-secondary-folder]").textContent = "Drafts";
+    }
+  </script>
+</body>
+</html>

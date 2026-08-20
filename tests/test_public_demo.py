@@ -82,6 +82,52 @@ class PublicDemoTests(unittest.TestCase):
         self.assertIn('.confirmed-badge[hidden]', styles)
         self.assertEqual(model.count("matchKey: roleScoutTeaching.matchKey"), 4)
 
+    def test_marketing_story_uses_real_provider_frames_and_starts_minimized(self) -> None:
+        page = (ROOT / "docs" / "index.html").read_text(encoding="utf-8")
+        script = (ROOT / "docs" / "demo" / "app.js").read_text(encoding="utf-8")
+        styles = (ROOT / "docs" / "demo" / "styles.css").read_text(encoding="utf-8")
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+        expected_assets = (
+            "gmail-minimized.png",
+            "gmail-review.png",
+            "gmail-review-detail.png",
+            "gmail-next.png",
+            "gmail-next-detail.png",
+            "protonmail-minimized.png",
+            "protonmail-review.png",
+            "protonmail-review-detail.png",
+            "protonmail-next.png",
+            "protonmail-next-detail.png",
+        )
+        for filename in expected_assets:
+            with self.subTest(filename=filename):
+                self.assertTrue(
+                    (ROOT / "docs" / "assets" / "marketing" / "product" / filename).is_file()
+                )
+                self.assertIn(filename, page + script + readme)
+
+        self.assertIn('data-story-provider="gmail"', page)
+        self.assertIn('data-story-provider="protonmail"', page)
+        self.assertIn('data-story-phase="minimized"', page)
+        self.assertIn("data-story-play", page)
+        self.assertIn("data-story-previous", page)
+        self.assertIn("data-story-next", page)
+        self.assertIn("prefers-reduced-motion", script)
+        self.assertNotIn('aria-live="polite"', page.split('class="story-caption"', 1)[1].split("</figcaption>", 1)[0])
+        progress_rule = styles.rsplit(".story-progress button {", 1)[1].split("}", 1)[0]
+        self.assertIn("width: 44px;", progress_rule)
+        self.assertIn("height: 44px;", progress_rule)
+        self.assertIn(".story-caption {\n    position: static;", styles)
+
+    def test_marketing_site_names_provider_parity_without_conflating_inboxes(self) -> None:
+        page = (ROOT / "docs" / "index.html").read_text(encoding="utf-8")
+
+        self.assertIn("Same Threadwise. Your choice of inbox.", page)
+        self.assertIn("Gmail", page)
+        self.assertIn("Proton Mail", page)
+        self.assertNotIn("Check Gmail", page)
+
 
 if __name__ == "__main__":
     unittest.main()

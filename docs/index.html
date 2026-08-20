@@ -3,89 +3,221 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="Try Threadwise with a synthetic inbox. No login, private email, or provider access required.">
-    <title>Threadwise synthetic inbox demo</title>
+    <meta name="description" content="Threadwise quietly labels Gmail and Proton Mail, then steps in only when a decision needs you.">
+    <meta property="og:title" content="Threadwise | Your inbox, quietly sorted">
+    <meta property="og:description" content="One calm email triage companion for Gmail and Proton Mail.">
+    <meta property="og:image" content="assets/marketing/product/gmail-review.png">
+    <meta name="theme-color" content="#ffffff">
+    <title>Threadwise | Your inbox, quietly sorted</title>
     <link rel="icon" href="assets/brand/threadwise-app-icon.png">
     <link rel="stylesheet" href="demo/styles.css">
   </head>
   <body>
-    <a class="skip-link" href="#demo">Skip to the demo</a>
+    <a class="skip-link" href="#interactive-demo">Skip to the interactive demo</a>
 
     <header class="site-header">
-      <a class="brand" href="https://github.com/czzzry/threadwise" aria-label="Threadwise on GitHub">
-        <img src="assets/brand/threadwise-primary-logo.png" alt="Threadwise">
+      <a class="brand" href="#top" aria-label="Threadwise home">
+        <span class="brand-mark" aria-hidden="true">
+          <img src="assets/brand/threadwise-app-mark.png" alt="">
+        </span>
+        <span>Threadwise</span>
       </a>
-      <div class="header-actions">
-        <span class="demo-badge">Synthetic demo</span>
-        <a href="https://github.com/czzzry/threadwise">View repository</a>
-      </div>
+      <nav class="header-actions" aria-label="Primary navigation">
+        <a href="#how-it-works">How it works</a>
+        <a href="#interactive-demo">Try the demo</a>
+        <a class="header-github" href="https://github.com/czzzry/threadwise">GitHub</a>
+      </nav>
     </header>
 
-    <main id="demo">
-      <section class="intro" aria-labelledby="page-title">
-        <div>
-          <p class="intro-label">No login or inbox access</p>
-          <h1 id="page-title">Teach the inbox without giving up control.</h1>
+    <main id="top">
+      <section class="hero" aria-labelledby="page-title">
+        <div class="hero-copy">
+          <p class="eyebrow">Email triage, in your inbox</p>
+          <h1 id="page-title">Threadwise</h1>
+          <p class="hero-promise">Your inbox, quietly sorted.</p>
+          <p class="hero-summary">
+            Threadwise labels routine mail in the background and stays out of the way.
+            When a decision needs you, the same companion opens inside Gmail or Proton Mail.
+          </p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="#interactive-demo">Try the synthetic demo</a>
+            <a class="button button-secondary" href="https://github.com/czzzry/threadwise">View the project</a>
+          </div>
         </div>
-        <p>
-          Pick an email, inspect Threadwise’s reasoning, and correct one decision.
-          The impact preview appears before anything broader changes.
+
+        <div class="story-shell" aria-label="Threadwise product walkthrough">
+          <div class="story-toolbar">
+            <div class="segmented-control" role="group" aria-label="Choose inbox provider">
+              <button type="button" data-story-provider="gmail" aria-pressed="true">Gmail</button>
+              <button type="button" data-story-provider="protonmail" aria-pressed="false">Proton Mail</button>
+            </div>
+            <button class="story-play" type="button" data-story-play aria-pressed="false">Pause</button>
+          </div>
+          <figure class="story-viewport" data-story-phase="minimized">
+            <img
+              id="story-frame"
+              src="assets/marketing/product/gmail-minimized.png"
+              alt="A wide Gmail inbox with Threadwise minimized to a small mark in the upper-right corner"
+              width="1600"
+              height="900"
+            >
+            <figcaption class="story-caption">
+              <strong data-story-title>Quiet by default</strong>
+              <span data-story-copy>Labels appear while Threadwise stays minimized.</span>
+            </figcaption>
+          </figure>
+          <div class="story-navigation" aria-label="Product walkthrough controls">
+            <button class="story-step-nav" type="button" data-story-previous aria-label="Show previous step" title="Previous step">&larr;</button>
+            <div class="story-progress">
+              <button class="is-active" type="button" data-story-step="0" aria-label="Show step 1: quiet by default" aria-current="step"></button>
+              <button type="button" data-story-step="1" aria-label="Show step 2: open Threadwise"></button>
+              <button type="button" data-story-step="2" aria-label="Show step 3: move to the next email"></button>
+            </div>
+            <button class="story-step-nav" type="button" data-story-next aria-label="Show next step" title="Next step">&rarr;</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="how-it-works" class="story-section">
+        <div class="section-heading">
+          <h2>Quiet for the routine.<br>Clear when it needs you.</h2>
+          <p>
+            Threadwise stays inside the inbox you already use. Labels appear on the messages themselves;
+            low-confidence decisions open one focused review with the email and reasoning together.
+          </p>
+        </div>
+
+        <div class="feature-row feature-row-reverse">
+          <div class="feature-copy">
+            <h3>Review the reason, not a mystery score.</h3>
+            <p>
+              See the suggested label, why Threadwise chose it, and the exact scope before you act.
+              Accept, change, or teach it without leaving the message.
+            </p>
+          </div>
+          <figure class="product-frame product-frame-focus">
+            <img src="assets/marketing/product/gmail-review.png" alt="Threadwise review panel open beside a synthetic Gmail message" loading="lazy" width="1600" height="900">
+          </figure>
+        </div>
+
+        <div class="feature-row">
+          <div class="feature-copy">
+            <h3>Decide once. Keep moving.</h3>
+            <p>
+              After a decision, the following email is ready immediately while the approved label reconciles in
+              the background. No modal detour and no second inbox.
+            </p>
+          </div>
+          <figure class="product-frame product-frame-wide">
+            <img src="assets/marketing/product/gmail-next.png" alt="Cloud Billing and its Receipts suggestion shown consistently after advancing to the next Gmail message" loading="lazy" width="1600" height="900">
+          </figure>
+        </div>
+      </section>
+
+      <section class="provider-section" aria-labelledby="provider-title">
+        <div class="section-heading section-heading-centered">
+          <h2 id="provider-title">Same Threadwise. Your choice of inbox.</h2>
+          <p>
+            Provider details stay provider-specific. The review language, controls, and teaching loop stay the same.
+          </p>
+        </div>
+        <div class="provider-comparison">
+          <figure>
+            <img src="assets/marketing/product/gmail-review.png" alt="Threadwise open in a synthetic Gmail inbox" loading="lazy" width="1600" height="900">
+            <figcaption><strong>Gmail</strong><span>Your inbox, shared companion</span></figcaption>
+          </figure>
+          <figure>
+            <img src="assets/marketing/product/protonmail-review.png" alt="The same Threadwise companion open in a synthetic Proton Mail inbox" loading="lazy" width="1600" height="900">
+            <figcaption><strong>Proton Mail</strong><span>Your inbox, shared companion</span></figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section id="interactive-demo" class="demo-section" aria-labelledby="demo-title">
+        <div class="section-heading demo-heading">
+          <div>
+            <p class="eyebrow">Synthetic demo</p>
+            <h2 id="demo-title">Try the teaching loop.</h2>
+          </div>
+          <p>
+            No login or inbox access. Pick an email, inspect the reasoning, and correct one decision.
+            The impact preview appears before anything broader changes.
+          </p>
+        </div>
+
+        <section class="workspace" aria-label="Interactive synthetic inbox">
+          <div class="mailbox">
+            <div class="mail-toolbar">
+              <button class="compose" type="button" disabled>Compose</button>
+              <div class="search" aria-hidden="true">Search synthetic mail</div>
+              <div class="mail-summary">
+                <span id="mail-count" class="mail-count">12 messages</span>
+                <span id="mailbox-status" class="mailbox-status" role="status" aria-live="polite">No demo changes yet</span>
+              </div>
+            </div>
+
+            <div class="mail-layout">
+              <nav class="mail-nav" aria-label="Demo mailbox folders">
+                <strong>Inbox <span data-folder-count="inbox">12</span></strong>
+                <span>Starred</span>
+                <span>Snoozed</span>
+                <span>Sent</span>
+                <span>Drafts</span>
+                <hr>
+                <span>EA/Work <b data-folder-count="EA/Work">2</b></span>
+                <span>EA/Promotions <b data-folder-count="EA/Promotions">5</b></span>
+                <span>EA/LowValue <b data-folder-count="EA/LowValue">1</b></span>
+              </nav>
+
+              <div class="message-list-shell">
+                <div class="tabs" aria-hidden="true">
+                  <strong>Primary</strong>
+                  <span>Promotions</span>
+                  <span>Updates</span>
+                </div>
+                <div id="message-list" class="message-list" aria-label="Synthetic messages"></div>
+              </div>
+            </div>
+          </div>
+
+          <aside class="companion" aria-label="Threadwise companion">
+            <div class="companion-header">
+              <span class="brand-mark companion-mark" aria-hidden="true">
+                <img src="assets/brand/threadwise-app-mark.png" alt="">
+              </span>
+              <div>
+                <strong>Threadwise</strong>
+                <span>Ready</span>
+              </div>
+            </div>
+            <div id="companion-content" class="companion-content" aria-live="polite"></div>
+          </aside>
+        </section>
+
+        <p class="safety-note">
+          Everything in this demo is synthetic and runs in your browser. It makes no network request,
+          has no credentials, and cannot access or change a provider inbox.
         </p>
       </section>
 
-      <section class="workspace" aria-label="Interactive synthetic inbox">
-        <div class="mailbox">
-          <div class="mail-toolbar">
-            <button class="compose" type="button" disabled>Compose</button>
-            <div class="search" aria-hidden="true">Search synthetic mail</div>
-            <div class="mail-summary">
-              <span id="mail-count" class="mail-count">12 messages</span>
-              <span id="mailbox-status" class="mailbox-status" role="status" aria-live="polite">No demo changes yet</span>
-            </div>
-          </div>
-
-          <div class="mail-layout">
-            <nav class="mail-nav" aria-label="Demo mailbox folders">
-              <strong>Inbox <span data-folder-count="inbox">12</span></strong>
-              <span>Starred</span>
-              <span>Snoozed</span>
-              <span>Sent</span>
-              <span>Drafts</span>
-              <hr>
-              <span>EA/Work <b data-folder-count="EA/Work">2</b></span>
-              <span>EA/Promotions <b data-folder-count="EA/Promotions">5</b></span>
-              <span>EA/LowValue <b data-folder-count="EA/LowValue">1</b></span>
-            </nav>
-
-            <div class="message-list-shell">
-              <div class="tabs" aria-hidden="true">
-                <strong>Primary</strong>
-                <span>Promotions</span>
-                <span>Updates</span>
-              </div>
-              <div id="message-list" class="message-list" aria-label="Synthetic messages"></div>
-            </div>
-          </div>
+      <section class="closing-section">
+        <p class="eyebrow">Threadwise</p>
+        <h2>Less inbox maintenance.<br>More confidence in what remains.</h2>
+        <div class="hero-actions">
+          <a class="button button-primary" href="https://github.com/czzzry/threadwise">Explore the repository</a>
+          <a class="button button-secondary" href="portfolio.md">Read the product overview</a>
         </div>
-
-        <aside class="companion" aria-label="Threadwise companion">
-          <div class="companion-header">
-            <img src="assets/brand/threadwise-app-icon.png" alt="">
-            <div>
-              <strong>Threadwise</strong>
-              <span>Clear threads. Better inbox.</span>
-            </div>
-            <span class="ready">Ready</span>
-          </div>
-          <div id="companion-content" class="companion-content" aria-live="polite"></div>
-        </aside>
       </section>
-
-      <p class="safety-note">
-        Everything on this page is synthetic and runs in your browser.
-        The demo makes no network request, has no credentials, and cannot access or change a provider inbox.
-      </p>
     </main>
+
+    <footer class="site-footer">
+      <a class="brand footer-brand" href="#top">
+        <span class="brand-mark" aria-hidden="true"><img src="assets/brand/threadwise-app-mark.png" alt=""></span>
+        <span>Threadwise</span>
+      </a>
+      <p>Human-in-the-loop email triage for Gmail and Proton Mail.</p>
+      <a href="https://github.com/czzzry/threadwise">GitHub</a>
+    </footer>
 
     <script type="module" src="demo/app.js"></script>
   </body>

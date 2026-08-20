@@ -283,9 +283,14 @@
         #${ROOT_ID} #ea-brand-toggle {
           width: 28px !important;
           height: 28px !important;
+          overflow: hidden !important;
           border: 0 !important;
           border-radius: 7px !important;
           background: transparent !important;
+        }
+        #${ROOT_ID} #ea-brand-toggle img {
+          transform: scale(1.08);
+          transform-origin: center;
         }
         #${ROOT_ID} #ea-header > div:first-child {
           width: 28px;
@@ -691,6 +696,10 @@
         }
         #${ROOT_ID}[data-ea-minimized="true"] #ea-brand-toggle:hover {
           background: transparent !important;
+        }
+        #${ROOT_ID} [data-ea-onboarding-logo] {
+          transform: scale(1.06);
+          transform-origin: center;
         }
         @media (min-width: 481px) and (max-height: 520px) {
           #${ROOT_ID}:not([data-ea-minimized="true"]) {
