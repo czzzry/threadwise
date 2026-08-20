@@ -407,7 +407,7 @@ body { margin: 0; font-family: Georgia, 'Times New Roman', serif; background: ra
     <header class="header">
       <div class="header-copy">
         <div class="brand-lockup">
-          <img class="brand-mark" src="/assets/brand/threadwise-app-icon.png" alt="" aria-hidden="true">
+          <img class="brand-mark" src="/assets/brand/threadwise-app-mark.png" alt="" aria-hidden="true">
           <div>
             <div class="title">Threadwise</div>
             <div class="brand-kicker">CLEAR THREADS. BETTER INBOX.</div>
@@ -1528,7 +1528,7 @@ main { min-height: 100vh; padding: clamp(8px, 3vw, 34px); display: grid; place-i
     <header class="header">
       <div class="header-copy">
         <div class="brand-lockup">
-          <img class="brand-mark" src="/assets/brand/threadwise-app-icon.png" alt="" aria-hidden="true">
+          <img class="brand-mark" src="/assets/brand/threadwise-app-mark.png" alt="" aria-hidden="true">
           <div>
             <div class="title">Threadwise</div>
             <div class="brand-kicker" aria-hidden="true">CLEAR THREADS. BETTER INBOX.</div>
@@ -3276,7 +3276,7 @@ details[data-dashboard-diagnostics] > summary {{ cursor:pointer; font-weight:850
 <section class="hero">
   <div class="hero-heading">
     <div class="hero-heading" style="justify-content:flex-start;">
-      <img class="brand-mark" src="/assets/brand/threadwise-app-icon.png" alt="" aria-hidden="true">
+      <img class="brand-mark" src="/assets/brand/threadwise-app-mark.png" alt="" aria-hidden="true">
       <div>
         <div class="eyebrow">Daily Dashboard</div>
         <h1>What Threadwise did today</h1>
@@ -3496,7 +3496,7 @@ def render_unsubscribe_review_page(details: list[dict], *, focus_list_key: str =
   <main>
     <section class="hero">
       <div class="hero-heading">
-        <img class="brand-mark" src="/assets/brand/threadwise-app-icon.png" alt="" aria-hidden="true">
+        <img class="brand-mark" src="/assets/brand/threadwise-app-mark.png" alt="" aria-hidden="true">
         <div>
           <div class="eyebrow">Unsubscribe Review</div>
           <h1>Subscription cleanup</h1>

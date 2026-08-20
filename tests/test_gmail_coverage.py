@@ -52,19 +52,39 @@ class GmailCoverageTests(unittest.TestCase):
         )
         return service, scopes
 
-    def test_unseen_checked_mail_enters_queue_without_model_or_mutation(self):
+    def test_unseen_checked_mail_requests_sync_without_creating_unlabeled_review_item(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             client = FakeReadonlyGmailClient(["new-1"])
             service, scopes = self.service(Path(temp_dir), client)
 
             result = service.check("founder-test")
 
-            self.assertEqual(result["status"], "queue-ready")
-            self.assertEqual(result["needs_review_count"], 1)
-            self.assertEqual(result["review_items"][0]["message_id"], "new-1")
+            self.assertEqual(result["status"], "partial")
+            self.assertEqual(result["needs_review_count"], 0)
+            self.assertEqual(result["requires_sync_count"], 1)
+            self.assertEqual(result["review_items"], [])
             self.assertEqual(scopes, [GMAIL_READONLY_SCOPE])
             self.assertEqual(result["gmail_mutation"], "none")
             self.assertNotIn("modify", " ".join(map(str, client.calls)))
+
+    def test_legacy_coverage_only_batch_is_treated_as_needing_real_sync(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            batches = storage_dir / "batches"
+            batches.mkdir(parents=True)
+            (batches / "gmail-coverage-old.json").write_text(
+                '{"provider":"gmail","coverage_read_only":true,"items":[{"message_id":"new-1","review_state":"pending","final_labels":[],"applied_labels":[]}]}',
+                encoding="utf-8",
+            )
+            client = FakeReadonlyGmailClient(["new-1"])
+            service, _ = self.service(storage_dir, client)
+
+            result = service.check("founder-test")
+
+            self.assertEqual(result["status"], "partial")
+            self.assertEqual(result["requires_sync_count"], 1)
+            self.assertEqual(result["needs_review_count"], 0)
+
 
     def test_known_reviewed_messages_can_produce_truthful_clear(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -96,7 +116,7 @@ class GmailCoverageTests(unittest.TestCase):
             self.assertFalse(result["scope_complete"])
             self.assertTrue(result["bounded"])
             self.assertEqual(result["read_failure_count"], 1)
-            self.assertEqual(result["unchecked_count"], 2)
+            self.assertEqual(result["unchecked_count"], 3)
 
     def test_cached_unknown_metadata_avoids_repeated_message_fetch(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -109,7 +129,8 @@ class GmailCoverageTests(unittest.TestCase):
 
             result = second.check("founder-test")
 
-            self.assertEqual(result["needs_review_count"], 1)
+            self.assertEqual(result["requires_sync_count"], 1)
+            self.assertEqual(result["needs_review_count"], 0)
             self.assertEqual(second_client.calls, [("search_message_ids", "in:inbox", 101)])
 
     def test_unseen_metadata_reads_are_bounded_and_parallel(self):
@@ -138,7 +159,8 @@ class GmailCoverageTests(unittest.TestCase):
 
             result = service.check("founder-test")
 
-            self.assertEqual(result["needs_review_count"], len(message_ids))
+            self.assertEqual(result["requires_sync_count"], len(message_ids))
+            self.assertEqual(result["needs_review_count"], 0)
             self.assertGreater(client.max_active, 1)
             self.assertLessEqual(client.max_active, 8)
 

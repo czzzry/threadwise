@@ -2,6 +2,7 @@
 
 Status: Complete; release candidate validated for `main`
 Current as of: 2026-08-13
+Superseded in part by: `docs/decisions/always-label-successfully-processed-mail.md` for initial model-label writes
 Branch: `codex/threadwise-main-landing`
 
 ## Founder decisions

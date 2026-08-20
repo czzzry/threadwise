@@ -59,7 +59,7 @@ class GmailInitialClassifierTests(unittest.TestCase):
         message.update(overrides)
         return message
 
-    def test_model_suggestion_is_review_only_with_compact_provenance(self):
+    def test_model_suggestion_is_tentatively_labeled_and_reviewable_with_compact_provenance(self):
         client = RecordingModelClient({
             "labels": ["personal", "reply-needed"],
             "confidence": "medium",
@@ -71,8 +71,8 @@ class GmailInitialClassifierTests(unittest.TestCase):
         result = classifier.classify_messages("founder-test-batch-1", [self.message()])
 
         item = result["items"][0]
-        self.assertEqual(item["applied_labels"], [])
-        self.assertEqual(item["near_misses"], ["personal", "reply-needed"])
+        self.assertEqual(item["applied_labels"], ["personal", "reply-needed"])
+        self.assertEqual(item["near_misses"], [])
         self.assertEqual(item["review_state"], "pending")
         self.assertEqual(item["interpretation"], "A person appears to expect a response.")
         self.assertEqual(item["decision_provenance"], {
@@ -109,7 +109,7 @@ class GmailInitialClassifierTests(unittest.TestCase):
         self.assertFalse(item["decision_provenance"]["llm_used"])
         self.assertEqual(client.payloads, [])
 
-    def test_model_abstention_and_failure_remain_pending(self):
+    def test_low_confidence_model_best_guess_is_labeled_while_failure_remains_unlabeled(self):
         abstaining = ReviewOnlyModelAssistedClassifier(RecordingModelClient({
             "labels": ["personal"],
             "confidence": "low",
@@ -123,7 +123,7 @@ class GmailInitialClassifierTests(unittest.TestCase):
         abstained_item = abstaining.classify_messages("batch-1", [self.message()])["items"][0]
         failed_item = failed.classify_messages("batch-2", [self.message()])["items"][0]
 
-        self.assertEqual(abstained_item["applied_labels"], [])
+        self.assertEqual(abstained_item["applied_labels"], ["personal"])
         self.assertEqual(abstained_item["near_misses"], [])
         self.assertTrue(abstained_item["decision_provenance"]["llm_abstained"])
         self.assertEqual(failed_item["applied_labels"], [])
@@ -160,7 +160,7 @@ class GmailInitialClassifierTests(unittest.TestCase):
         self.assertIsInstance(classifier, ReviewOnlyModelAssistedClassifier)
         self.assertEqual(status, {"state": "ready", "model": "test-model"})
 
-    def test_daily_run_persists_model_suggestion_but_makes_zero_provider_writes(self):
+    def test_daily_run_applies_model_suggestion_but_keeps_it_pending_for_review(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
             client = ReadRecordingGmailClient({
@@ -190,16 +190,18 @@ class GmailInitialClassifierTests(unittest.TestCase):
                 classifier=classifier,
             )
 
-            self.assertEqual(result.label_write_count, 0)
+            self.assertEqual(result.label_write_count, 1)
             self.assertEqual(result.inbox_removal_count, 0)
-            self.assertEqual(len(result.unlabeled_exceptions), 1)
-            item = result.unlabeled_exceptions[0]
-            self.assertEqual(item["near_misses"], ["personal"])
+            self.assertEqual(result.unlabeled_exceptions, [])
+            item = json.loads((storage_dir / "batches" / f"{result.batch_id}.json").read_text())["items"][0]
+            self.assertEqual(item["applied_labels"], ["personal"])
+            self.assertEqual(item["review_state"], "pending")
+            self.assertEqual(item["review_action"], "model-auto-label")
             self.assertEqual(item["decision_provenance"]["llm_model"], "test-model")
             self.assertEqual(len(classifier._model_client.payloads), 1)
             self.assertEqual(
                 [call[0] for call in client.calls],
-                ["list_messages", "get_message"],
+                ["list_messages", "get_message", "get_or_create_label", "replace_threadwise_labels"],
             )
 
     def test_runtime_queue_preserves_model_suggestion_during_deterministic_refresh(self):

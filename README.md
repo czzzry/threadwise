@@ -87,7 +87,7 @@ Key choices:
 
 - **Local-first artifacts:** fetched messages, review decisions, reports, write status, and teaching memory are stored locally so every current action can be inspected. Historical unsubscribe artifacts remain preserved locally but are not exposed as product actions.
 - **Provider adapters, not a generic platform:** Gmail remains the primary write-capable release target. ProtonMail has read paths plus one bounded label-only Bridge review action; broader provider behavior remains out of scope.
-- **Rules before model calls:** deterministic classification and accepted teaching memory run first. OpenAI Chat Completions are available for explicitly configured review-only initial suggestions and optional evaluation/runtime-cascade paths, but the product does not depend on silent model autonomy for every action.
+- **Rules before model calls:** deterministic classification and accepted teaching memory run first. The explicitly configured OpenAI model supplies a best-guess label for deterministic misses; uncertain labels stay visible for review instead of leaving ordinary mail unlabeled.
 - **A browser companion as the product surface:** the sidebar sits next to Gmail so correction happens where the user sees the mistake.
 - **Explicit mutation gates:** label write-back and limited `INBOX` removal are bounded. Broader rewrites require preview and user approval; unsubscribe execution and destructive suspicious-sender actions are unavailable.
 - **Demo data is deterministic:** the hosted interaction runs entirely on browser-local synthetic data, needs no setup, and cannot expose a private inbox.

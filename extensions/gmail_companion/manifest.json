@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Threadwise Companion",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "Shows the same Threadwise companion inside Gmail and Proton Mail.",
   "permissions": [
     "tabs",
@@ -39,6 +39,7 @@
   "web_accessible_resources": [
     {
       "resources": [
+        "assets/brand/threadwise-app-mark.png",
         "assets/brand/threadwise-app-icon.png"
       ],
       "matches": [

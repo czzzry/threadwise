@@ -128,7 +128,7 @@ async function probeHealth() {
 }
 
 function apiTimeoutMs(path) {
-  if (path === "/api/gmail-coverage-check" || path === "/api/gmail-check-run" || path === "/api/provider-sync-run") {
+  if (path === "/api/provider-coverage-check" || path === "/api/gmail-coverage-check" || path === "/api/gmail-check-run" || path === "/api/provider-sync-run") {
     return PROVIDER_SYNC_TIMEOUT_MS;
   }
   if (path === "/api/teach-apply") {

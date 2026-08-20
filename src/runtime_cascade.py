@@ -38,7 +38,9 @@ class OpenAIRuntimeCascadeClient:
                     "content": (
                         "You classify one email using a bounded label taxonomy and optional prior memory. "
                         "Return strict JSON with keys labels, confidence, rationale, unresolved. "
-                        "labels must contain 0 to 3 values from: personal, receipt-billing, account-security, "
+                        "Choose the best 1 to 3 labels even when confidence is low; uncertainty belongs in "
+                        "confidence and unresolved, not an empty label list. labels must contain values from: "
+                        "personal, receipt-billing, account-security, "
                         "travel, shopping-order, spam-low-value, promotions, newsletter, job-related, "
                         "financial-account, reply-needed, calendar-event. "
                         "Set unresolved to true when the email should stay for human follow-up."

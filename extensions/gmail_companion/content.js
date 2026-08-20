@@ -40,11 +40,11 @@
   if (!COVERAGE) {
     throw new Error("Threadwise coverage module did not load.");
   }
-  const BRAND_ICON_URL = chrome.runtime.getURL("assets/brand/threadwise-app-icon.png");
+  const BRAND_ICON_URL = chrome.runtime.getURL("assets/brand/threadwise-app-mark.png");
   const ACTIVE_PROVIDER = PROVIDER.id;
   const PANEL_WIDTH = "408px";
   const PANEL_WIDTH_EXPANDED = "min(920px, calc(100vw - 84px))";
-  const PANEL_WIDTH_MINIMIZED = "70px";
+  const PANEL_WIDTH_MINIMIZED = "40px";
   const REFRESH_INTERVAL_MS = 5000;
   const PROGRESSION_REFRESH_INTERVAL_MS = 1000;
   const UNDERSTANDING_REFRESH_INTERVAL_MS = 400;
@@ -653,19 +653,44 @@
           color: var(--tw-ink) !important;
         }
         #${ROOT_ID}[data-ea-minimized="true"] #ea-panel {
+          width: 40px !important;
+          min-width: 40px !important;
+          max-width: 40px !important;
+          height: 40px !important;
+          flex: 0 0 40px !important;
+          overflow: visible !important;
           border-color: transparent !important;
           background: transparent !important;
           box-shadow: none !important;
         }
+        #${ROOT_ID}[data-ea-minimized="true"] {
+          min-width: 40px !important;
+          max-width: 40px !important;
+          overflow: visible !important;
+        }
         #${ROOT_ID}[data-ea-minimized="true"] #ea-header {
-          height: 48px !important;
-          grid-template-columns: 28px !important;
+          width: 40px !important;
+          height: 40px !important;
+          min-height: 40px !important;
+          flex: 0 0 40px !important;
+          grid-template-columns: 40px !important;
           justify-content: center;
-          padding: 10px !important;
+          padding: 0 !important;
           border: 0 !important;
-          border-radius: 12px;
-          background: var(--tw-surface) !important;
-          box-shadow: 0 2px 6px rgba(31,35,40,.12) !important;
+          border-radius: 10px !important;
+          background: transparent !important;
+          box-shadow: none !important;
+        }
+        #${ROOT_ID}[data-ea-minimized="true"] #ea-header > div:first-child,
+        #${ROOT_ID}[data-ea-minimized="true"] #ea-brand-toggle {
+          width: 40px !important;
+          height: 40px !important;
+        }
+        #${ROOT_ID}[data-ea-minimized="true"] #ea-brand-toggle {
+          border-radius: 10px !important;
+        }
+        #${ROOT_ID}[data-ea-minimized="true"] #ea-brand-toggle:hover {
+          background: transparent !important;
         }
         @media (min-width: 481px) and (max-height: 520px) {
           #${ROOT_ID}:not([data-ea-minimized="true"]) {
@@ -801,7 +826,7 @@
         <div id="ea-header" style="height:52px;display:grid;grid-template-columns:28px minmax(0,1fr) 30px;align-items:center;gap:10px;padding:0 14px;border-bottom:1px solid #e2e5e9;background:#fff;">
           <div style="display:flex;align-items:center;gap:10px;min-width:0;">
             <button id="ea-brand-toggle" type="button" aria-label="Open Threadwise Home" title="Open Threadwise" style="position:relative;width:28px;height:28px;border-radius:7px;border:0;flex:0 0 auto;background:transparent;padding:0;cursor:pointer;overflow:hidden;">
-              <img src="${BRAND_ICON_URL}" alt="" aria-hidden="true" data-ea-brand-img="true" style="width:100%;height:100%;display:block;object-fit:cover;background:#fff;">
+              <img src="${BRAND_ICON_URL}" alt="" aria-hidden="true" data-ea-brand-img="true" style="width:100%;height:100%;display:block;object-fit:contain;background:transparent;">
             </button>
           </div>
           <div style="display:flex;align-items:center;gap:10px;min-width:0;">
@@ -875,7 +900,7 @@
     }
     root.style.width = minimized ? PANEL_WIDTH_MINIMIZED : (affectedReviewOpen ? PANEL_WIDTH_EXPANDED : PANEL_WIDTH);
     header.style.gridTemplateColumns = minimized ? "1fr" : "28px minmax(0, 1fr) 30px";
-    header.style.padding = minimized ? "10px" : "0 14px";
+    header.style.padding = minimized ? "0" : "0 14px";
     header.style.borderBottom = minimized ? "0" : "1px solid #e2e5e9";
     button.style.setProperty("display", minimized ? "none" : "grid", "important");
     if (headerCopy) {
@@ -2854,19 +2879,21 @@
   }
 
   function coverageSummary(model) {
-    if (model.status === "unknown") return "Threadwise handled the email you opened. Check Gmail before judging the wider review queue.";
-    if (model.status === "checking") return "Reading current Gmail Inbox membership. No labels, archive actions, or other provider changes can run.";
+    if (model.status === "unknown") return "Threadwise handled the email you opened. Check your inbox before judging the wider review queue.";
+    if (model.status === "checking") return `Reading current ${activeProviderName()} Inbox membership. No labels, archive actions, or other provider changes can run.`;
     if (model.status === "queue-ready") return `Threadwise checked ${model.checked_count} current Inbox message${model.checked_count === 1 ? "" : "s"}. Only the messages needing a decision entered this queue.`;
     if (model.status === "verified-clear") return `Threadwise freshly checked ${model.checked_count} current Inbox message${model.checked_count === 1 ? "" : "s"}. None need your judgment.`;
+    if (model.status === "partial" && model.requires_sync_count) return `${model.requires_sync_count} current Inbox message${model.requires_sync_count === 1 ? " has" : "s have"} not completed a Threadwise classification run. Update the inbox to classify and label ${model.requires_sync_count === 1 ? "it" : "them"}.`;
     if (model.status === "partial") return `Threadwise checked ${model.checked_count} of ${model.candidate_count || model.checked_count} messages in the stated scope. This is not a clear result.`;
-    if (model.status === "stale") return "Gmail may have changed since the last check. The previous queue result is no longer authoritative.";
+    if (model.status === "stale") return "Your inbox may have changed since the last check. The previous queue result is no longer authoritative.";
     if (model.status === "offline") return "The handled email is saved, but Threadwise cannot verify the wider queue while the companion is offline.";
-    return model.error || "Threadwise could not finish the read-only Gmail check. No queue-clear claim is available.";
+    return model.error || "Threadwise could not finish the read-only inbox check. No queue-clear claim is available.";
   }
 
   function coverageActionKind(model) {
     if (model.status === "queue-ready") return "coverage-review";
     if (model.status === "verified-clear") return "coverage-back";
+    if (model.status === "partial" && model.requires_sync_count) return "coverage-sync";
     return "coverage-check";
   }
 
@@ -2876,9 +2903,9 @@
       ? `${model.checked_count} of ${model.candidate_count}`
       : model.facts.checked;
     const indicator = model.indicator === "indeterminate"
-      ? '<div data-ea-coverage-indicator="indeterminate" role="progressbar" aria-label="Checking Gmail coverage" style="height:3px;overflow:hidden;border-radius:999px;background:#ecebff;"><div style="width:42%;height:100%;border-radius:999px;background:#635bff;animation:ea-coverage-slide 1.1s ease-in-out infinite;"></div></div>'
+      ? '<div data-ea-coverage-indicator="indeterminate" role="progressbar" aria-label="Checking inbox coverage" style="height:3px;overflow:hidden;border-radius:999px;background:#ecebff;"><div style="width:42%;height:100%;border-radius:999px;background:#635bff;animation:ea-coverage-slide 1.1s ease-in-out infinite;"></div></div>'
       : model.indicator === "determinate"
-        ? `<div data-ea-coverage-indicator="determinate" role="progressbar" aria-label="Gmail coverage checked" aria-valuemin="0" aria-valuemax="${Math.max(1, model.candidate_count)}" aria-valuenow="${model.checked_count}" style="height:3px;overflow:hidden;border-radius:999px;background:#ecebff;"><div style="width:${Math.min(100, Math.round((model.checked_count / Math.max(1, model.candidate_count)) * 100))}%;height:100%;border-radius:999px;background:#635bff;"></div></div>`
+        ? `<div data-ea-coverage-indicator="determinate" role="progressbar" aria-label="Inbox coverage checked" aria-valuemin="0" aria-valuemax="${Math.max(1, model.candidate_count)}" aria-valuenow="${model.checked_count}" style="height:3px;overflow:hidden;border-radius:999px;background:#ecebff;"><div style="width:${Math.min(100, Math.round((model.checked_count / Math.max(1, model.candidate_count)) * 100))}%;height:100%;border-radius:999px;background:#635bff;"></div></div>`
         : "";
     const nextItem = model.review_items[0] || null;
     const nextHtml = model.status === "queue-ready" && nextItem
@@ -2888,7 +2915,7 @@
       ? `<button type="button" data-ea-action="${model.secondary.startsWith("Review") ? "coverage-review" : model.secondary === "Details" ? "coverage-details" : "coverage-check"}" style="border:0;background:transparent;color:#5f5a78;padding:7px 2px;cursor:pointer;font:inherit;font-size:.78rem;font-weight:720;">${escapeHtml(model.secondary)}</button>`
       : "";
     const details = coverageDetailsOpen
-      ? `<div data-ea-coverage-details style="border-top:1px solid #e2e5e9;padding-top:9px;color:#6b6255;font-size:.73rem;line-height:1.45;"><div>Coverage: ${escapeHtml(model.scope)}</div><div>Queue: ${model.status === "verified-clear" ? "Freshly verified" : model.status === "queue-ready" ? "Freshly built" : "Not verified clear"}</div><div>Provider changes: None · read-only check</div></div>`
+      ? `<div data-ea-coverage-details style="border-top:1px solid #e2e5e9;padding-top:9px;color:#6b6255;font-size:.73rem;line-height:1.45;"><div>Coverage: ${escapeHtml(model.scope)}</div><div>Queue: ${model.status === "verified-clear" ? "Freshly verified" : model.status === "queue-ready" ? "Freshly built" : "Not verified clear"}</div><div>${model.requires_sync_count ? "Update inbox will classify and apply Threadwise labels." : "Provider changes: None · read-only check"}</div></div>`
       : "";
     return `
       <section data-ea-coverage-state="${escapeHtml(model.status)}" aria-live="polite" style="display:grid;gap:10px;color:#1f2328;">
@@ -3281,21 +3308,21 @@
         `<option value="${escapeHtml(option.id)}"${option.id === currentLabel ? " selected" : ""}>${escapeHtml(decisionLabelName(option.id))}</option>`,
       ).join("");
       setHtml(selectedEmailNode, `
-        <div data-ea-selected-state="change" style="display:grid;gap:12px;margin-top:10px;">
+        <div data-ea-selected-state="change" style="display:grid;gap:10px;padding:16px;">
           <div>
-            <div style="font-size:1.3rem;font-weight:840;line-height:1.15;">What should this email be?</div>
-            <div style="margin-top:6px;color:#6b6255;font-size:0.88rem;overflow-wrap:anywhere;">${escapeHtml(selected.subject || "(no subject)")}</div>
+            <div style="font-size:1rem;font-weight:760;line-height:1.25;">What should this email be?</div>
+            <div style="margin-top:4px;color:#60666f;font-size:.78rem;line-height:1.35;overflow-wrap:anywhere;">${escapeHtml(selected.subject || "(no subject)")}</div>
           </div>
-          <label style="display:grid;gap:6px;font-weight:760;">Tell Threadwise what this should be
-            <textarea id="ea-teach-note" rows="3" placeholder="For example: LowValue welcome email — I don't care about these" style="box-sizing:border-box;width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(36,24,18,.32);background:#fffdf7;color:#241812;font:inherit;resize:vertical;">${escapeHtml(teachDraft.note)}</textarea>
+          <label style="display:grid;gap:5px;color:#1f2328;font-size:.8rem;font-weight:680;">Tell Threadwise what should change
+            <textarea id="ea-teach-note" rows="3" placeholder="For example: This is a LowValue welcome email." style="box-sizing:border-box;width:100%;min-height:84px;padding:9px 10px;border-radius:8px;border:1px solid #cdd2d8;background:#fff;color:#1f2328;font:inherit;font-size:.8rem;line-height:1.4;resize:vertical;">${escapeHtml(teachDraft.note)}</textarea>
           </label>
-          <div style="margin-top:-4px;color:#6b6255;font-size:0.82rem;line-height:1.4;">A clear label in your instruction takes priority over Threadwise's current guess.</div>
-          <label style="display:grid;gap:6px;font-weight:760;">Manual label override (optional)
-            <select id="ea-target-label" style="box-sizing:border-box;width:100%;min-height:44px;padding:10px 12px;border-radius:10px;border:1px solid rgba(36,24,18,.32);background:#fffdf7;color:#241812;font:inherit;"><option value="">Use my instruction</option>${labelOptions}</select>
+          <div style="margin-top:-3px;color:#60666f;font-size:.72rem;line-height:1.4;">A label named in your note takes priority over the current suggestion.</div>
+          <label style="display:grid;gap:5px;color:#1f2328;font-size:.8rem;font-weight:680;">Label override <span style="color:#7b8088;font-weight:500;">(optional)</span>
+            <select id="ea-target-label" style="box-sizing:border-box;width:100%;height:40px;padding:0 10px;border-radius:8px;border:1px solid #cdd2d8;background:#fff;color:#1f2328;font:inherit;font-size:.8rem;"><option value="">Use my instruction</option>${labelOptions}</select>
           </label>
-          ${selectedDecisionConflict ? `<div data-ea-label-conflict role="alert" style="border-radius:14px;background:#fde8e6;padding:12px;color:#7f1d1d;line-height:1.45;">${escapeHtml(selectedDecisionConflict)}</div>` : ""}
-          <div style="display:grid;gap:9px;">
-            <button type="button" data-ea-action="preview-current-change" data-tw-primary-action style="min-height:44px;border:2px solid #241812;background:#2eb67d;color:#241812;border-radius:11px;padding:9px 12px;cursor:pointer;font:inherit;font-weight:800;box-shadow:3px 3px 0 #241812;">Preview change</button>
+          ${selectedDecisionConflict ? `<div data-ea-label-conflict role="alert" style="border-radius:8px;background:#fde8e6;padding:10px;color:#8a241a;font-size:.76rem;line-height:1.4;">${escapeHtml(selectedDecisionConflict)}</div>` : ""}
+          <div style="display:grid;gap:8px;margin-top:2px;">
+            <button type="button" data-ea-action="preview-current-change" data-tw-primary-action style="height:40px;border:0;background:#635bff;color:#fff;border-radius:8px;padding:0 12px;cursor:pointer;font:inherit;font-size:.8rem;font-weight:680;">Preview change</button>
           </div>
         </div>
       `);
@@ -3309,13 +3336,13 @@
           ? renderTeachResultHtml(teachResult)
           : renderTeachResultHtml(teachPendingResult("preview"));
       setHtml(selectedEmailNode, `
-        <div data-ea-selected-state="teach-preview" style="display:grid;gap:12px;margin-top:10px;">
+        <div data-ea-selected-state="teach-preview" style="display:grid;gap:10px;padding:16px;">
           <div>
-            <div style="font-size:1.3rem;font-weight:840;line-height:1.15;">Change this email to ${escapeHtml(label)}</div>
-            <div style="margin-top:6px;color:#6b6255;font-size:0.88rem;overflow-wrap:anywhere;">${escapeHtml(selected.subject || "(no subject)")}</div>
+            <div style="font-size:1rem;font-weight:760;line-height:1.25;">Change this email to ${escapeHtml(label)}</div>
+            <div style="margin-top:4px;color:#60666f;font-size:.78rem;line-height:1.35;overflow-wrap:anywhere;">${escapeHtml(selected.subject || "(no subject)")}</div>
           </div>
-          <div style="color:#6b6255;font-size:0.82rem;line-height:1.4;">Opening the email preserves the current correction draft.</div>
-          <div style="border-radius:14px;background:#f5efe2;padding:12px;color:#1f1a14;line-height:1.45;">This keeps the simple current-email change, and also lets you choose whether the lesson should apply to future or matching inbox emails.</div>
+          <div style="color:#60666f;font-size:.72rem;line-height:1.4;">Opening the email preserves the current correction draft.</div>
+          <div style="border-radius:8px;background:#f6f7f9;padding:10px;color:#1f2328;font-size:.76rem;line-height:1.42;">Choose whether this change applies only here, to future matching mail, or to matching mail already in the inbox.</div>
           ${learningPreviewHtml}
         </div>
       `);
@@ -5373,8 +5400,8 @@
     const quietDock = workspaceMode === "review";
     setHtml(host, `
       <div data-ea-context-actions-surface style="display:grid;gap:0;margin-top:14px;">
-        <button type="button" data-ea-context-trigger aria-haspopup="menu" aria-expanded="${contextActionsOpen ? "true" : "false"}" aria-controls="ea-context-menu" aria-label="Open contextual actions" title="Actions (.)" style="display:inline-flex;align-items:center;justify-content:${quietDock ? "center" : "space-between"};gap:10px;min-height:44px;width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid rgba(36,24,18,.24);border-radius:9px;background:#fffdf7;color:#241812;cursor:pointer;font:inherit;font-weight:800;">
-          ${quietDock ? '<span aria-hidden="true">⋯</span>' : '<span>Actions</span><span aria-hidden="true" style="color:#6b6255;font-size:.82rem;">· .</span>'}
+        <button type="button" data-ea-context-trigger aria-haspopup="menu" aria-expanded="${contextActionsOpen ? "true" : "false"}" aria-controls="ea-context-menu" aria-label="Open contextual actions" title="Actions (.)" style="display:inline-flex;align-items:center;justify-content:${quietDock ? "center" : "space-between"};gap:8px;height:40px;width:100%;box-sizing:border-box;padding:0 10px;border:1px solid #e2e5e9;border-radius:8px;background:#fff;color:#1f2328;cursor:pointer;font:inherit;font-size:.8rem;font-weight:650;">
+          ${quietDock ? '<span aria-hidden="true">⋯</span>' : '<span>Actions</span><span aria-hidden="true" style="color:#7b8088;font-size:.72rem;">· .</span>'}
         </button>
       </div>
     `);
@@ -5641,6 +5668,11 @@
     if (coverageReviewButton) {
       event.preventDefault();
       return openCoverageQueue();
+    }
+    const coverageSyncButton = event.target.closest("[data-ea-action='coverage-sync']");
+    if (coverageSyncButton) {
+      event.preventDefault();
+      return triggerProviderSync({ refreshCoverageAfter: true });
     }
     const coverageBackButton = event.target.closest("[data-ea-action='coverage-back']");
     if (coverageBackButton) {
@@ -6839,7 +6871,7 @@
   }
 
   function startCoverageCheck() {
-    if (coverageCheckInFlight || ACTIVE_PROVIDER !== "gmail") {
+    if (coverageCheckInFlight) {
       return false;
     }
     coverageCheckInFlight = true;
@@ -6848,9 +6880,9 @@
     renderState(lastHarnessState || lastSidebarState);
     chrome.runtime.sendMessage({
       type: "email-agent:api",
-      path: "/api/gmail-coverage-check",
+      path: "/api/provider-coverage-check",
       method: "POST",
-      body: { provider: "gmail" },
+      body: { provider: ACTIVE_PROVIDER },
     }, (response) => {
       coverageCheckInFlight = false;
       const connectionKind = response?.connection_state?.kind || "";
@@ -6860,7 +6892,7 @@
           status: connectionKind && connectionKind !== "ready" ? "offline" : "failed",
           previous_status: coverageState.previous_status || "",
           error: friendlyErrorMessage(
-            chrome.runtime.lastError?.message || response?.payload?.error || response?.error || "Could not check Gmail.",
+            chrome.runtime.lastError?.message || response?.payload?.error || response?.error || "Could not check inbox.",
           ),
         });
         renderState(lastHarnessState || lastSidebarState);
@@ -6881,7 +6913,7 @@
     activeSummaryFilter = "needs_attention_items";
     forcedHome = false;
     if (coverageSyntheticNavigation) {
-      return openItemPreview(items[0], { queueContext: false, origin: "gmail_coverage" });
+      return openItemPreview(items[0], { queueContext: false, origin: "provider_coverage" });
     }
     manualPreviewContext = null;
     manualPreviewOriginContext = null;
@@ -6892,7 +6924,7 @@
     return true;
   }
 
-  function triggerProviderSync() {
+  function triggerProviderSync({ refreshCoverageAfter = false } = {}) {
     if (gmailCheckPending) {
       return;
     }
@@ -6946,6 +6978,9 @@
       };
       previousPayload = "";
       refreshSelection(true);
+      if (refreshCoverageAfter) {
+        window.setTimeout(() => startCoverageCheck(), 250);
+      }
     });
   }
 

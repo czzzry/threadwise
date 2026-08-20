@@ -102,6 +102,7 @@ class CompanionRuntimeStateTests(unittest.TestCase):
                 self.assertIsNone(
                     build_runtime.call_args.kwargs["allowed_review_message_ids"]
                 )
+                self.assertFalse(build_runtime.call_args.kwargs["refresh_pending"])
 
                 queued[0]()
                 runtime.runtime_payload()
@@ -111,6 +112,7 @@ class CompanionRuntimeStateTests(unittest.TestCase):
                 build_runtime.call_args.kwargs["allowed_review_message_ids"],
                 {"still-in-inbox"},
             )
+            self.assertFalse(build_runtime.call_args.kwargs["refresh_pending"])
 
     def test_failed_live_inbox_reconciliation_does_not_block_first_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -168,6 +170,7 @@ class CompanionRuntimeStateTests(unittest.TestCase):
                 Path(temp_dir),
                 provider="gmail",
                 allowed_review_message_ids=None,
+                refresh_pending=False,
             )
 
     def test_reconciliation_finishing_during_first_build_cannot_cache_stale_queue(self) -> None:

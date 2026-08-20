@@ -1,7 +1,7 @@
 # CONTEXT.md
 
 Status: Current repo context
-Current as of: 2026-08-14
+Current as of: 2026-08-20
 
 This file is the short "you are here" guide for the repo.
 
@@ -35,11 +35,15 @@ Do not infer approval from `docs/v2-issue-map.md`, archived PRDs, or old handoff
 
 The founder has approved the Threadwise World-Class Triage Gauntlet in `docs/prd-threadwise-gauntlet-2026-08-09.md`. It preserves the existing Threadwise logo and Gmail-overlay architecture, excludes AI auto-response and writing, and uses Mail-0/Zero, Grammarly, Refined GitHub, Raycast, and Linear as the specified functionality and interaction bars.
 
-On 2026-08-11 the founder approved the real-Gmail Variant C production visual milestone and a truthful provider-coverage slice: a selected message or narrow local snapshot must never be presented as the whole inbox. Slice 7 is now complete in the main-landing candidate, including the explicit read-only `Check Gmail` refresh, a fresh-critic SHIP recommendation, the controlled-browser gate, and live Gmail verification. Selected-message handling and provider coverage remain separate axes, and coverage never routes through provider mutation behavior.
+On 2026-08-11 the founder approved the real-Gmail Variant C production visual milestone and a truthful provider-coverage slice: a selected message or narrow local snapshot must never be presented as the whole inbox. Slice 7 is complete, including an explicit read-only coverage refresh, controlled-browser acceptance, and live Gmail verification. On 2026-08-20 the action became the provider-neutral `Check inbox` and gained Proton Mail support. Selected-message handling and provider coverage remain separate axes, and coverage never routes through provider mutation behavior.
 
 The Gauntlet is decomposed in `docs/threadwise-gauntlet-slice-map-2026-08-09.md`. Implementation still proceeds one triaged vertical slice at a time. The first-run companion slice in issue `#105` is implemented and won its second independent critic round at `97/100`; see `docs/handoff/2026-08-09-threadwise-gauntlet-onboarding.md`. Queue-local search and panel-scoped keyboard navigation in issue `#106` is also complete: its fourth fresh critic declared a WIN at `85/100` versus the documented `~70/100` baseline after real focus, nonzero-scroll, and explicit-exit corrections. See `docs/handoff/2026-08-09-threadwise-gauntlet-queue-navigation.md`. The contextual action panel in issue `#107` is complete: its third fresh critic declared a WIN at `94/100`, approximately `+24` over baseline, after closed-loop scroll/focus and collision-aware placement corrections. See `docs/handoff/2026-08-09-threadwise-gauntlet-contextual-actions.md`. Selected-email explanation and one-click correction in issue `#108` is also complete: its first fresh critic declared a WIN at `87/100`, `+17` over baseline, with five of six tasks and all safety gates clear. See `docs/handoff/2026-08-09-threadwise-gauntlet-selected-email-explanation.md`. High-throughput review completion in issue `#109` is now complete: its final fresh critic declared a WIN at `96/100` versus the documented `~70/100` baseline after every direct and chained late-response boundary was anchored to the live provider, message, thread, URL, and route. See `docs/handoff/2026-08-09-threadwise-gauntlet-review-progression.md`.
 
-On 2026-08-12 the founder removed unsubscribe and the destructive suspicious-sender action from the core product. List-Unsubscribe remains only as a classification signal and `suspicious` remains a review label. The selected-email corrector now supports truthful one-to-three-label `only`, `add`, `remove`, and `replace` changes for the current email, executes the approved preview without a second model interpretation, and checks Gmail's live Threadwise-label baseline before replacement. Initial model-assisted labeling is explicitly configurable and review-only; its compact provenance is visible under Evidence and it never auto-writes model suggestions. The full automated suite passes (`842/842`, 16 skipped) both with the private model configuration present and with API keys deliberately removed. All companion JavaScript suites, the public demo, public-data hygiene, and six controlled-browser gauntlets pass.
+On 2026-08-12 the founder removed unsubscribe and the destructive suspicious-sender action from the core product. List-Unsubscribe remains only as a classification signal and `suspicious` remains a review label. The selected-email corrector supports truthful one-to-three-label `only`, `add`, `remove`, and `replace` changes for the current email, executes the approved preview without a second model interpretation, and checks Gmail's live Threadwise-label baseline before replacement.
+
+On 2026-08-20 the founder replaced the review-only model-write restriction with the always-label decision in `docs/decisions/always-label-successfully-processed-mail.md`. Every successfully processed message now receives Threadwise's best one-to-three labels in Gmail or Proton Mail. Low-confidence model decisions remain pending for review after the additive label write. Read-only coverage discoveries request a real classification sync and never create unlabeled review items; old coverage-only batches are excluded from runtime queues. Genuine model, provider-read, or provider-write failures remain visible operational exceptions rather than ordinary unlabeled review work.
+
+The current implementation passes 848 repository tests with 16 expected skips, all extension JavaScript behavior suites, public-data hygiene, and real browser click-throughs of the shared Proton coverage, sync, review, correction, and minimized states. The installed companion is healthy, its configured initial and teaching models are ready, Proton Mail Bridge is available, and the scheduled Proton entry point loads the same private model configuration as the companion.
 
 LIVE Gmail now passes on the founder's Mac with the production unpacked extension and local companion. The configured OpenAI model is available without exposing its key. A reversible exact-label correction was verified against Gmail and restored to its original label set. The explicit read-only coverage check completed in about 11 seconds, checked 72 current Inbox candidates, and produced a 64-item review queue without changing provider labels. The minimized state exposes one `Open Threadwise Home` control and preserves the queue count. See `docs/handoff/2026-08-12-core-flow-redesign-and-model-labeling.md`.
 
@@ -77,14 +81,15 @@ For the active Gauntlet direction and bounded slice, use:
 
 1. `docs/prd-threadwise-gauntlet-2026-08-09.md`
 2. `docs/threadwise-gauntlet-slice-map-2026-08-09.md`
-3. `docs/handoff/2026-08-12-core-flow-redesign-and-model-labeling.md` with issues `#139`, `#140`, and `#141` for the completed safety, exact-label correction, and review-only model-labeling amendments
-4. `docs/handoff/2026-08-09-threadwise-gauntlet-review-progression.md`, `docs/issues/109-make-optimistic-review-advancement-truthful.md`, and GitHub issue `#109` for the completed high-throughput review-completion slice
-5. `docs/handoff/2026-08-09-threadwise-gauntlet-selected-email-explanation.md`, `docs/issues/108-attach-truthful-explanation-and-one-click-correction.md`, and GitHub issue `#108` for the completed selected-email explanation slice
-6. `docs/handoff/2026-08-09-threadwise-gauntlet-contextual-actions.md`, `docs/issues/107-add-contextual-action-panel-to-companion.md`, and GitHub issue `#107` for the completed contextual-action slice
-7. `docs/handoff/2026-08-09-threadwise-gauntlet-queue-navigation.md`, `docs/issues/106-add-queue-filtering-and-panel-keyboard-navigation.md`, and GitHub issue `#106` for the completed queue-local interaction slice
-8. `docs/handoff/2026-08-09-threadwise-gauntlet-onboarding.md` and GitHub issue `#105` for the completed first-run onboarding slice
-9. `docs/v2-alignment.md`
-10. `docs/prd-universal-threadwise-experience-2026-08-01.md` for the shared-provider architecture and safety baseline
+3. `docs/decisions/always-label-successfully-processed-mail.md` for the current initial-label and review-queue contract
+4. `docs/handoff/2026-08-12-core-flow-redesign-and-model-labeling.md` with issues `#139`, `#140`, and `#141` for the completed safety, exact-label correction, and historical review-only model-labeling amendment
+5. `docs/handoff/2026-08-09-threadwise-gauntlet-review-progression.md`, `docs/issues/109-make-optimistic-review-advancement-truthful.md`, and GitHub issue `#109` for the completed high-throughput review-completion slice
+6. `docs/handoff/2026-08-09-threadwise-gauntlet-selected-email-explanation.md`, `docs/issues/108-attach-truthful-explanation-and-one-click-correction.md`, and GitHub issue `#108` for the completed selected-email explanation slice
+7. `docs/handoff/2026-08-09-threadwise-gauntlet-contextual-actions.md`, `docs/issues/107-add-contextual-action-panel-to-companion.md`, and GitHub issue `#107` for the completed contextual-action slice
+8. `docs/handoff/2026-08-09-threadwise-gauntlet-queue-navigation.md`, `docs/issues/106-add-queue-filtering-and-panel-keyboard-navigation.md`, and GitHub issue `#106` for the completed queue-local interaction slice
+9. `docs/handoff/2026-08-09-threadwise-gauntlet-onboarding.md` and GitHub issue `#105` for the completed first-run onboarding slice
+10. `docs/v2-alignment.md`
+11. `docs/prd-universal-threadwise-experience-2026-08-01.md` for the shared-provider architecture and safety baseline
 
 For the next provider-parity milestone, use:
 
@@ -134,7 +139,8 @@ Use this order:
 ## Current Trust Boundaries
 
 - Gmail mutation must stay bounded and auditable
-- ProtonMail daily runs add suggested `EA/` labels only for medium/high-confidence classifications, verify each through Bridge, and preserve Inbox; low-confidence, unlabeled, and failed-verification items remain in the review console. No label replacement, move, archive, Trash, Spam, send, or provider rule changes are allowed.
+- Gmail and Proton Mail runs add the best available Threadwise labels for every successfully processed message. Low-confidence decisions remain pending for review after the additive write. Genuine classification or verification failures are operational exceptions, not ordinary unlabeled queue items.
+- Proton Mail writes are verified through Bridge and preserve Inbox. No Proton label replacement, move, archive, Trash, Spam, send, or provider rule changes are allowed.
 - unsubscribe execution is not part of the current core product
 - broad autonomous inbox actions remain out of scope by default
 - private email, credentials, OAuth, and live inbox data remain sensitive

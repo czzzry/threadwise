@@ -784,6 +784,7 @@ def build_companion_runtime_payload(
     *,
     provider: str = "gmail",
     allowed_review_message_ids: set[str] | None = None,
+    refresh_pending: bool = True,
 ) -> dict:
     from src.gmail_batch_review_store import GmailBatchReviewStore
 
@@ -798,7 +799,12 @@ def build_companion_runtime_payload(
         if message_id in refreshed_items:
             return refreshed_items[message_id]
         labels = item.get("final_labels") or item.get("applied_labels") or []
-        if raw_message and not labels and item.get("review_state") != "reviewed":
+        if (
+            refresh_pending
+            and raw_message
+            and not labels
+            and item.get("review_state") != "reviewed"
+        ):
             refreshed_items[message_id] = review_store.refresh_pending_item(
                 batch,
                 item,
@@ -816,6 +822,8 @@ def build_companion_runtime_payload(
         for batch_path in recent_batch_paths:
             batch = load_json(batch_path)
             if (batch.get("provider") or "gmail") != provider:
+                continue
+            if batch.get("coverage_read_only") is True:
                 continue
             batch_id = batch.get("batch_id", "")
             write_status_map = load_json_or_default(write_status_path(storage_dir, batch_id), {})
@@ -845,6 +853,8 @@ def build_companion_runtime_payload(
         for batch_path in all_batch_paths:
             batch = load_json(batch_path)
             if (batch.get("provider") or "gmail") != provider:
+                continue
+            if batch.get("coverage_read_only") is True:
                 continue
             batch_id = batch.get("batch_id", "")
             write_status_map = load_json_or_default(write_status_path(storage_dir, batch_id), {})
@@ -911,10 +921,12 @@ def load_latest_batch(storage_dir: Path) -> dict | None:
     batches_dir = storage_dir / "batches"
     if not batches_dir.exists():
         return None
-    matches = sorted(batches_dir.glob("*.json"), key=artifact_path_sort_key)
-    if not matches:
-        return None
-    return load_json(matches[-1])
+    matches = sorted(batches_dir.glob("*.json"), key=artifact_path_sort_key, reverse=True)
+    for match in matches:
+        batch = load_json(match)
+        if batch.get("coverage_read_only") is not True:
+            return batch
+    return None
 
 def find_matching_item(storage_dir: Path, selected_context: dict) -> dict | None:
     message_id = selected_context.get("message_id") or ""
@@ -927,6 +939,8 @@ def find_matching_item(storage_dir: Path, selected_context: dict) -> dict | None
     for batch_path in sorted(batches_dir.glob("*.json"), key=artifact_path_sort_key, reverse=True):
         batch = load_json(batch_path)
         if selected_provider and (batch.get("provider") or "gmail") != selected_provider:
+            continue
+        if batch.get("coverage_read_only") is True:
             continue
         raw_messages = {message.get("id"): message for message in batch.get("raw_messages", [])}
         for item in batch.get("items", []):

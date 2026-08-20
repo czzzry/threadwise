@@ -153,7 +153,7 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertEqual(queue["amazon-security"]["suggested_label"], "account-security")
             self.assertNotEqual(queue["amazon-prime-welcome"]["suggested_label"], "shopping-order")
 
-    def test_selected_email_uses_the_same_refreshed_classification_as_review_queue(self) -> None:
+    def test_selected_email_uses_the_same_stored_classification_as_review_queue(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_dir = Path(temp_dir)
             raw_message = {
@@ -180,8 +180,9 @@ class GmailCompanionUiTests(unittest.TestCase):
                         "sender": "Piotr from BAD AXE <badaxe@badaxe.pl>",
                         "subject": "Wizyta BAD AXE",
                         "review_state": "pending",
-                        "final_labels": [],
-                        "applied_labels": [],
+                        "final_labels": ["calendar-event"],
+                        "applied_labels": ["calendar-event"],
+                        "interpretation": "Calendar event from the stored daily classification.",
                     }
                 ],
                 [raw_message],
@@ -197,8 +198,7 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertEqual(selected["internal_label"], queue_item["internal_label"])
             self.assertEqual(selected["classification"], queue_item["classification"])
             self.assertEqual(selected["suggested_label"], queue_item["suggested_label"])
-            self.assertIn("EA/Calendar", selected["reason"])
-            self.assertNotIn("no confident category", selected["reason"])
+            self.assertEqual(selected["reason"], "Calendar event from the stored daily classification.")
 
     def test_live_review_queue_excludes_locally_stale_messages_no_longer_in_gmail_inbox(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1245,7 +1245,9 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("Broader rule candidate:", content_js)
         self.assertIn("Saved locally for review.", content_js)
         self.assertIn('let minimized = true;', content_js)
-        self.assertIn('PANEL_WIDTH_MINIMIZED = "70px"', content_js)
+        self.assertIn('PANEL_WIDTH_MINIMIZED = "40px"', content_js)
+        self.assertIn("min-width: 40px !important", content_js)
+        self.assertIn("max-width: 40px !important", content_js)
         self.assertIn('id="ea-brand-toggle"', content_js)
         self.assertIn('addEventListener("click", handleBrandToggle)', content_js)
         self.assertIn("function handleBrandToggle", content_js)
@@ -1265,7 +1267,7 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("#ea-panel [data-tw-primary-action]", content_js)
         self.assertIn(":focus-visible", content_js)
         self.assertIn('id="ea-header-tagline"', content_js)
-        self.assertIn('chrome.runtime.getURL("assets/brand/threadwise-app-icon.png")', content_js)
+        self.assertIn('chrome.runtime.getURL("assets/brand/threadwise-app-mark.png")', content_js)
         self.assertIn("open Threadwise", content_js)
         self.assertIn("Check again", content_js)
         self.assertIn("`Running ${activeProviderName()} sync...`", content_js)
@@ -1408,7 +1410,7 @@ class GmailCompanionUiTests(unittest.TestCase):
         self.assertIn("Open daily dashboard", content_js)
         manifest = json.loads((repo_root / "extensions" / "gmail_companion" / "manifest.json").read_text())
         self.assertIn("web_accessible_resources", manifest)
-        self.assertIn("assets/brand/threadwise-app-icon.png", manifest["web_accessible_resources"][0]["resources"])
+        self.assertIn("assets/brand/threadwise-app-mark.png", manifest["web_accessible_resources"][0]["resources"])
 
     def test_empty_home_does_not_offer_repeated_sync_as_the_primary_action(self) -> None:
         content_js = (Path(__file__).parent.parent / "extensions" / "gmail_companion" / "content.js").read_text()
@@ -1458,7 +1460,7 @@ class GmailCompanionUiTests(unittest.TestCase):
         manifest = json.loads((repo_root / "extensions" / "gmail_companion" / "manifest.json").read_text())
         background_js = (repo_root / "extensions" / "gmail_companion" / "background.js").read_text()
 
-        self.assertEqual(manifest["version"], "0.3.4")
+        self.assertEqual(manifest["version"], "0.3.5")
         self.assertIn("threadwise_active_extension_version", background_js)
         self.assertIn("chrome.runtime.getManifest().version", background_js)
         self.assertIn('"https://mail.google.com/*", "https://mail.proton.me/*"', background_js)
@@ -2670,6 +2672,41 @@ class GmailCompanionUiTests(unittest.TestCase):
             self.assertEqual(service.calls, ["founder-test"])
             self.assertEqual(payload["status"], "verified-clear")
             self.assertEqual(payload["gmail_mutation"], "none")
+
+    def test_provider_coverage_endpoint_dispatches_proton_read_only_check(self) -> None:
+        class ProtonCoverageConsole:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def check_coverage(self) -> dict:
+                self.calls += 1
+                return {
+                    "status": "queue-ready",
+                    "provider": "protonmail",
+                    "checked_count": 15,
+                    "needs_review_count": 2,
+                    "provider_mutation": "none",
+                }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            console = ProtonCoverageConsole()
+            app = GmailCompanionApp(
+                Path(temp_dir),
+                proton_review_console=console,
+            )
+            handler = _FakeRequestHandler(
+                "/api/provider-coverage-check",
+                method="POST",
+                json_body={"provider": "protonmail"},
+            )
+
+            app.handle_request(handler)
+            payload = json.loads(handler.wfile.value.decode("utf-8"))
+
+            self.assertEqual(handler.code, 200)
+            self.assertEqual(console.calls, 1)
+            self.assertEqual(payload["provider"], "protonmail")
+            self.assertEqual(payload["provider_mutation"], "none")
 
     def test_attention_rule_proposal_endpoints_preview_and_approve_without_gmail_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -1,7 +1,8 @@
 # Issue 141 — Wire review-only model-assisted initial labeling
 
-Status: Complete; automated and real-model LIVE acceptance passed
-Current as of: 2026-08-13
+Status: Complete; write restriction superseded by founder decision on 2026-08-20
+Current as of: 2026-08-20
+Superseded by: `docs/decisions/always-label-successfully-processed-mail.md`
 Approved by: Founder, 2026-08-12
 Parent direction: `docs/prd-threadwise-gauntlet-2026-08-09.md`
 
@@ -14,6 +15,8 @@ The production Gmail companion currently starts with only the deterministic fixt
 Add an explicitly configured model-assisted classifier at the existing Gmail batch-classifier seam. Preserve deterministic classification as the no-model default. Persist a compact decision provenance record and show it under progressive disclosure in the selected-email review surface.
 
 Model-generated initial suggestions remain pending for human review and must not auto-write Gmail in this slice. The read-only `Check Gmail` coverage service remains model-free.
+
+The no-write sentence above records this issue's historical boundary. The current product applies the model's tentative labels while preserving the pending review state; see the superseding decision.
 
 ## Acceptance criteria
 

@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -8,6 +9,7 @@ from typing import TextIO
 from src.cli_paths import resolve_optional_path, resolve_path
 from src.daily_report import build_protonmail_daily_report, suggested_label_counts, write_daily_report
 from src.fixture_classifier import CLASSIFIER_POLICY_VERSION, FixtureBatchClassifier
+from src.gmail_initial_classifier import configure_initial_classifier
 from src.label_taxonomy import gmail_label_name
 from src.live_protonmail_client import LiveProtonMailClient, SetupError
 from src.live_protonmail_fetch_cli import DEFAULT_CREDENTIALS_DIR, DEFAULT_STORAGE_DIR
@@ -53,6 +55,22 @@ def main(
     storage_dir.mkdir(parents=True, exist_ok=True)
     credentials_dir.mkdir(parents=True, exist_ok=True)
 
+    selected_model = str(os.environ.get("THREADWISE_CLASSIFICATION_MODEL") or "").strip()
+    classifier, classifier_status = configure_initial_classifier(
+        selected_model,
+        deterministic_classifier=FixtureBatchClassifier(
+            fixtures_dir=Path("."),
+            trusted_personal_senders=TrustedSenderStore(storage_dir).load_or_rebuild(),
+        ),
+    )
+    if selected_model and classifier is None:
+        reason = str(classifier_status.get("reason") or "configuration-unavailable")
+        error_output.write(
+            "Threadwise model classification is not ready "
+            f"({reason}). Check the private API configuration before the Proton run.\n"
+        )
+        return 2
+
     protonmail_client_factory = protonmail_client_factory or _default_protonmail_client_factory
 
     try:
@@ -62,6 +80,7 @@ def main(
             batch_size=args.batch_size,
             storage_dir=storage_dir,
             protonmail_client=protonmail_client,
+            classifier=classifier,
         )
         if result is None:
             output.write("No new messages found.\n")
@@ -95,6 +114,7 @@ def run_live_protonmail_daily_batch(
     batch_size: int,
     storage_dir: Path,
     protonmail_client: object,
+    classifier: object | None = None,
 ) -> dict | None:
     """Repair stale unresolved items, then incrementally classify new Proton messages."""
     repair = repair_stored_low_confidence_messages(
@@ -102,10 +122,12 @@ def run_live_protonmail_daily_batch(
         batch_size=batch_size,
         storage_dir=storage_dir,
         protonmail_client=protonmail_client,
+        classifier=classifier,
     )
     fetcher = ProtonMailBatchFetcher(
         protonmail_client=protonmail_client,
         storage_dir=storage_dir,
+        classifier=classifier,
     )
     review_queue = fetcher.fetch_protonmail_batch(account_id, batch_size)
     if review_queue is None:
@@ -165,6 +187,7 @@ def repair_stored_low_confidence_messages(
     batch_size: int,
     storage_dir: Path,
     protonmail_client: object,
+    classifier: object | None = None,
 ) -> dict:
     """Reclassify bounded unresolved local items when the classifier policy changes."""
     candidates: list[dict] = []
@@ -187,7 +210,10 @@ def repair_stored_low_confidence_messages(
                 continue
             if item.get("confidence_band") != "low":
                 continue
-            if item.get("classifier_policy_version") == CLASSIFIER_POLICY_VERSION:
+            if (
+                classifier is None
+                and item.get("classifier_policy_version") == CLASSIFIER_POLICY_VERSION
+            ):
                 continue
             raw_message = raw_by_id.get(str(item.get("message_id") or ""))
             if raw_message:
@@ -219,7 +245,7 @@ def repair_stored_low_confidence_messages(
         protonmail_client=protonmail_client,
         storage_dir=storage_dir,
     )
-    classifier = FixtureBatchClassifier(
+    active_classifier = classifier or FixtureBatchClassifier(
         fixtures_dir=Path("."),
         trusted_personal_senders=TrustedSenderStore(storage_dir).load_or_rebuild(),
     )
@@ -237,7 +263,7 @@ def repair_stored_low_confidence_messages(
             normalize_protonmail_message(account_id, candidate["raw_message"])
             for candidate in batch_candidates
         ]
-        review_queue = classifier.classify_messages(batch_id, normalized)
+        review_queue = active_classifier.classify_messages(batch_id, normalized)
         review_queue = fetcher._postprocess_review_queue(review_queue, normalized)
         classified_by_id = {
             str(item["message_id"]): item
@@ -324,7 +350,7 @@ def _print_summary(
 
 
 def _auto_apply_confident_labels(protonmail_client: object, stored_batch: dict) -> tuple[int, int]:
-    """Apply only non-edge Proton suggestions and keep every exception reviewable."""
+    """Apply every available Proton suggestion and keep uncertain ones reviewable."""
     raw_messages_by_id = {
         str(message.get("id") or ""): message
         for message in stored_batch.get("raw_messages") or []
@@ -333,7 +359,7 @@ def _auto_apply_confident_labels(protonmail_client: object, stored_batch: dict) 
     failure_count = 0
     for item in stored_batch.get("items") or []:
         labels = [str(label) for label in item.get("applied_labels") or [] if str(label)]
-        if item.get("confidence_band") not in {"medium", "high"} or not labels:
+        if not labels:
             item["provider_write_state"] = "not-attempted"
             continue
 

@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Threadwise marketing storyboard - updated UI</title>
+  <style>
+    :root {
+      --ink: #20232b;
+      --muted: #6d7380;
+      --faint: #9299a5;
+      --paper: #ffffff;
+      --canvas: #eef1f7;
+      --chrome: #f7f8fb;
+      --line: #d9dde5;
+      --line-strong: #c8cdd7;
+      --purple: #6258f5;
+      --purple-dark: #4b43d2;
+      --purple-soft: #efeeff;
+      --green: #159a62;
+      --green-soft: #e5f7ef;
+      --amber: #b96a12;
+      --amber-soft: #fff3df;
+      --shadow: 0 18px 45px rgba(30, 36, 55, .15), 0 3px 10px rgba(30, 36, 55, .08);
+    }
+
+    * { box-sizing: border-box; }
+    html { background: var(--canvas); }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--canvas);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    button { font: inherit; cursor: pointer; }
+    button:focus-visible { outline: 3px solid #2a8bb0; outline-offset: 3px; }
+
+    .prototype-banner {
+      padding: 10px 18px;
+      color: #f7f8ff;
+      background: #232733;
+      text-align: center;
+      font-size: .7rem;
+      font-weight: 800;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+    .page { width: min(1240px, calc(100% - 32px)); margin: 30px auto 106px; }
+    .masthead {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 28px;
+      margin-bottom: 22px;
+    }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand img { width: 42px; height: 42px; border-radius: 11px; }
+    .brand-name { font-size: 1.2rem; font-weight: 800; letter-spacing: -.03em; }
+    .brand-note { margin-top: 2px; color: var(--muted); font-size: .74rem; }
+    h1 { max-width: 760px; margin: 15px 0 0; font-size: clamp(2rem, 5vw, 4.25rem); line-height: .98; letter-spacing: -.065em; }
+    .intro { max-width: 710px; margin: 15px 0 0; color: #5e6470; font-size: 1rem; line-height: 1.55; }
+    .motion-note { max-width: 244px; color: var(--muted); font-size: .76rem; line-height: 1.4; }
+    .motion-note strong { display: block; margin-bottom: 5px; color: var(--ink); font-size: .73rem; }
+
+    .stage {
+      padding: clamp(16px, 3vw, 32px);
+      border: 1px solid var(--line-strong);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, .72);
+      box-shadow: 0 10px 28px rgba(56, 63, 82, .07);
+    }
+    .stage-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 18px; margin-bottom: 18px; }
+    .stage-heading h2 { margin: 0; font-size: 1.05rem; letter-spacing: -.025em; }
+    .stage-heading p { margin: 4px 0 0; color: var(--muted); font-size: .8rem; }
+    .badge { display: inline-flex; align-items: center; gap: 7px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: #fff; font-size: .68rem; font-weight: 750; white-space: nowrap; }
+    .badge-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+
+    /* The browser is deliberately straight-on. Motion is crop and scale only: no tilt, no perspective. */
+    .capture {
+      position: relative;
+      min-height: 560px;
+      overflow: hidden;
+      border: 1px solid #bec5d1;
+      border-radius: 10px;
+      background: #f4f6fa;
+      box-shadow: 0 8px 22px rgba(44, 52, 73, .1);
+    }
+    .browser-bar { height: 38px; display: flex; align-items: center; gap: 7px; padding: 0 14px; border-bottom: 1px solid var(--line); background: var(--chrome); }
+    .browser-dot { width: 8px; height: 8px; border-radius: 50%; background: #c2c7d0; }
+    .address { width: min(420px, 48%); height: 20px; margin-left: 10px; padding: 3px 10px; overflow: hidden; border: 1px solid #e0e3e9; border-radius: 6px; color: #9aa1ad; background: #fff; font-size: .59rem; white-space: nowrap; }
+    .capture-viewport { position: relative; height: 522px; overflow: hidden; }
+    .capture-content { position: absolute; inset: 0; transform-origin: right center; transition: transform .8s cubic-bezier(.2, .75, .25, 1); }
+    .capture.zoom .capture-content { transform: scale(1.38) translateX(-11.4%); }
+
+    .mail-app { display: grid; grid-template-columns: 148px minmax(0, 1fr); height: 522px; background: #fff; }
+    .mail-nav { padding: 19px 11px; border-right: 1px solid var(--line); background: #fafbfc; }
+    .mail-brand { display: flex; align-items: center; gap: 7px; margin: 0 6px 18px; color: #424957; font-size: .78rem; font-weight: 800; }
+    .mail-brand-mark { width: 20px; height: 20px; border-radius: 5px; background: #655cf4; }
+    .nav-item { padding: 8px 9px; border-radius: 6px; color: #707784; font-size: .72rem; }
+    .nav-item.active { color: #313744; background: #edf0f4; font-weight: 800; }
+    .mail-main { min-width: 0; display: grid; grid-template-columns: minmax(0, 46%) minmax(0, 54%); background: #fff; }
+    .inbox-list { min-width: 0; border-right: 1px solid var(--line); }
+    .inbox-toolbar { height: 52px; display: flex; align-items: center; justify-content: space-between; padding: 0 15px; border-bottom: 1px solid #edf0f3; color: #7b828e; font-size: .66rem; }
+    .inbox-toolbar strong { color: #424957; font-size: .72rem; }
+    .email-row { min-height: 75px; padding: 12px 14px; border-bottom: 1px solid #edf0f3; color: #58606c; }
+    .email-row.selected { border-left: 3px solid var(--purple); padding-left: 11px; background: #f6f5ff; color: #252b37; }
+    .email-sender { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: .68rem; font-weight: 800; }
+    .email-date { color: #9aa0aa; font-size: .58rem; font-weight: 600; }
+    .email-subject { margin-top: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .71rem; }
+    .email-labels { display: flex; gap: 4px; margin-top: 7px; }
+    .email-label { padding: 2px 5px; border-radius: 4px; color: #554bd0; background: #eae8ff; font-size: .54rem; font-weight: 800; }
+    .email-label.green { color: #13744e; background: #e5f7ef; }
+    .message-pane { min-width: 0; padding: 26px 24px; background: #fff; }
+    .message-meta { color: #7c8490; font-size: .63rem; }
+    .message-title { max-width: 430px; margin: 11px 0 9px; font-size: 1.1rem; font-weight: 800; line-height: 1.18; letter-spacing: -.02em; }
+    .message-rule { width: 100%; height: 1px; margin: 17px 0; background: #edf0f3; }
+    .message-line { width: 88%; height: 8px; margin-top: 12px; border-radius: 3px; background: #eef1f4; }
+    .message-line.short { width: 58%; }
+    .message-stamp { display: inline-flex; margin-top: 18px; padding: 6px 8px; border: 1px solid #dfe3e9; border-radius: 5px; color: #777e8a; background: #fafbfc; font-size: .6rem; }
+
+    .tw-minimized { position: absolute; top: 16px; right: 17px; z-index: 3; display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 10px; background: transparent; }
+    .tw-minimized img { width: 100%; height: 100%; }
+    .tw-dock { position: absolute; top: 0; right: 0; z-index: 4; display: flex; flex-direction: column; width: min(365px, 38%); height: 522px; border-left: 1px solid #cbd0d9; background: #fff; box-shadow: -12px 0 30px rgba(35, 41, 59, .09); transition: width .6s ease, opacity .35s ease; }
+    .tw-dock.hidden { display: none; }
+    .tw-header { display: flex; align-items: center; gap: 9px; min-height: 51px; padding: 10px 13px; border-bottom: 1px solid var(--line); background: #fff; }
+    .tw-header img { width: 27px; height: 27px; border-radius: 7px; }
+    .tw-name { font-size: .84rem; font-weight: 800; }
+    .tw-status { color: #555d6b; font-size: .67rem; }
+    .tw-minimize { margin-left: auto; padding: 3px 4px; border: 0; color: #69717e; background: transparent; font-size: 1.2rem; line-height: 1; }
+    .tw-content { min-height: 0; padding: 17px 15px 15px; overflow: hidden; }
+    .tw-context { display: flex; justify-content: space-between; gap: 10px; padding-bottom: 12px; border-bottom: 1px solid #edf0f3; }
+    .tw-context-title { max-width: 225px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .77rem; font-weight: 800; }
+    .tw-context-from { margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: .62rem; }
+    .tw-context-count { color: #6a7180; font-size: .62rem; white-space: nowrap; }
+    .tw-progress { height: 3px; margin-top: 11px; overflow: hidden; border-radius: 999px; background: #e0e3e9; }
+    .tw-progress span { display: block; width: 34%; height: 100%; background: var(--purple); transition: width .5s ease; }
+    .tw-kicker { margin-top: 19px; color: #747b88; font-size: .65rem; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
+    .tw-title { margin-top: 6px; font-size: 1rem; font-weight: 800; line-height: 1.12; letter-spacing: -.02em; }
+    .tw-subtitle { margin-top: 6px; color: #5e6572; font-size: .71rem; line-height: 1.4; }
+    .tw-reason { margin-top: 13px; padding: 11px; border-radius: 8px; color: #4e5663; background: #f5f6f9; font-size: .7rem; line-height: 1.42; }
+    .tw-reason strong { color: var(--ink); }
+    .tw-facts { margin-top: 13px; border-top: 1px solid #edf0f3; }
+    .tw-fact { display: flex; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid #edf0f3; color: #6d7481; font-size: .65rem; }
+    .tw-fact strong { color: #303642; font-size: .67rem; text-align: right; }
+    .tw-actions { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; margin-top: 14px; }
+    .tw-button { min-height: 36px; padding: 8px 11px; border: 0; border-radius: 7px; color: #fff; background: var(--purple); font-size: .7rem; font-weight: 800; box-shadow: 0 2px 0 var(--purple-dark); }
+    .tw-button.secondary { padding-inline: 10px; color: #363d4b; background: #fff; border: 1px solid var(--line-strong); box-shadow: none; }
+    .tw-button:disabled { opacity: .65; cursor: default; }
+    .tw-disclosure { margin-top: 12px; border-top: 1px solid #edf0f3; }
+    .tw-disclosure summary { padding: 10px 0; color: #464d5a; font-size: .67rem; font-weight: 750; cursor: pointer; }
+    .tw-disclosure p { margin: -1px 0 9px; color: var(--muted); font-size: .66rem; line-height: 1.42; }
+    .tw-disclosure button { padding: 0; border: 0; color: var(--purple-dark); background: transparent; font-size: .66rem; font-weight: 750; }
+    .tw-status-line { display: flex; align-items: center; gap: 7px; margin-top: 14px; padding: 8px 9px; border-radius: 7px; color: #4e5663; background: #f5f6f9; font-size: .66rem; }
+    .tw-status-line::before { width: 7px; height: 7px; border-radius: 50%; background: var(--green); content: ""; }
+
+    .caption { min-height: 39px; margin: 15px 1px 0; color: #555c69; font-size: .93rem; line-height: 1.4; }
+    .caption strong { color: var(--ink); }
+    .stage-controls { display: flex; align-items: center; gap: 9px; margin-top: 13px; }
+    .control-button { padding: 9px 13px; border: 1px solid #2f3440; border-radius: 7px; color: #fff; background: #2f3440; font-size: .74rem; font-weight: 800; }
+    .control-button.light { color: #363d4b; background: #fff; border-color: var(--line-strong); }
+    .step-dots { display: flex; gap: 6px; margin-left: auto; }
+    .step-dot { width: 7px; height: 7px; border-radius: 50%; background: #d4d8e0; }
+    .step-dot.active { background: var(--purple); }
+
+    /* Cut board: one source of truth for the product frame, presented as a clean storyboard. */
+    .cut-board { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+    .cut { min-width: 0; }
+    .cut-label { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 8px; color: #59606e; font-size: .68rem; font-weight: 800; }
+    .cut-number { color: var(--purple); }
+    .cut-window { position: relative; height: 235px; overflow: hidden; border: 1px solid #bec5d1; border-radius: 8px; background: #f4f6fa; }
+    .cut-window .browser-bar { height: 23px; padding: 0 8px; gap: 4px; }
+    .cut-window .browser-dot { width: 5px; height: 5px; }
+    .cut-window .address { height: 12px; margin-left: 5px; padding: 1px 5px; font-size: .4rem; }
+    .cut-window .capture-viewport, .cut-window .capture-content, .cut-window .mail-app { height: 212px; }
+    .cut-window .mail-nav { padding: 9px 6px; }
+    .cut-window .mail-app { grid-template-columns: 74px minmax(0, 1fr); }
+    .cut-window .mail-brand { margin: 0 3px 10px; font-size: .51rem; }
+    .cut-window .mail-brand-mark { width: 12px; height: 12px; border-radius: 3px; }
+    .cut-window .nav-item { padding: 4px 4px; font-size: .43rem; }
+    .cut-window .mail-main { grid-template-columns: minmax(0, 46%) minmax(0, 54%); }
+    .cut-window .inbox-toolbar { height: 24px; padding: 0 7px; font-size: .4rem; }
+    .cut-window .inbox-toolbar strong { font-size: .43rem; }
+    .cut-window .email-row { min-height: 40px; padding: 6px 7px; }
+    .cut-window .email-row.selected { padding-left: 5px; }
+    .cut-window .email-sender, .cut-window .email-subject { font-size: .42rem; }
+    .cut-window .email-date { font-size: .35rem; }
+    .cut-window .email-subject { margin-top: 2px; }
+    .cut-window .email-labels { display: none; }
+    .cut-window .message-pane { padding: 12px 9px; }
+    .cut-window .message-meta { font-size: .38rem; }
+    .cut-window .message-title { margin: 5px 0; font-size: .54rem; }
+    .cut-window .message-rule { margin: 8px 0; }
+    .cut-window .message-line { height: 4px; margin-top: 6px; }
+    .cut-window .message-stamp { margin-top: 8px; padding: 3px 4px; font-size: .35rem; }
+    .cut-window .tw-minimized { top: 9px; right: 8px; width: 22px; height: 22px; padding: 3px; border-radius: 5px; }
+    .cut-window .tw-dock { width: 44%; height: 212px; }
+    .cut-window .tw-header { min-height: 24px; gap: 4px; padding: 5px 6px; }
+    .cut-window .tw-header img { width: 14px; height: 14px; border-radius: 4px; }
+    .cut-window .tw-name, .cut-window .tw-status { font-size: .4rem; }
+    .cut-window .tw-minimize { font-size: .65rem; }
+    .cut-window .tw-content { padding: 8px 7px; }
+    .cut-window .tw-context { padding-bottom: 5px; }
+    .cut-window .tw-context-title { max-width: 80px; font-size: .4rem; }
+    .cut-window .tw-context-from, .cut-window .tw-context-count { margin-top: 1px; font-size: .35rem; }
+    .cut-window .tw-progress { height: 2px; margin-top: 5px; }
+    .cut-window .tw-kicker { margin-top: 7px; font-size: .35rem; }
+    .cut-window .tw-title { margin-top: 3px; font-size: .52rem; }
+    .cut-window .tw-subtitle { margin-top: 3px; font-size: .38rem; }
+    .cut-window .tw-reason { margin-top: 5px; padding: 5px; font-size: .38rem; }
+    .cut-window .tw-facts { margin-top: 5px; }
+    .cut-window .tw-fact { padding: 3px 0; font-size: .35rem; }
+    .cut-window .tw-fact strong { font-size: .36rem; }
+    .cut-window .tw-actions { gap: 4px; margin-top: 6px; }
+    .cut-window .tw-button { min-height: 18px; padding: 3px 4px; border-radius: 4px; font-size: .36rem; box-shadow: 0 1px 0 var(--purple-dark); }
+    .cut-window .tw-disclosure, .cut-window .tw-status-line { display: none; }
+    .cut-window .capture.zoom .capture-content { transform: scale(1.16) translateX(-6%); }
+    .cut-copy { min-height: 60px; margin-top: 9px; color: #666e7b; font-size: .68rem; line-height: 1.35; }
+    .cut-copy strong { color: var(--ink); }
+
+    /* Direct demo: the actual extension remains docked while the host inbox stays visible. */
+    .demo-layout { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 18px; align-items: start; }
+    .demo-copy h3 { margin: 0; font-size: 1.15rem; letter-spacing: -.03em; }
+    .demo-copy p { margin: 7px 0 16px; color: var(--muted); font-size: .78rem; line-height: 1.45; }
+    .demo-list { display: grid; gap: 7px; }
+    .demo-step { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 8px; align-items: start; padding: 9px; border: 1px solid var(--line); border-radius: 8px; color: #5e6572; background: #fff; font-size: .7rem; line-height: 1.3; cursor: pointer; }
+    .demo-step.active { border-color: #aaa5ff; background: var(--purple-soft); color: #303642; }
+    .demo-step-number { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; color: #fff; background: #969ba8; font-size: .65rem; font-weight: 800; }
+    .demo-step.active .demo-step-number { background: var(--purple); }
+    .demo-step strong { display: block; color: inherit; font-size: .72rem; }
+    .demo-step small { display: block; margin-top: 2px; color: #777f8c; font-size: .63rem; }
+    .demo-note { padding: 12px; border-left: 2px solid var(--purple); color: #5e6572; background: #fff; font-size: .71rem; line-height: 1.42; }
+    .demo-note strong { display: block; margin-bottom: 4px; color: var(--ink); }
+
+    .variant-switcher { position: fixed; right: 16px; bottom: 16px; z-index: 10; display: flex; gap: 5px; padding: 5px; border: 1px solid #bec5d1; border-radius: 8px; background: rgba(255,255,255,.95); box-shadow: 0 8px 22px rgba(30, 36, 55, .13); }
+    .variant-switcher a { padding: 7px 9px; border-radius: 5px; color: #626978; font-size: .67rem; font-weight: 800; text-decoration: none; }
+    .variant-switcher a.active { color: #fff; background: #2f3440; }
+
+    @media (max-width: 900px) {
+      .masthead { align-items: flex-start; flex-direction: column; }
+      .motion-note { max-width: 460px; }
+      .capture { min-height: 510px; }
+      .capture-viewport, .mail-app { height: 472px; }
+      .tw-dock { height: 472px; width: min(350px, 52%); }
+      .capture.zoom .capture-content { transform: scale(1.22) translateX(-8%); }
+      .cut-board { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 620px) {
+      .page { width: min(100% - 20px, 520px); margin-top: 20px; }
+      .prototype-banner { padding-inline: 10px; font-size: .6rem; }
+      h1 { font-size: 2.45rem; }
+      .stage { padding: 12px; }
+      .stage-heading { flex-direction: column; }
+      .capture { min-height: 420px; }
+      .capture-viewport, .mail-app { height: 382px; }
+      .mail-app { grid-template-columns: 56px minmax(0, 1fr); }
+      .mail-nav { padding: 12px 5px; }
+      .mail-brand { margin: 0 2px 13px; }
+      .mail-brand span, .nav-item span { display: none; }
+      .mail-brand-mark { width: 17px; height: 17px; }
+      .nav-item { padding: 7px 4px; text-align: center; }
+      .mail-main { grid-template-columns: 1fr; }
+      .message-pane { display: none; }
+      .tw-dock { height: 382px; width: min(292px, 72%); }
+      .tw-content { padding: 13px 11px; }
+      .tw-context-title { max-width: 150px; }
+      .capture.zoom .capture-content { transform: scale(1.12) translateX(-5%); }
+      .cut-board { grid-template-columns: 1fr; }
+      .cut-window { height: 255px; }
+      .cut-window .capture-viewport, .cut-window .capture-content, .cut-window .mail-app { height: 232px; }
+      .cut-window .tw-dock { height: 232px; }
+      .demo-layout { grid-template-columns: 1fr; }
+      .variant-switcher { right: 10px; bottom: 10px; left: 10px; justify-content: center; }
+      .variant-switcher a { flex: 1; text-align: center; }
+    }
+  </style>
+</head>
+<body>
+  <div class="prototype-banner">Throwaway marketing prototype · updated Variant C surfaces · straight-on motion study</div>
+  <main class="page">
+    <header class="masthead">
+      <div>
+        <div class="brand">
+          <img src="../docs/assets/brand/threadwise-app-mark.png" alt="Threadwise app icon">
+          <div>
+            <div class="brand-name">Threadwise</div>
+            <div class="brand-note">Inbox intelligence, still in your inbox.</div>
+          </div>
+        </div>
+        <h1>Quiet until your judgment matters.</h1>
+        <p class="intro">Threadwise starts as one small mark, labels routine mail in the background, and opens into the same compact decision surface in Gmail or Proton Mail. The camera stays level and moves closer only after the user opens it.</p>
+      </div>
+      <div class="motion-note"><strong>Motion rule</strong>Level, straight-on capture. Begin wide and minimized, reveal background work, then use one controlled push into the opened panel. No tilt or perspective.</div>
+    </header>
+
+    <section class="stage">
+      <div class="stage-heading">
+        <div>
+          <h2 id="stage-title">Continuous hero · inbox to decision</h2>
+          <p id="stage-description">One short sequence that makes the extension relationship legible before it gets close.</p>
+        </div>
+        <div class="badge"><span class="badge-dot"></span><span id="stage-badge">Interactive prototype</span></div>
+      </div>
+      <div id="variant-root"></div>
+    </section>
+  </main>
+
+  <nav class="variant-switcher" aria-label="Storyboard variants">
+    <a href="?variant=hero" data-variant="hero">Hero push-in</a>
+    <a href="?variant=cuts" data-variant="cuts">Storyboard cuts</a>
+    <a href="?variant=demo" data-variant="demo">Product demo</a>
+  </nav>
+
+  <script>
+    const logo = '../docs/assets/brand/threadwise-app-mark.png';
+    const variant = new URLSearchParams(window.location.search).get('variant') || 'hero';
+    const root = document.querySelector('#variant-root');
+    const stageTitle = document.querySelector('#stage-title');
+    const stageDescription = document.querySelector('#stage-description');
+    const stageBadge = document.querySelector('#stage-badge');
+
+    const messages = {
+      gmail: [
+        { sender: 'Finance', subject: 'Quarterly approval', date: '9:42 AM', labels: [] },
+        { sender: 'GitHub', subject: 'Your Actions workflow completed', date: '8:57 AM', labels: ['Personal'] },
+        { sender: 'Figma', subject: 'A new comment on your file', date: 'Yesterday', labels: ['Work'] },
+        { sender: 'Cloudflare', subject: 'Your weekly account summary', date: 'Yesterday', labels: ['Account'] }
+      ],
+      proton: [
+        { sender: 'DHL Paket', subject: 'Your shipment is on its way', date: 'Yesterday', labels: [] },
+        { sender: 'Trackunit', subject: 'One new job match near your profile', date: 'Yesterday', labels: ['Personal'] },
+        { sender: 'Vercel', subject: 'Failed production deployment on team CAS', date: 'Mon', labels: ['Personal'] },
+        { sender: 'Spaceship', subject: 'Important action required: verify your account', date: 'Mon', labels: ['Account'] }
+      ]
+    };
+
+    function mailRows(provider, selected = 0, backgroundDone = false) {
+      return messages[provider].map((email, index) => `
+        <div class="email-row ${index === selected ? 'selected' : ''}">
+          <div class="email-sender"><span>${email.sender}</span><span class="email-date">${email.date}</span></div>
+          <div class="email-subject">${email.subject}</div>
+          ${(email.labels.length || (backgroundDone && index === 0)) ? `<div class="email-labels">${(email.labels.length ? email.labels : [provider === 'proton' ? 'Delivery' : 'Receipts']).map(label => `<span class="email-label ${label === 'Personal' ? 'green' : ''}">${label}</span>`).join('')}</div>` : ''}
+        </div>`).join('');
+    }
+
+    function browserMarkup({ provider = 'gmail', state = 'inbox', selected = 0, panel = true, closeup = false, next = false, backgroundDone = false } = {}) {
+      const proton = provider === 'proton';
+      const email = messages[provider][selected];
+      const title = next ? (proton ? 'Your shipment is on its way' : 'Your Actions workflow completed') : email.subject;
+      const panelState = state === 'inbox' ? 'home' : state;
+      const suggestedLabel = proton ? 'Delivery' : 'Receipts';
+      const suggestedReason = proton
+        ? 'This message is a DHL shipment update, so it belongs with delivery mail. It stays visible in the inbox.'
+        : 'This is a finance approval message and belongs with receipts. It stays visible in the inbox.';
+      const panelBody = panelState === 'home' ? `
+        <div class="tw-context">
+          <div><div class="tw-context-title">Inbox overview</div><div class="tw-context-from">${proton ? 'Proton Mail' : 'Gmail'}</div></div>
+          <div class="tw-context-count">3 need review</div>
+        </div>
+        <div class="tw-progress"><span style="width: 22%"></span></div>
+        <div class="tw-kicker">Threadwise home</div>
+        <div class="tw-title">Keep the inbox moving.</div>
+        <div class="tw-subtitle">Threadwise checks the inbox, explains uncertain decisions, and waits for your judgment where it matters.</div>
+        <div class="tw-reason"><strong>3 emails need your review.</strong><br>Unread mail stays in your inbox.</div>
+        <div class="tw-actions"><button class="tw-button">Review first</button><button class="tw-button secondary">•••</button></div>` : panelState === 'correction' ? `
+        <div class="tw-context">
+          <div><div class="tw-context-title">${email.subject}</div><div class="tw-context-from">${email.sender}</div></div>
+          <div class="tw-context-count">2 of 3</div>
+        </div>
+        <div class="tw-progress"><span style="width: 67%"></span></div>
+        <div class="tw-kicker">Correct / teach</div>
+        <div class="tw-title">Change this email to Personal</div>
+        <div class="tw-subtitle">Tell Threadwise once. Keep the correction narrow, or teach it for future matching mail.</div>
+        <div class="tw-reason"><strong>Human-readable read</strong><br>This looks like a rare Google account notice, not every message from Google.</div>
+        <div class="tw-facts"><div class="tw-fact"><span>Current label</span><strong>Uncategorized</strong></div><div class="tw-fact"><span>New label</span><strong>Personal + Account</strong></div></div>
+        <div class="tw-actions"><button class="tw-button">Fix email + Next</button><button class="tw-button secondary">•••</button></div>
+        <details class="tw-disclosure"><summary>How Threadwise understood this</summary><p>LLM reviewed the email and your instruction. The narrower rule wins over a broad sender rule.</p><button>Ask LLM to review again</button></details>` : `
+        <div class="tw-context">
+          <div><div class="tw-context-title">${email.subject}</div><div class="tw-context-from">${email.sender}</div></div>
+          <div class="tw-context-count">1 of 3</div>
+        </div>
+        <div class="tw-progress"><span style="width: 34%"></span></div>
+        <div class="tw-kicker">Threadwise's read</div>
+        <div class="tw-title">${suggestedLabel}</div>
+        <div class="tw-subtitle">A decision is required for this message.</div>
+        <div class="tw-reason"><strong>High confidence.</strong><br>${suggestedReason}</div>
+        <div class="tw-facts"><div class="tw-fact"><span>Action</span><strong>Apply ${suggestedLabel} label</strong></div><div class="tw-fact"><span>Scope</span><strong>This email only</strong></div></div>
+        <div class="tw-actions"><button class="tw-button">Accept ${suggestedLabel}</button><button class="tw-button secondary">•••</button></div>
+        <details class="tw-disclosure"><summary>How Threadwise understood this</summary><p>Sender and message meaning match a ${proton ? 'delivery update' : 'finance receipt'}. No broad rule is being created.</p></details>`;
+
+      return `
+        <div class="capture ${closeup ? 'zoom' : ''}" data-provider="${provider}">
+          <div class="browser-bar"><span class="browser-dot"></span><span class="browser-dot"></span><span class="browser-dot"></span><div class="address">${proton ? 'mail.proton.me' : 'mail.google.com'} · Inbox</div></div>
+          <div class="capture-viewport">
+            <div class="capture-content">
+              <div class="mail-app">
+                <aside class="mail-nav"><div class="mail-brand"><span class="mail-brand-mark"></span><span>${proton ? 'Proton Mail' : 'Gmail'}</span></div><div class="nav-item active"><span>Inbox</span></div><div class="nav-item"><span>Starred</span></div><div class="nav-item"><span>Sent</span></div><div class="nav-item"><span>Archive</span></div></aside>
+                <div class="mail-main">
+                  <section class="inbox-list"><div class="inbox-toolbar"><strong>Inbox</strong><span>${next || backgroundDone ? 'Just updated' : '42 messages'}</span></div>${mailRows(provider, next ? Math.min(selected + 1, messages[provider].length - 1) : selected, backgroundDone)}</section>
+                  <article class="message-pane"><div class="message-meta">${email.sender} · ${proton ? 'Proton Mail' : 'Gmail'}</div><div class="message-title">${title}</div><div class="message-meta">To you · ${email.date}</div><div class="message-rule"></div><div class="message-line"></div><div class="message-line"></div><div class="message-line short"></div><div class="message-stamp">${next ? 'Threadwise is working in the background' : 'Message body remains the source of truth'}</div></article>
+                </div>
+              </div>
+              ${panel ? `<aside class="tw-dock"><header class="tw-header"><img src="${logo}" alt=""><span class="tw-name">Threadwise</span><span class="tw-status">Ready</span><button class="tw-minimize" aria-label="Minimize">−</button></header><div class="tw-content">${panelBody}${state === 'advance' ? '<div class="tw-status-line">Applied in the background · loading next</div>' : ''}</div></aside>` : '<button class="tw-minimized" aria-label="Open Threadwise"><img src="' + logo + '" alt=""></button>'}
+            </div>
+          </div>
+        </div>`;
+    }
+
+    function renderHero() {
+      stageTitle.textContent = 'Continuous hero · inbox to decision';
+      stageDescription.textContent = 'One short sequence that makes the extension relationship legible before it gets close.';
+      stageBadge.textContent = 'Interactive prototype';
+      root.innerHTML = `<div id="hero-capture"></div><div class="caption" id="hero-caption"></div><div class="stage-controls"><button class="control-button" id="hero-play">Play story</button><button class="control-button light" id="hero-next">Next beat</button><div class="step-dots" id="hero-dots"></div></div>`;
+      const captureRoot = document.querySelector('#hero-capture');
+      const caption = document.querySelector('#hero-caption');
+      const dots = document.querySelector('#hero-dots');
+      const beats = [
+        { state: 'inbox', panel: false, closeup: false, caption: '<strong>Start with almost nothing.</strong> Threadwise is one small mark at the edge of the inbox.' },
+        { state: 'background', panel: false, backgroundDone: true, closeup: false, caption: '<strong>Routine work happens quietly.</strong> A label appears while the inbox remains fully usable.' },
+        { state: 'home', panel: true, backgroundDone: true, closeup: false, caption: '<strong>Open it only when needed.</strong> The panel attaches to the edge without becoming a second inbox.' },
+        { state: 'review', panel: true, backgroundDone: true, closeup: true, caption: '<strong>Then move in.</strong> The straight-on crop makes the suggested label, reason, and scope legible.' },
+        { state: 'correction', panel: true, backgroundDone: true, closeup: true, caption: '<strong>Correct or teach in plain language.</strong> Threadwise keeps the lesson narrow and explicit.' },
+        { state: 'advance', panel: true, backgroundDone: true, closeup: true, next: true, caption: '<strong>Fix + Next.</strong> The next email loads immediately while the write finishes in the background.' },
+        { state: 'inbox', panel: false, backgroundDone: true, closeup: false, next: true, caption: '<strong>Then get out of the way again.</strong> The inbox is labeled, and Threadwise returns to one small mark.' },
+        { state: 'review', panel: true, backgroundDone: true, closeup: false, provider: 'proton', caption: '<strong>Same Threadwise on Proton Mail.</strong> The host changes; the product interaction does not.' }
+      ];
+      let index = 0;
+      let timer;
+      function draw() {
+        const beat = beats[index];
+        captureRoot.innerHTML = browserMarkup({ ...beat, provider: beat.provider || 'gmail', selected: 0 });
+        caption.innerHTML = beat.caption;
+        dots.innerHTML = beats.map((_, i) => `<span class="step-dot ${i === index ? 'active' : ''}"></span>`).join('');
+        document.querySelector('#hero-next').textContent = index === beats.length - 1 ? 'Restart' : 'Next beat';
+      }
+      function next() { index = (index + 1) % beats.length; draw(); }
+      document.querySelector('#hero-next').addEventListener('click', next);
+      document.querySelector('#hero-play').addEventListener('click', () => {
+        clearInterval(timer);
+        index = 0; draw();
+        timer = setInterval(() => { next(); if (index === beats.length - 1) clearInterval(timer); }, 1150);
+      });
+      draw();
+    }
+
+    function renderCuts() {
+      stageTitle.textContent = 'Storyboard cuts · level, close, repeat';
+      stageDescription.textContent = 'Five readable frames for a landing page or README: quiet presence, background value, one focused intervention, then quiet again.';
+      stageBadge.textContent = 'Static storyboard';
+      const cuts = [
+        { label: 'Quiet by default', copy: '<strong>1 · One small mark.</strong><br>The inbox belongs to the user until Threadwise is needed.', state: 'inbox', panel: false },
+        { label: 'Background value', copy: '<strong>2 · Labels appear quietly.</strong><br>Routine classifications require no new inbox or dashboard.', state: 'background', panel: false, backgroundDone: true },
+        { label: 'Focused decision', copy: '<strong>3 · Open, understand, decide.</strong><br>Reason, confidence, action, and scope stay compact.', state: 'review', panel: true, closeup: true, backgroundDone: true },
+        { label: 'Back to the inbox', copy: '<strong>4 · Move on.</strong><br>Threadwise minimizes after the decision and leaves the labeled inbox visible.', state: 'inbox', panel: false, next: true, backgroundDone: true },
+        { label: 'Provider parity', copy: '<strong>5 · Same product, Proton Mail.</strong><br>A clean match cut changes the host, not the interaction.', state: 'review', panel: true, provider: 'proton', backgroundDone: true }
+      ];
+      root.innerHTML = `<div class="cut-board">${cuts.map((cut, i) => `<article class="cut"><div class="cut-label"><span>${cut.label}</span><span class="cut-number">0${i + 1}</span></div><div class="cut-window">${browserMarkup(cut)}</div><p class="cut-copy">${cut.copy}</p></article>`).join('')}</div>`;
+    }
+
+    function renderDemo() {
+      stageTitle.textContent = 'Product demo · the extension is the product';
+      stageDescription.textContent = 'A more literal product view for a website section: click through the same states without a cinematic wrapper.';
+      stageBadge.textContent = 'Clickable UI study';
+      root.innerHTML = `<div class="demo-layout"><div><div id="demo-capture"></div></div><aside class="demo-copy"><h3>One interaction model.</h3><p>Gmail and Proton Mail share the same surface. Only the inbox behind it changes.</p><div class="demo-list" id="demo-list"></div><div class="demo-note"><strong>Why this feels lighter</strong>The extension is never a second inbox. It is a focused decision layer attached to the message you already opened.</div></aside></div>`;
+      const states = [
+        { label: 'Quiet by default', note: 'Only the Threadwise mark', state: 'inbox', panel: false },
+        { label: 'Background labeling', note: 'Value without interruption', state: 'background', panel: false, backgroundDone: true },
+        { label: 'Open when needed', note: 'Keep the inbox in context', state: 'home', panel: true, backgroundDone: true },
+        { label: 'Suggested action', note: 'Explain before asking', state: 'review', panel: true, backgroundDone: true },
+        { label: 'Correct / teach', note: 'Scope the lesson clearly', state: 'correction', panel: true, backgroundDone: true },
+        { label: 'Next email', note: 'Advance while the write finishes', state: 'advance', panel: true, next: true, backgroundDone: true },
+        { label: 'Move on', note: 'Return to the small mark', state: 'inbox', panel: false, next: true, backgroundDone: true }
+      ];
+      let index = 0;
+      const captureRoot = document.querySelector('#demo-capture');
+      const list = document.querySelector('#demo-list');
+      function draw() {
+        captureRoot.innerHTML = browserMarkup({ ...states[index], provider: 'gmail', selected: 0, closeup: index >= 3 && index <= 5 });
+        list.innerHTML = states.map((item, i) => `<button class="demo-step ${i === index ? 'active' : ''}" data-index="${i}"><span class="demo-step-number">${i + 1}</span><span><strong>${item.label}</strong><small>${item.note}</small></span></button>`).join('');
+        list.querySelectorAll('.demo-step').forEach(button => button.addEventListener('click', () => { index = Number(button.dataset.index); draw(); }));
+      }
+      draw();
+    }
+
+    const activeVariant = ['hero', 'cuts', 'demo'].includes(variant) ? variant : 'hero';
+    document.querySelectorAll('[data-variant]').forEach(link => link.classList.toggle('active', link.dataset.variant === activeVariant));
+    if (activeVariant === 'cuts') renderCuts();
+    else if (activeVariant === 'demo') renderDemo();
+    else renderHero();
+  </script>
+</body>
+</html>

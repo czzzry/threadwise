@@ -1,12 +1,14 @@
 # Review Semantics Preflight
 
-Status: draft for Founder approval before implementation
+Status: Partially superseded for automatic initial classification
+Current as of: 2026-08-20
+Superseded by: `docs/decisions/always-label-successfully-processed-mail.md` where this document treats low confidence as an automatic unlabeled outcome
 
 Purpose: lock only the minimum review semantics needed for the first implementation slices.
 
 ## Decisions
 
-- `unlabeled` is a valid reviewed outcome when no suggested label is worth keeping or the message exposes a taxonomy gap. It is reviewable like any other outcome and should not silently become a low-confidence labeled guess.
+- `unlabeled` remains a valid explicit reviewed outcome when the user rejects every Threadwise label or identifies a taxonomy gap. Automatic initial classification instead applies the best available tentative label and uses confidence to prioritize review.
 - Applied labels are capped at 3 per message. Any additional ranked candidates stay visible as near-misses and are not applied.
 - A near-miss means: "plausible candidate worth showing in review, but not strong enough to apply." Near-misses are for reviewer context, not hidden auto-fallback labels.
 - Confidence bands are reviewer aids, not truth claims:

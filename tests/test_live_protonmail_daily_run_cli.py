@@ -1,10 +1,12 @@
 import io
 import json
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from src.fixture_classifier import CLASSIFIER_POLICY_VERSION
 from src.live_protonmail_daily_run_cli import (
@@ -39,6 +41,41 @@ class FakeDailyRunProtonMailClient:
 
 
 class LiveProtonMailDailyRunCliTests(unittest.TestCase):
+    def test_daily_run_script_loads_repo_local_environment(self) -> None:
+        script = (Path(__file__).resolve().parent.parent / "scripts" / "daily_live_protonmail_run.py").read_text()
+
+        self.assertIn("from src.local_environment import load_local_environment", script)
+        self.assertIn("load_local_environment(REPO_ROOT)", script)
+
+    def test_main_passes_configured_model_classifier_to_proton_run(self) -> None:
+        configured_classifier = object()
+        with tempfile.TemporaryDirectory() as temp_dir, patch.dict(
+            os.environ,
+            {"THREADWISE_CLASSIFICATION_MODEL": "gpt-test"},
+        ), patch(
+            "src.live_protonmail_daily_run_cli.configure_initial_classifier",
+            return_value=(configured_classifier, {"state": "ready", "model": "gpt-test"}),
+        ) as configure, patch(
+            "src.live_protonmail_daily_run_cli.run_live_protonmail_daily_batch",
+            return_value=None,
+        ) as run:
+            exit_code = main(
+                [
+                    "--account-id",
+                    "founder-proton",
+                    "--storage-dir",
+                    temp_dir,
+                    "--credentials-dir",
+                    temp_dir,
+                ],
+                stdout=io.StringIO(),
+                protonmail_client_factory=lambda *_args: FakeDailyRunProtonMailClient([]),
+            )
+
+        self.assertEqual(exit_code, 0)
+        configure.assert_called_once()
+        self.assertIs(run.call_args.kwargs["classifier"], configured_classifier)
+
     def test_daily_run_script_runs_from_repo_root_without_pythonpath(self) -> None:
         repo_root = Path(__file__).resolve().parent.parent
         result = subprocess.run(
@@ -73,7 +110,7 @@ class LiveProtonMailDailyRunCliTests(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             self.assertIn("No new messages found.", stdout.getvalue())
 
-    def test_auto_apply_leaves_low_confidence_and_unlabeled_messages_for_review(self) -> None:
+    def test_auto_apply_labels_low_confidence_messages_and_skips_only_missing_labels(self) -> None:
         client = FakeDailyRunProtonMailClient([])
         batch = {
             "raw_messages": [
@@ -90,11 +127,11 @@ class LiveProtonMailDailyRunCliTests(unittest.TestCase):
 
         applied_count, failure_count = _auto_apply_confident_labels(client, batch)
 
-        self.assertEqual((applied_count, failure_count), (1, 0))
-        self.assertEqual(client.label_calls, [("high", "EA/Personal")])
+        self.assertEqual((applied_count, failure_count), (2, 0))
+        self.assertEqual(client.label_calls, [("high", "EA/Personal"), ("low", "EA/Personal")])
         self.assertEqual(
             [item["provider_write_state"] for item in batch["items"]],
-            ["applied", "not-attempted", "not-attempted"],
+            ["applied", "applied", "not-attempted"],
         )
 
     def test_main_auto_applies_confident_labels_and_writes_daily_report(self) -> None:
@@ -241,6 +278,61 @@ class LiveProtonMailDailyRunCliTests(unittest.TestCase):
             self.assertEqual(client.label_calls, [("dhl-1", "EA/Orders")])
             self.assertEqual(item["applied_labels"], ["shopping-order"])
             self.assertEqual(item["classifier_policy_version"], CLASSIFIER_POLICY_VERSION)
+
+    def test_repair_retries_current_policy_unlabeled_item_with_configured_classifier(self) -> None:
+        class ConfiguredClassifier:
+            def classify_messages(self, batch_id, messages):
+                message = messages[0]
+                return {
+                    "batch_id": batch_id,
+                    "items": [{
+                        "message_id": message["message_id"],
+                        "sender": message["sender"],
+                        "subject": message["subject"],
+                        "confidence_band": "low",
+                        "applied_labels": ["shopping-order"],
+                        "review_state": "pending",
+                        "classifier_policy_version": CLASSIFIER_POLICY_VERSION,
+                    }],
+                }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            batch_dir = storage_dir / "batches"
+            batch_dir.mkdir(parents=True)
+            batch = {
+                "batch_id": "founder-proton-batch-1",
+                "account_id": "founder-proton",
+                "provider": "protonmail",
+                "raw_messages": [{
+                    "id": "retry-1",
+                    "rfc_message_id": "<retry-1@example.com>",
+                    "sender": "DHL Paket <noreply@dhl.de>",
+                    "subject": "Your parcel is moving",
+                    "date": "2026-08-05T10:00:00Z",
+                    "body": "Your package is on its way.",
+                }],
+                "items": [{
+                    "message_id": "retry-1",
+                    "confidence_band": "low",
+                    "applied_labels": [],
+                    "classifier_policy_version": CLASSIFIER_POLICY_VERSION,
+                }],
+            }
+            (batch_dir / "founder-proton-batch-1.json").write_text(json.dumps(batch))
+            client = FakeDailyRunProtonMailClient([{"id": "retry-1"}])
+
+            result = repair_stored_low_confidence_messages(
+                account_id="founder-proton",
+                batch_size=25,
+                storage_dir=storage_dir,
+                protonmail_client=client,
+                classifier=ConfiguredClassifier(),
+            )
+
+            self.assertEqual(result["reprocessed_count"], 1)
+            self.assertEqual(result["auto_applied_count"], 1)
+            self.assertEqual(client.label_calls, [("retry-1", "EA/Orders")])
 
     def test_repair_does_not_revisit_user_reviewed_unlabeled_items(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

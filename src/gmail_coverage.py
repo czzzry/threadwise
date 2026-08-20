@@ -28,8 +28,8 @@ class GmailCoverageService:
     """Build a truthful, read-only view of current Gmail Inbox coverage.
 
     The service only lists and reads messages with gmail.readonly. It does not
-    classify with a model: mail absent from Threadwise's stored batches needs a
-    human judgment, while stored reviewed mail is treated as already adjudicated.
+    create unlabeled review work: mail absent from Threadwise's stored batches
+    is reported as needing a normal classification run.
     """
 
     def __init__(
@@ -124,6 +124,7 @@ class GmailCoverageService:
                 fetched_metadata = dict(zip(metadata_ids, executor.map(fetch_metadata, metadata_ids), strict=True))
         metadata: dict[str, dict] = {}
         review_items: list[dict] = []
+        requires_sync_count = 0
         read_failures = 0
         reused_count = 0
         provider_get_count = 0
@@ -137,7 +138,14 @@ class GmailCoverageService:
                     "sender": str(known_item.get("sender") or "(unknown sender)"),
                 }
                 if self._needs_judgment(known_item):
-                    review_items.append(self._review_item(metadata[message_id], source="stored-unresolved"))
+                    if known_item.get("final_labels") or known_item.get("applied_labels"):
+                        review_items.append(self._review_item(
+                            metadata[message_id],
+                            source="stored-unresolved",
+                            classified_item=known_item,
+                        ))
+                    else:
+                        requires_sync_count += 1
                 continue
             if message_id in cached_metadata:
                 item_metadata = dict(cached_metadata[message_id])
@@ -149,15 +157,12 @@ class GmailCoverageService:
                     read_failures += 1
                     continue
             metadata[message_id] = item_metadata
-            review_items.append(self._review_item(item_metadata, source="new-to-threadwise"))
+            requires_sync_count += 1
 
-        is_partial = bounded or read_failures > 0
-        unchecked_count = read_failures + (1 if bounded else 0)
+        is_partial = bounded or read_failures > 0 or requires_sync_count > 0
+        unchecked_count = read_failures + requires_sync_count + (1 if bounded else 0)
         status = "partial" if is_partial else ("queue-ready" if review_items else "verified-clear")
         checked_at = _utc_now()
-        new_candidates = [item for item in review_items if item.get("coverage_source") == "new-to-threadwise"]
-        if new_candidates:
-            self._persist_review_candidates(account_id, checked_at, new_candidates)
         scope = (
             f"First {self._limit} current Gmail Inbox messages"
             if bounded
@@ -175,11 +180,12 @@ class GmailCoverageService:
             "bounded": bounded,
             "read_failure_count": read_failures,
             "unchecked_count": unchecked_count,
+            "requires_sync_count": requires_sync_count,
             "reused_metadata_count": reused_count,
             "gmail_mutation": "none",
             "provider_routes_called": ["gmail.messages.list", *(["gmail.messages.get"] if provider_get_count else [])],
             "truth_note": (
-                "Unread mail stays in Gmail. Only checked messages needing your judgment enter this queue."
+                "Unread mail stays in your inbox. Only classified messages needing your judgment enter this queue."
             ),
         }
         self._persist_snapshot({**result, "metadata": metadata, "message_ids": message_ids})
@@ -194,6 +200,8 @@ class GmailCoverageService:
             batch = load_json(path)
             if (batch.get("provider") or "gmail") != "gmail":
                 continue
+            if batch.get("coverage_read_only") is True:
+                continue
             for item in batch.get("items") or []:
                 message_id = str(item.get("message_id") or "")
                 if message_id and message_id not in known:
@@ -207,17 +215,21 @@ class GmailCoverageService:
         )
 
     @staticmethod
-    def _review_item(metadata: dict, *, source: str) -> dict:
+    def _review_item(metadata: dict, *, source: str, classified_item: dict | None = None) -> dict:
+        classified_item = classified_item or {}
+        labels = list(classified_item.get("final_labels") or classified_item.get("applied_labels") or [])
         return {
             "provider": "gmail",
             "message_id": str(metadata.get("message_id") or ""),
             "thread_id": str(metadata.get("thread_id") or ""),
             "subject": str(metadata.get("subject") or "(no subject)"),
             "sender": str(metadata.get("sender") or "(unknown sender)"),
-            "classification": "Needs review",
+            "internal_label": labels[0] if labels else None,
+            "suggested_label": labels[0] if labels else None,
+            "classification": labels[0] if labels else "Classification unavailable",
             "status": "needs-attention",
             "status_label": "Needs review",
-            "reason": "This checked message has not been adjudicated by Threadwise.",
+            "reason": str(classified_item.get("interpretation") or "Threadwise labeled this message and wants your confirmation."),
             "coverage_source": source,
         }
 
@@ -234,36 +246,3 @@ class GmailCoverageService:
         temporary = self.snapshot_path.with_suffix(".tmp")
         temporary.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
         temporary.replace(self.snapshot_path)
-
-    def _persist_review_candidates(self, account_id: str, checked_at: str, items: list[dict]) -> None:
-        """Save read-only discoveries locally so the established review UI can open them."""
-        batches_dir = self._storage_dir / "batches"
-        batches_dir.mkdir(parents=True, exist_ok=True)
-        stamp = checked_at.replace(":", "").replace("-", "").replace(".", "")
-        batch_id = f"gmail-coverage-{stamp}"
-        batch = {
-            "schema_version": 1,
-            "batch_id": batch_id,
-            "provider": "gmail",
-            "account_id": account_id,
-            "created_at": checked_at,
-            "coverage_read_only": True,
-            "items": [
-                {
-                    "source": "gmail",
-                    "account_id": account_id,
-                    "message_id": item["message_id"],
-                    "thread_id": item.get("thread_id", ""),
-                    "subject": item.get("subject", "(no subject)"),
-                    "sender": item.get("sender", "(unknown sender)"),
-                    "review_state": "pending",
-                    "final_labels": [],
-                    "applied_labels": [],
-                    "interpretation": "Read-only Gmail coverage found a message that has not been adjudicated.",
-                }
-                for item in items
-            ],
-            "raw_messages": [],
-        }
-        path = batches_dir / f"{batch_id}.json"
-        path.write_text(json.dumps(batch, indent=2, sort_keys=True), encoding="utf-8")

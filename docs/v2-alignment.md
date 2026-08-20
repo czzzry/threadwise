@@ -163,7 +163,8 @@ Current accepted autonomy:
 
 - auto-apply all current suggested `EA/` labels
 - remove `INBOX` only for `spam-low-value` and `promotions` in Gmail
-- leave unlabeled or unsupported exceptions for manual handling
+- keep low-confidence labels reviewable after the additive provider write
+- surface genuine classification, provider-read, and provider-write failures as operational exceptions rather than ordinary unlabeled review items
 
 Still out of scope for default autonomy:
 
@@ -171,7 +172,7 @@ Still out of scope for default autonomy:
 - trashing mail
 - archiving mail broadly
 - any unsubscribe execution or user-facing unsubscribe management
-- ProtonMail label replacement, moving, archiving, Trash, Spam, sending, or provider-side filter/rule management. Daily Proton runs may add and read back suggested `EA/` labels only for medium/high-confidence classifications while preserving Inbox; low-confidence, unlabeled, and failed-verification items require review.
+- ProtonMail label replacement, moving, archiving, Trash, Spam, sending, or provider-side filter/rule management. Daily Proton runs may add and read back the best available suggested `EA/` labels for every successfully processed message while preserving Inbox; low-confidence decisions remain reviewable after the write.
 
 ## Teaching Loop Rules
 

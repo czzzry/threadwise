@@ -1,7 +1,7 @@
 # Threadwise Product Overview
 
 Status: Public product overview
-Current as of: 2026-08-14
+Current as of: 2026-08-20
 
 ## One-Line Summary
 
@@ -31,8 +31,8 @@ Threadwise focuses on the middle ground: useful automation with visible boundari
 
 ## What It Does Today
 
-- Runs a Gmail-first triage workflow for one person’s inbox
-- Classifies messages using deterministic rules plus explicitly configured, review-only model assistance
+- Runs one shared triage workflow in Gmail and Proton Mail
+- Classifies messages using deterministic rules plus explicitly configured model assistance, then keeps uncertain labels reviewable
 - Writes bounded Gmail labels back to the provider
 - Removes Gmail `INBOX` only for already-approved low-value categories
 - Shows a browser-based inbox companion beside Gmail
@@ -41,7 +41,7 @@ Threadwise focuses on the middle ground: useful automation with visible boundari
 - Previews when a correction would affect other existing emails
 - Requires confirmation before wider existing-message changes
 - Advances review quickly while background writes retain truthful receipt, retry, and reconciliation state
-- Checks Gmail coverage read-only and keeps review queues provider-scoped
+- Checks inbox coverage read-only in Gmail and Proton Mail and keeps review queues provider-scoped
 - Supports exact one-to-three-label selected-email `only`, `add`, `remove`, and `replace` corrections
 - Produces daily and weekly local reports
 - Supports ProtonMail read-only import/live-fetch plus a bounded label-only Bridge review console
@@ -68,7 +68,7 @@ flowchart TD
 Threadwise is organized around trust boundaries:
 
 - **Fetch and normalize:** provider-specific fetchers pull mail into local stored batches. Gmail is the primary write-capable release target; the [current operating checkpoint](checkpoints/current-operating-model-2026-06-22.md) owns the exact provider write boundaries.
-- **Classify with layers:** deterministic rules and accepted teaching memory run first. Explicit configuration can add review-only initial model suggestions or optional evaluation/runtime escalation.
+- **Classify with layers:** deterministic rules and accepted teaching memory run first. Explicit configuration adds model-assisted best guesses for deterministic misses; low-confidence labels remain visible for review after the additive provider write.
 - **Store evidence locally:** batches, review decisions, reports, write status, and teaching memory are local artifacts so runs can be inspected and replayed. Historical unsubscribe artifacts remain preserved but are not exposed as current product actions.
 - **Show decisions in context:** the Gmail companion sidebar explains the selected email and exposes correction where the user sees the mistake.
 - **Gate provider actions:** label writes and limited `INBOX` removal are bounded by explicit rules and approvals. Broader rewrites require preview and approval; unsubscribe execution and destructive suspicious-sender actions are unavailable.

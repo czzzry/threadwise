@@ -1,4 +1,4 @@
-"""Optional review-only model assistance for initial Gmail classification."""
+"""Optional model assistance for complete initial email classification."""
 
 from __future__ import annotations
 
@@ -11,12 +11,12 @@ from src.label_taxonomy import CANONICAL_LABEL_ORDER
 from src.runtime_cascade import OpenAIRuntimeCascadeClient
 
 
-class ReviewOnlyModelAssistedClassifier:
-    """Escalate deterministic misses to a model without making them writable.
+class ModelAssistedClassifier:
+    """Escalate deterministic misses to a model with reviewable best guesses.
 
     Deterministic matches keep the existing auto-apply behavior. Model output is
-    stored only as a pending suggestion (`near_misses`) so the existing daily
-    automation cannot turn a first-time model decision into a provider write.
+    stored as the tentative label set and remains pending for review after the
+    provider label write.
     """
 
     def __init__(
@@ -37,13 +37,13 @@ class ReviewOnlyModelAssistedClassifier:
             if item.get("applied_labels"):
                 item["decision_provenance"] = _rules_provenance()
                 continue
-            self._apply_review_only_model_result(
+            self._apply_model_result(
                 item,
                 messages_by_id.get(str(item.get("message_id") or ""), {}),
             )
         return result
 
-    def _apply_review_only_model_result(self, item: dict, message: dict) -> None:
+    def _apply_model_result(self, item: dict, message: dict) -> None:
         model_name = str(getattr(self._model_client, "model", "") or "")
         try:
             response = self._model_client.analyze_message(_model_payload(message))
@@ -51,7 +51,9 @@ class ReviewOnlyModelAssistedClassifier:
             abstained = bool(response.get("unresolved") or not labels)
             rationale = str(response.get("rationale") or "").strip()
             confidence = _confidence(response.get("confidence"))
-            item["near_misses"] = [] if abstained else labels
+            item["applied_labels"] = labels
+            item["near_misses"] = []
+            item["confidence_band"] = confidence
             if rationale:
                 item["interpretation"] = rationale
             item["decision_provenance"] = {
@@ -72,12 +74,15 @@ class ReviewOnlyModelAssistedClassifier:
                 "llm_abstained": False,
                 "llm_failed": True,
             }
-        # These fields are deliberately explicit even though the base classifier
-        # currently leaves unmatched items pending by omission.
-        item["applied_labels"] = []
+        # A model result remains reviewable even after its tentative label is
+        # written. A true model failure has no pretend fallback label.
         item["review_state"] = "pending"
         item.pop("final_labels", None)
         item.pop("review_action", None)
+
+
+# Compatibility for callers created before the always-label decision.
+ReviewOnlyModelAssistedClassifier = ModelAssistedClassifier
 
 
 def configure_initial_classifier(
@@ -86,7 +91,7 @@ def configure_initial_classifier(
     env: Mapping[str, str] | None = None,
     client_factory=None,
     deterministic_classifier: FixtureBatchClassifier | None = None,
-) -> tuple[ReviewOnlyModelAssistedClassifier | None, dict]:
+) -> tuple[ModelAssistedClassifier | None, dict]:
     """Return the optional classifier and a safe user-visible config status."""
     model_name = str(model or "").strip()
     if not model_name:
@@ -112,7 +117,7 @@ def configure_initial_classifier(
             "model": model_name,
             "reason": "client-configuration-failed",
         }
-    return ReviewOnlyModelAssistedClassifier(
+    return ModelAssistedClassifier(
         client,
         deterministic_classifier=deterministic_classifier,
     ), {

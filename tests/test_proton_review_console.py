@@ -58,6 +58,58 @@ class FakeProtonClient:
 
 
 class ProtonReviewConsoleTests(unittest.TestCase):
+    def test_unlabeled_legacy_record_requests_sync_instead_of_entering_review_queue(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "classification.json").write_text(json.dumps({
+                "provider": "protonmail",
+                "account_id": "founder-proton",
+                "messages": {
+                    "101": {
+                        "status": "suggested",
+                        "sender": "First sender <first@example.test>",
+                        "subject": "First subject",
+                        "reason": "No label suggestion was stored.",
+                    },
+                },
+            }))
+
+            state = self._console(root, FakeProtonClient(message_ids=["101"])).state()
+
+            self.assertEqual(state["remaining_count"], 0)
+            self.assertIsNone(state["current"])
+
+    def test_read_only_coverage_requests_sync_without_creating_unlabeled_review_work(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "classification.json").write_text(json.dumps({
+                "provider": "protonmail",
+                "account_id": "founder-proton",
+                "messages": {
+                    "101": {
+                        "status": "suggested",
+                        "sender": "First sender <first@example.test>",
+                        "subject": "First subject",
+                        "internal_label": "newsletter",
+                        "label": "EA/Newsletter",
+                        "reason": "An opted-in editorial digest.",
+                    },
+                },
+            }))
+            client = FakeProtonClient(message_ids=["101", "102"])
+            console = self._console(root, client)
+
+            coverage = console.check_coverage()
+
+            self.assertEqual(coverage["status"], "partial")
+            self.assertEqual(coverage["checked_count"], 2)
+            self.assertEqual(coverage["needs_review_count"], 1)
+            self.assertEqual(coverage["requires_sync_count"], 1)
+            self.assertEqual(client.label_calls, [])
+            self.assertEqual(coverage["provider_mutation"], "none")
+            stored = json.loads((root / "classification.json").read_text())
+            self.assertNotIn("102", stored["messages"])
+
     def test_rapid_proton_accepts_are_applied_in_order(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

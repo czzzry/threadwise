@@ -12,7 +12,9 @@
   </main>
   <script>
     window.__twSyncCalls = [];
+    window.__twCoverageCalls = [];
     window.__twSynced = false;
+    const coverageMode = new URLSearchParams(window.location.search).get("mode") === "coverage";
 
     const selectedContext = {
       provider: "protonmail",
@@ -27,7 +29,12 @@
     };
 
     function harnessState() {
-      const selectedEmail = window.__twSynced
+      const activeSelectedContext = coverageMode
+        ? { provider: "protonmail", message_id: "", subject: "", sender: "" }
+        : selectedContext;
+      const selectedEmail = coverageMode
+        ? null
+        : window.__twSynced
         ? {
             found: true,
             provider: "protonmail",
@@ -57,13 +64,13 @@
             understanding_label: "Ready",
             understanding_message: "Threadwise is ready with the current email.",
           };
-      const reviewItems = window.__twSynced ? [selectedEmail] : [];
+      const reviewItems = window.__twSynced && selectedEmail ? [selectedEmail] : [];
       return {
-        selected_context: selectedContext,
+        selected_context: activeSelectedContext,
         sidebar_state: {
           contract_version: "threadwise-sidebar-v2",
           generated_at: "2026-08-05T09:00:00Z",
-          selected_context: selectedContext,
+          selected_context: activeSelectedContext,
           selected_email: selectedEmail,
           daily_summary: {
             provider: "protonmail",
@@ -104,16 +111,18 @@
       id: "protonmail",
       name: "Proton Mail",
       canRunManualSync: true,
-      hasOpenMessage: () => true,
-      selectedContext: () => ({ ...selectedContext }),
+      hasOpenMessage: () => !coverageMode,
+      selectedContext: () => coverageMode
+        ? { provider: "protonmail", message_id: "", subject: "", sender: "" }
+        : ({ ...selectedContext }),
       messageUrl: () => selectedContext.page_url,
     });
 
     window.chrome = {
       runtime: {
         lastError: null,
-        getURL: (path) => `/${path}`,
-        onMessage: { addListener: () => undefined },
+        getURL: (path) => `/extensions/gmail_companion/${path}`,
+        onMessage: { addListener: () => undefined, removeListener: () => undefined },
         sendMessage(message, callback) {
           if (message.type === "email-agent:get-state") {
             setTimeout(() => callback({
@@ -138,11 +147,50 @@
             }), 50);
             return;
           }
+          if (message.type === "email-agent:api" && message.path === "/api/provider-coverage-check") {
+            window.__twCoverageCalls.push(message.body);
+            document.body.dataset.coverageProvider = String(message.body?.provider || "");
+            setTimeout(() => callback({
+              ok: true,
+              payload: {
+                status: "queue-ready",
+                provider: "protonmail",
+                checked_at: new Date().toISOString(),
+                checked_count: 15,
+                candidate_count: 15,
+                needs_review_count: 1,
+                review_items: window.__twSynced ? [harnessState().sidebar_state.selected_email] : [],
+                scope: "Current Proton Mail Inbox messages",
+                provider_mutation: "none",
+              },
+            }), 30);
+            return;
+          }
           setTimeout(() => callback({ ok: true, payload: {} }), 0);
+        },
+      },
+      storage: {
+        local: {
+          get() {
+            return Promise.resolve({
+              threadwise_onboarding_state: { version: "2026-08-09-v1", status: "completed" },
+            });
+          },
+          set() {
+            return Promise.resolve();
+          },
         },
       },
     };
   </script>
+  <script src="/extensions/gmail_companion/teaching_recovery.js"></script>
+  <script src="/extensions/gmail_companion/analytics.js"></script>
+  <script src="/extensions/gmail_companion/onboarding.js"></script>
+  <script src="/extensions/gmail_companion/queue_navigation.js"></script>
+  <script src="/extensions/gmail_companion/context_actions.js"></script>
+  <script src="/extensions/gmail_companion/selected_explanation.js"></script>
+  <script src="/extensions/gmail_companion/review_progression.js"></script>
+  <script src="/extensions/gmail_companion/coverage.js"></script>
   <script src="/extensions/gmail_companion/content.js"></script>
 </body>
 </html>

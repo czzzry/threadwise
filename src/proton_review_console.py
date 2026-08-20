@@ -46,8 +46,9 @@ def sync_proton_review_ledger(storage_dir: Path, batch_id: str) -> dict:
             continue
         internal_labels = [str(label) for label in item.get("applied_labels") or [] if str(label)]
         provider_write_state = str(item.get("provider_write_state") or "")
+        review_required = item.get("review_state") == "pending"
         records[message_id] = {
-            "status": "provider-confirmed" if provider_write_state == "applied" else "suggested",
+            "status": "suggested" if review_required else "provider-confirmed" if provider_write_state == "applied" else "suggested",
             "batch_id": batch_id,
             "account_id": str(batch.get("account_id") or ""),
             "sender": str(item.get("sender") or ""),
@@ -59,6 +60,8 @@ def sync_proton_review_ledger(storage_dir: Path, batch_id: str) -> dict:
             "label": gmail_label_name(internal_labels[0]) if internal_labels else "",
             "reason": str(item.get("interpretation") or "No explanation was stored."),
             "confidence_band": str(item.get("confidence_band") or "low"),
+            "review_required": review_required,
+            "provider_write_state": provider_write_state,
         }
         projected += 1
 
@@ -96,6 +99,85 @@ class ProtonReviewConsole:
     def state(self) -> dict:
         with self._lock:
             return self._state_unlocked()
+
+    def check_coverage(self, limit: int = 100) -> dict:
+        """Build a current Proton review snapshot using read-only Bridge calls."""
+        if limit < 1:
+            raise ValueError("Proton inbox coverage limit must be positive.")
+        with self._lock:
+            checked_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+            listed_ids = list(dict.fromkeys(
+                str(message_id)
+                for message_id in self._proton.list_messages(limit + 1)
+                if str(message_id)
+            ))
+            bounded = len(listed_ids) > limit
+            live_ids = listed_ids[:limit]
+            classification = load_json_or_default(
+                self._classification_ledger_path,
+                {"provider": "protonmail", "messages": {}},
+            )
+            review_state = load_json_or_default(
+                self._review_state_path,
+                {"provider": "protonmail", "messages": {}},
+            )
+            records = classification.setdefault("messages", {})
+            reviewed_ids = set((review_state.get("messages") or {}).keys())
+            completed_ids = {
+                message_id
+                for message_id, record in records.items()
+                if str(record.get("status") or "").lower()
+                in {"applied", "provider-confirmed", "completed"}
+            } | reviewed_ids
+            review_items: list[dict] = []
+            read_failure_count = 0
+            requires_sync_count = 0
+            for message_id in live_ids:
+                if message_id in completed_ids:
+                    continue
+                record = records.get(message_id)
+                coverage_source = "stored-unresolved"
+                if not isinstance(record, dict):
+                    try:
+                        self._proton.get_message(message_id)
+                    except Exception:
+                        read_failure_count += 1
+                        continue
+                    requires_sync_count += 1
+                    continue
+                if not (record.get("internal_labels") or record.get("internal_label")):
+                    requires_sync_count += 1
+                    continue
+                item = self._companion_review_item_unlocked(message_id, record)
+                item["coverage_source"] = coverage_source
+                review_items.append(item)
+
+            checked_count = max(0, len(live_ids) - read_failure_count)
+            unchecked_count = int(bounded) + read_failure_count + requires_sync_count
+            status = (
+                "partial"
+                if unchecked_count
+                else "queue-ready"
+                if review_items
+                else "verified-clear"
+            )
+            return {
+                "status": status,
+                "provider": "protonmail",
+                "checked_at": checked_at,
+                "checked_count": checked_count,
+                "candidate_count": len(live_ids) + int(bounded),
+                "needs_review_count": len(review_items),
+                "read_failure_count": read_failure_count,
+                "unchecked_count": unchecked_count,
+                "requires_sync_count": requires_sync_count,
+                "scope": f"Current Proton Mail Inbox messages (up to {limit})",
+                "scope_complete": not bounded,
+                "bounded": bounded,
+                "review_items": review_items,
+                "provider_mutation": "none",
+                "provider_routes_called": ["list_messages", "get_message"],
+            }
 
     def companion_harness(self, selected_context: dict | None = None) -> dict:
         """Project the Proton queue into the shared companion sidebar contract."""
@@ -318,6 +400,14 @@ class ProtonReviewConsole:
         candidates: list[tuple[float, str, dict]] = []
         for message_id, record in (classification.get("messages") or {}).items():
             if message_id not in live_ids or message_id in completed_ids:
+                continue
+            has_label = bool(
+                record.get("internal_labels")
+                or record.get("internal_label")
+                or record.get("labels")
+                or record.get("label")
+            )
+            if not has_label:
                 continue
             confidence = float((record.get("double_check") or {}).get("confidence", 1.0))
             candidates.append((confidence, message_id, record))
@@ -615,7 +705,7 @@ def render_proton_review_page(state: dict) -> str:
 <body>
   <main>
     <header>
-      <div class="brand"><img src="/assets/brand/threadwise-app-icon.png" alt=""><div><div class="eyebrow">Threadwise companion</div><h1>Proton review</h1><a href="/daily-dashboard">Back to daily dashboard</a></div></div>
+      <div class="brand"><img src="/assets/brand/threadwise-app-mark.png" alt=""><div><div class="eyebrow">Threadwise companion</div><h1>Proton review</h1><a href="/daily-dashboard">Back to daily dashboard</a></div></div>
           <div class="count"><span data-remaining-count>{remaining}</span> to review · {completed} completed</div>
     </header>
     {card}

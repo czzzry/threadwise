@@ -78,7 +78,8 @@ DEFAULT_CREDENTIALS_DIR = Path("data/gmail_credentials")
 DEFAULT_PROTON_STORAGE_DIR = Path("data/protonmail_fetch")
 DEFAULT_PROTON_CREDENTIALS_DIR = Path("data/protonmail_credentials")
 DEFAULT_PROTON_ACCOUNT_ID = "founder-proton"
-THREADWISE_APP_ICON_PATH = Path("docs/assets/brand/threadwise-app-icon.png")
+THREADWISE_APP_ICON_PATH = Path("docs/assets/brand/threadwise-app-mark.png")
+THREADWISE_APP_ICON_PNG_PATH = Path("docs/assets/brand/threadwise-app-icon.png")
 HEALTH_STATUS_SCHEMA_VERSION = 1
 HEALTH_STATUS_PATH = "/api/health"
 HEALTH_STATUS_SERVICE_ID = "threadwise-gmail-companion"
@@ -122,7 +123,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--classification-model",
         help=(
-            "Explicit OpenAI model for review-only initial classification assistance. "
+            "Explicit OpenAI model for complete initial classification assistance. "
             "No model is selected by default."
         ),
     )
@@ -376,11 +377,16 @@ class GmailCompanionApp:
             handler.wfile.write(encoded)
             return
 
-        if handler.command == "GET" and parsed.path == "/assets/brand/threadwise-app-icon.png":
-            if not THREADWISE_APP_ICON_PATH.exists():
+        if handler.command == "GET" and parsed.path in {
+            "/assets/brand/threadwise-app-mark.png",
+            "/assets/brand/threadwise-app-icon.png",
+        }:
+            is_mark = parsed.path.endswith("threadwise-app-mark.png")
+            icon_path = THREADWISE_APP_ICON_PATH if is_mark else THREADWISE_APP_ICON_PNG_PATH
+            if not icon_path.exists():
                 self._write_json(handler, HTTPStatus.NOT_FOUND, {"error": "Brand icon not found"})
                 return
-            encoded = THREADWISE_APP_ICON_PATH.read_bytes()
+            encoded = icon_path.read_bytes()
             handler.send_response(HTTPStatus.OK)
             handler.send_header("Content-Type", "image/png")
             handler.send_header("Content-Length", str(len(encoded)))
@@ -557,6 +563,16 @@ class GmailCompanionApp:
             try:
                 payload = self._read_request_payload(handler)
                 response = self.check_gmail_coverage(payload)
+                return self._write_json(handler, HTTPStatus.OK, response)
+            except (KeyError, ValueError, HTTPException, json.JSONDecodeError) as exc:
+                return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+            except Exception as exc:
+                return self._write_json(handler, HTTPStatus.SERVICE_UNAVAILABLE, {"error": str(exc)})
+
+        if handler.command == "POST" and parsed.path == "/api/provider-coverage-check":
+            try:
+                payload = self._read_request_payload(handler)
+                response = self.check_provider_coverage(payload)
                 return self._write_json(handler, HTTPStatus.OK, response)
             except (KeyError, ValueError, HTTPException, json.JSONDecodeError) as exc:
                 return self._write_json(handler, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
@@ -1203,6 +1219,19 @@ class GmailCompanionApp:
         account_id = str(payload.get("account_id") or infer_gmail_account_id(self._storage_dir))
         return self._gmail_coverage_service.check(account_id)
 
+    def check_provider_coverage(self, payload: dict) -> dict:
+        """Read current provider Inbox membership without provider mutation."""
+        provider = str(payload.get("provider") or "gmail").strip().lower()
+        if provider == "gmail":
+            return {
+                **self.check_gmail_coverage(payload),
+                "provider": "gmail",
+                "provider_mutation": "none",
+            }
+        if provider == "protonmail":
+            return self._proton_console().check_coverage()
+        raise ValueError("Choose Gmail or Proton Mail before checking inbox coverage.")
+
     def trigger_provider_sync(
         self,
         payload: dict,
@@ -1356,6 +1385,7 @@ class GmailCompanionApp:
             batch_size=int(payload.get("batch_size") or 25),
             storage_dir=self._proton_storage_dir,
             protonmail_client=proton_client,
+            classifier=self._initial_classifier,
         )
 
 

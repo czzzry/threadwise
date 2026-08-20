@@ -81,6 +81,17 @@ def auto_approve_items(items: list[dict], write_status_map: dict[str, str]) -> l
                 continue
             auto_items.append(item)
             continue
+        if (
+            labels
+            and (item.get("decision_provenance") or {}).get("decision_source") == "model"
+        ):
+            if write_status_map.get(item["message_id"]) == "applied":
+                continue
+            item["review_state"] = "pending"
+            item["review_action"] = "model-auto-label"
+            item["final_labels"] = list(labels)
+            auto_items.append(item)
+            continue
         if not labels:
             continue
         item["review_state"] = "reviewed"
@@ -225,7 +236,9 @@ def run_daily_gmail_automation(
     write_summary = writer.write_reviewed_labels(review_queue["batch_id"], auto_items)
     inbox_summary = writer.remove_inbox_for_low_value_messages(review_queue["batch_id"], auto_items)
     unlabeled_exceptions = [
-        item for item in stored_batch["items"] if item.get("review_state") != "reviewed"
+        item
+        for item in stored_batch["items"]
+        if not (item.get("final_labels") or item.get("applied_labels"))
     ]
     attention = None
     if attention_model_client is not None:

@@ -98,6 +98,7 @@ class CompanionRuntimeState:
             self._storage_dir,
             provider="gmail",
             allowed_review_message_ids=live_inbox_ids,
+            refresh_pending=False,
         )
         with self._data_lock:
             if live_inbox_generation == self._live_inbox_ids_generation:

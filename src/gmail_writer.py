@@ -107,7 +107,11 @@ class MockGmailLabelWriter:
         failed_count = 0
         skipped_count = 0
         for item in reviewed_items:
-            if item.get("review_state") != "reviewed":
+            is_tentative_model_label = (
+                item.get("review_state") == "pending"
+                and item.get("review_action") == "model-auto-label"
+            )
+            if item.get("review_state") != "reviewed" and not is_tentative_model_label:
                 skipped_count += 1
                 continue
 

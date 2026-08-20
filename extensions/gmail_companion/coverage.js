@@ -21,7 +21,8 @@
       needs_review_count: Math.max(0, Number(state.needs_review_count || 0)),
       read_failure_count: Math.max(0, Number(state.read_failure_count || 0)),
       unchecked_count: Math.max(0, Number(state.unchecked_count || 0)),
-      scope: state.scope || "Gmail coverage not checked",
+      requires_sync_count: Math.max(0, Number(state.requires_sync_count || 0)),
+      scope: state.scope || "Inbox coverage not checked",
       review_items: Array.isArray(state.review_items) ? state.review_items : [],
       error: state.error || "",
       previous_status: state.previous_status || "",
@@ -54,18 +55,27 @@
     const shared = {
       ...state,
       facts,
-      truthNote: "Unread mail stays in Gmail. Only checked messages needing your judgment enter this queue.",
+      truthNote: "Unread mail stays in your inbox. Only checked messages needing your judgment enter this queue.",
       indicator: "none",
       secondary: "",
     };
-    if (state.status === "checking") return { ...shared, shell: "Checking Gmail…", title: "Checking new and changed mail…", action: "Checking…", disabled: true, indicator: "indeterminate" };
-    if (state.status === "queue-ready") return { ...shared, shell: `${state.needs_review_count} need review`, title: `${state.needs_review_count} email${state.needs_review_count === 1 ? "" : "s"} need your review`, action: "Review first", secondary: "Check again" };
-    if (state.status === "verified-clear") return { ...shared, shell: "Queue clear · just now", title: "Review queue clear", action: "Back to Gmail", secondary: "Check again", truthNote: "Gmail may still contain unread mail. Clear means no checked messages need review." };
-    if (state.status === "partial") return { ...shared, shell: "Check incomplete", title: `${state.unchecked_count || state.read_failure_count || Math.max(1, state.candidate_count - state.checked_count)} messages weren’t checked`, action: "Finish check", secondary: state.needs_review_count ? `Review ${state.needs_review_count}` : "", indicator: "determinate" };
-    if (state.status === "failed") return { ...shared, shell: "Check failed", title: "Gmail check failed", action: "Try again", secondary: state.needs_review_count ? `Review ${state.needs_review_count}` : "" };
-    if (state.status === "offline") return { ...shared, shell: "Offline", title: "Can’t check Gmail", action: "Try again", secondary: "Details", truthNote: "This email is handled. The wider review queue is unverified while coverage is unavailable." };
-    if (state.status === "stale") return { ...shared, shell: "Coverage out of date", title: "Queue status is out of date", action: "Check Gmail", truthNote: "Gmail changed since the last check. Threadwise makes no clear claim until it is checked again." };
-    return { ...shared, shell: "Coverage not checked", title: "Inbox not checked", action: "Check Gmail" };
+    if (state.status === "checking") return { ...shared, shell: "Checking inbox…", title: "Checking new and changed mail…", action: "Checking…", disabled: true, indicator: "indeterminate" };
+    if (state.status === "queue-ready") {
+      const plural = state.needs_review_count !== 1;
+      return {
+        ...shared,
+        shell: `${state.needs_review_count} need review`,
+        title: `${state.needs_review_count} email${plural ? "s" : ""} ${plural ? "need" : "needs"} your review`,
+        action: "Review first",
+        secondary: "Check again",
+      };
+    }
+    if (state.status === "verified-clear") return { ...shared, shell: "Queue clear · just now", title: "Review queue clear", action: "Back to inbox", secondary: "Check again", truthNote: "Your inbox may still contain unread mail. Clear means no checked messages need review." };
+    if (state.status === "partial") return { ...shared, shell: "Check incomplete", title: state.requires_sync_count ? `${state.requires_sync_count} message${state.requires_sync_count === 1 ? "" : "s"} need Threadwise` : `${state.unchecked_count || state.read_failure_count || Math.max(1, state.candidate_count - state.checked_count)} messages weren’t checked`, action: state.requires_sync_count ? "Update inbox" : "Finish check", secondary: state.needs_review_count ? `Review ${state.needs_review_count}` : "", indicator: "determinate" };
+    if (state.status === "failed") return { ...shared, shell: "Check failed", title: "Inbox check failed", action: "Try again", secondary: state.needs_review_count ? `Review ${state.needs_review_count}` : "" };
+    if (state.status === "offline") return { ...shared, shell: "Offline", title: "Can’t check inbox", action: "Try again", secondary: "Details", truthNote: "This email is handled. The wider review queue is unverified while coverage is unavailable." };
+    if (state.status === "stale") return { ...shared, shell: "Coverage out of date", title: "Queue status is out of date", action: "Check inbox", truthNote: "Your inbox changed since the last check. Threadwise makes no clear claim until it is checked again." };
+    return { ...shared, shell: "Coverage not checked", title: "Inbox not checked", action: "Check inbox" };
   }
 
   const api = Object.freeze({ STATES, STALE_AFTER_MS, freshnessLabel, normalize, model });
