@@ -16,10 +16,9 @@ class GmailCompanionStateTests(unittest.TestCase):
             (batches_dir / "gmail-coverage-old.json").write_text(
                 json.dumps(
                     {
-                        "batch_id": "gmail-coverage-old",
+                        "batch_id": "legacy-import-without-coverage-flag",
                         "provider": "gmail",
                         "account_id": "founder-test",
-                        "coverage_read_only": True,
                         "items": [
                             {
                                 "message_id": "coverage-only",
@@ -28,6 +27,7 @@ class GmailCompanionStateTests(unittest.TestCase):
                                 "applied_labels": [],
                                 "subject": "Coverage-only discovery",
                                 "sender": "sender@example.com",
+                                "interpretation": "Read-only Gmail coverage found a message that has not been adjudicated.",
                             }
                         ],
                         "raw_messages": [],
@@ -47,6 +47,37 @@ class GmailCompanionStateTests(unittest.TestCase):
             self.assertEqual(payload["items"], [])
             self.assertEqual(payload["needs_attention_items"], [])
             self.assertIsNone(selected)
+
+    def test_runtime_queue_contains_every_item_in_the_reported_review_count(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_dir = Path(temp_dir)
+            batches_dir = storage_dir / "batches"
+            batches_dir.mkdir()
+            pending_items = [
+                {
+                    "message_id": f"message-{index:02d}",
+                    "review_state": "pending",
+                    "final_labels": ["personal"],
+                    "applied_labels": ["personal"],
+                    "subject": f"Message {index}",
+                }
+                for index in range(42)
+            ]
+            (batches_dir / "gmail-current.json").write_text(json.dumps({
+                "batch_id": "gmail-current",
+                "provider": "gmail",
+                "account_id": "founder-test",
+                "items": pending_items,
+                "raw_messages": [],
+            }))
+
+            payload = build_companion_runtime_payload(
+                storage_dir,
+                refresh_pending=False,
+            )
+
+            self.assertEqual(payload["daily_summary"]["needs_attention_count"], 42)
+            self.assertEqual(len(payload["needs_attention_items"]), 42)
 
     def test_runtime_payload_can_skip_pending_item_reclassification(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

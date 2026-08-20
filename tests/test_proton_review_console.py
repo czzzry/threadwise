@@ -366,6 +366,43 @@ class ProtonReviewConsoleTests(unittest.TestCase):
             )
             self.assertEqual(state["sidebar_state"]["ui_state"]["provider_name"], "Proton Mail")
 
+    def test_companion_harness_exposes_every_item_in_the_proton_review_count(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            message_ids = [str(200 + index) for index in range(18)]
+            records = {
+                message_id: {
+                    "status": "suggested",
+                    "sender": f"Sender {message_id} <sender-{message_id}@example.test>",
+                    "subject": f"Subject {message_id}",
+                    "internal_label": "personal",
+                    "label": "EA/Personal",
+                    "double_check": {"confidence": 0.5},
+                }
+                for message_id in message_ids
+            }
+            (root / "classification.json").write_text(json.dumps({
+                "provider": "protonmail",
+                "account_id": "founder-proton",
+                "messages": records,
+            }))
+            client = FakeProtonClient(message_ids=message_ids)
+            client.messages = {
+                message_id: {
+                    "id": message_id,
+                    "sender": record["sender"],
+                    "subject": record["subject"],
+                    "body": "Message body",
+                    "rfc_message_id": f"<{message_id}@example.test>",
+                }
+                for message_id, record in records.items()
+            }
+
+            state = self._console(root, client).companion_harness({"provider": "protonmail"})
+
+            self.assertEqual(state["sidebar_state"]["daily_summary"]["needs_attention_count"], 18)
+            self.assertEqual(len(state["needs_attention_items"]), 18)
+
     def test_selected_email_matches_sender_by_address_when_display_formatting_differs(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

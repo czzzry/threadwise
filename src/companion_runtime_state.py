@@ -334,7 +334,7 @@ class CompanionRuntimeState:
             "selected_context": selected_context,
             "sidebar_state": sidebar_state,
             "recent_items": unacknowledged_items[:24],
-            "needs_attention_items": list(runtime.get("needs_attention_items") or [])[:12],
+            "needs_attention_items": list(runtime.get("needs_attention_items") or []),
             "auto_handled_items": [
                 item
                 for item in unacknowledged_items

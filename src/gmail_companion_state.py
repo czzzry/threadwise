@@ -31,6 +31,9 @@ HIGH_CONSEQUENCE_ATTENTION_CATEGORIES = {
 
 SELECTED_EMAIL_READING_SECONDS = 0.35
 SELECTED_EMAIL_UNDERSTANDING_SECONDS = 1.5
+LEGACY_READ_ONLY_COVERAGE_REASON = (
+    "Read-only Gmail coverage found a message that has not been adjudicated."
+)
 
 
 def artifact_path_sort_key(path: Path) -> tuple[tuple[int, object], ...]:
@@ -39,6 +42,20 @@ def artifact_path_sort_key(path: Path) -> tuple[tuple[int, object], ...]:
         (1, int(part)) if part.isdigit() else (0, part.lower())
         for part in re.split(r"(\d+)", path.name)
     )
+
+
+def is_legacy_read_only_coverage_batch(batch: dict) -> bool:
+    return (
+        batch.get("coverage_read_only") is True
+        or str(batch.get("batch_id") or "").startswith("gmail-coverage-")
+    )
+
+
+def is_legacy_read_only_coverage_item(batch: dict, item: dict) -> bool:
+    if is_legacy_read_only_coverage_batch(batch):
+        return True
+    legacy_reason = str(item.get("interpretation") or item.get("reason") or "").strip()
+    return legacy_reason == LEGACY_READ_ONLY_COVERAGE_REASON
 
 
 def selected_context_from_query(query: dict[str, list[str]]) -> dict:
@@ -828,13 +845,15 @@ def build_companion_runtime_payload(
             batch = load_json(batch_path)
             if (batch.get("provider") or "gmail") != provider:
                 continue
-            if batch.get("coverage_read_only") is True:
+            if is_legacy_read_only_coverage_batch(batch):
                 continue
             batch_id = batch.get("batch_id", "")
             write_status_map = load_json_or_default(write_status_path(storage_dir, batch_id), {})
             inbox_status_map = load_json_or_default(inbox_removal_status_path(storage_dir, batch_id), {})
             raw_messages = {message.get("id"): message for message in batch.get("raw_messages", [])}
             for item in batch.get("items", [])[:25]:
+                if is_legacy_read_only_coverage_item(batch, item):
+                    continue
                 message_id = str(item.get("message_id") or "")
                 if allowed_review_message_ids is not None and message_id not in allowed_review_message_ids:
                     continue
@@ -859,13 +878,15 @@ def build_companion_runtime_payload(
             batch = load_json(batch_path)
             if (batch.get("provider") or "gmail") != provider:
                 continue
-            if batch.get("coverage_read_only") is True:
+            if is_legacy_read_only_coverage_batch(batch):
                 continue
             batch_id = batch.get("batch_id", "")
             write_status_map = load_json_or_default(write_status_path(storage_dir, batch_id), {})
             inbox_status_map = load_json_or_default(inbox_removal_status_path(storage_dir, batch_id), {})
             raw_messages = {message.get("id"): message for message in batch.get("raw_messages", [])}
             for item in batch.get("items", []):
+                if is_legacy_read_only_coverage_item(batch, item):
+                    continue
                 message_id = item.get("message_id", "")
                 if not message_id or message_id in seen_message_ids:
                     continue
@@ -901,7 +922,7 @@ def build_companion_runtime_payload(
         },
         "items": items[:80],
         "recent_items": items[:24],
-        "needs_attention_items": actionable_items[:12],
+        "needs_attention_items": actionable_items,
         "classification_error_items": classification_error_items[:12],
         "auto_handled_items": [item for item in items if item.get("status") == "auto-handled"][:12],
         "kept_visible_items": [item for item in items if item.get("status") in {"kept-visible", "auto-labeled", "provider-confirmed"}][:12],
@@ -934,7 +955,7 @@ def load_latest_batch(storage_dir: Path) -> dict | None:
     matches = sorted(batches_dir.glob("*.json"), key=artifact_path_sort_key, reverse=True)
     for match in matches:
         batch = load_json(match)
-        if batch.get("coverage_read_only") is not True:
+        if not is_legacy_read_only_coverage_batch(batch):
             return batch
     return None
 
@@ -950,10 +971,12 @@ def find_matching_item(storage_dir: Path, selected_context: dict) -> dict | None
         batch = load_json(batch_path)
         if selected_provider and (batch.get("provider") or "gmail") != selected_provider:
             continue
-        if batch.get("coverage_read_only") is True:
+        if is_legacy_read_only_coverage_batch(batch):
             continue
         raw_messages = {message.get("id"): message for message in batch.get("raw_messages", [])}
         for item in batch.get("items", []):
+            if is_legacy_read_only_coverage_item(batch, item):
+                continue
             if message_id and item.get("message_id") == message_id:
                 return {"batch": batch, "item": item, "raw_message": raw_messages.get(item.get("message_id"), {})}
             if not message_id and normalized_subject and normalized_selected_sender:

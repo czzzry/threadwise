@@ -234,7 +234,7 @@ class ProtonReviewConsole:
             "selected_context": selected_context,
             "sidebar_state": sidebar_state,
             "recent_items": review_items[:24],
-            "needs_attention_items": review_items[:12],
+            "needs_attention_items": review_items,
             "auto_handled_items": [],
             "kept_visible_items": [],
             "analytics_status": {"state": "active"},
@@ -415,7 +415,7 @@ class ProtonReviewConsole:
 
         review_items = [
             self._companion_review_item_unlocked(message_id, record)
-            for _, message_id, record in candidates[:24]
+            for _, message_id, record in candidates
         ]
         current = None
         if candidates:

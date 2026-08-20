@@ -9,6 +9,37 @@ from src.unsubscribe_inventory_store import UnsubscribeInventoryStore
 
 
 class CompanionRuntimeStateTests(unittest.TestCase):
+    def test_harness_does_not_truncate_the_runtime_review_queue(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime = _runtime(Path(temp_dir))
+            queue = [
+                {"message_id": f"message-{index:02d}", "status": "needs-attention"}
+                for index in range(42)
+            ]
+
+            with (
+                patch(
+                    "src.companion_runtime_state.build_companion_runtime_payload",
+                    return_value={
+                        "items": queue,
+                        "needs_attention_items": queue,
+                        "daily_summary": {"needs_attention_count": 42},
+                    },
+                ),
+                patch(
+                    "src.companion_runtime_state.build_selected_email_state",
+                    return_value={"found": False},
+                ),
+                patch(
+                    "src.companion_runtime_state.build_daily_summary",
+                    return_value={},
+                ),
+            ):
+                state = runtime.harness({})
+
+            self.assertEqual(state["sidebar_state"]["daily_summary"]["needs_attention_count"], 42)
+            self.assertEqual(len(state["needs_attention_items"]), 42)
+
     def test_rapid_gmail_accepts_share_one_serial_background_worker(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             queued: list = []

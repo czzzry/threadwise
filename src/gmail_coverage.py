@@ -4,7 +4,12 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 
-from src.gmail_companion_state import artifact_path_sort_key, load_json
+from src.gmail_companion_state import (
+    artifact_path_sort_key,
+    is_legacy_read_only_coverage_batch,
+    is_legacy_read_only_coverage_item,
+    load_json,
+)
 from src.live_gmail_client import GMAIL_READONLY_SCOPE
 
 
@@ -200,9 +205,11 @@ class GmailCoverageService:
             batch = load_json(path)
             if (batch.get("provider") or "gmail") != "gmail":
                 continue
-            if batch.get("coverage_read_only") is True:
+            if is_legacy_read_only_coverage_batch(batch):
                 continue
             for item in batch.get("items") or []:
+                if is_legacy_read_only_coverage_item(batch, item):
+                    continue
                 message_id = str(item.get("message_id") or "")
                 if message_id and message_id not in known:
                     known[message_id] = item

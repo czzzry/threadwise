@@ -73,7 +73,7 @@ class GmailCoverageTests(unittest.TestCase):
             batches = storage_dir / "batches"
             batches.mkdir(parents=True)
             (batches / "gmail-coverage-old.json").write_text(
-                '{"provider":"gmail","coverage_read_only":true,"items":[{"message_id":"new-1","review_state":"pending","final_labels":[],"applied_labels":[]}]}',
+                '{"provider":"gmail","items":[{"message_id":"new-1","review_state":"pending","final_labels":[],"applied_labels":[],"interpretation":"Read-only Gmail coverage found a message that has not been adjudicated."}]}',
                 encoding="utf-8",
             )
             client = FakeReadonlyGmailClient(["new-1"])
